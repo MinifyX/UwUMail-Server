@@ -12,6 +12,7 @@ members = [
     "crates/uwumail-tunnel",
     "crates/uwumail-gateway",
     "crates/uwumail-backup",
+    "crates/uwumail-tnef",
 ]
 
 [workspace.package]
@@ -30,6 +31,7 @@ uwumail-imap = { path = "crates/uwumail-imap" }
 uwumail-jmap = { path = "crates/uwumail-jmap" }
 uwumail-smtp = { path = "crates/uwumail-smtp" }
 uwumail-store = { path = "crates/uwumail-store" }
+uwumail-tnef = { path = "crates/uwumail-tnef" }
 uwumail-tunnel = { path = "crates/uwumail-tunnel" }
 uwumail-web = { path = "crates/uwumail-web" }
 
@@ -44,6 +46,8 @@ axum = { version = "0.8", default-features = false, features = ["http1", "http2"
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 data-encoding = "2"
+# Text of TNEF (winmail.dat) in Windows code pages; the version mail-parser uses.
+encoding_rs = "0.8"
 futures-util = "0.3"
 # Packing the TLS reports this server sends; the version mail-auth uses.
 flate2 = "1"
