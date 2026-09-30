@@ -421,7 +421,7 @@ stay `AssistLabel/*`, as since 0.18.
 | `id` | `Id` | server-set, like `g3` |
 | `name` | `String` | 1 to 40 characters, unique per person (ignoring case) |
 | `description` | `String` | what belongs there, at most 300 characters; this is what the model reads |
-| `keyword` | `String` | server-set when created and never changed: the keyword on the emails, a lower-case ASCII form of the first name (`rechnungen`, `bestellungen-versand`), or `label-<n>` |
+| `keyword` | `String` | server-set when created and never changed: the keyword on the emails, a lower-case ASCII form of the first name (`rechnungen`, `bestellungen-versand`), `label-<form>` when that form is a mark other programs act on (`junk`, `nonjunk`, `notjunk`, `phishing`, `seen`, `answered`, `flagged`, `deleted`, `draft`, `recent`, `forwarded`, `mdnsent`, `submitpending`, `submitted`), or `label-<n>` |
 | `color` | `String\|null` | `#rrggbb` or `null` |
 | `rules` | `Rules\|null` | conditions that put the label on new mail; `null` for none (default) |
 | `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter` or `shipping`; `null` for none (default) |

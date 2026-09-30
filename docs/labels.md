@@ -34,13 +34,14 @@ missing, and never takes one off.
 
 | | |
 | --- | --- |
-| `from` | the first address of `From`, lower case |
-| `subject` | the subject |
+| `from` | the first address of `From`, lower case, at most 1,000 characters |
+| `subject` | the subject, at most 1,000 characters |
 | `text` | the text: the `text/plain` body, or the HTML body turned into text, at most 100,000 characters |
-| `attachments` | name (may be empty) and content type of every attachment part |
+| `attachments` | name (may be empty) and content type of the first 100 attachment parts, each at most 1,000 characters |
 | `has_attachment` | there is at least one attachment part |
 | `calendar` | a `text/calendar` or `application/ics` part, or an attachment whose name ends in `.ics` |
-| `headers` | the names and values of `List-Unsubscribe`, `List-Unsubscribe-Post`, `List-Id`, `List-Post` and `Precedence` |
+| `headers` | the names and values (at most 1,000 characters) of `List-Unsubscribe`, `List-Unsubscribe-Post`, `List-Id`, `List-Post` and `Precedence` |
+| `from_trusted` | whether the `From` address says who sent the mail (see [Learned senders](#learned-senders)) |
 
 **Folding** makes text comparable: lower case (Unicode), and every run of white space one space.
 
@@ -137,10 +138,20 @@ It matches when
 For each label and From address the server counts how often the person gave a mail from that
 address the label **by hand** (JMAP `Email/set`, IMAP `STORE`). Taking the label off a mail of that
 address by hand (also with `AssistLabel/undo`) forgets the address for the label (the count is
-gone). From a count of **2** on, new mail from the address gets the label: `{ "address", "count" }`.
+gone). From a count of **2** on, new mail from the address gets the label: `{ "address", "count" }`
+— but only when the `From` address says who really sent it: at delivery the server takes it when
+SPF, DKIM or DMARC vouch for the address (or the mail comes from this server), since anyone can
+write a known address into `From` and so get a label, and whatever Sieve rule sorts by it, onto
+their mail. Apps that cannot tell keep `from_trusted` on.
+
+Only labels with `learnSenders` on count senders. At most 5,000 addresses are kept per label; a new
+one beyond takes the place of the least counted. Addresses over 320 characters are not learned.
 
 Only changes the person makes count: labels the server or the AI put on, keywords Sieve sets at
-delivery, and taking a label off every mail when it is destroyed teach nothing.
+delivery, and taking a label off every mail when it is destroyed teach nothing. Neither does
+labeling by someone a folder is shared with (the owner's labels learn from the owner), except in a
+shared mailbox, whose labels are all its members'. While labels without a model are switched off
+(`nonAiLabels`), nothing is learned.
 
 ## Classifier
 
@@ -169,11 +180,15 @@ recent mail per labeling:
   without it. Such a mail that is later labeled by hand simply becomes an example with the label;
 - at most 3,000 examples per person; beyond that the oldest are forgotten.
 
+Only labels with `classifier` on learn examples. The server learns a hand-labeling a moment later,
+from a queue: an email waits there once per label (putting a label on and off again leaves only
+the last change), at most 500 per person, and people take turns.
+
 For label L, the examples split into `P` (with L) and `N` (all other examples). For every token the
 model counts in how many examples of `P` and of `N` it occurs (`p(t)`, `n(t)`).
 
 **Deciding.** Nothing happens before `|P| ≥ 15` and `|N| ≥ 15`. Then, for the mail's tokens that
-occur in at least 2 examples (`p(t) + n(t) ≥ 2`):
+occur in at least 2 examples (`p(t) + n(t) ≥ 2`; counts below 0 read as 0):
 
 ```
 w(t) = ln( (p(t) + 1) / (|P| + 2) ) − ln( (n(t) + 1) / (|N| + 2) )
