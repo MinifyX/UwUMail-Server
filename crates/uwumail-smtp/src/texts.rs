@@ -194,3 +194,138 @@ pub fn bounce(tone: ToneConfig, recipient_is_local: bool, brand: &str) -> Bounce
     };
     BounceTexts { sender_name: sender(tone.language, who, brand), subject, intro, outro }
 }
+
+/// A paragraph for bounces of mail Microsoft (Outlook, Hotmail, Microsoft 365) refused or held
+/// back for too long: it is not the sender's fault, and the admins know (docs/microsoft.md).
+/// `local` is mail from our own people, who are addressed like everywhere else in their mail.
+pub fn microsoft_note(language: Language, local: bool, kind: crate::microsoft::IssueKind) -> &'static str {
+    use crate::microsoft::IssueKind as K;
+    use Language as L;
+    match (language, local, kind) {
+        (L::De, true, K::Blocked) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) blockiert gerade Mail von diesem Server. Das liegt nicht an \
+             dir oder deiner Nachricht. Die Admins des Servers wurden informiert und kümmern sich darum. Versuch es \
+             später noch einmal oder erreiche die Person auf einem anderen Weg."
+        }
+        (L::De, true, K::Throttled) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) nimmt von diesem Server gerade nur wenig Mail an und hat \
+             deine Nachricht immer wieder vertröstet, bis die Zeit um war. Das liegt nicht an dir. Die Admins des \
+             Servers wurden informiert. Versuch es später noch einmal."
+        }
+        (L::De, true, K::Authentication) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) lehnt Mail von deiner Domain gerade ab, weil ihm die \
+             Absenderprüfung (SPF, DKIM, DMARC) nicht reicht. Das liegt nicht an dir. Die Admins des Servers wurden \
+             informiert und bringen die Einträge in Ordnung."
+        }
+        (L::De, false, K::Blocked) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) blockiert derzeit Mail von diesem Server. Das liegt nicht an \
+             Ihnen oder Ihrer Nachricht. Die Administratoren des Servers wurden informiert."
+        }
+        (L::De, false, K::Throttled) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) nimmt von diesem Server derzeit nur wenig Mail an; Ihre \
+             Nachricht wurde bis zum Ablauf der Frist immer wieder zurückgestellt. Die Administratoren des Servers \
+             wurden informiert."
+        }
+        (L::De, false, K::Authentication) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) lehnt derzeit Mail dieser Domain ab, weil die \
+             Absenderprüfung (SPF, DKIM, DMARC) nicht ausreicht. Die Administratoren des Servers wurden informiert."
+        }
+        (L::En, _, K::Blocked) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) is currently blocking mail from this server. This is not \
+             about you or your message. The server's admins have been told and are looking after it. Please try \
+             again later or reach the person another way."
+        }
+        (L::En, _, K::Throttled) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) is currently taking only a little mail from this server and \
+             kept putting your message off until time ran out. This is not about you. The server's admins have been \
+             told. Please try again later."
+        }
+        (L::En, _, K::Authentication) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) is currently refusing mail from this domain because its \
+             sender checks (SPF, DKIM, DMARC) are not good enough for Microsoft. This is not about you. The server's \
+             admins have been told."
+        }
+        (L::Fr, true, K::Blocked) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) bloque en ce moment le courrier de ce serveur. Ce n'est ni \
+             ta faute ni celle de ton message. Les admins du serveur sont prévenus et s'en occupent. Réessaie plus \
+             tard ou contacte la personne autrement."
+        }
+        (L::Fr, true, K::Throttled) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) n'accepte en ce moment que peu de courrier de ce serveur et a \
+             repoussé ton message jusqu'à expiration du délai. Ce n'est pas ta faute. Les admins du serveur sont \
+             prévenus. Réessaie plus tard."
+        }
+        (L::Fr, true, K::Authentication) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) refuse en ce moment le courrier de ton domaine, car ses \
+             vérifications d'expéditeur (SPF, DKIM, DMARC) ne lui suffisent pas. Ce n'est pas ta faute. Les admins \
+             du serveur sont prévenus."
+        }
+        (L::Fr, false, K::Blocked) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) bloque actuellement le courrier de ce serveur. Cela ne tient \
+             ni à vous ni à votre message. Les administrateurs du serveur ont été informés."
+        }
+        (L::Fr, false, K::Throttled) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) n'accepte actuellement que peu de courrier de ce serveur ; \
+             votre message a été différé jusqu'à expiration du délai. Les administrateurs du serveur ont été informés."
+        }
+        (L::Fr, false, K::Authentication) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) refuse actuellement le courrier de ce domaine, car les \
+             vérifications d'expéditeur (SPF, DKIM, DMARC) sont insuffisantes. Les administrateurs du serveur ont été \
+             informés."
+        }
+        (L::Nl, true, K::Blocked) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) blokkeert op dit moment mail van deze server. Dat ligt niet \
+             aan jou of je bericht. De beheerders van de server weten het en pakken het op. Probeer het later nog \
+             eens of bereik de persoon op een andere manier."
+        }
+        (L::Nl, true, K::Throttled) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) neemt op dit moment maar weinig mail van deze server aan en \
+             heeft je bericht steeds uitgesteld tot de tijd om was. Dat ligt niet aan jou. De beheerders van de \
+             server weten het. Probeer het later nog eens."
+        }
+        (L::Nl, true, K::Authentication) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) weigert op dit moment mail van je domein, omdat de \
+             afzendercontrole (SPF, DKIM, DMARC) niet voldoet. Dat ligt niet aan jou. De beheerders van de server \
+             weten het."
+        }
+        (L::Nl, false, K::Blocked) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) blokkeert momenteel mail van deze server. Dit ligt niet aan u \
+             of uw bericht. De beheerders van de server zijn op de hoogte gebracht."
+        }
+        (L::Nl, false, K::Throttled) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) neemt momenteel maar weinig mail van deze server aan; uw \
+             bericht is steeds uitgesteld tot de termijn verstreek. De beheerders van de server zijn op de hoogte \
+             gebracht."
+        }
+        (L::Nl, false, K::Authentication) => {
+            "Microsoft (Outlook, Hotmail, Microsoft 365) weigert momenteel mail van dit domein, omdat de \
+             afzendercontrole (SPF, DKIM, DMARC) niet voldoet. De beheerders van de server zijn op de hoogte gebracht."
+        }
+        (L::Ja, _, K::Blocked) => {
+            "現在、Microsoft（Outlook、Hotmail、Microsoft 365）がこのサーバーからのメールをブロックしています。\
+             あなたやメッセージの問題ではありません。サーバーの管理者には通知済みで、対応中です。\
+             時間をおいて再度送るか、別の方法で相手に連絡してください。"
+        }
+        (L::Ja, _, K::Throttled) => {
+            "現在、Microsoft（Outlook、Hotmail、Microsoft 365）はこのサーバーからのメールを少ししか受け付けておらず、\
+             期限切れまでメッセージの受け取りを先延ばしにしました。あなたの問題ではありません。\
+             サーバーの管理者には通知済みです。時間をおいて再度お試しください。"
+        }
+        (L::Ja, _, K::Authentication) => {
+            "現在、Microsoft（Outlook、Hotmail、Microsoft 365）は、送信者の確認（SPF、DKIM、DMARC）が不十分なため、\
+             このドメインからのメールを拒否しています。あなたの問題ではありません。サーバーの管理者には通知済みです。"
+        }
+        (L::Zh, _, K::Blocked) => {
+            "Microsoft（Outlook、Hotmail、Microsoft 365）目前正在拦截来自此服务器的邮件。这不是你或你的邮件的问题。\
+             服务器管理员已收到通知并正在处理。请稍后再试，或通过其他方式联系对方。"
+        }
+        (L::Zh, _, K::Throttled) => {
+            "Microsoft（Outlook、Hotmail、Microsoft 365）目前只接收来自此服务器的少量邮件，一直推迟接收你的邮件，\
+             直到超时。这不是你的问题。服务器管理员已收到通知。请稍后再试。"
+        }
+        (L::Zh, _, K::Authentication) => {
+            "Microsoft（Outlook、Hotmail、Microsoft 365）目前拒收来自此域名的邮件，因为发件人验证（SPF、DKIM、DMARC）\
+             不符合其要求。这不是你的问题。服务器管理员已收到通知。"
+        }
+    }
+}

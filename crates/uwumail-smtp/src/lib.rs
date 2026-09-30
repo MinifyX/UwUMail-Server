@@ -24,6 +24,7 @@ mod headers;
 pub mod health;
 pub mod https;
 mod inbound;
+pub mod microsoft;
 pub mod mta_sts;
 mod outbound;
 pub mod palette;

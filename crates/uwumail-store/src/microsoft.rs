@@ -135,6 +135,7 @@ impl Store {
                 "INSERT INTO microsoft_deliveries (scope, subject, at) VALUES (?1, ?2, ?3)
                  ON CONFLICT (scope, subject) DO UPDATE SET at = MAX(at, excluded.at)",
             )?;
+            upsert.execute(params!["any", "", at])?;
             if let Some(ip) = ip.filter(|ip| !ip.is_empty()) {
                 upsert.execute(params!["ip", ip, at])?;
             }
@@ -148,16 +149,20 @@ impl Store {
 
     /// Closes issues that are over at `at`: mail went through since the last refusal, and that
     /// refusal is a day old. Issues about an unknown address or domain close once any mail went
-    /// through. Old resolved ones are forgotten. Returns how many were closed.
+    /// through, and so do address issues on a server that never learns its own public address
+    /// (behind NAT, only Microsoft's answer names it). Old resolved ones are forgotten. Returns
+    /// how many were closed.
     pub async fn resolve_microsoft_issues(&self, at: i64) -> Result<usize> {
         self.write(move |tx| {
             let closed = tx.execute(
                 "UPDATE microsoft_issues SET resolved_at = ?1, resolved_by = 'auto'
                  WHERE resolved_at IS NULL AND last_seen <= ?2
                    AND EXISTS (SELECT 1 FROM microsoft_deliveries AS d
-                               WHERE d.at > microsoft_issues.last_seen
-                                 AND (microsoft_issues.subject = ''
-                                      OR (d.scope = microsoft_issues.scope AND d.subject = microsoft_issues.subject)))",
+                               WHERE d.at >= microsoft_issues.last_seen
+                                 AND (d.scope = microsoft_issues.scope AND d.subject = microsoft_issues.subject
+                                      OR d.scope = 'any' AND microsoft_issues.subject = ''
+                                      OR d.scope = 'any' AND microsoft_issues.scope = 'ip'
+                                         AND NOT EXISTS (SELECT 1 FROM microsoft_deliveries WHERE scope = 'ip')))",
                 params![at, at - MICROSOFT_RESOLVE_AFTER_SECS],
             )?;
             tx.execute(
@@ -273,6 +278,15 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(left, 0);
+    }
+
+    #[tokio::test]
+    async fn behind_nat_any_mail_through_counts() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.record_microsoft_refusal(refusal("4.7.650", "203.0.113.5"), T0).await.unwrap();
+        // The server only knows its private address, so it records none.
+        store.record_microsoft_delivery(None, "example.org".into(), T0 + HOUR).await.unwrap();
+        assert_eq!(store.resolve_microsoft_issues(T0 + 24 * HOUR).await.unwrap(), 1);
     }
 
     #[tokio::test]
