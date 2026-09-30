@@ -3,6 +3,62 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.20.0
+
+**Mail from Outlook and Exchange** ([docs/winmail-dat.md](docs/winmail-dat.md)):
+
+- **winmail.dat (TNEF) is decoded.** Attachments, including long Unicode names and attached messages,
+  show up as normal JMAP attachments; the body (compressed RTF, including HTML wrapped in it) is
+  shown when the mail has no better one. Meeting requests, answers and cancellations inside
+  winmail.dat reach the calendar like iMIP invitations and appear as an `invite.ics` attachment.
+  Search, previews, `hasAttachment`, the spam check and the AI assistant see what is inside (search,
+  preview and `hasAttachment` for mail delivered from now on). Stored mail stays byte for byte as it
+  came (DKIM keeps verifying), IMAP is unchanged; decoding happens when the mail is read. The
+  decoder is its own crate, `uwumail-tnef`, shared with the UwUMail client.
+- **Microsoft Safe Links** are unwrapped in previews, the search index and the links the assistant
+  gets; the webmail shows and opens the real address.
+
+**Delivering to Microsoft** ([docs/microsoft.md](docs/microsoft.md)):
+
+- Refusals and throttling by Outlook.com, Hotmail and Microsoft 365 (`S3150`/`S3140`, banned
+  senders, `5.7.606`–`5.7.7xx` such as `5.7.708`, `4.7.650`/`4.7.500`, `5.7.515`, `5.7.509`) are
+  recognised during delivery and kept as issues per sending address or domain, with first and last
+  seen and a count. They show in the server overview and a banner with the code, the address, what
+  it means and a link to Microsoft's delisting form; admins get an alert mail, at most once a day
+  while a block lasts. Issues close by themselves a day after mail to Microsoft goes through again,
+  or by hand. Migration `0061_microsoft_issues.sql`.
+- The sender's bounce explains in plain words that Microsoft is blocking or throttling the server and
+  that the admins know. **Changed:** bounces to your own users now come in the user's language
+  instead of the server's.
+- New *Server → Microsoft* page: a checklist of Microsoft's 2025 sender rules (SPF, DKIM, DMARC and
+  alignment, reverse DNS, TLS, one-click unsubscribe) and step-by-step guides for SNDS, JMRP and
+  delisting.
+
+**BIMI per domain** ([docs/bimi.md](docs/bimi.md)): upload the logo as SVG, the server cleans it
+into SVG Tiny PS and hosts it (with an optional VMC/CMC) at `https://<host>/bimi/<domain>.svg`,
+suggests the `default._bimi` record, checks it with the DNS check, puts it in through the
+Cloudflare button and says whether DMARC is strict enough. BIMI logos show in Gmail, Apple Mail,
+Yahoo and others, not in Outlook; Gmail and Apple need a mark certificate. Migration `0062_bimi.sql`.
+
+**AI costs count everything a request can cost** ([docs/jmap-assist.md](docs/jmap-assist.md#assistestimate), [docs/llm.md](docs/llm.md)):
+
+- Price lists are read in full from LiteLLM and OpenRouter: thinking (reasoning) tokens, cached
+  prompt tokens, fees per request, pictures, web searches and higher prices for large prompts. A
+  price per request can also be set by hand (`pricePerRequest`).
+- `Assist/estimate` lists each model call (`calls`, including the retry without answer schema,
+  weighted by how often it happens), adds the API's framing, the typical thinking of reasoning
+  models (`reasoningTokens`), the text read from pictures (`imageCount`, `imageTokens`), a worst
+  case (`cost.max`) and the split of the cost (`cost.parts`). It learns from the last 50 real
+  requests per provider, model and feature (`calibrated`).
+- The real cost uses what the provider reported: cached tokens, thinking, request fees, OpenRouter's
+  own `usage.cost`. Usage keeps `reasoningTokens`, `cachedTokens` and `calls`; thinking tokens count
+  toward the daily token limit. The portal shows the whole price sheet and a thinking column in the
+  statistics. Migrations `0063_assist_cost_details.sql`, `0064_assist_calibration.sql`.
+
+**Webmail 0.20.0** (bundled): Safe Links show and open their real address, Teams meeting links get
+a join bar, and the AI estimate tooltip shows the worst case ("≈ 1.250 Tokens · ≈ 0,02 € (max.
+0,05 €)"), a short breakdown and whether it is calibrated.
+
 ## 0.19.0
 
 **What an AI request costs, before you click** ([docs/jmap-assist.md](docs/jmap-assist.md#assistestimate), [docs/llm.md](docs/llm.md)):
