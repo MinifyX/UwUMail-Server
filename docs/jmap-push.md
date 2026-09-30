@@ -134,6 +134,10 @@ Asking for `url` or `keys` is `forbidden`.
   the person's app password rule changes. From then on nothing is pushed to it,
   and it is dropped with the next hourly cleanup. An account that is switched
   off or deleted gets no pushes.
+- It hears only of what that login may see: an app password or OAuth app
+  without `dav` gets no changes of `Calendar`, `CalendarEvent`,
+  `CalendarEventNotification`, `ParticipantIdentity`, `AddressBook` or
+  `ContactCard`, and no `CalendarAlert`, whatever `types` it asked for.
 - Expired subscriptions, and those never verified within a day, are dropped
   every hour.
 

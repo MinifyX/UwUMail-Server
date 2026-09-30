@@ -81,6 +81,9 @@ pub struct PushTarget {
     pub keys: Option<PushKeys>,
     pub types: Option<Vec<String>>,
     pub verification_code: String,
+    /// Whether the login that made it may reach calendars and address books (the `dav` scope): an
+    /// app password or OAuth app without it hears nothing of them, as over the EventSource.
+    pub may_use_dav: bool,
 }
 
 /// How a verification code that came back was taken.
@@ -196,12 +199,28 @@ fn target(conn: &Connection, row: &Row<'_>) -> Result<PushTarget> {
         url_shown: row.get(3)?,
         keys,
         types: parse_types(row.get(6)?),
+        may_use_dav: row.get(8)?,
         verification_code: row.get(7)?,
     })
 }
 
-const TARGET_COLUMNS: &str =
-    "p.id, p.account_id, p.url, p.url_shown, p.keys_p256dh, p.keys_auth, p.types, p.verification_code";
+/// Whether the login behind a subscription `p` may reach calendars and address books: the account
+/// password and the webmail may, an app password or OAuth app only with the `dav` scope.
+macro_rules! may_use_dav {
+    () => {
+        "CASE
+    WHEN p.credential LIKE 'app:%' THEN EXISTS (SELECT 1 FROM app_passwords ap
+        WHERE ap.id = CAST(substr(p.credential, 5) AS INTEGER) AND ' ' || ap.scopes || ' ' LIKE '% dav %')
+    WHEN p.credential LIKE 'oauth:%' THEN EXISTS (SELECT 1 FROM oauth_grants g
+        WHERE g.id = CAST(substr(p.credential, 7) AS INTEGER) AND ' ' || g.scopes || ' ' LIKE '% dav %')
+    ELSE 1 END"
+    };
+}
+
+const TARGET_COLUMNS: &str = concat!(
+    "p.id, p.account_id, p.url, p.url_shown, p.keys_p256dh, p.keys_auth, p.types, p.verification_code, ",
+    may_use_dav!()
+);
 
 impl Store {
     /// Adds a subscription, not yet verified, and returns it with where to send its code.
@@ -247,6 +266,11 @@ impl Store {
             )?;
             let id = tx.last_insert_rowid();
             let subscription = own(tx, new.account_id, &new.credential, id)?;
+            let may_use_dav = tx.query_row(
+                concat!("SELECT ", may_use_dav!(), " FROM push_subscriptions p WHERE p.id = ?1"),
+                [id],
+                |row| row.get(0),
+            )?;
             let target = PushTarget {
                 id,
                 account_id: new.account_id,
@@ -255,6 +279,7 @@ impl Store {
                 keys: new.keys,
                 types: new.types,
                 verification_code: code,
+                may_use_dav,
             };
             Ok((subscription, target))
         })
@@ -623,6 +648,33 @@ mod tests {
 
         store.destroy_push_subscription(mini, "password", again.id).await.unwrap();
         assert!(store.push_subscriptions(mini, "password").await.unwrap().is_empty());
+    }
+
+    /// Whether a subscription's login may know of calendars: the account password may, an app
+    /// password only with `dav`.
+    #[tokio::test]
+    async fn targets_know_whether_their_login_may_use_dav() {
+        let (store, _dir) = store().await;
+        let mini = account(&store, "mini").await;
+        let app = |name: &str, scopes| NewAppPassword { name: name.into(), scopes, expires_at: None };
+        let mail = store.create_app_password(mini, app("Mail", vec![AppScope::Mail])).await.unwrap();
+        let dav = store.create_app_password(mini, app("Both", vec![AppScope::Mail, AppScope::Dav])).await.unwrap();
+        let mut expected = Vec::new();
+        for (credential, may) in [
+            ("password".to_owned(), true),
+            (push_credential_for_app_password(mail.app_password.id), false),
+            (push_credential_for_app_password(dav.app_password.id), true),
+        ] {
+            let url = format!("https://push.example.net/{}", credential.replace(':', "-"));
+            let (created, target) = store.create_push_subscription(new(mini, &credential, &url)).await.unwrap();
+            assert_eq!(target.may_use_dav, may, "{credential}");
+            let right =
+                PushSubscriptionUpdate { verification_code: Some(target.verification_code), ..Default::default() };
+            store.update_push_subscription(mini, &credential, created.id, right).await.unwrap();
+            expected.push(may);
+        }
+        let targets = store.push_targets(vec![mini]).await.unwrap();
+        assert_eq!(targets.iter().map(|t| t.may_use_dav).collect::<Vec<_>>(), expected);
     }
 
     #[tokio::test]
