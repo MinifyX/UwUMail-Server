@@ -15,6 +15,8 @@ import { toast } from "@/state/toasts";
 import {
   ADMIN_ASSIST,
   FEATURES,
+  FOREIGN_MAIL,
+  listedFeatures,
   byDay,
   byFeature,
   byPerson,
@@ -109,6 +111,16 @@ function PolicyCard({ policy }: { policy: AssistPolicy }) {
   );
 }
 
+/** What a provider may be used for, in its summary line. */
+function featuresText(provider: AdminProvider, t: ReturnType<typeof useT>["t"]): string {
+  const listed = listedFeatures(provider.features);
+  const features =
+    listed === "all"
+      ? t("assist.admin.allFeatures")
+      : listed.map((feature) => t(`assist.features.${feature}`)).join(", ");
+  return provider.features.includes(FOREIGN_MAIL) ? `${features} · ${t("assist.admin.foreignMail")}` : features;
+}
+
 /** Who may use a provider, in a few words. */
 function accessText(provider: AdminProvider, t: ReturnType<typeof useT>["t"]): string {
   if (provider.access === "domains") {
@@ -196,10 +208,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                       <span className="block truncate font-mono text-[12px] text-muted">{provider.baseUrl}</span>
                     )}
                     <span className="block text-[12px] text-muted">
-                      {accessText(provider, t)} ·{" "}
-                      {provider.features.length === FEATURES.length
-                        ? t("assist.admin.allFeatures")
-                        : provider.features.map((feature) => t(`assist.features.${feature}`)).join(", ")}
+                      {accessText(provider, t)} · {featuresText(provider, t)}
                     </span>
                     <span className="block text-[12px] text-muted">
                       <QuotaText

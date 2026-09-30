@@ -11,6 +11,15 @@ export const FOREIGN_MAIL = "foreignMail" as const;
 /** What a provider may be used for: the features, and mail of other accounts. */
 export type ProviderFeature = Feature | typeof FOREIGN_MAIL;
 
+/**
+ * The features a provider's summary names: `"all"` when it has every one, otherwise those it has, in
+ * their usual order. Mail of other accounts is a switch of its own, not one of them.
+ */
+export function listedFeatures(features: readonly ProviderFeature[]): "all" | Feature[] {
+  const listed = FEATURES.filter((feature) => features.includes(feature));
+  return listed.length === FEATURES.length ? "all" : listed;
+}
+
 export type ProviderKind =
   "openai" | "anthropic" | "gemini" | "mistral" | "openrouter" | "ollama" | "openaiCompatible" | "chatgpt";
 

@@ -7,6 +7,7 @@ import {
   currencyFor,
   draftOf,
   emptyDraft,
+  FEATURES,
   FOREIGN_MAIL,
   formatCost,
   loginReducer,
@@ -14,6 +15,7 @@ import {
   parseLimit,
   parsePrice,
   hasThinking,
+  listedFeatures,
   MAX_PRICE_PER_REQUEST,
   pollSeconds,
   providerBody,
@@ -150,6 +152,13 @@ describe("the provider form", () => {
     });
     const picked = { ...draft, features: [FOREIGN_MAIL, "summarize" as const] };
     expect(providerBody(picked, OLLAMA, { create: true, admin: true }).features).toEqual(["summarize", FOREIGN_MAIL]);
+  });
+
+  it("summarizes a provider's features without the switch for other accounts", () => {
+    // A provider migrated to 0.21 has every feature plus foreignMail: still "all features".
+    expect(listedFeatures([...FEATURES, FOREIGN_MAIL])).toBe("all");
+    expect(listedFeatures([...FEATURES])).toBe("all");
+    expect(listedFeatures([FOREIGN_MAIL, "autoLabels", "summarize"])).toEqual(["summarize", "autoLabels"]);
   });
 
   it("finds logins in addresses", () => {
