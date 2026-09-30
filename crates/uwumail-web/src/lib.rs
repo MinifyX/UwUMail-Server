@@ -89,6 +89,8 @@ struct Inner {
     setup_code: Mutex<Option<String>>,
     /// The latest run of the setup checks.
     server_check: Mutex<Option<uwumail_smtp::servercheck::ServerCheck>>,
+    /// The sending addresses with their reverse names for the Microsoft checklist, and when.
+    microsoft_addresses: Mutex<Option<(i64, Vec<uwumail_smtp::servercheck::AddressReport>)>>,
     /// Apple configuration profiles waiting for their one download, by token.
     apple_profiles: Mutex<HashMap<String, routes::apps::PendingProfile>>,
     /// The UwUMail Gateway, once the server plugged it in.
@@ -158,6 +160,7 @@ impl Web {
                 login: login::LoginState::default(),
                 setup_code: Mutex::default(),
                 server_check: Mutex::default(),
+                microsoft_addresses: Mutex::default(),
                 apple_profiles: Mutex::default(),
                 gateway: std::sync::OnceLock::new(),
                 host: std::sync::OnceLock::new(),
@@ -630,6 +633,9 @@ impl Web {
             .route("/api/admin/alerts", get(routes::alerts::list))
             .route("/api/admin/alerts/{id}/acknowledge", post(routes::alerts::acknowledge))
             .route("/api/admin/stats", get(routes::stats::show))
+            .route("/api/admin/microsoft/issues", get(routes::microsoft::issues))
+            .route("/api/admin/microsoft/issues/{id}/resolve", post(routes::microsoft::resolve))
+            .route("/api/admin/microsoft/checklist", get(routes::microsoft::checklist).post(routes::microsoft::check))
             .route("/api/admin/health", get(routes::admin::health))
             .route("/api/admin/health/check", post(routes::admin::check_health))
             .route("/api/admin/updates", get(routes::updates::show).put(routes::updates::save))
@@ -659,6 +665,21 @@ impl Web {
             .route("/api/admin/domains/{name}/reports/{kind}/{id}", get(routes::reports::detail))
             .route("/.well-known/mta-sts.txt", get(routes::reports::policy))
             .route("/api/admin/domains/{name}/dns/cloudflare", post(routes::domains::cloudflare))
+            .route("/api/admin/domains/{name}/bimi", get(routes::bimi::show).put(routes::bimi::update))
+            .route("/api/admin/domains/{name}/bimi/logo.svg", get(routes::bimi::preview))
+            .route(
+                "/api/admin/domains/{name}/bimi/svg",
+                put(routes::bimi::upload)
+                    .delete(routes::bimi::remove_svg)
+                    .layer(axum::extract::DefaultBodyLimit::max(4 * uwumail_smtp::bimi::MAX_SVG_INPUT)),
+            )
+            .route(
+                "/api/admin/domains/{name}/bimi/certificate",
+                put(routes::bimi::upload_certificate).delete(routes::bimi::remove_certificate),
+            )
+            .route("/api/admin/domains/{name}/bimi/check", post(routes::bimi::check))
+            // BIMI logos and certificates, for every receiver (docs/bimi.md).
+            .route("/bimi/{file}", get(routes::bimi::public_file))
             .route("/api/admin/domains/{name}/dkim/rotate", post(routes::domains::rotate_keys))
             .route("/api/admin/domains/{name}/dkim/activate", post(routes::domains::activate_keys))
             .route("/api/admin/domains/{name}/dkim/{selector}", delete(routes::domains::remove_key))

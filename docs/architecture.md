@@ -95,6 +95,12 @@ Design choices that matter later:
   and in a DNSSEC-signed zone the TLSA record for the server's key), resolved
   from the root servers down.
 - `dkim`: RSA-2048 and Ed25519 keys per domain; submitted mail is signed with both.
+- `microsoft`: tells Microsoft's refusals and throttling (`S3150`, `5.7.708`,
+  `4.7.650`, `5.7.515` ...) apart from ordinary bounces; the delivery worker keeps
+  them as issues per sending address or domain for the admins, and bounces explain
+  them ([microsoft.md](microsoft.md)).
+- `bimi`: logos cleaned into SVG Tiny PS, mark certificates and the
+  `default._bimi` record, hosted per domain ([bimi.md](bimi.md)).
 - `forward` + `srs`: after local delivery, mail also goes to a person's confirmed
   forwarding addresses. Mail to other servers gets an SRS envelope sender on
   the person's domain (HMAC-SHA256, valid 21 days), so SPF passes there; DKIM

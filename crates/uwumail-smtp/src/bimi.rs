@@ -396,6 +396,8 @@ fn check_urls(value: &str) -> Result<(), SvgError> {
 struct Cleaner<'a> {
     rules: &'a [CssRule],
     uses_xlink: bool,
+    /// A new square goes behind the logo, so the one from an earlier upload goes.
+    replace_background: bool,
 }
 
 impl Cleaner<'_> {
@@ -506,7 +508,9 @@ impl Cleaner<'_> {
                     }
                     let attributes = self.attributes(child)?;
                     // Our own square from an earlier upload makes way for the new one.
-                    if attributes.iter().any(|(key, value)| key == "id" && value == BACKGROUND_ID) {
+                    if self.replace_background
+                        && attributes.iter().any(|(key, value)| key == "id" && value == BACKGROUND_ID)
+                    {
                         continue;
                     }
                     let keep_text = matches!(name, "text" | "tspan" | "textArea" | "desc");
@@ -641,7 +645,7 @@ pub fn tiny_ps(input: &str, options: &SvgOptions<'_>) -> Result<String, SvgError
     let (x, y) = (x - (size - width) / 2.0, y - (size - height) / 2.0);
 
     let rules = css_rules(&root);
-    let mut cleaner = Cleaner { rules: &rules, uses_xlink: false };
+    let mut cleaner = Cleaner { rules: &rules, uses_xlink: false, replace_background: options.background.is_some() };
     // What the root says about the look is passed on to a group around everything.
     let mut inherited = cleaner.attributes(&root)?;
     inherited
@@ -924,8 +928,11 @@ mod tests {
         for gone in ["script", "alert", "metadata", "onload", "onclick", "x=\"5\"", "width=\"200\" height=\"100\""] {
             assert!(!out.contains(gone), "{gone} is still in {out}");
         }
-        // Cleaning its own output gives the same again.
+        // Cleaning its own output gives the same again, with a new background or keeping the one it has.
         assert_eq!(tiny_ps(&out, &SvgOptions { title: "", background: Some("#ffffff") }).unwrap(), out);
+        assert_eq!(tiny_ps(&out, &SvgOptions { title: "", background: None }).unwrap(), out);
+        let retitled = tiny_ps(&out, &SvgOptions { title: "Other & more", background: None }).unwrap();
+        assert!(retitled.contains("<title>Other &amp; more</title>") && retitled.contains("bimi-background"));
     }
 
     #[test]
