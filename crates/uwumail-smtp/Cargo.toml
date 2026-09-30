@@ -51,6 +51,7 @@ webpki-roots.workspace = true
 zip.workspace = true
 
 [dev-dependencies]
+uwumail-tnef = { workspace = true, features = ["builder"] }
 uwumail-gateway.workspace = true
 uwumail-tunnel.workspace = true
 

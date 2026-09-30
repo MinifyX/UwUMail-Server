@@ -354,14 +354,25 @@ pub(crate) async fn incoming(ctx: &Context, account_id: i64, raw: &[u8], sender:
     }
 }
 
-/// The first iCalendar part of a mail that carries a method.
+/// The first iCalendar part of a mail that carries a method; else a meeting Outlook packed into
+/// winmail.dat (`uwumail_store::tnef`), which is taken like an iMIP invitation.
 fn find_itip(raw: &[u8]) -> Option<String> {
     // Most mail has no calendar part; it is not parsed a second time for nothing.
     let mentions = |needle: &[u8]| raw.windows(needle.len()).any(|window| window.eq_ignore_ascii_case(needle));
-    if !mentions(b"text/calendar") && !mentions(b"application/ics") {
+    let calendar = mentions(b"text/calendar") || mentions(b"application/ics");
+    let tnef = uwumail_store::tnef::mentioned(raw);
+    if !calendar && !tnef {
         return None;
     }
     let message = uwumail_store::mime_limits::parse_message(raw)?;
+    let found = if calendar { calendar_part(&message) } else { None };
+    found.or_else(|| {
+        let decoded = if tnef { uwumail_store::tnef::decode(&message) } else { Vec::new() };
+        decoded.into_iter().find_map(|d| d.calendar).filter(|text| text.len() <= MAX_ITIP_BYTES)
+    })
+}
+
+fn calendar_part(message: &mail_parser::Message<'_>) -> Option<String> {
     message.parts.iter().find_map(|part| {
         let content_type = part.content_type()?;
         let full = match content_type.subtype() {
@@ -545,5 +556,22 @@ Content-Type: multipart/alternative; boundary=b\r\n\r\n--b\r\nContent-Type: text
 Content-Type: text/calendar; method=REPLY; charset=utf-8\r\n\r\nBEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nEND:VCALENDAR\r\n--b--\r\n";
         assert!(find_itip(mail.as_bytes()).unwrap().contains("METHOD:REPLY"));
         assert!(find_itip(b"From: a@example.com\r\n\r\nno calendar here\r\n").is_none());
+    }
+
+    #[test]
+    fn a_meeting_in_winmail_dat_is_found() {
+        use uwumail_tnef::builder::{Props, Tnef, global_object_id, mime_with_winmail};
+        use uwumail_tnef::mapi::{self, PSETID_APPOINTMENT, PSETID_MEETING};
+        let mut tnef = Tnef::new();
+        tnef.message_class("IPM.Schedule.Meeting.Canceled");
+        tnef.message_props(
+            &Props::new()
+                .unicode(mapi::PR_SENT_REPRESENTING_SMTP_ADDRESS, "gast@example.com")
+                .named_time(&PSETID_APPOINTMENT, 0x820D, 1_793_091_600)
+                .named_binary(&PSETID_MEETING, 0x0003, &global_object_id("x@example.com", None)),
+        );
+        let mail = mime_with_winmail("From: gast@example.com\r\nTo: mini@example.org\r\n", None, &tnef.build());
+        let ics = find_itip(&mail).unwrap();
+        assert!(ics.contains("METHOD:CANCEL") && ics.contains("mailto:mini@example.org"), "{ics}");
     }
 }

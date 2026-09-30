@@ -240,3 +240,35 @@ async fn invitations_from_outside_for_organizers_of_ours_are_not_believed() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(a.copy("mini@a.test", "falsch@a.test").await.is_none());
 }
+
+/// Outlook's own format: a meeting request inside winmail.dat lands in the calendar like an
+/// iMIP invitation.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_meeting_in_winmail_dat_is_taken_like_an_invitation() {
+    use uwumail_tnef::builder::{Props, Tnef, global_object_id, mime_with_winmail};
+    use uwumail_tnef::mapi::{self, PSETID_APPOINTMENT, PSETID_MEETING};
+    let b = start("b.test", "nyu").await;
+    let mut tnef = Tnef::new();
+    tnef.message_class("IPM.Schedule.Meeting.Request");
+    tnef.message_props(
+        &Props::new()
+            .unicode(mapi::PR_SUBJECT, "Kaffee")
+            .unicode(mapi::PR_SENT_REPRESENTING_NAME, "Gast")
+            .unicode(mapi::PR_SENT_REPRESENTING_SMTP_ADDRESS, "gast@stranger.test")
+            .named_time(&PSETID_APPOINTMENT, 0x820D, 1_793_091_600)
+            .named_time(&PSETID_APPOINTMENT, 0x820E, 1_793_095_200)
+            .named_long(&PSETID_APPOINTMENT, 0x8201, 1)
+            .named_binary(&PSETID_MEETING, 0x0003, &global_object_id("kaffee@stranger.test", None)),
+    );
+    let mail = mime_with_winmail(
+        "From: Gast <gast@stranger.test>\r\nTo: Nyu <nyu@b.test>\r\nSubject: Kaffee\r\n",
+        Some("Kaffee?"),
+        &tnef.build(),
+    );
+    b.inject("gast@stranger.test", "nyu@b.test", &String::from_utf8(mail).unwrap()).await;
+    let copy = b.wait_for("nyu@b.test", "kaffee@stranger.test", |_| true).await;
+    let event = copy.main_event().unwrap();
+    assert_eq!(event.value("SUMMARY"), Some("Kaffee"));
+    assert_eq!(itip::organizer(&copy).as_deref(), Some("gast@stranger.test"));
+    assert_eq!(partstat(&copy, "nyu@b.test"), "NEEDS-ACTION");
+}

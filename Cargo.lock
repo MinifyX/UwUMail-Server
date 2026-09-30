@@ -4766,6 +4766,7 @@ dependencies = [
  "url",
  "uwumail-gateway",
  "uwumail-store",
+ "uwumail-tnef",
  "uwumail-tunnel",
  "webpki-roots",
  "zip",
