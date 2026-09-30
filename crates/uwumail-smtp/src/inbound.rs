@@ -24,7 +24,7 @@ use crate::dsn::{self, FailedRecipient};
 use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, clamav, fetched, forward, headers, random_id, relay, reports, rules, spam, srs, vacation};
+use crate::{Smtp, clamav, fetched, forward, headers, labels, random_id, relay, reports, rules, spam, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -2083,16 +2083,26 @@ pub(crate) async fn receive(
                 None
             })
         };
+        // The person's labels that need no model, before their rules (docs/labels.md). Never for Junk.
+        let labeled = if junk { labels::Labeled::default() } else { labels::decide(&ctx, account_id, &message).await };
         let stored = match script {
-            Some((_, script)) => {
-                rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message, proof)
-                    .await
-                    .map(|filed| (filed.mailbox, filed.stored, filed.email_ids))
-            }
+            Some((_, script)) => rules::deliver(
+                &ctx,
+                account_id,
+                script,
+                &recipient.address,
+                &envelope.address,
+                &message,
+                &labeled,
+                proof,
+            )
+            .await
+            .map(|filed| (filed.mailbox, filed.stored, filed.email_ids)),
             None => {
                 let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
+                let keywords = labeled.keywords();
                 let request =
-                    IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
+                    IngestRequest { account_id, raw: message.clone(), mailboxes, keywords, received_at: None };
                 ctx.store
                     .ingest(request)
                     .await
@@ -2104,6 +2114,7 @@ pub(crate) async fn receive(
                 // The person's own labels, put on in the background by the AI assistant when they asked
                 // for it. Never for Junk, and never in the way of the delivery.
                 if !junk && kept {
+                    labels::log(&ctx, account_id, &email_ids, &labeled).await;
                     queue_for_labels(&ctx, account_id, &email_ids).await;
                 }
                 note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, mailbox);
