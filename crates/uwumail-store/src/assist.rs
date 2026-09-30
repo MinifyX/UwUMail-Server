@@ -377,6 +377,17 @@ pub struct TokenCount {
     pub cost_usd: Option<f64>,
 }
 
+/// Tokens of each kind one [`Store::add_assist_tokens`] adds or takes back at most. The numbers
+/// come from the provider; a garbled or hostile count must neither overflow the sums (SQLite turns
+/// an overflowing integer into a REAL, which no longer reads as one) nor wipe a day's limit.
+const MAX_TOKENS_PER_ADD: i64 = 10_000_000;
+/// US dollars one [`Store::add_assist_tokens`] adds or takes back at most.
+const MAX_COST_PER_ADD: f64 = 1000.0;
+/// A usage column counts no higher, so sums over many rows stay far from overflowing.
+const MAX_USAGE_COUNT: i64 = 1_000_000_000_000;
+/// Nor does a day's cost.
+const MAX_USAGE_COST: f64 = 1_000_000_000.0;
+
 /// One request as the provider reported it, next to what the server expected, for
 /// `Assist/estimate` to learn from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1217,7 +1228,7 @@ impl Store {
             let day = utc_day(now());
             if requests_per_day.is_some() || tokens_per_day.is_some() {
                 let (requests, tokens): (i64, i64) = tx.query_row(
-                    "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens), 0)
+                    "SELECT COALESCE(SUM(requests), 0), CAST(TOTAL(input_tokens + output_tokens + reasoning_tokens) AS INTEGER)
                      FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
                     params![account_id, provider_id, day],
                     |row| Ok((row.get(0)?, row.get(1)?)),
@@ -1251,28 +1262,36 @@ impl Store {
         count: TokenCount,
     ) -> Result<()> {
         let feature = feature.to_owned();
-        let cost_usd = count.cost_usd.filter(|cost| cost.is_finite());
+        let tokens = |n: i64| n.clamp(-MAX_TOKENS_PER_ADD, MAX_TOKENS_PER_ADD);
+        let cost_usd =
+            count.cost_usd.filter(|cost| cost.is_finite()).map(|cost| cost.clamp(-MAX_COST_PER_ADD, MAX_COST_PER_ADD));
         self.write(move |tx| {
+            // Each column stays between 0 and its cap; the cap also brings back a column an older
+            // overflow left as a REAL.
             tx.execute(
                 "INSERT INTO assist_usage (account_id, provider_id, day, feature, input_tokens, output_tokens, cost_usd,
                     reasoning_tokens, cached_tokens, calls)
                  VALUES (?1, ?2, ?3, ?4, MAX(?5, 0), MAX(?6, 0), MAX(?7, 0), MAX(?8, 0), MAX(?9, 0), MAX(?10, 0))
                  ON CONFLICT (account_id, provider_id, day, feature) DO UPDATE SET
-                    input_tokens = MAX(input_tokens + ?5, 0), output_tokens = MAX(output_tokens + ?6, 0),
-                    cost_usd = CASE WHEN ?7 IS NULL THEN cost_usd ELSE MAX(COALESCE(cost_usd, 0) + ?7, 0) END,
-                    reasoning_tokens = MAX(reasoning_tokens + ?8, 0), cached_tokens = MAX(cached_tokens + ?9, 0),
-                    calls = MAX(calls + ?10, 0)",
+                    input_tokens = MIN(MAX(input_tokens + ?5, 0), ?11),
+                    output_tokens = MIN(MAX(output_tokens + ?6, 0), ?11),
+                    cost_usd = CASE WHEN ?7 IS NULL THEN cost_usd ELSE MIN(MAX(COALESCE(cost_usd, 0) + ?7, 0), ?12) END,
+                    reasoning_tokens = MIN(MAX(reasoning_tokens + ?8, 0), ?11),
+                    cached_tokens = MIN(MAX(cached_tokens + ?9, 0), ?11),
+                    calls = MIN(MAX(calls + ?10, 0), ?11)",
                 params![
                     account_id,
                     provider_id,
                     day,
                     feature,
-                    count.input,
-                    count.output,
+                    tokens(count.input),
+                    tokens(count.output),
                     cost_usd,
-                    count.reasoning,
-                    count.cached,
-                    count.calls
+                    tokens(count.reasoning),
+                    tokens(count.cached),
+                    tokens(count.calls),
+                    MAX_USAGE_COUNT,
+                    MAX_USAGE_COST
                 ],
             )?;
             Ok(())
@@ -1353,7 +1372,7 @@ impl Store {
     pub async fn assist_used_today(&self, account_id: i64, provider_id: i64) -> Result<UsedToday> {
         self.read(move |conn| {
             Ok(conn.query_row(
-                "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens), 0), SUM(cost_usd)
+                "SELECT COALESCE(SUM(requests), 0), CAST(TOTAL(input_tokens + output_tokens + reasoning_tokens) AS INTEGER), SUM(cost_usd)
                  FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
                 params![account_id, provider_id, utc_day(now())],
                 |row| Ok(UsedToday { requests: row.get(0)?, tokens: row.get(1)?, cost_usd: row.get(2)? }),
@@ -1365,14 +1384,23 @@ impl Store {
     /// Usage from `since_day` on, of one person or of everyone; newest day first.
     pub async fn assist_usage(&self, account_id: Option<i64>, since_day: String) -> Result<Vec<UsageRow>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT u.day, u.account_id, a.login, u.provider_id, p.name, u.feature, u.requests, u.input_tokens,
-                        u.output_tokens, u.cost_usd, u.reasoning_tokens, u.cached_tokens, u.calls
+            // Counts read as integers within their cap whatever an older overflow left in them, so
+            // one bad row can't break the whole page.
+            let count = |column: &str| format!("MIN(MAX(CAST(u.{column} AS INTEGER), 0), {MAX_USAGE_COUNT})");
+            let mut stmt = conn.prepare(&format!(
+                "SELECT u.day, u.account_id, a.login, u.provider_id, p.name, u.feature, {}, {}, {},
+                        MIN(MAX(CAST(u.cost_usd AS REAL), 0), {MAX_USAGE_COST:?}), {}, {}, {}
                  FROM assist_usage u JOIN accounts a ON a.id = u.account_id
                  LEFT JOIN assist_providers p ON p.id = u.provider_id
                  WHERE u.day >= ?1 AND (?2 IS NULL OR u.account_id = ?2)
                  ORDER BY u.day DESC, a.login, u.provider_id, u.feature LIMIT 20000",
-            )?;
+                count("requests"),
+                count("input_tokens"),
+                count("output_tokens"),
+                count("reasoning_tokens"),
+                count("cached_tokens"),
+                count("calls"),
+            ))?;
             let rows = stmt.query_map(params![since_day, account_id], |row| {
                 Ok(UsageRow {
                     day: row.get(0)?,
@@ -1583,5 +1611,61 @@ mod tests {
         assert_eq!(label_keyword("旅行"), "");
         assert!(label_keyword(&"sehr-lang ".repeat(20)).len() <= 40);
         assert!(crate::mutate::valid_keyword(&label_keyword("Reisen (privat)")));
+    }
+
+    #[tokio::test]
+    async fn huge_token_counts_are_capped_and_usage_stays_readable() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = store
+            .create_account(crate::NewAccount {
+                address: "nyu@example.org".into(),
+                display_name: "Nyu".into(),
+                password: None,
+                role: crate::Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let day = store.reserve_assist_usage(account, 1, "summarize", None, None).await.unwrap();
+        let max = TokenCount {
+            input: i64::MAX,
+            output: i64::MAX,
+            reasoning: i64::MAX,
+            cached: i64::MAX,
+            calls: i64::MAX,
+            cost_usd: Some(f64::MAX),
+        };
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", max).await.unwrap();
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", max).await.unwrap();
+        let rows = store.assist_usage(None, day.clone()).await.unwrap();
+        assert_eq!((rows[0].input_tokens, rows[0].calls), (2 * MAX_TOKENS_PER_ADD, 2 * MAX_TOKENS_PER_ADD));
+        assert_eq!(rows[0].cost_usd, Some(2.0 * MAX_COST_PER_ADD));
+
+        // A huge take-back only takes back one request's worth, never the whole day.
+        let back = TokenCount { input: i64::MIN, cost_usd: Some(f64::MIN), ..TokenCount::default() };
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", back).await.unwrap();
+        let rows = store.assist_usage(None, day.clone()).await.unwrap();
+        assert_eq!((rows[0].input_tokens, rows[0].cost_usd), (MAX_TOKENS_PER_ADD, Some(MAX_COST_PER_ADD)));
+
+        // A row an older overflow turned into REALs still reads, and the next count repairs it.
+        store
+            .write(|tx| {
+                tx.execute("UPDATE assist_usage SET input_tokens = 1e300, output_tokens = 9.3e18", [])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let rows = store.assist_usage(None, day.clone()).await.unwrap();
+        assert_eq!((rows[0].input_tokens, rows[0].output_tokens), (MAX_USAGE_COUNT, MAX_USAGE_COUNT));
+        assert!(store.assist_used_today(account, 1).await.unwrap().tokens > 0);
+        // The limit check reads it too: used up, not a broken column.
+        let limited = store.reserve_assist_usage(account, 1, "summarize", None, Some(i64::MAX)).await;
+        assert!(matches!(limited, Err(StoreError::Rule { code: "overQuota", .. })), "{limited:?}");
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", TokenCount::default()).await.unwrap();
+        let rows = store.assist_usage(None, day).await.unwrap();
+        assert_eq!(rows[0].input_tokens, MAX_USAGE_COUNT);
     }
 }
