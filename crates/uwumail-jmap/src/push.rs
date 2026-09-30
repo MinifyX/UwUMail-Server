@@ -2,11 +2,12 @@
 
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Extension;
 use axum::extract::{Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::stream::{self, Stream};
@@ -15,8 +16,62 @@ use serde_json::{Map, Value, json};
 use tokio::sync::broadcast;
 use uwumail_store::{CalendarAlertFired, LiveLogin, StateChange, Store};
 
-use crate::auth::ClientInfo;
+use crate::api::RequestError;
+use crate::auth::{ClientInfo, Login};
 use crate::{Jmap, ids};
+
+/// Event streams and WebSockets one account may have open at once, together. Each watches every
+/// change on the server; the webmail has one per tab, an app one per device.
+pub const MAX_PUSH_CONNECTIONS: usize = 32;
+
+/// The push connections open per account.
+#[derive(Default)]
+pub(crate) struct Connections(Arc<Mutex<HashMap<i64, usize>>>);
+
+/// A place among an account's [`MAX_PUSH_CONNECTIONS`], given back when the connection ends.
+pub(crate) struct Slot {
+    open: Arc<Mutex<HashMap<i64, usize>>>,
+    account_id: i64,
+}
+
+impl Connections {
+    /// A place for one more push connection of the account, or `None` when it has all it may.
+    pub fn open(&self, account_id: i64) -> Option<Slot> {
+        let mut open = self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let count = open.entry(account_id).or_default();
+        if *count >= MAX_PUSH_CONNECTIONS {
+            return None;
+        }
+        *count += 1;
+        Some(Slot { open: self.0.clone(), account_id })
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let mut open = self.open.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(count) = open.get_mut(&self.account_id) {
+            *count -= 1;
+            if *count == 0 {
+                open.remove(&self.account_id);
+            }
+        }
+    }
+}
+
+/// The answer to one push connection too many (RFC 8620, section 3.6.1, "limit").
+pub(crate) fn too_many_connections() -> Response {
+    RequestError {
+        status: StatusCode::TOO_MANY_REQUESTS,
+        body: json!({
+            "type": "urn:ietf:params:jmap:error:limit",
+            "limit": "maxPushConnections",
+            "status": 429,
+            "detail": format!("An account may have at most {MAX_PUSH_CONNECTIONS} event streams and WebSockets open."),
+        }),
+    }
+    .into_response()
+}
 
 const TYPES: &[&str] = &[
     "Mailbox",
@@ -63,6 +118,39 @@ pub(crate) struct Watcher {
     /// For an app allowed masked addresses only: nothing but `MaskedEmail` of the own account is
     /// pushed, whatever types it asks for.
     masked_only: bool,
+    /// Whether the login may reach calendars and address books; without, their types and calendar
+    /// alerts are not pushed, as their methods do not answer it.
+    may_use_dav: bool,
+    /// The accounts that share mail with this one.
+    owners: Owners,
+}
+
+/// The accounts that share mail with the watched one, as of a [`Store::sharing_generation`]. Every
+/// change on the server comes by every watcher; asking the database each time who shares with
+/// whom made a read per change and watcher.
+#[derive(Default)]
+struct Owners {
+    list: Vec<i64>,
+    /// `None` until read, or to read again.
+    generation: Option<u64>,
+    /// How often they were read, for the tests.
+    reads: usize,
+}
+
+impl Owners {
+    async fn current(&mut self, store: &Store, account_id: i64) -> &[i64] {
+        // The generation before the read: a change of sharing committed during it moves it on,
+        // and the next change reads again.
+        let generation = store.sharing_generation();
+        if self.generation != Some(generation) {
+            self.reads += 1;
+            if let Ok(list) = store.sharing_owners(account_id).await {
+                self.list = list;
+                self.generation = Some(generation);
+            }
+        }
+        &self.list
+    }
 }
 
 /// What a watcher has to push.
@@ -84,8 +172,9 @@ impl Watcher {
         let alerts = store.subscribe_calendar_alerts();
         let last_modseq = store.account_modseq(account_id).await.unwrap_or(0);
         // Where each shared account stands now, so what comes later is measured from here.
+        let mut owners = Owners::default();
         let mut shared_modseqs = HashMap::new();
-        for owner in store.sharing_owners(account_id).await.unwrap_or_default() {
+        for owner in owners.current(&store, account_id).await.to_vec() {
             if let Ok(modseq) = store.account_modseq(owner).await {
                 shared_modseqs.insert(owner, modseq);
             }
@@ -100,18 +189,25 @@ impl Watcher {
             pending: Vec::new(),
             alerts,
             masked_only: false,
+            may_use_dav: true,
+            owners,
         }
     }
 
-    /// Keeps this watcher to `MaskedEmail` of the own account, for an app allowed nothing else.
-    pub fn only_masked(mut self, masked_only: bool) -> Watcher {
-        self.masked_only = masked_only;
+    /// Keeps this watcher to what the login may see: `MaskedEmail` of the own account for an app
+    /// allowed nothing else, no calendars and contacts without the `dav` scope.
+    pub fn allowed_to(mut self, login: &Login) -> Watcher {
+        self.masked_only = login.masked_only();
+        self.may_use_dav = login.may_use_dav();
         self
     }
 
     /// Whether a type that changed is pushed: asked for, and allowed to the login.
     fn wants(&self, kind: &str) -> bool {
-        (!self.masked_only || kind == "MaskedEmail") && self.types.iter().any(|t| t == kind)
+        let dav = kind == "CalendarAlert" || crate::methods::DAV_TYPES.contains(&kind);
+        (!self.masked_only || kind == "MaskedEmail")
+            && (self.may_use_dav || !dav)
+            && self.types.iter().any(|t| t == kind)
     }
 
     /// Waits for the next change of this account or of an account that shares mail with it, or a
@@ -121,7 +217,7 @@ impl Watcher {
         let wants_alerts = self.wants("CalendarAlert");
         loop {
             tokio::select! {
-                change = next_change(&self.store, self.account_id, &mut self.changes, &mut self.pending, self.last_modseq) => {
+                change = next_change(&self.store, self.account_id, &mut self.changes, &mut self.pending, &mut self.owners, self.last_modseq) => {
                     return change.map(Pushed::State);
                 }
                 alert = self.alerts.recv(), if wants_alerts => match alert {
@@ -168,6 +264,7 @@ async fn next_change(
     account_id: i64,
     changes: &mut broadcast::Receiver<StateChange>,
     pending: &mut Vec<StateChange>,
+    owners: &mut Owners,
     last_modseq: i64,
 ) -> Option<StateChange> {
     if let Some(change) = pending.pop() {
@@ -177,14 +274,14 @@ async fn next_change(
         match changes.recv().await {
             Ok(change) if change.account_id == account_id => return Some(change),
             Ok(change) => {
-                let owners = store.sharing_owners(account_id).await.unwrap_or_default();
-                if owners.contains(&change.account_id) {
+                if owners.current(store, account_id).await.contains(&change.account_id) {
                     return Some(change);
                 }
             }
             // Missed some changes: report everything as changed, in the shared accounts too.
             Err(broadcast::error::RecvError::Lagged(_)) => {
-                for owner in store.sharing_owners(account_id).await.unwrap_or_default() {
+                owners.generation = None;
+                for owner in owners.current(store, account_id).await.to_vec() {
                     if let Ok(modseq) = store.account_modseq(owner).await {
                         pending.push(StateChange { account_id: owner, modseq });
                     }
@@ -267,6 +364,8 @@ pub(crate) async fn type_states(
 
 struct Listener {
     jmap: Jmap,
+    /// Its place among the account's push connections, until the stream ends.
+    _slot: Slot,
     /// The login the stream was opened with: it ends with it.
     login: LiveLogin,
     watcher: Watcher,
@@ -330,14 +429,18 @@ pub async fn handle(
         Err(err) => return err.into_response(),
     };
     let account = &login.account;
+    let Some(slot) = jmap.inner.push_connections.open(account.id) else {
+        return too_many_connections();
+    };
     let types: Vec<String> = match query.types.as_deref() {
         None | Some("*") | Some("") => all_types(),
         Some(list) => list.split(',').map(|t| t.trim().to_owned()).collect(),
     };
     let ping = query.ping.filter(|p| *p > 0).map(|p| Duration::from_secs(p.clamp(30, 3600)));
-    let watcher = Watcher::new(jmap.inner.store.clone(), account.id, types).await.only_masked(login.masked_only());
+    let watcher = Watcher::new(jmap.inner.store.clone(), account.id, types).await.allowed_to(&login);
     let listener = Listener {
         jmap: jmap.clone(),
+        _slot: slot,
         login: login.live(),
         watcher,
         close_after_state: query.closeafter.as_deref() == Some("state"),
@@ -345,4 +448,85 @@ pub async fn handle(
         done: false,
     };
     Sse::new(events(listener)).keep_alive(KeepAlive::new().interval(Duration::from_secs(300))).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewAccount, Role};
+
+    async fn people(store: &Store, names: &[&str]) -> Vec<i64> {
+        store.create_domain("example.org").await.unwrap();
+        let mut ids = Vec::new();
+        for name in names {
+            let account = store
+                .create_account(NewAccount {
+                    address: format!("{name}@example.org"),
+                    display_name: name.to_string(),
+                    password: Some("katzenpfote-123".into()),
+                    role: Role::User,
+                    quota_bytes: 0,
+                    protocols: None,
+                })
+                .await
+                .unwrap();
+            ids.push(account.id);
+        }
+        ids
+    }
+
+    async fn deliver(store: &Store, account_id: i64) {
+        let raw = b"From: a@example.net\r\nSubject: hallo\r\n\r\nhallo\r\n".to_vec();
+        let mailboxes = vec![MailboxTarget::Role(MailboxRole::Inbox)];
+        store.ingest(IngestRequest { account_id, raw, mailboxes, keywords: vec![], received_at: None }).await.unwrap();
+    }
+
+    async fn next_state(watcher: &mut Watcher) -> StateChange {
+        match tokio::time::timeout(Duration::from_secs(10), watcher.wait()).await.unwrap() {
+            Some(Pushed::State(change)) => change,
+            _ => panic!("no state change"),
+        }
+    }
+
+    /// Every change on the server comes by every watcher; who shares with the watched account is
+    /// read once, and again only after sharing changed.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn changes_of_others_do_not_ask_who_shares() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        let ids = people(&store, &["mini", "nyu", "kiki"]).await;
+        let (mini, nyu, kiki) = (ids[0], ids[1], ids[2]);
+        let mut watcher = Watcher::new(store.clone(), mini, all_types()).await;
+        assert_eq!(watcher.owners.reads, 1);
+
+        deliver(&store, nyu).await;
+        deliver(&store, nyu).await;
+        deliver(&store, mini).await;
+        assert_eq!(next_state(&mut watcher).await.account_id, mini);
+        assert_eq!(watcher.owners.reads, 1, "someone else's mail made the watcher ask who shares");
+
+        // Kiki shares her inbox with Mini: read again, and Kiki's changes come through from then on.
+        let inbox = store.mailboxes(kiki).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
+        store.set_mailbox_acl_for(kiki, inbox.unwrap().id, mini, "lr").await.unwrap();
+        assert_eq!(next_state(&mut watcher).await.account_id, kiki);
+        assert_eq!(watcher.owners.reads, 2);
+        deliver(&store, kiki).await;
+        assert_eq!(next_state(&mut watcher).await.account_id, kiki);
+        assert_eq!(watcher.owners.reads, 2);
+    }
+
+    /// A login without the `dav` scope hears nothing of calendars and address books, alerts
+    /// included, as their methods do not answer it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_login_without_dav_hears_no_calendars() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        let mini = people(&store, &["mini"]).await[0];
+        let mut watcher = Watcher::new(store, mini, all_types()).await;
+        let dav = ["Calendar", "CalendarEvent", "CalendarAlert", "AddressBook", "ContactCard", "ParticipantIdentity"];
+        assert!(dav.iter().all(|kind| watcher.wants(kind)));
+        watcher.may_use_dav = false;
+        assert!(!dav.iter().any(|kind| watcher.wants(kind)));
+        assert!(["Email", "Mailbox", "EmailDelivery", "MaskedEmail"].iter().all(|kind| watcher.wants(kind)));
+    }
 }

@@ -408,6 +408,8 @@ impl Store {
             keep_an_admin(tx, &account, false)?;
             let at = now();
             tx.execute("UPDATE accounts SET deleted_at = ?1 WHERE id = ?2", params![at, account.id])?;
+            // Folders a person in the trash shared are no longer shared, and are again on restore.
+            crate::acl::note_sharing_changed();
             tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [account.id])?;
             crate::held::cancel_held(tx, account.id, HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
             tx.execute("DELETE FROM password_links WHERE account_id = ?1", [account.id])?;
@@ -430,6 +432,7 @@ impl Store {
             let domain = login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
             crate::masked_domains::ensure_mail_domain(tx, crate::directory::domain_id(tx, domain)?)?;
             tx.execute("UPDATE accounts SET deleted_at = NULL WHERE id = ?1", [account.id])?;
+            crate::acl::note_sharing_changed();
             account.deleted_at = None;
             Ok(account)
         })

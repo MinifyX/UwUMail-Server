@@ -64,6 +64,7 @@ use uwumail_store::Store;
 
 pub use auth::{AuthError, Authenticator, ClientInfo, Login};
 pub use methods::unsubscribe::UnsubscribeTransport;
+pub use push::MAX_PUSH_CONNECTIONS;
 pub use webpush::{PushMessage, PushTiming, PushTransport};
 
 /// Tells a person that a program created an app password for their account at `/jmap/token`:
@@ -118,6 +119,8 @@ pub(crate) struct Inner {
     pub reminders: calendar_alerts::ReminderLimits,
     /// The AI assistant (docs/jmap-assist.md), when the server has one.
     pub assist: Option<uwumail_assist::Assist>,
+    /// The event streams and WebSockets open per account.
+    pub push_connections: push::Connections,
 }
 
 /// Where remote pictures (`images`) and what OCR read in pictures (`ocr`) are kept: `cache/…` in the
@@ -162,6 +165,7 @@ impl Jmap {
                 unsubscribe_transport: None,
                 reminders: Default::default(),
                 assist: None,
+                push_connections: Default::default(),
             }),
         }
     }

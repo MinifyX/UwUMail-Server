@@ -155,7 +155,10 @@ pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage,
 pub use import::ImportProgress;
 pub use labels::{LabelSetup, LabelTraining};
 pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
-pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
+pub use mail::{
+    EmailSummary, IngestRequest, IngestedEmail, MAX_KEYWORDS_PER_EMAIL, Mailbox, MailboxRole, MailboxTarget,
+    TestMessageStatus,
+};
 pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
 pub use masked_domains::{
     AccountMaskedPolicy, DomainKind, DomainMaskedPolicy, EffectiveMaskedPolicy, KindBlockers, KindChange, MaskedMode,
@@ -294,6 +297,8 @@ struct Inner {
     auth_limiter: Arc<AuthLimiter>,
     /// How many password hashes are checked at once.
     hashing: password::Gate,
+    /// Moves on after every committed write that changed who shares mail with whom.
+    sharing_generation: std::sync::atomic::AtomicU64,
 }
 
 impl Store {
@@ -323,6 +328,7 @@ impl Store {
                 external: std::sync::RwLock::new(None),
                 auth_limiter: Arc::default(),
                 hashing: password::Gate::new(),
+                sharing_generation: Default::default(),
             }),
         })
     }
@@ -335,6 +341,14 @@ impl Store {
 
     pub fn data_dir(&self) -> &Path {
         &self.inner.data_dir
+    }
+
+    /// Moves on whenever who shares mail with whom changed (a folder shared or no longer, members of
+    /// a shared mailbox, ...), after the change is committed and before it is announced. What
+    /// [`Store::sharing_owners`] says holds while this stays the same, so push need not ask again
+    /// for every change on the server.
+    pub fn sharing_generation(&self) -> u64 {
+        self.inner.sharing_generation.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Subscribes to account state changes (new mail, flag changes, ...).
@@ -380,9 +394,16 @@ impl Store {
         F: FnOnce(&rusqlite::Transaction<'_>) -> Result<T> + Send + 'static,
     {
         let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || inner.db.write(f))
-            .await
-            .map_err(|err| StoreError::Internal(err.to_string()))?
+        tokio::task::spawn_blocking(move || {
+            let result = inner.db.write(f);
+            // Only once the write is over: whoever sees the new generation reads the new shares.
+            if acl::take_sharing_touched() {
+                inner.sharing_generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            result
+        })
+        .await
+        .map_err(|err| StoreError::Internal(err.to_string()))?
     }
 
     fn notify_change(&self, account_id: i64, modseq: i64) {

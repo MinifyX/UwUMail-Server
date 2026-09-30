@@ -60,7 +60,7 @@ pub async fn image_text(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         return Ok(response);
     }
     let raw = store.blob(&record.blob).await?;
-    let (sources, mut skipped) = pictures_of(&raw, &record.blob, remote);
+    let (sources, mut skipped) = pictures_in(raw, record.blob.clone(), remote).await;
 
     // The person reading, whose share of the egress remote pictures take.
     let person = ctx.shared.as_ref().map_or(ctx.account.id, |view| view.me.id);
@@ -127,7 +127,7 @@ pub(crate) async fn texts_for_assist(
     }
     let record = store.emails_by_ids(account_id, vec![email_id]).await.ok()?.into_iter().next()?;
     let raw = store.blob(&record.blob).await.ok()?;
-    let (sources, _) = pictures_of(&raw, &record.blob, false);
+    let (sources, _) = pictures_in(raw, record.blob.clone(), false).await;
     if how == uwumail_assist::PictureRead::KnownOnly {
         let mut found = uwumail_assist::PictureTexts::default();
         for source in sources {
@@ -151,6 +151,12 @@ pub(crate) async fn texts_for_assist(
         .collect()
         .await;
     Some(uwumail_assist::PictureTexts::read(texts.into_iter().flatten().collect()))
+}
+
+/// [`pictures_of`] on the blocking pool: parsing a message, and its HTML for remote pictures, is
+/// no work for the workers every protocol shares.
+async fn pictures_in(raw: Vec<u8>, blob: uwumail_store::BlobHash, remote: bool) -> (Vec<Source>, usize) {
+    tokio::task::spawn_blocking(move || pictures_of(&raw, &blob, remote)).await.unwrap_or_default()
 }
 
 /// A message's first [`MAX_IMAGES`] pictures in the order they come: embedded ones and attachments,

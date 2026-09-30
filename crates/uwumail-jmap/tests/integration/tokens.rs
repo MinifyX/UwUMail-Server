@@ -329,3 +329,39 @@ async fn calendars_and_contacts_need_the_dav_scope() {
     let (_, response) = server.api_as(&basic("mini@example.org", PASSWORD), &using, calls).await;
     assert_eq!(response["methodResponses"][0][0], "Calendar/get", "{response}");
 }
+
+/// Push keeps to what the credential may reach: an app password for mail hears of mail, not of
+/// calendars, which its methods do not answer either.
+#[tokio::test(flavor = "multi_thread")]
+async fn push_to_a_mail_only_app_password_leaves_calendars_out() {
+    use tower::ServiceExt;
+
+    let server = server().await;
+    let id = server.id("mini@example.org").await;
+    let account = server.account_id("mini@example.org").await;
+    let app = NewAppPassword { name: "Mail".into(), scopes: vec![AppScope::Mail], expires_at: None };
+    let created = server.store.create_app_password(id, app).await.unwrap();
+    let request = Request::get("/jmap/eventsource/?types=*&closeafter=state&ping=0")
+        .header(header::AUTHORIZATION, bearer(&created.secret))
+        .body(Body::empty())
+        .unwrap();
+    let response = server.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let stream = tokio::spawn(async move {
+        String::from_utf8(axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap()
+    });
+
+    // A calendar made with the account password first: nothing is told of it. Then mail arrives.
+    let calendars = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars"];
+    let calls = json!([["Calendar/set", { "accountId": account, "create": { "c": { "name": "Arbeit" } } }, "0"]]);
+    let responses = server.api_using("mini@example.org", &calendars, calls).await;
+    assert!(responses[0][1]["created"]["c"].is_object(), "{}", responses[0]);
+    server.deliver("mini@example.org", "From: a@example.net\nSubject: Hallo\n\nhallo\n").await;
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(10), stream).await.unwrap().unwrap();
+    let data = event.lines().find_map(|line| line.strip_prefix("data:")).unwrap();
+    let data: Value = serde_json::from_str(data.trim()).unwrap();
+    let changed = data["changed"][&account].as_object().unwrap();
+    assert!(changed.contains_key("Email"), "{event}");
+    assert!(!changed.keys().any(|kind| kind.starts_with("Calendar")), "{event}");
+}

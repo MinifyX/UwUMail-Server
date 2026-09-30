@@ -46,6 +46,19 @@ programs that only look at `primaryAccounts` do not see them ([sharing.md](shari
   a sort at most 10 comparators (`unsupportedSort`). Parsing messages for `Email/get` and
   `Email/parse` shares the request's 15 seconds with calendar and contact work; once they are used
   up the call answers `serverUnavailable`, and the rest can be asked for in a new request.
+- `Email/get` and `Email/parse` do each id, blob and property once, however often a call names
+  it. `properties`, `bodyProperties` (and the `properties` of every other `/get`) may name at most
+  100 entries, else `invalidArguments`. The body values of one response hold at most 50 MB
+  together, even without `maxBodyValueBytes`; past that they come cut, with `isTruncated`.
+- `Email/import` takes at most 500 emails (`maxObjectsInSet`, else `requestTooLarge`). Once the
+  request's 15 seconds are used up, the rest come back in `notCreated` with `rateLimit`; what was
+  imported stays.
+- An email has at most 100 keywords. A create, import or update naming more, or an update that
+  would take the email past them, is answered with `invalidProperties` (IMAP STORE: `NO`); removing
+  keywords always works.
+- An account may have at most 32 EventSource streams and WebSockets open together; one more is
+  answered with `429` (`limit`: `maxPushConnections`). An HTTP/2 connection runs up to 100
+  requests at once.
 - An email made with `Email/set` may have at most 1,000 body parts, and its parts together may
   hold at most `maxSizeAttachmentsPerEmail` bytes (50 MB), counting a blob or body value as often
   as parts name it. More is answered with `tooLarge`.
