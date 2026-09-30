@@ -243,7 +243,7 @@ the sentence of the mail the event comes from, copied exactly. At most 10 events
 }
 
 pub fn labels_schema(names: &[String]) -> Value {
-    json!({
+    let mut schema = json!({
         "type": "object",
         "additionalProperties": false,
         "required": ["labels"],
@@ -262,7 +262,19 @@ pub fn labels_schema(names: &[String]) -> Value {
                 }
             }
         }
-    })
+    });
+    one_verdict_each(&mut schema["properties"]["labels"], names.len());
+    schema
+}
+
+/// A verdict for every label: a provider that holds the model to the schema then does not let it
+/// stop after the first one, as small models otherwise do. A provider that refuses these keywords
+/// answers 400, and the request goes again without a schema.
+fn one_verdict_each(array: &mut Value, labels: usize) {
+    if labels > 0 {
+        array["minItems"] = json!(labels);
+        array["maxItems"] = json!(labels);
+    }
 }
 
 /// `labels` as (name, description).
@@ -312,6 +324,7 @@ pub fn suggest_schema(names: &[String], new_labels: usize) -> Value {
             }
         }
     });
+    one_verdict_each(&mut properties["verdicts"], names.len());
     let mut required = vec!["verdicts"];
     if new_labels > 0 {
         properties["newLabels"] = json!({

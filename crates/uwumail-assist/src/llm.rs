@@ -325,7 +325,7 @@ async fn ask(
         request = request.header(name, value);
     }
     let request = request
-        .body(Full::new(Bytes::from(body.to_string())))
+        .body(Full::new(Bytes::from(ordered_json(&body))))
         .map_err(|_| ProviderError::NotAllowed("the provider's address is not usable".into()))?;
     let response = tokio::time::timeout(IDLE_TIMEOUT, target.client.send(request))
         .await
@@ -387,6 +387,68 @@ fn auth_headers(target: &Target) -> Vec<(&'static str, String)> {
         }
     }
     headers
+}
+
+/// The request as JSON text, with every schema's `properties` in the order of its `required` list.
+///
+/// A provider that holds the model to a schema (OpenAI, llama.cpp, Ollama …) makes it write the
+/// keys in the order the schema lists them, and `serde_json` keeps an object's keys sorted. So
+/// `{"fits", "name", "reason"}` would make the model decide before it gives its reason, and propose
+/// `newLabels` before it judged the labels. The schemas list `required` in the order meant.
+fn ordered_json(value: &Value) -> String {
+    let mut out = String::new();
+    write_ordered(value, &mut out);
+    out
+}
+
+fn write_ordered(value: &Value, out: &mut String) {
+    match value {
+        Value::Array(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_ordered(item, out);
+            }
+            out.push(']');
+        }
+        Value::Object(map) => {
+            let order: Vec<&str> = match (map.get("properties"), map.get("required")) {
+                (Some(Value::Object(_)), Some(Value::Array(required))) => {
+                    required.iter().filter_map(Value::as_str).collect()
+                }
+                _ => Vec::new(),
+            };
+            out.push('{');
+            for (index, (key, item)) in map.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&Value::String(key.clone()).to_string());
+                out.push(':');
+                match item {
+                    Value::Object(properties) if key == "properties" && !order.is_empty() => {
+                        let mut keys: Vec<&String> = properties.keys().collect();
+                        keys.sort_by_key(|name| order.iter().position(|first| first == name).unwrap_or(usize::MAX));
+                        out.push('{');
+                        for (index, name) in keys.into_iter().enumerate() {
+                            if index > 0 {
+                                out.push(',');
+                            }
+                            out.push_str(&Value::String(name.clone()).to_string());
+                            out.push(':');
+                            write_ordered(&properties[name.as_str()], out);
+                        }
+                        out.push('}');
+                    }
+                    _ => write_ordered(item, out),
+                }
+            }
+            out.push('}');
+        }
+        scalar => out.push_str(&scalar.to_string()),
+    }
 }
 
 fn request_body(target: &Target, prompt: &Prompt, stream: bool, with_schema: bool) -> (String, Value) {
@@ -849,6 +911,22 @@ pub fn json_answer(text: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn schemas_go_out_in_the_order_of_their_required_list() {
+        let schema = crate::prompts::suggest_schema(&["Rechnungen".into()], 2);
+        let body = serde_json::json!({ "model": "m", "response_format": { "json_schema": { "schema": schema } } });
+        let text = ordered_json(&body);
+        let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
+        assert!(at("verdicts") < at("newLabels"), "{text}");
+        assert!(at("name") < at("reason") && at("reason") < at("fits"), "{text}");
+        assert_eq!(schema["properties"]["verdicts"]["minItems"], 1);
+        assert_eq!(schema["properties"]["verdicts"]["maxItems"], 1);
+        // The same JSON, only in another order.
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), body);
+        let plain = serde_json::json!({ "b": [1, "x\"y", null, { "a": true }], "a": 1.5 });
+        assert_eq!(ordered_json(&plain), plain.to_string());
+    }
 
     #[test]
     fn tokens_are_counted_by_script() {

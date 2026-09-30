@@ -46,6 +46,9 @@ existing providers; the switch decides).
   before saying why, so small models listed every label and then explained that it did not fit
   ("not financial transactions"), and the label was set anyway. Now it judges every label with a
   reason first and then `fits` true or false; only labels that fit are set.
+  Providers that hold the model to the answer's shape (OpenAI, llama.cpp, Ollama …) now also get
+  the keys in that order (they had them sorted, `fits` first) and one verdict per label, so a small
+  model no longer stops after the first label or proposes new labels before judging the old ones.
 
 
 **Security**: a review of the whole server before this release found three high, eight medium and
