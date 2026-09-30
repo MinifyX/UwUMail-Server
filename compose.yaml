@@ -47,14 +47,19 @@ services:
     stop_grace_period: 20s
     # Hardening: the server runs as an unprivileged user (uid 10001) on a read-only root file
     # system; only the data volume and a small /tmp are writable. Every Linux capability is
-    # dropped except NET_BIND_SERVICE, which the binary needs to bind the low mail and web ports.
+    # dropped, and no-new-privileges keeps anything in the container from gaining one back. The
+    # low mail and web ports need none: inside the container's own network, ports from 0 up are
+    # open to every user (Docker's default since 20.10, written out here so it holds everywhere).
+    # With network_mode: host this sysctl is refused; see "Host networking" in docs/deployment.md.
     read_only: true
     tmpfs:
       - /tmp
     cap_drop:
       - ALL
-    cap_add:
-      - NET_BIND_SERVICE
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    security_opt:
+      - no-new-privileges:true
 
   # The virus scanner. It stays out of the way until you ask for it:
   #

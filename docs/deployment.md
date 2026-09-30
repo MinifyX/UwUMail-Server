@@ -399,6 +399,28 @@ profile as everywhere else: `docker compose --profile antivirus up -d`.
 Mail apps in your own network connect straight to the UwUMail machine on 993,
 465 or 587; a local DNS entry for the host name keeps certificates valid.
 
+## Host networking
+
+The compose files run the server without any Linux capability and with
+`no-new-privileges`. It still binds 25, 80, 443 and the other low ports
+because `net.ipv4.ip_unprivileged_port_start: 0` opens them to every user
+inside the container's own network namespace (Docker has done that by default
+since 20.10; the compose files say it explicitly). Before 0.21.0 the binary
+carried a `cap_net_bind_service` file capability instead, which is why an older
+compose file still has `cap_add: NET_BIND_SERVICE`: harmless, but no longer
+needed, and replacing it with the `sysctls` and `security_opt` lines of the
+current `compose.yaml` is the hardened form.
+
+With `network_mode: host` the container shares the machine's network
+namespace, and Docker refuses `net.*` sysctls for it. Then remove the
+`sysctls` lines and either
+
+- set it on the machine itself, from the lowest port UwUMail uses:
+  `echo net.ipv4.ip_unprivileged_port_start=25 > /etc/sysctl.d/60-uwumail.conf && sysctl --system`
+  (every user on that machine may then bind ports from 25 up, so only on a
+  machine that runs nothing else), or
+- keep the default bridge network, which is what the stock files do.
+
 ## Checking a live server
 
 `scripts/live-check.mjs` uses a server the way the app does: JMAP session over

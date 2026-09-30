@@ -18,6 +18,14 @@ x-server: &server
   restart: unless-stopped
   environment:
     UWUMAIL_CONFIG: /etc/uwumail.toml
+  # The same hardening as the stock compose.yaml: no capabilities, the low ports opened to the
+  # unprivileged user by the sysctl instead.
+  cap_drop:
+    - ALL
+  sysctls:
+    net.ipv4.ip_unprivileged_port_start: 0
+  security_opt:
+    - no-new-privileges:true
 
 services:
   a:

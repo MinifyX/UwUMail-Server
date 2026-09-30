@@ -784,9 +784,9 @@ it; the portal shows them with the exact version.
 ### Buttons for the machine itself (optional)
 
 The server's container cannot touch the machine it runs on. It is distroless,
-read-only, unprivileged, and every capability is dropped but the one it needs
-for the low mail ports — which is most of what makes a break-in worth little,
-so it stays that way.
+read-only, unprivileged, runs with `no-new-privileges`, and every capability
+is dropped — which is most of what makes a break-in worth little, so it stays
+that way.
 
 A small helper beside it can, and then the portal shows what the system has
 waiting and installs it with a button. The installer offers it; adding it
