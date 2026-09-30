@@ -16,8 +16,11 @@ async fn chat_completions_answer_with_a_checked_verdict() {
     rig.server_provider("openaiCompatible", json!({})).await;
     let email = rig.deliver(&rig.mia, INVOICE).await;
     rig.fake.push(Reply::Json(200, chat(&spam_json()), vec![]));
-    let result =
-        rig.assist.spam_check(&rig.mia, SpamArgs { email_id: email, language: Some("de".into()) }).await.unwrap();
+    let result = rig
+        .assist
+        .spam_check(&rig.mia, SpamArgs { email_id: email, language: Some("de".into()), ..Default::default() })
+        .await
+        .unwrap();
     assert_eq!(result.verdict, "suspicious");
     assert_eq!(result.reasons, ["Unbekannter Absender"]);
     assert_eq!(result.effective.model, "small-model", "checks use the fast model");
@@ -84,7 +87,11 @@ async fn anthropic_speaks_messages_and_structured_outputs() {
     rig.server_provider("anthropic", json!({})).await;
     let email = rig.deliver(&rig.mia, INVOICE).await;
     rig.fake.push(Reply::Json(200, messages(&spam_json()), vec![]));
-    let result = rig.assist.spam_check(&rig.mia, SpamArgs { email_id: email, language: None }).await.unwrap();
+    let result = rig
+        .assist
+        .spam_check(&rig.mia, SpamArgs { email_id: email, language: None, ..Default::default() })
+        .await
+        .unwrap();
     assert_eq!(result.verdict, "suspicious");
     let seen = &rig.fake.seen()[0];
     assert_eq!(seen.path, "/v1/messages");
@@ -117,7 +124,7 @@ async fn errors_say_what_went_wrong() {
     let rig = rig().await;
     rig.server_provider("openaiCompatible", json!({})).await;
     let email = rig.deliver(&rig.mia, INVOICE).await;
-    let check = || rig.assist.spam_check(&rig.mia, SpamArgs { email_id: email, language: None });
+    let check = || rig.assist.spam_check(&rig.mia, SpamArgs { email_id: email, language: None, ..Default::default() });
 
     rig.fake.push(Reply::Json(429, json!({ "error": { "message": "slow down" } }), vec![("retry-after", "7".into())]));
     match check().await {

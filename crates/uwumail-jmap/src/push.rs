@@ -35,6 +35,7 @@ const TYPES: &[&str] = &[
     "SieveScript",
     "MaskedEmail",
     "ProfilePicture",
+    "AssistLabel",
 ];
 
 #[derive(Deserialize)]
@@ -241,10 +242,22 @@ pub(crate) async fn type_states(
             store.user_settings_state(account_id).await.unwrap_or_else(|_| modseq.to_string())
         } else if kind == "ProfilePicture" {
             store.profile_settings(account_id).await.map_or_else(|_| modseq.to_string(), |s| s.state.to_string())
+        } else if kind == "AssistLabel" {
+            store.assist_label_state(account_id).await.unwrap_or_else(|_| modseq.to_string())
         } else {
             modseq.to_string()
         };
         changed.insert(kind.clone(), json!(state));
+    }
+    // The labels' counts move with the mail (docs/jmap-assist.md, "State and push").
+    if !shared
+        && kinds.iter().any(|k| k == "Email")
+        && !changed.contains_key("AssistLabel")
+        && wanted("AssistLabel")
+        && store.has_assist_labels(account_id).await.unwrap_or(false)
+        && let Ok(state) = store.assist_label_state(account_id).await
+    {
+        changed.insert("AssistLabel".into(), json!(state));
     }
     if kinds.iter().any(|k| k == "Email") && wanted("EmailDelivery") {
         changed.insert("EmailDelivery".into(), json!(modseq.to_string()));

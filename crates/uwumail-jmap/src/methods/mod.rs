@@ -390,6 +390,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "AssistLabel/log" => single(assist::label_log(ctx, &args).await?),
         "AssistLabel/undo" => single(assist::label_undo(ctx, &args).await?),
         "AssistLabel/apply" => single(assist::label_apply(ctx, &args).await?),
+        "AssistLabel/suggest" => single(assist::label_suggest(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

@@ -176,7 +176,7 @@ async fn the_policy_decides_who_gets_which_feature() {
 
     // Switched off on the server: gone for everyone.
     rig.policy(|policy| policy.features.spam_check = false).await;
-    let spam = SpamArgs { email_id: email, language: None };
+    let spam = SpamArgs { email_id: email, language: None, ..Default::default() };
     assert_eq!(code(rig.assist.spam_check(&rig.mia, spam).await.unwrap_err()), "unavailable");
 
     // By person instead of domain.
@@ -222,7 +222,11 @@ async fn choices_pick_the_provider_and_model() {
 
     let email = rig.deliver(&rig.mia, INVOICE).await;
     rig.fake.push(Reply::Json(200, chat(r#"{"verdict":"legitimate","confidence":0.9,"reasons":[]}"#), vec![]));
-    let result = rig.assist.spam_check(&rig.mia, SpamArgs { email_id: email, language: None }).await.unwrap();
+    let result = rig
+        .assist
+        .spam_check(&rig.mia, SpamArgs { email_id: email, language: None, ..Default::default() })
+        .await
+        .unwrap();
     assert_eq!(result.effective.provider_name, "Erster");
     assert_eq!(rig.fake.seen()[0].body["model"], "tiny-model");
 

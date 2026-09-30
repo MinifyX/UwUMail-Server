@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true
+uwumail-labels.workspace = true
 
 base64.workspace = true
 bytes.workspace = true

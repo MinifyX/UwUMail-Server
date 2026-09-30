@@ -356,6 +356,7 @@ async fn add_assist(jmap: &Jmap, document: &mut Value, account: &Account, base: 
         features.auto_labels,
         capability.may_add_providers,
         capability.may_use_private_addresses,
+        capability.foreign_mail,
     ];
     format!("-ai{}", bits.iter().map(|on| if *on { '1' } else { '0' }).collect::<String>())
 }

@@ -16,9 +16,9 @@ use tokio::sync::mpsc;
 use url::{Host, Url};
 use uwumail_smtp::egress::{Reach, is_local_network};
 use uwumail_store::{
-    ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, Account, AssistFeatures, AssistPolicy,
-    AssistProviderRecord, AssistProviderWrite, CalibrationSample, SecretChange, Store, StoreError, TokenCount,
-    normalize_domain,
+    ASSIST_FOREIGN_MAIL, ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, Account,
+    AssistFeatures, AssistPolicy, AssistProviderRecord, AssistProviderWrite, CalibrationSample, SecretChange, Store,
+    StoreError, TokenCount, normalize_domain,
 };
 
 use crate::chatgpt::{self, Poll, Tokens};
@@ -52,8 +52,12 @@ pub struct Capability {
     pub may_use_private_addresses: bool,
     pub max_providers: usize,
     pub max_labels: usize,
+    pub max_label_conditions: usize,
     pub max_instruction_chars: usize,
     pub max_text_chars: usize,
+    /// The assistant may be used for mail of the person's other accounts (docs/jmap-assist.md,
+    /// "Foreign mail").
+    pub foreign_mail: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +197,7 @@ pub struct SettingsView {
     pub default: Option<Choice>,
     pub features: BTreeMap<String, Option<Choice>>,
     pub auto_labels: bool,
+    pub non_ai_labels: bool,
     pub refine_events: bool,
     /// The user setting `assist.currency`: `EUR` or `USD` for someone reading in English.
     pub currency: Option<String>,
@@ -210,6 +215,7 @@ pub struct SettingsPatch {
     pub default: Option<Option<Choice>>,
     pub features: Option<BTreeMap<String, Option<Choice>>>,
     pub auto_labels: Option<bool>,
+    pub non_ai_labels: Option<bool>,
     pub refine_events: Option<bool>,
     /// `null` takes the setting away.
     #[serde(default, deserialize_with = "nullable")]
@@ -354,10 +360,11 @@ fn key_hint(key: &str) -> Option<String> {
     (chars.len() >= 8).then(|| format!("…{}", chars[chars.len() - 4..].iter().collect::<String>()))
 }
 
+/// What a provider may be used for: the features, and mail of other accounts.
 fn check_features(features: &[String]) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for feature in features {
-        if !FEATURES.contains(&feature.as_str()) {
+        if !FEATURES.contains(&feature.as_str()) && feature != ASSIST_FOREIGN_MAIL {
             return Err(AssistError::invalid("badFeature", "features", format!("{feature:?} is not a feature")));
         }
         if !out.contains(feature) {
@@ -508,7 +515,9 @@ fn build_write(
     }
     let features = match &input.features {
         Some(features) => check_features(features)?,
-        None => before.map(|b| b.features.clone()).unwrap_or_else(|| FEATURES.iter().map(|f| f.to_string()).collect()),
+        None => before
+            .map(|b| b.features.clone())
+            .unwrap_or_else(|| FEATURES.iter().chain([&ASSIST_FOREIGN_MAIL]).map(|f| f.to_string()).collect()),
     };
     let access = input.access.clone().or_else(|| before.map(|b| b.access.clone())).unwrap_or_else(|| "everyone".into());
     if !matches!(access.as_str(), "everyone" | "domains" | "people") {
@@ -620,14 +629,20 @@ impl Assist {
                 continue;
             }
             let Some(info) = kinds::kind(&record.kind) else { continue };
-            let features = record.features.iter().filter(|f| policy.features.get(f)).cloned().collect::<Vec<String>>();
+            let features = record
+                .features
+                .iter()
+                .filter(|f| policy.features.get(f) || (*f == ASSIST_FOREIGN_MAIL && policy.foreign_mail))
+                .cloned()
+                .collect::<Vec<String>>();
             let usable = !info.personal_only && usable(&record, info);
             out.push(Available { record, info, server: true, features, usable });
         }
         for record in store.assist_providers(Some(account.id)).await? {
             let Some(info) = kinds::kind(&record.kind) else { continue };
             let features = if policy.allow_personal {
-                FEATURES.iter().filter(|f| policy.features.get(f)).map(|f| f.to_string()).collect()
+                let foreign = policy.foreign_mail.then_some(ASSIST_FOREIGN_MAIL);
+                FEATURES.iter().filter(|f| policy.features.get(f)).copied().chain(foreign).map(str::to_owned).collect()
             } else {
                 Vec::new()
             };
@@ -677,9 +692,12 @@ impl Assist {
         let available = self.available(account, &policy).await?;
         let prefs = self.store().assist_prefs(account.id).await?;
         let mut features = AssistFeatures::default();
+        let foreign = foreign_only(&available);
+        let mut foreign_mail = false;
         for feature in FEATURES {
             let on = policy.features.get(feature) && Self::effective(&available, &prefs.choices, feature).is_some();
             features.set(feature, on);
+            foreign_mail |= on && policy.foreign_mail && Self::effective(&foreign, &prefs.choices, feature).is_some();
         }
         Ok(Capability {
             features,
@@ -687,8 +705,10 @@ impl Assist {
             may_use_private_addresses: policy.allow_personal && policy.allow_personal_private,
             max_providers: ASSIST_MAX_PERSONAL_PROVIDERS,
             max_labels: ASSIST_MAX_LABELS,
+            max_label_conditions: uwumail_labels::MAX_CONDITIONS,
             max_instruction_chars: MAX_INSTRUCTION_CHARS,
             max_text_chars: MAX_TEXT_CHARS,
+            foreign_mail,
         })
     }
 
@@ -736,6 +756,7 @@ impl Assist {
             default: chosen("default"),
             features,
             auto_labels: prefs.auto_labels,
+            non_ai_labels: prefs.non_ai_labels,
             refine_events,
             currency,
             effective,
@@ -801,6 +822,11 @@ impl Assist {
         let auto_labels = patch.auto_labels.unwrap_or(prefs.auto_labels);
         if patch.default.is_some() || patch.features.is_some() || patch.auto_labels.is_some() {
             store.set_assist_prefs(account.id, choices, auto_labels).await?;
+        }
+        if let Some(on) = patch.non_ai_labels
+            && on != prefs.non_ai_labels
+        {
+            store.set_non_ai_labels(account.id, on).await?;
         }
         let mut values = Vec::new();
         if let Some(refine) = patch.refine_events {
@@ -1111,8 +1137,13 @@ impl Assist {
     /// limits, all before a feature reads any mail. Dropping the ticket gives the place back; the
     /// request stays counted.
     pub(crate) async fn prepare(&self, account: &Account, feature: &str) -> Result<Ticket<'_>> {
+        self.prepare_for(account, feature, false).await
+    }
+
+    /// [`Assist::prepare`], for mail of the person's other accounts when `foreign`.
+    pub(crate) async fn prepare_for(&self, account: &Account, feature: &str, foreign: bool) -> Result<Ticket<'_>> {
         let store = self.store();
-        let (provider, model, policy) = self.resolve(account, feature).await?;
+        let (provider, model, policy) = self.resolve_for(account, feature, foreign).await?;
         let running = self.begin(account.id)?;
         let record = &provider.record;
         let (requests_per_day, tokens_per_day) =
@@ -1150,14 +1181,28 @@ impl Assist {
     }
 
     /// The provider and model `feature` would use for `account`, as [`Assist::prepare`] picks them,
-    /// without taking or counting a request.
-    pub(crate) async fn resolve(&self, account: &Account, feature: &str) -> Result<(Available, String, AssistPolicy)> {
+    /// without taking or counting a request; among the providers that may serve mail of other
+    /// accounts when `foreign`.
+    pub(crate) async fn resolve_for(
+        &self,
+        account: &Account,
+        feature: &str,
+        foreign: bool,
+    ) -> Result<(Available, String, AssistPolicy)> {
         let store = self.store();
         let policy = store.assist_policy().await?;
         if !policy.features.get(feature) {
             return Err(AssistError::Unavailable(format!("{feature} is switched off on this server")));
         }
-        let available = self.available(account, &policy).await?;
+        if foreign && !policy.foreign_mail {
+            return Err(AssistError::Unavailable(
+                "the assistant is not for mail of other accounts on this server".into(),
+            ));
+        }
+        let mut available = self.available(account, &policy).await?;
+        if foreign {
+            available = foreign_only(&available);
+        }
         let prefs = store.assist_prefs(account.id).await?;
         let (provider, model) = Self::effective(&available, &prefs.choices, feature)
             .ok_or_else(|| AssistError::Unavailable(format!("no AI provider can be used for {feature}")))?;
@@ -1393,6 +1438,11 @@ impl Drop for Charge {
             }
         });
     }
+}
+
+/// The providers that may serve mail of other accounts.
+fn foreign_only(available: &[Available]) -> Vec<Available> {
+    available.iter().filter(|a| a.features.iter().any(|f| f == ASSIST_FOREIGN_MAIL)).cloned().collect()
 }
 
 fn usable(record: &AssistProviderRecord, info: &KindInfo) -> bool {

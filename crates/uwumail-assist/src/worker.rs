@@ -3,13 +3,17 @@
 //! Delivery only queues a mail (`Store::enqueue_auto_label`) and never waits for this. A job that
 //! fails for a passing reason (the provider is busy or away) is tried again twice, a few minutes
 //! apart; any other failure, and a job older than a day, is dropped: the mail simply keeps no label.
+//!
+//! It also learns from labels the person put on or took off by hand (docs/labels.md): the
+//! classifier's examples. That needs no model.
 
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use tokio::sync::watch;
-use uwumail_store::{LabelJob, MailboxRole, StoreError};
+use uwumail_store::{LabelJob, LabelTraining, MailboxRole, StoreError};
 
+use crate::mail::MAX_PARSE_BYTES;
 use crate::{Assist, AssistError, now};
 
 /// Tries per job.
@@ -79,7 +83,8 @@ impl Assist {
                     tracing::warn!(%err, "pruning the AI assistant's queue and counts failed");
                 }
             }
-            let worked = self.work_queue().await;
+            let learned = self.learn_labels().await;
+            let worked = self.work_queue().await || learned;
             let wait = if worked {
                 Duration::ZERO
             } else {
@@ -99,6 +104,61 @@ impl Assist {
                 _ = shutdown.changed() => {}
             }
         }
+    }
+
+    /// Learns from the hand-labelings waiting. `true` when there were any.
+    pub async fn learn_labels(&self) -> bool {
+        let jobs = match self.store().label_training().await {
+            Ok(jobs) => jobs,
+            Err(err) => {
+                tracing::warn!(%err, "reading what labels learn failed");
+                return false;
+            }
+        };
+        for job in &jobs {
+            if let Err(err) = self.learn_label(job).await {
+                tracing::warn!(%err, account = job.account_id, "learning a label failed");
+            }
+            if let Err(err) = self.store().finish_label_training(job.id).await {
+                tracing::warn!(%err, "updating what labels learn failed");
+                return false;
+            }
+        }
+        !jobs.is_empty()
+    }
+
+    /// The classifier's tokens of an email: those it was learned with, or read from the message.
+    /// `None` when the email is gone.
+    async fn label_tokens(&self, account_id: i64, email_id: i64) -> Result<Option<Vec<i64>>, StoreError> {
+        if let Some(tokens) = self.store().label_example_tokens(account_id, email_id).await? {
+            return Ok(Some(tokens));
+        }
+        let record = match self.store().email(account_id, email_id).await {
+            Ok(record) => record,
+            Err(StoreError::NotFound(_)) => return Ok(None),
+            Err(err) => return Err(err),
+        };
+        let raw = self.store().blob(&record.blob).await?;
+        let mail = uwumail_labels::Mail::parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
+        Ok(Some(uwumail_labels::tokens(&mail).iter().map(|token| uwumail_labels::token_hash(token)).collect()))
+    }
+
+    /// Learns one hand-labeling: the email as an example with or without the label and, for a new
+    /// example with it, an ordinary inbox mail as one without any.
+    async fn learn_label(&self, job: &LabelTraining) -> Result<(), StoreError> {
+        let Some(tokens) = self.label_tokens(job.account_id, job.email_id).await? else { return Ok(()) };
+        let newly =
+            self.store().learn_label_example(job.account_id, job.email_id, job.label_id, job.positive, tokens).await?;
+        if !newly {
+            return Ok(());
+        }
+        let Some(other) = self.store().label_background_candidate(job.account_id, job.email_id).await? else {
+            return Ok(());
+        };
+        if let Some(tokens) = self.label_tokens(job.account_id, other).await? {
+            self.store().add_label_background(job.account_id, other, tokens).await?;
+        }
+        Ok(())
     }
 
     /// Takes the jobs that are due now. `true` when there were any.

@@ -275,6 +275,12 @@ then \"fits\": true only when the mail clearly is what the label describes, othe
 label or only one; a mail that merely mentions a topic does not fit. {RULES} Answer only with JSON: \
 {{\"labels\": [{{\"name\": \"…\", \"reason\": \"…\", \"fits\": false}}]}}."
     );
+    let user = format!("<labels>\n{}</labels>\n\n<mail>\n{}\n</mail>", label_list(labels), mail.for_prompt(false));
+    let names: Vec<String> = labels.iter().map(|(name, _)| name.clone()).collect();
+    Prompt { system, user, schema: Some(("labels", labels_schema(&names))), max_tokens: 2000 }
+}
+
+fn label_list(labels: &[(String, String)]) -> String {
     let mut list = String::new();
     for (name, description) in labels {
         let description = description.trim();
@@ -284,9 +290,80 @@ label or only one; a mail that merely mentions a topic does not fit. {RULES} Ans
             list.push_str(&format!("- {}: {}\n", escape_tags(name), escape_tags(description)));
         }
     }
-    let user = format!("<labels>\n{list}</labels>\n\n<mail>\n{}\n</mail>", mail.for_prompt(false));
+    list
+}
+
+/// The answer of `AssistLabel/suggest`: a verdict per label, reason before `fits`, and with
+/// `new_labels` up to that many proposals.
+pub fn suggest_schema(names: &[String], new_labels: usize) -> Value {
+    let name = if names.is_empty() { json!({ "type": "string" }) } else { json!({ "type": "string", "enum": names }) };
+    let mut properties = json!({
+        "verdicts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "reason", "fits"],
+                "properties": {
+                    "name": name,
+                    "reason": { "type": "string" },
+                    "fits": { "type": "boolean" }
+                }
+            }
+        }
+    });
+    let mut required = vec!["verdicts"];
+    if new_labels > 0 {
+        properties["newLabels"] = json!({
+            "type": "array",
+            "maxItems": new_labels,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "description", "color", "reason"],
+                "properties": {
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "color": { "type": "string" },
+                    "reason": { "type": "string" }
+                }
+            }
+        });
+        required.push("newLabels");
+    }
+    json!({ "type": "object", "additionalProperties": false, "required": required, "properties": properties })
+}
+
+/// `AssistLabel/suggest`: `labels` as (name, description); `new_labels` how many new labels may be
+/// proposed when none fits (0: none).
+pub fn suggest(mail: &MailText, labels: &[(String, String)], new_labels: usize, language: Option<&str>) -> Prompt {
+    let language = match language_name(language) {
+        Some(language) => format!("in {language}"),
+        None if labels.is_empty() => "in the language of the mail".into(),
+        None => "in the language of the label descriptions".into(),
+    };
+    let mut system = format!(
+        "You help a person sort one e-mail into their labels. The labels and what belongs in them are listed \
+between <labels> and </labels>. Go through every label once, in the order of the list: give its name exactly as \
+written, then \"reason\": one short sentence {language} whether the mail belongs in it and why, then \"fits\": true \
+only when the mail clearly is what the label describes, otherwise false. Decide after the reason, not before. A \
+mail that merely mentions a topic does not fit."
+    );
+    let example = if new_labels > 0 {
+        system.push_str(&format!(
+            " Only when no label fits, propose up to {new_labels} new labels that would fit this mail and mails like \
+it: \"name\" (one to three words, at most 40 characters, not the name of a listed label), \"description\" (one \
+sentence what belongs there, at most 300 characters), \"color\" (\"#rrggbb\") and \"reason\" (one sentence), all \
+{language}. When a label fits, \"newLabels\" is empty."
+        ));
+        "{\"verdicts\": [{\"name\": \"…\", \"reason\": \"…\", \"fits\": false}], \"newLabels\": []}"
+    } else {
+        "{\"verdicts\": [{\"name\": \"…\", \"reason\": \"…\", \"fits\": false}]}"
+    };
+    system.push_str(&format!(" {RULES} Answer only with JSON: {example}."));
+    let user = format!("<labels>\n{}</labels>\n\n<mail>\n{}\n</mail>", label_list(labels), mail.for_prompt(false));
     let names: Vec<String> = labels.iter().map(|(name, _)| name.clone()).collect();
-    Prompt { system, user, schema: Some(("labels", labels_schema(&names))), max_tokens: 2000 }
+    Prompt { system, user, schema: Some(("label_suggestions", suggest_schema(&names, new_labels))), max_tokens: 3000 }
 }
 
 #[cfg(test)]
