@@ -3825,7 +3825,8 @@
       "costNote": "コストは公開料金表に基づく概算で、プロバイダーの請求額とは異なる場合があります。",
       "currency": "通貨",
       "currencyEur": "ユーロ (€)",
-      "currencyUsd": "米ドル ($)"
+      "currencyUsd": "米ドル ($)",
+      "reasoningTokens": "思考トークン"
     },
     "provider": {
       "model": "モデル {{model}}",
@@ -3988,7 +3989,8 @@
         "peopleRequired": "ユーザーを 1 人以上追加してください。",
         "featuresRequired": "機能を 1 つ以上選んでください。",
         "limitInvalid": "0 より大きい整数を入力するか、空欄にしてください。",
-        "priceInvalid": "0 以上の料金を入力してください(例: 0.25)。"
+        "priceInvalid": "0 以上の料金を入力してください(例: 0.25)。",
+        "requestPriceInvalid": "0 から 100 までの料金を入力してください(例: 0.005)。"
       },
       "price": "料金",
       "priceIntro": "100 万トークンあたりの米ドル価格で、コストの表示に使います。空欄なら公開されている料金表の価格を使います。",
@@ -3998,7 +4000,8 @@
       "outputPrice": "出力(100 万トークンあたり)",
       "priceAutomatic": "料金表から",
       "showCost": "利用者にコストを表示する",
-      "showCostHint": "利用者は自分のリクエストのコストを確認できます。管理者には常に表示されます。"
+      "showCostHint": "利用者は自分のリクエストのコストを確認できます。管理者には常に表示されます。",
+      "requestPrice": "1 リクエストあたり(米ドル)"
     },
     "chatgpt": {
       "title": "ChatGPT サインイン",
@@ -4018,7 +4021,11 @@
       "free": "無料",
       "perMillion": "100 万トークンあたり 入力 {{input}}、出力 {{output}}",
       "manual": "手動設定",
-      "unknown": "料金不明"
+      "unknown": "料金不明",
+      "reasoning": "思考 {{price}}",
+      "perRequest": "1 リクエストあたり {{price}}",
+      "tier": "{{tokens}} トークン超: 入力 {{input}}、出力 {{output}}",
+      "thinks": "回答前に思考する"
     }
   }
 }

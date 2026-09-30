@@ -3905,7 +3905,8 @@
       "costNote": "Kosten sind Schätzungen aus öffentlichen Preislisten und können von der Rechnung des Anbieters abweichen.",
       "currency": "Währung",
       "currencyEur": "Euro (€)",
-      "currencyUsd": "US-Dollar ($)"
+      "currencyUsd": "US-Dollar ($)",
+      "reasoningTokens": "Denk-Tokens"
     },
     "provider": {
       "model": "Modell {{model}}",
@@ -4072,7 +4073,8 @@
         "peopleRequired": "Füge mindestens eine Person hinzu.",
         "featuresRequired": "Wähle mindestens eine Funktion.",
         "limitInvalid": "Eine ganze Zahl über null, oder leer.",
-        "priceInvalid": "Gib einen Preis ab 0 ein, zum Beispiel 0,25."
+        "priceInvalid": "Gib einen Preis ab 0 ein, zum Beispiel 0,25.",
+        "requestPriceInvalid": "Gib einen Preis von 0 bis 100 ein, zum Beispiel 0,005."
       },
       "price": "Preis",
       "priceIntro": "US-Dollar pro Million Tokens, um Kosten anzuzeigen. Leer übernimmt den Preis aus öffentlichen Preislisten.",
@@ -4082,7 +4084,8 @@
       "outputPrice": "Ausgabe, pro Million Tokens",
       "priceAutomatic": "Aus den Preislisten",
       "showCost": "Kosten den Nutzenden zeigen",
-      "showCostHint": "Sie sehen dann, was ihre Anfragen kosten. Du siehst es immer."
+      "showCostHint": "Sie sehen dann, was ihre Anfragen kosten. Du siehst es immer.",
+      "requestPrice": "Pro Anfrage, US-Dollar"
     },
     "chatgpt": {
       "title": "ChatGPT-Anmeldung",
@@ -4102,7 +4105,11 @@
       "free": "Kostenlos",
       "perMillion": "{{input}} Eingabe, {{output}} Ausgabe pro Million Tokens",
       "manual": "von Hand gesetzt",
-      "unknown": "Preis unbekannt"
+      "unknown": "Preis unbekannt",
+      "reasoning": "Denken {{price}}",
+      "perRequest": "{{price}} pro Anfrage",
+      "tier": "über {{tokens}} Tokens: {{input}} rein, {{output}} raus",
+      "thinks": "denkt vor der Antwort"
     }
   }
 }

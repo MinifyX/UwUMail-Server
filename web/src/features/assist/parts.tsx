@@ -7,6 +7,7 @@ import { formatNumber } from "@/lib/format";
 import {
   formatCost,
   formatDay,
+  hasThinking,
   normalizeChip,
   rowSum,
   share,
@@ -255,7 +256,11 @@ export function QuotaText({ quota }: { quota: Quota | null }) {
   return <>{parts.length > 0 ? parts.join(" · ") : t("assist.quota.none")}</>;
 }
 
-/** A price in US dollars per million tokens: "$0.25 / $2.00 per million tokens (in / out)", or free. */
+/**
+ * A price in US dollars per million tokens: "$0.25 in, $2.00 out per million tokens", or free. The
+ * rest of the price sheet follows where it adds something: thinking at another price, a fee per
+ * request, a higher price for large prompts, and that the model thinks.
+ */
 export function PriceText({ price }: { price: Price }) {
   const { t, i18n } = useT();
   if (price.source === "free") return <>{t("assist.price.free")}</>;
@@ -263,10 +268,27 @@ export function PriceText({ price }: { price: Price }) {
     new Intl.NumberFormat(i18n.language, { style: "currency", currency: "USD", maximumSignificantDigits: 4 }).format(
       value,
     );
+  const extras: string[] = [];
+  if (price.reasoningPerMillion != null && price.reasoningPerMillion !== price.outputPerMillion) {
+    extras.push(t("assist.price.reasoning", { price: dollars(price.reasoningPerMillion) }));
+  }
+  if (price.perRequest) extras.push(t("assist.price.perRequest", { price: dollars(price.perRequest) }));
+  const tier = price.tiers?.[0];
+  if (tier) {
+    extras.push(
+      t("assist.price.tier", {
+        tokens: formatNumber(tier.aboveTokens, i18n.language),
+        input: dollars(tier.inputPerMillion),
+        output: dollars(tier.outputPerMillion),
+      }),
+    );
+  }
+  if (price.supportsReasoning) extras.push(t("assist.price.thinks"));
   return (
     <>
       {t("assist.price.perMillion", { input: dollars(price.inputPerMillion), output: dollars(price.outputPerMillion) })}
       {price.source === "manual" && ` (${t("assist.price.manual")})`}
+      {extras.map((extra) => ` · ${extra}`).join("")}
     </>
   );
 }
@@ -305,9 +327,19 @@ function costText(amount: number | null, currency: string, language: string): st
 
 /**
  * Requests, tokens in and tokens out as table cells, with a bar for the requests when `max` is
- * given, and the cost when a `currency` is.
+ * given, thinking tokens when `thinking`, and the cost when a `currency` is.
  */
-export function SumCells({ sum, max, currency }: { sum: UsageSum; max?: number; currency?: string }) {
+export function SumCells({
+  sum,
+  max,
+  currency,
+  thinking = false,
+}: {
+  sum: UsageSum;
+  max?: number;
+  currency?: string;
+  thinking?: boolean;
+}) {
   const { i18n } = useT();
   const number = (value: number) => formatNumber(value, i18n.language);
   return (
@@ -327,6 +359,7 @@ export function SumCells({ sum, max, currency }: { sum: UsageSum; max?: number; 
       </td>
       <td className="px-2 py-1.5 text-right tabular-nums">{number(sum.inputTokens)}</td>
       <td className="py-1.5 pl-2 text-right tabular-nums">{number(sum.outputTokens)}</td>
+      {thinking && <td className="py-1.5 pl-2 text-right tabular-nums">{number(sum.reasoningTokens)}</td>}
       {currency && (
         <td className="py-1.5 pl-2 text-right whitespace-nowrap tabular-nums">
           {costText(sum.amount, currency, i18n.language)}
@@ -336,7 +369,7 @@ export function SumCells({ sum, max, currency }: { sum: UsageSum; max?: number; 
   );
 }
 
-export function SumHeads({ cost = false }: { cost?: boolean }) {
+export function SumHeads({ cost = false, thinking = false }: { cost?: boolean; thinking?: boolean }) {
   const { t } = useT();
   return (
     <>
@@ -349,6 +382,11 @@ export function SumHeads({ cost = false }: { cost?: boolean }) {
       <th scope="col" className="py-1.5 pl-2 text-right font-semibold whitespace-nowrap">
         {t("assist.usage.outputTokens")}
       </th>
+      {thinking && (
+        <th scope="col" className="py-1.5 pl-2 text-right font-semibold whitespace-nowrap">
+          {t("assist.usage.reasoningTokens")}
+        </th>
+      )}
       {cost && (
         <th scope="col" className="py-1.5 pl-2 text-right font-semibold whitespace-nowrap">
           {t("assist.usage.cost")}
@@ -358,7 +396,7 @@ export function SumHeads({ cost = false }: { cost?: boolean }) {
   );
 }
 
-/** The sums as tiles; the cost as a fourth when a `currency` is given. */
+/** The sums as tiles; thinking when there was any, the cost when a `currency` is given. */
 export function UsageTotals({ sum, currency }: { sum: UsageSum; currency?: string }) {
   const { t, i18n } = useT();
   const tiles: [string, string][] = [
@@ -366,9 +404,16 @@ export function UsageTotals({ sum, currency }: { sum: UsageSum; currency?: strin
     ["inputTokens", formatNumber(sum.inputTokens, i18n.language)],
     ["outputTokens", formatNumber(sum.outputTokens, i18n.language)],
   ];
+  if (sum.reasoningTokens > 0) tiles.push(["reasoningTokens", formatNumber(sum.reasoningTokens, i18n.language)]);
   if (currency) tiles.push(["cost", costText(sum.amount, currency, i18n.language)]);
+  const columns =
+    tiles.length === 3
+      ? "grid-cols-3"
+      : tiles.length === 4
+        ? "grid-cols-2 sm:grid-cols-4"
+        : "grid-cols-2 sm:grid-cols-5";
   return (
-    <dl className={clsx("grid gap-2 sm:gap-3", currency ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
+    <dl className={clsx("grid gap-2 sm:gap-3", columns)}>
       {tiles.map(([key, value]) => (
         <div key={key} className="min-w-0 rounded-control bg-canvas px-3 py-2">
           <dt className="truncate text-[12px] text-muted">{t(`assist.usage.${key}`)}</dt>
@@ -401,6 +446,7 @@ export function SumTable<Row extends UsageSum>({
 }) {
   const { t } = useT();
   const max = Math.max(0, ...rows.map((row) => row.requests));
+  const thinking = hasThinking(total ? [total, ...rows] : rows);
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[440px] text-[13px]">
@@ -410,7 +456,7 @@ export function SumTable<Row extends UsageSum>({
             <th scope="col" className="py-1.5 pr-3 font-semibold">
               {head}
             </th>
-            <SumHeads cost={currency !== undefined} />
+            <SumHeads cost={currency !== undefined} thinking={thinking} />
           </tr>
         </thead>
         <tbody>
@@ -419,7 +465,7 @@ export function SumTable<Row extends UsageSum>({
               <th scope="row" className="py-1.5 pr-3 text-left font-semibold break-all">
                 {label(row)}
               </th>
-              <SumCells sum={row} max={max} currency={currency} />
+              <SumCells sum={row} max={max} currency={currency} thinking={thinking} />
             </tr>
           ))}
         </tbody>
@@ -429,7 +475,7 @@ export function SumTable<Row extends UsageSum>({
               <th scope="row" className="py-1.5 pr-3 text-left">
                 {t("assist.usage.total")}
               </th>
-              <SumCells sum={total} currency={currency} />
+              <SumCells sum={total} currency={currency} thinking={thinking} />
             </tr>
           </tfoot>
         )}
@@ -449,6 +495,7 @@ export function EntriesTable({
   currency?: string;
 }) {
   const { t, i18n } = useT();
+  const thinking = hasThinking(rows);
   return (
     <details className="rounded-control border border-hairline p-3">
       <summary className="cursor-pointer text-[13px] font-semibold">
@@ -473,7 +520,7 @@ export function EntriesTable({
               <th scope="col" className="px-2 py-1.5 font-semibold">
                 {t("assist.usage.feature")}
               </th>
-              <SumHeads cost={currency !== undefined} />
+              <SumHeads cost={currency !== undefined} thinking={thinking} />
             </tr>
           </thead>
           <tbody>
@@ -485,7 +532,7 @@ export function EntriesTable({
                 {showPerson && <td className="px-2 py-1.5 break-all">{row.login}</td>}
                 <td className="px-2 py-1.5">{row.providerName}</td>
                 <td className="px-2 py-1.5">{t(`assist.features.${row.feature}`)}</td>
-                <SumCells sum={rowSum(row)} currency={currency} />
+                <SumCells sum={rowSum(row)} currency={currency} thinking={thinking} />
               </tr>
             ))}
           </tbody>

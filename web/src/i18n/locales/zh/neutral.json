@@ -3825,7 +3825,8 @@
       "costNote": "费用是根据公开价格表估算的,可能与服务商的账单不同。",
       "currency": "货币",
       "currencyEur": "欧元 (€)",
-      "currencyUsd": "美元 ($)"
+      "currencyUsd": "美元 ($)",
+      "reasoningTokens": "思考 token"
     },
     "provider": {
       "model": "模型 {{model}}",
@@ -3988,7 +3989,8 @@
         "peopleRequired": "请至少添加一个用户。",
         "featuresRequired": "请至少选择一个功能。",
         "limitInvalid": "请输入大于零的整数，或留空。",
-        "priceInvalid": "请输入 0 或更大的价格,例如 0.25。"
+        "priceInvalid": "请输入 0 或更大的价格,例如 0.25。",
+        "requestPriceInvalid": "请输入 0 到 100 之间的价格,例如 0.005。"
       },
       "price": "价格",
       "priceIntro": "每百万 token 的美元价格,用于显示费用。留空则使用公开价格表中的价格。",
@@ -3998,7 +4000,8 @@
       "outputPrice": "输出,每百万 token",
       "priceAutomatic": "来自价格表",
       "showCost": "向使用者显示费用",
-      "showCostHint": "他们将看到自己请求的费用。你始终可以看到。"
+      "showCostHint": "他们将看到自己请求的费用。你始终可以看到。",
+      "requestPrice": "每次请求,美元"
     },
     "chatgpt": {
       "title": "ChatGPT 登录",
@@ -4018,7 +4021,11 @@
       "free": "免费",
       "perMillion": "每百万 token 输入 {{input}},输出 {{output}}",
       "manual": "手动设置",
-      "unknown": "价格未知"
+      "unknown": "价格未知",
+      "reasoning": "思考 {{price}}",
+      "perRequest": "每次请求 {{price}}",
+      "tier": "超过 {{tokens}} token:输入 {{input}},输出 {{output}}",
+      "thinks": "回答前会思考"
     }
   }
 }

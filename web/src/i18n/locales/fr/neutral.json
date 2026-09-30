@@ -3983,7 +3983,8 @@
       "costNote": "Les coûts sont des estimations tirées de listes de prix publiques et peuvent différer de la facture du fournisseur.",
       "currency": "Devise",
       "currencyEur": "Euro (€)",
-      "currencyUsd": "Dollar US ($)"
+      "currencyUsd": "Dollar US ($)",
+      "reasoningTokens": "Jetons de réflexion"
     },
     "provider": {
       "model": "Modèle {{model}}",
@@ -4154,7 +4155,8 @@
         "peopleRequired": "Ajoutez au moins une personne.",
         "featuresRequired": "Choisissez au moins une fonction.",
         "limitInvalid": "Un nombre entier supérieur à zéro, ou vide.",
-        "priceInvalid": "Saisissez un prix de 0 ou plus, par exemple 0,25."
+        "priceInvalid": "Saisissez un prix de 0 ou plus, par exemple 0,25.",
+        "requestPriceInvalid": "Saisissez un prix de 0 à 100, par exemple 0,005."
       },
       "price": "Prix",
       "priceIntro": "En dollars US par million de tokens, pour afficher les coûts. Vide : le prix vient des listes de prix publiques.",
@@ -4164,7 +4166,8 @@
       "outputPrice": "Sortie, par million de tokens",
       "priceAutomatic": "Selon les listes de prix",
       "showCost": "Montrer les coûts aux personnes qui l'utilisent",
-      "showCostHint": "Elles voient alors ce que coûtent leurs requêtes. Vous le voyez toujours."
+      "showCostHint": "Elles voient alors ce que coûtent leurs requêtes. Vous le voyez toujours.",
+      "requestPrice": "Par requête, en dollars US"
     },
     "chatgpt": {
       "title": "Connexion ChatGPT",
@@ -4184,7 +4187,11 @@
       "free": "Gratuit",
       "perMillion": "{{input}} en entrée, {{output}} en sortie par million de tokens",
       "manual": "fixé à la main",
-      "unknown": "Prix inconnu"
+      "unknown": "Prix inconnu",
+      "reasoning": "réflexion {{price}}",
+      "perRequest": "{{price}} par requête",
+      "tier": "au-delà de {{tokens}} tokens : {{input}} en entrée, {{output}} en sortie",
+      "thinks": "réfléchit avant de répondre"
     }
   }
 }

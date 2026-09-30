@@ -394,8 +394,8 @@ function PriceFields({
           stored && t("assist.form.priceUnknown")
         )}
       </p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {(["inputPrice", "outputPrice"] as const).map((field) => (
+      <div className="grid gap-3 sm:grid-cols-3">
+        {(["inputPrice", "outputPrice", "requestPrice"] as const).map((field) => (
           <Field key={field} label={t(`assist.form.${field}`)} error={errorOf(field)}>
             {(id) => (
               <TextInput
