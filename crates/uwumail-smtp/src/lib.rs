@@ -11,6 +11,7 @@ pub mod bimi;
 mod checks;
 pub mod clamav;
 mod client;
+pub mod client_slots;
 pub mod config;
 pub mod dane;
 pub mod dkim;
@@ -62,6 +63,7 @@ use tokio::sync::Semaphore;
 use uwumail_store::Store;
 
 pub use client::{Connector, connect_directly};
+pub use client_slots::{ClientSlot, ClientSlots};
 pub use config::{
     AntivirusConfig, BrandConfig, DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig,
     RelaySecurity, ReportsConfig, SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
@@ -404,6 +406,13 @@ impl Smtp {
     /// Whether another mail server receives mail first and hands it to us.
     pub fn behind_upstream_server(&self) -> bool {
         !self.inner.live().trusted_relays.is_empty()
+    }
+
+    /// Whether `ip` is one of `smtp.trusted_relays`: something in front that hands on connections
+    /// of many clients, so it is not limited like one client, on SMTP or on the mail app ports.
+    pub fn is_trusted_relay(&self, ip: IpAddr) -> bool {
+        let ip = ip.to_canonical();
+        self.inner.live().trusted_relays.iter().any(|network| network.contains(ip))
     }
 
     /// What the spam history is set to keep, for the job that clears it out and for the portal.

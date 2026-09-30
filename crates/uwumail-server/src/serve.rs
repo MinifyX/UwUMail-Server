@@ -101,7 +101,11 @@ pub async fn run(
     store.set_external_passwords(external.clone());
     // Mail apps may append messages as big as they may send. A refused OAuth token points the app
     // to this server's OpenID configuration.
-    let imap = uwumail_imap::Imap::new(store.clone(), config.smtp.max_message_size).with_hostname(&config.hostname);
+    // A relay in front that hides the clients' addresses is not limited like one client, as for SMTP.
+    let relays = smtp.clone();
+    let imap = uwumail_imap::Imap::new(store.clone(), config.smtp.max_message_size)
+        .with_hostname(&config.hostname)
+        .trusting(move |ip| relays.is_trusted_relay(ip));
     let mail_tls = tls::mail_server_config(certs.clone())?;
     if let Some(listener) = bind(&config.listen.imaps, "mail apps (IMAP with TLS)").await? {
         tasks.spawn(imap.clone().serve(listener, mail_tls.clone(), shutdown_rx.clone()));

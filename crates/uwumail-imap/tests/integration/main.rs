@@ -2,6 +2,7 @@
 //! `target/` small and linking fast. Add new test files as modules here.
 
 mod imap;
+mod limits;
 mod managesieve;
 mod robustness;
 mod sharing;

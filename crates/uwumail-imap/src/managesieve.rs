@@ -21,7 +21,7 @@ use uwumail_store::{
     Store, validate_sieve_name,
 };
 
-use crate::Imap;
+use crate::{ClientLimit, Imap};
 
 /// The longest command line, without literals.
 const MAX_LINE: usize = 8 * 1024;
@@ -43,6 +43,9 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_AUTH_FAILURES: u32 = 3;
 const MAX_CONNECTIONS: usize = 500;
+/// Connections at once from one client address (IPv4, or IPv6 /64): an app keeps one open at most,
+/// while one address could otherwise hold all [`MAX_CONNECTIONS`] before logging in.
+pub const MAX_CONNECTIONS_PER_CLIENT: usize = 20;
 const IMPLEMENTATION: &str = "UwUMail Server";
 
 /// Everything ManageSieve connections share. Cheap to clone.
@@ -51,6 +54,7 @@ pub struct ManageSieve {
     store: Store,
     limiter: Arc<AuthLimiter>,
     connections: Arc<Semaphore>,
+    clients: ClientLimit,
     /// [`LOGIN_TIMEOUT`] and [`PRE_LOGIN_LIMIT`]; shorter in tests.
     login_timeouts: (Duration, Duration),
     hostname: Option<String>,
@@ -63,6 +67,8 @@ impl ManageSieve {
             store: imap.store.clone(),
             limiter: imap.limiter.clone(),
             connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+            // Its own count, but the same addresses trusted as for IMAP.
+            clients: imap.clients.with_max(MAX_CONNECTIONS_PER_CLIENT),
             login_timeouts: (LOGIN_TIMEOUT, PRE_LOGIN_LIMIT),
             hostname: imap.hostname.clone(),
         }
@@ -73,6 +79,14 @@ impl ManageSieve {
     #[doc(hidden)]
     pub fn with_login_timeouts(mut self, per_command: Duration, in_all: Duration) -> ManageSieve {
         self.login_timeouts = (per_command, in_all);
+        self
+    }
+
+    /// Another limit of connections at once from one client address than
+    /// [`MAX_CONNECTIONS_PER_CLIENT`]. For tests.
+    #[doc(hidden)]
+    pub fn with_client_limit(mut self, max: usize) -> ManageSieve {
+        self.clients = self.clients.with_max(max);
         self
     }
 
@@ -102,8 +116,20 @@ impl ManageSieve {
 
     /// Runs one session on a connection from `peer`.
     pub fn serve_stream(&self, stream: BoxIo, peer: SocketAddr, tls: Arc<rustls::ServerConfig>) {
+        let Some(slot) = self.clients.admit(peer.ip()) else {
+            // The connection starts in plain text, so it can be told why; a client that does not
+            // even take that line is not waited for.
+            tracing::debug!(%peer, "too many managesieve connections from one client");
+            tokio::spawn(async move {
+                let mut stream = stream;
+                let bye = b"BYE \"Too many connections from your address\"\r\n";
+                let _ = tokio::time::timeout(Duration::from_secs(5), stream.write_all(bye)).await;
+            });
+            return;
+        };
         let sieve = self.clone();
         tokio::spawn(async move {
+            let _slot = slot;
             let Ok(_permit) = sieve.connections.clone().try_acquire_owned() else {
                 return;
             };
@@ -385,8 +411,11 @@ impl Session {
                 continue;
             }
             kept += size;
-            let mut literal = vec![0; size];
-            self.stream().read_exact(&mut literal).await?;
+            // Grown as the bytes arrive: a literal announced but never sent takes no memory.
+            let mut literal = Vec::new();
+            if (&mut *self.stream()).take(size as u64).read_to_end(&mut literal).await? < size {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
             args.push(Arg::Text(literal));
         }
     }

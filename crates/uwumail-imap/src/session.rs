@@ -24,6 +24,11 @@ use crate::{Imap, mime};
 const MAX_LINE: usize = 64 * 1024;
 /// Everything but APPEND: login data, mailbox names, search words.
 const MAX_COMMAND: usize = 256 * 1024;
+/// The largest literal before logging in: a user name or a password, which some apps send as a
+/// literal. Anything bigger was only a way to make the server hold memory for a stranger.
+const MAX_LITERAL_BEFORE_LOGIN: usize = 8 * 1024;
+/// A whole command before logging in, its lines and literals together.
+const MAX_COMMAND_BEFORE_LOGIN: usize = MAX_LINE;
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long a connection may stay without logging in, however busy it keeps: NOOP after NOOP, or
 /// an AUTHENTICATE challenge nobody answers, held a connection slot for ever
@@ -304,9 +309,13 @@ where
             // could announce a literal of the full message size and make the server set aside that
             // much -- the bytes are never sent, the memory is held until the login times out, and
             // one short line per connection is all it costs. Nothing before a login needs more than
-            // a command.
-            let limit = if is_append && self.account.is_some() { self.imap.max_append } else { MAX_COMMAND };
-            if size > limit || command.len() + size > limit + MAX_COMMAND {
+            // a user name and a password.
+            let (limit, in_all) = match self.account {
+                None => (MAX_LITERAL_BEFORE_LOGIN, MAX_COMMAND_BEFORE_LOGIN),
+                Some(_) if is_append => (self.imap.max_append, self.imap.max_append + MAX_COMMAND),
+                Some(_) => (MAX_COMMAND, 2 * MAX_COMMAND),
+            };
+            if size > limit || command.len() + size > in_all {
                 if non_synchronizing {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Literal too big"));
                 }
@@ -325,9 +334,11 @@ where
                 self.send(b"+ Ready for literal data\r\n").await?;
                 self.flush().await?;
             }
-            let start = command.len();
-            command.resize(start + size, 0);
-            self.reader.read_exact(&mut command[start..]).await?;
+            // Grown as the bytes arrive, not set aside up front: an announced literal that never
+            // comes costs nothing.
+            if (&mut self.reader).take(size as u64).read_to_end(&mut command).await? < size {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
         }
     }
 
@@ -1886,7 +1897,9 @@ where
             StoreAction::Replace => FlagChange::Replace(keywords),
         };
         let uids: Vec<u32> = targets.iter().map(|(_, uid)| *uid).collect();
-        let skipped = self.store.imap_store_flags(account, mailbox_id, uids.clone(), change, unchanged_since).await?;
+        let login = self.account_id();
+        let skipped =
+            self.store.imap_store_flags_by(login, account, mailbox_id, uids.clone(), change, unchanged_since).await?;
         let skipped_set: HashSet<u32> = skipped.iter().copied().collect();
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
         let by_uid: HashMap<u32, &ImapEmail> = emails.iter().map(|email| (email.uid, email)).collect();

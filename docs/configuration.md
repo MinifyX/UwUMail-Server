@@ -511,4 +511,7 @@ ten minutes to arrive once DATA or the first BDAT chunk began. Real clients get 
 client that sends a NOOP now and then only to keep its connection does not keep it. One client
 address may have `smtp.max_connections_per_client` connections at once on all SMTP ports together;
 behind something that hides the clients' addresses (a proxy that makes every connection come from
-one address), raise it or list that address in `trusted_relays`.
+one address), raise it or list that address in `trusted_relays`. IMAP allows 50 connections at once per
+client address and ManageSieve 20, counted apart from SMTP; addresses in `smtp.trusted_relays` are
+not limited there either. Connections through the UwUMail Gateway count for the client's own
+address. Before logging in, IMAP takes literals of at most 8 KiB (a user name or a password).
