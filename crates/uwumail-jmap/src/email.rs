@@ -16,6 +16,7 @@ use mail_builder::mime::{BodyPart, MimePart};
 use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
 use serde_json::{Map, Value, json};
 use uwumail_store::mime_limits::parse_message;
+use uwumail_store::tnef::{self, Decoded, Sub};
 use uwumail_store::{BlobHash, EmailAddress, EmailRecord};
 
 use crate::{dates, ids};
@@ -77,14 +78,81 @@ pub fn needs_raw(properties: &[String]) -> bool {
 }
 
 /// The cleaned HTML body of a message, or nothing when it has none.
-fn safe_html_of(message: &Message<'_>) -> Option<String> {
-    let index = *message.html_body.first()? as usize;
-    let part = message.parts.get(index)?;
-    let html = match &part.body {
-        PartType::Html(text) => text.as_ref(),
-        _ => return None,
+fn safe_html_of(message: &Message<'_>, tnef: &[Decoded], bodies: &Bodies) -> Option<String> {
+    let html = match *bodies.html.first()? {
+        PartRef::Mime(index) => match &message.parts.get(index)?.body {
+            PartType::Html(text) => text.as_ref(),
+            _ => return None,
+        },
+        PartRef::Tnef(k, Sub::Html) => tnef.get(k)?.message.body.html.as_deref()?,
+        PartRef::Tnef(..) => return None,
     };
     Some(crate::safe_html::sanitize(html))
+}
+
+/// A body part: one of the MIME structure, or one made of a winmail.dat part (the position in
+/// the decoded list, and which).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PartRef {
+    Mime(usize),
+    Tnef(usize, Sub),
+}
+
+/// `textBody`, `htmlBody` and `attachments`, with what winmail.dat parts hold (`uwumail_store::tnef`):
+/// their attachments and meeting instead of the winmail.dat part itself, and their body where the
+/// MIME has none as good (no HTML, or no text at all).
+struct Bodies {
+    text: Vec<PartRef>,
+    html: Vec<PartRef>,
+    attachments: Vec<PartRef>,
+}
+
+fn bodies(message: &Message<'_>, tnef: &[Decoded]) -> Bodies {
+    let mime = |list: &[u32]| list.iter().map(|i| PartRef::Mime(*i as usize)).collect::<Vec<_>>();
+    let mut text = mime(&message.text_body);
+    let mut html = mime(&message.html_body);
+    let mut attachments: Vec<PartRef> = message
+        .attachments
+        .iter()
+        .map(|i| *i as usize)
+        .filter(|i| !tnef.iter().any(|d| d.index == *i))
+        .map(PartRef::Mime)
+        .collect();
+    for (k, decoded) in tnef.iter().enumerate() {
+        attachments.extend(
+            decoded
+                .subs()
+                .into_iter()
+                .filter(|sub| matches!(sub, Sub::Calendar | Sub::Attachment(_)))
+                .map(|sub| PartRef::Tnef(k, sub)),
+        );
+    }
+    let with_body =
+        tnef.iter().enumerate().find(|(_, d)| d.message.body.text.is_some() || d.message.body.html.is_some());
+    if let Some((k, decoded)) = with_body {
+        let body = &decoded.message.body;
+        let own_html = tnef::mime_has_html(message);
+        if !own_html && body.html.is_some() {
+            html = vec![PartRef::Tnef(k, Sub::Html)];
+        }
+        if !tnef::mime_has_text(message) {
+            text = vec![PartRef::Tnef(k, if body.text.is_some() { Sub::Text } else { Sub::Html })];
+            if own_html || body.html.is_none() {
+                html.clone_from(&text);
+            }
+        }
+    }
+    Bodies { text, html, attachments }
+}
+
+/// Whether the properties need what winmail.dat parts hold.
+fn needs_tnef(properties: &[String]) -> bool {
+    properties.iter().any(|p| {
+        matches!(
+            p.as_str(),
+            "bodyValues" | "textBody" | "htmlBody" | "attachments" | "uwuSafeHtml" | "uwuHasRemoteContent"
+        )
+    })
 }
 
 /// EmailAddress objects always have a `name`, `null` when there is none (RFC 8621, 4.1.2.3).
@@ -228,6 +296,136 @@ fn part_size(part: &mail_parser::MessagePart<'_>) -> usize {
     }
 }
 
+/// Decoded content of a part named by a blob id, for downloads: a MIME part, or one made of a
+/// winmail.dat part. `None` for a whole blob.
+pub fn blob_content(raw: &[u8], reference: &ids::BlobRef) -> Option<(Vec<u8>, String)> {
+    match *reference {
+        ids::BlobRef::Whole(_) => None,
+        ids::BlobRef::Part(_, index) => part_content(raw, index),
+        ids::BlobRef::Tnef(_, index, sub) => {
+            let message = parse_message(raw)?;
+            let decoded = tnef::decode_part(&message, index)?;
+            tnef_content(&decoded, sub)
+        }
+    }
+}
+
+/// The content and media type of a part made of a winmail.dat part.
+fn tnef_content(decoded: &Decoded, sub: Sub) -> Option<(Vec<u8>, String)> {
+    let body = &decoded.message.body;
+    Some(match sub {
+        Sub::Text => (body.text.clone()?.into_bytes(), "text/plain".into()),
+        Sub::Html => (body.html.clone()?.into_bytes(), "text/html".into()),
+        Sub::Calendar => (decoded.calendar.clone()?.into_bytes(), "text/calendar".into()),
+        Sub::Attachment(n) => {
+            let attachment = decoded.attachment(sub)?;
+            match &attachment.embedded {
+                Some(inner) => (attached_message(inner, &format!("{}.{n}", decoded.index), 0), "message/rfc822".into()),
+                None => (attachment.data.clone(), attachment.mime_type.clone()),
+            }
+        }
+    })
+}
+
+/// How deep messages attached to attached messages are written out.
+const MAX_ATTACHED_DEPTH: usize = 3;
+
+/// A message attached inside winmail.dat, written as a MIME message.
+fn attached_message(message: &tnef::decoder::Message, id: &str, depth: usize) -> Vec<u8> {
+    let mut builder = MessageBuilder::new()
+        .message_id(format!("tnef.{id}@uwumail.invalid"))
+        .date(Date::new(message.sent_at.unwrap_or(0)))
+        .subject(message.subject.clone().unwrap_or_default());
+    if let Some(sender) = &message.sender
+        && let Some(email) = &sender.email
+    {
+        builder =
+            builder.from(BuilderAddress::new_address(sender.name.clone().map(Cow::Owned), Cow::Owned(email.clone())));
+    }
+    if let Some(text) = &message.body.text {
+        builder = builder.text_body(text.clone());
+    }
+    if let Some(html) = &message.body.html {
+        builder = builder.html_body(html.clone());
+    }
+    for (n, attachment) in message.attachments.iter().enumerate() {
+        let name = attachment.name.clone().unwrap_or_else(|| "attachment".into());
+        builder = match (&attachment.embedded, &attachment.content_id) {
+            (Some(inner), _) if depth < MAX_ATTACHED_DEPTH => builder.attachment(
+                "message/rfc822",
+                eml_name(&name),
+                attached_message(inner, &format!("{id}.{}", n + 1), depth + 1),
+            ),
+            (Some(_), _) => continue,
+            (None, Some(cid)) if attachment.inline => {
+                builder.inline(attachment.mime_type.clone(), cid.clone(), attachment.data.clone())
+            }
+            (None, _) => builder.attachment(attachment.mime_type.clone(), name, attachment.data.clone()),
+        };
+    }
+    builder.write_to_vec().unwrap_or_default()
+}
+
+/// A file name for an attached message.
+fn eml_name(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".eml") { name.to_owned() } else { format!("{name}.eml") }
+}
+
+/// A part made of a winmail.dat part as a JMAP EmailBodyPart.
+fn tnef_body_part(hash: &BlobHash, decoded: &Decoded, sub: Sub, properties: &[String]) -> Value {
+    let attachment = decoded.attachment(sub);
+    let (size, kind) = tnef_content(decoded, sub).map_or((0, String::new()), |(bytes, kind)| (bytes.len(), kind));
+    let name = match sub {
+        Sub::Calendar => Some("invite.ics".to_owned()),
+        Sub::Attachment(_) => attachment.and_then(|a| match &a.embedded {
+            Some(inner) => Some(eml_name(a.name.as_deref().or(inner.subject.as_deref()).unwrap_or("message"))),
+            None => a.name.clone(),
+        }),
+        _ => None,
+    };
+    let mut object = Map::new();
+    for property in properties {
+        let value = match property.as_str() {
+            "partId" => json!(tnef::part_id(decoded.index, sub)),
+            "blobId" => json!(ids::tnef_blob(hash, decoded.index, sub)),
+            "size" => json!(size),
+            "headers" => json!([]),
+            "name" => json!(name),
+            "type" => json!(kind),
+            "charset" => match sub {
+                Sub::Text | Sub::Html | Sub::Calendar => json!("utf-8"),
+                Sub::Attachment(_) => Value::Null,
+            },
+            "disposition" => match sub {
+                Sub::Text | Sub::Html => Value::Null,
+                Sub::Calendar => json!("attachment"),
+                Sub::Attachment(_) => json!(if attachment.is_some_and(|a| a.inline) { "inline" } else { "attachment" }),
+            },
+            "cid" => json!(attachment.and_then(|a| a.content_id.clone())),
+            "language" | "subParts" => Value::Null,
+            "location" => json!(attachment.and_then(|a| a.content_location.clone())),
+            other if other.starts_with("header:") => {
+                if other.ends_with(":all") {
+                    json!([])
+                } else {
+                    Value::Null
+                }
+            }
+            _ => continue,
+        };
+        object.insert(property.clone(), value);
+    }
+    Value::Object(object)
+}
+
+fn part_json(message: &Message<'_>, tnef: &[Decoded], hash: &BlobHash, part: PartRef, properties: &[String]) -> Value {
+    match part {
+        PartRef::Mime(index) => body_part(message, hash, index, properties, None),
+        PartRef::Tnef(k, sub) => tnef.get(k).map_or(Value::Null, |d| tnef_body_part(hash, d, sub, properties)),
+    }
+}
+
 /// Decoded content of a part, for downloads.
 pub fn part_content(raw: &[u8], index: usize) -> Option<(Vec<u8>, String)> {
     let message = parse_message(raw)?;
@@ -329,32 +527,50 @@ fn truncate(text: &str, max: usize) -> (String, bool) {
     (text[..cut].to_owned(), true)
 }
 
-fn body_values(message: &Message<'_>, options: BodyValueOptions) -> Value {
+fn body_values(message: &Message<'_>, tnef: &[Decoded], bodies: &Bodies, options: BodyValueOptions) -> Value {
     let mut values = Map::new();
-    let mut add = |index: usize| {
-        let Some(part) = message.parts.get(index) else { return };
-        let (text, problem) = match &part.body {
-            PartType::Text(text) | PartType::Html(text) => (text.as_ref(), part.is_encoding_problem),
-            _ => return,
+    let mut add = |part: PartRef| {
+        let (id, text, problem) = match part {
+            PartRef::Mime(index) => {
+                let Some(part) = message.parts.get(index) else { return };
+                match &part.body {
+                    PartType::Text(text) | PartType::Html(text) => {
+                        (index.to_string(), text.as_ref(), part.is_encoding_problem)
+                    }
+                    _ => return,
+                }
+            }
+            PartRef::Tnef(k, sub) => {
+                let Some(decoded) = tnef.get(k) else { return };
+                let text = match sub {
+                    Sub::Text => decoded.message.body.text.as_deref(),
+                    Sub::Html => decoded.message.body.html.as_deref(),
+                    _ => None,
+                };
+                let Some(text) = text else { return };
+                (tnef::part_id(decoded.index, sub), text, false)
+            }
         };
         // The value has LF line endings, not the CRLF of the message (RFC 8621, 4.1.4).
         let text = text.replace("\r\n", "\n");
         let (value, truncated) = truncate(&text, options.max_bytes);
-        values.insert(
-            index.to_string(),
-            json!({ "value": value, "isEncodingProblem": problem, "isTruncated": truncated }),
-        );
+        values.insert(id, json!({ "value": value, "isEncodingProblem": problem, "isTruncated": truncated }));
     };
     if options.all {
         for index in 0..message.parts.len() {
-            add(index);
+            add(PartRef::Mime(index));
+        }
+        for (k, decoded) in tnef.iter().enumerate() {
+            for sub in decoded.subs().into_iter().filter(|s| matches!(s, Sub::Text | Sub::Html)) {
+                add(PartRef::Tnef(k, sub));
+            }
         }
     } else {
         if options.text {
-            message.text_body.iter().for_each(|i| add(*i as usize));
+            bodies.text.iter().for_each(|part| add(*part));
         }
         if options.html {
-            message.html_body.iter().for_each(|i| add(*i as usize));
+            bodies.html.iter().for_each(|part| add(*part));
         }
     }
     Value::Object(values)
@@ -370,6 +586,12 @@ pub fn to_json(
     options: BodyValueOptions,
 ) -> Value {
     let parsed = raw.and_then(parse_message);
+    // What winmail.dat parts hold, only for the properties that show it.
+    let tnef = match &parsed {
+        Some(m) if needs_tnef(properties) => tnef::decode(m),
+        _ => Vec::new(),
+    };
+    let bodies = parsed.as_ref().map(|m| bodies(m, &tnef));
     let headers =
         parsed.as_ref().and_then(|m| m.parts.first().map(|root| raw_headers(&m.raw_message, root))).unwrap_or_default();
     let mut object = Map::new();
@@ -427,25 +649,28 @@ pub fn to_json(
                 json!(headers.iter().map(|(n, v)| json!({ "name": n, "value": v })).collect::<Vec<_>>())
             }
             ("bodyStructure", _, Some(m)) => body_part(m, hash, 0, body_properties, Some(0)),
-            ("textBody", _, Some(m)) => json!(
-                m.text_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, None)).collect::<Vec<_>>()
-            ),
-            ("htmlBody", _, Some(m)) => json!(
-                m.html_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, None)).collect::<Vec<_>>()
-            ),
-            ("attachments", _, Some(m)) => {
-                json!(
-                    m.attachments
-                        .iter()
-                        .map(|i| body_part(m, hash, *i as usize, body_properties, None))
-                        .collect::<Vec<_>>()
-                )
+            ("textBody" | "htmlBody" | "attachments", _, Some(m)) => {
+                let Some(bodies) = &bodies else { continue };
+                let list = match property.as_str() {
+                    "textBody" => &bodies.text,
+                    "htmlBody" => &bodies.html,
+                    _ => &bodies.attachments,
+                };
+                json!(list.iter().map(|part| part_json(m, &tnef, hash, *part, body_properties)).collect::<Vec<_>>())
             }
-            ("bodyValues", _, Some(m)) => body_values(m, options),
-            ("uwuSafeHtml", _, Some(m)) => safe_html_of(m).map_or(Value::Null, Value::String),
-            ("uwuHasRemoteContent", _, Some(m)) => {
-                json!(safe_html_of(m).is_some_and(|clean| crate::safe_html::has_remote_content(&clean)))
+            ("bodyValues", _, Some(m)) => {
+                let Some(bodies) = &bodies else { continue };
+                body_values(m, &tnef, bodies, options)
             }
+            ("uwuSafeHtml", _, Some(m)) => {
+                bodies.as_ref().and_then(|b| safe_html_of(m, &tnef, b)).map_or(Value::Null, Value::String)
+            }
+            ("uwuHasRemoteContent", _, Some(m)) => json!(
+                bodies
+                    .as_ref()
+                    .and_then(|b| safe_html_of(m, &tnef, b))
+                    .is_some_and(|clean| crate::safe_html::has_remote_content(&clean))
+            ),
             (other, _, Some(_)) if other.starts_with("header:") => {
                 header_property(other, &headers).unwrap_or(Value::Null)
             }

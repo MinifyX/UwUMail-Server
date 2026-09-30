@@ -107,7 +107,7 @@ pub async fn download(
         };
         let (bytes, detected) = match reference {
             ids::BlobRef::Whole(_) => (bytes, "message/rfc822".to_owned()),
-            ids::BlobRef::Part(_, index) => match email::part_content(&bytes, index) {
+            ref part => match email::blob_content(&bytes, part) {
                 Some(part) => part,
                 None => return problem(StatusCode::NOT_FOUND, "Unknown blob."),
             },
@@ -117,7 +117,7 @@ pub async fn download(
     // A Sieve script's content lives with the script, not in the blob files (RFC 9661 section 2.2).
     let script = match &reference {
         ids::BlobRef::Whole(hash) => store.sieve_script_blob(owner.id, hash).await.ok().flatten(),
-        ids::BlobRef::Part(..) => None,
+        ids::BlobRef::Part(..) | ids::BlobRef::Tnef(..) => None,
     };
     // So does the profile picture: it lives with the account (docs/profile-pictures.md).
     let picture = match &reference {
@@ -142,7 +142,7 @@ pub async fn download(
                 let uploaded = store.upload_media_type(owner.id, hash).await.ok().flatten();
                 (bytes, uploaded.unwrap_or_else(|| "message/rfc822".into()))
             }
-            ids::BlobRef::Part(_, index) => match email::part_content(&bytes, index) {
+            ref part => match email::blob_content(&bytes, part) {
                 Some(part) => part,
                 None => return problem(StatusCode::NOT_FOUND, "Unknown blob."),
             },
