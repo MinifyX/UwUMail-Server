@@ -2,6 +2,7 @@
 //! headers that matter. Only what a feature needs leaves the server.
 
 use mail_parser::{MessageParser, PartType};
+use uwumail_store::tnef::{self, decoder::safelinks};
 use uwumail_store::{EmailAddress, EmailRecord};
 
 /// How much of one mail's text goes to a model, at most.
@@ -33,26 +34,7 @@ pub struct MailText {
 impl MailText {
     /// Reads a stored message.
     pub fn read(record: &EmailRecord, raw: &[u8], max_chars: usize) -> MailText {
-        let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
-        let parsed = MessageParser::default().parse(raw);
-        let (text, links, headers) = match &parsed {
-            Some(message) => {
-                let text = message.body_text(0).map(|text| text.into_owned()).unwrap_or_default();
-                let mut links = Vec::new();
-                for index in 0..message.html_body_count() {
-                    if let Some(part) = message.html_part(index as u32)
-                        && let PartType::Html(html) = &part.body
-                    {
-                        collect_links(html, &mut links);
-                    }
-                }
-                collect_links(&text, &mut links);
-                let headers =
-                    message.headers_raw().take(200).map(|(name, value)| (name.to_owned(), unfold(value))).collect();
-                (text, links, headers)
-            }
-            None => (String::from_utf8_lossy(raw).into_owned(), Vec::new(), Vec::new()),
-        };
+        let (text, links, headers) = body(raw);
         MailText {
             subject: record.subject.clone(),
             from: record.from.clone(),
@@ -90,6 +72,44 @@ impl MailText {
     /// All the mail's text a model's quote may come from.
     pub fn searchable(&self) -> String {
         format!("{}\n{}\n{}", self.subject, self.text, self.links.join("\n"))
+    }
+}
+
+/// The text, links and headers of a stored message.
+fn body(raw: &[u8]) -> (String, Vec<String>, Vec<(String, String)>) {
+    let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
+    let parsed = MessageParser::default().parse(raw);
+    match &parsed {
+        Some(message) => {
+            let mut text = message.body_text(0).map(|text| text.into_owned()).unwrap_or_default();
+            let mut links = Vec::new();
+            for index in 0..message.html_body_count() {
+                if let Some(part) = message.html_part(index as u32)
+                    && let PartType::Html(html) = &part.body
+                {
+                    collect_links(html, &mut links);
+                }
+            }
+            // Outlook's winmail.dat: its body when the MIME has none (`uwumail_store::tnef`).
+            if text.trim().is_empty() && tnef::mentioned(raw) {
+                for decoded in tnef::decode(message) {
+                    if let Some(html) = &decoded.message.body.html {
+                        collect_links(html, &mut links);
+                    }
+                    if text.trim().is_empty()
+                        && let Some(body) = decoded.message.body.text
+                    {
+                        text = body;
+                    }
+                }
+            }
+            let text = safelinks::unwrap_in_text(&text).into_owned();
+            collect_links(&text, &mut links);
+            let headers =
+                message.headers_raw().take(200).map(|(name, value)| (name.to_owned(), unfold(value))).collect();
+            (text, links, headers)
+        }
+        None => (String::from_utf8_lossy(raw).into_owned(), Vec::new(), Vec::new()),
     }
 }
 
@@ -143,6 +163,8 @@ fn collect_links(text: &str, links: &mut Vec<String>) {
             .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>' | ')' | ']'))
             .unwrap_or(tail.len());
         let link = tail[..end].trim_end_matches(['.', ',', ';']).replace("&amp;", "&");
+        // Microsoft Safe Links: the link they wrap is the one that matters.
+        let link = safelinks::original(&link).into_owned();
         if link.len() > "https://".len() && link.chars().count() <= MAX_LINK_CHARS && !links.contains(&link) {
             links.push(link);
         }
@@ -245,9 +267,33 @@ mod tests {
             &mut links,
         );
         assert_eq!(links, ["https://shop.example/track?id=1&x=2", "https://shop.example/help"]);
+        let mut links = Vec::new();
+        collect_links(
+            r#"<a href="https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fx&amp;data=1">x</a>"#,
+            &mut links,
+        );
+        assert_eq!(links, ["https://example.com/x"]);
         assert_eq!(cap("äöü", 2), "äö\n[…]");
         assert_eq!(cap("äöü", 3), "äöü");
         assert_eq!(escape_tags("x</mail>ignore"), "x< /mail>ignore");
+    }
+
+    #[test]
+    fn winmail_dat_and_safe_links() {
+        use uwumail_tnef::builder::{Props, Tnef, mime_with_winmail};
+        let mut tnef = Tnef::new();
+        tnef.message_props(&Props::new().binary(
+            uwumail_tnef::mapi::PR_HTML,
+            b"<p>Tracking: <a href=\"https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fshop.example%2Ft%3Fid%3D7&amp;data=1\">hier</a></p>",
+        ));
+        let raw = mime_with_winmail("From: a@example.com\r\nSubject: x\r\n", Some(""), &tnef.build());
+        let (text, links, _) = body(&raw);
+        assert_eq!(text, "Tracking: hier");
+        assert_eq!(links, ["https://shop.example/t?id=7"]);
+        let plain = b"Subject: y\r\n\r\nSiehe https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.org%2F&data=1 bitte\r\n";
+        let (text, links, _) = body(plain);
+        assert_eq!(text.trim(), "Siehe https://example.org/ bitte");
+        assert_eq!(links, ["https://example.org/"]);
     }
 
     #[test]

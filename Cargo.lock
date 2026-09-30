@@ -4552,6 +4552,7 @@ dependencies = [
  "url",
  "uwumail-smtp",
  "uwumail-store",
+ "uwumail-tnef",
 ]
 
 [[package]]
