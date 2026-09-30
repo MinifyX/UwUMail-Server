@@ -18,6 +18,7 @@ mod health;
 mod ldap;
 mod loki;
 mod mailbox;
+mod microsoft_bimi;
 mod moving;
 mod oauth;
 mod oidc;

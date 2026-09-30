@@ -89,8 +89,10 @@ pub(crate) fn from_health(health: &Health) -> (Vec<AlertObservation>, Vec<String
         }
         for finding in &area.findings {
             let Some(level) = level_of(finding.level) else { continue };
-            let key = match finding.params.get("domain").and_then(Value::as_str) {
-                Some(domain) => format!("{}:{domain}", finding.code),
+            // One alert per domain, or per sending address (Microsoft's refusals).
+            let about = finding.params.get("domain").or_else(|| finding.params.get("ip")).and_then(Value::as_str);
+            let key = match about {
+                Some(about) => format!("{}:{about}", finding.code),
                 None => finding.code.to_owned(),
             };
             observations.push(AlertObservation {
@@ -270,13 +272,20 @@ impl Web {
         let mut items = String::new();
         for notice in notices {
             let alert = &notice.alert;
-            let domain = alert.params.get("domain").and_then(Value::as_str).unwrap_or_default();
-            let text = alert_texts::finding(language, &alert.code).replace("{domain}", domain);
+            let param = |key: &str| alert.params.get(key).and_then(Value::as_str).unwrap_or_default();
+            let text = alert_texts::finding(language, &alert.code)
+                .replace("{domain}", param("domain"))
+                .replace("{ip}", param("ip"))
+                .replace("{code}", param("code"));
             let label = alert_texts::label(language, notice.event, alert.level);
             let separator = if matches!(language, Language::Ja | Language::Zh) { "：" } else { ": " };
             items.push_str(&format!("• {label}{separator}{text}\n"));
             if let Some(link) = alert.link.as_deref().filter(|_| notice.event != AlertEvent::Resolved) {
                 items.push_str(&format!("  https://{hostname}{link}\n"));
+                // Where Microsoft takes requests to lift a block.
+                if alert.code == "microsoftBlocked" {
+                    items.push_str(&format!("  {}\n", uwumail_smtp::microsoft::DELIST_URL));
+                }
             }
         }
         let name = if admin.display_name.trim().is_empty() { admin.login.as_str() } else { admin.display_name.trim() };
@@ -374,6 +383,21 @@ mod tests {
         };
         let (observations, unsure) = from_health(&health);
         assert_eq!(unsure, ["dns"]);
+        let microsoft = Health {
+            level: Level::Problem,
+            checked_at: None,
+            areas: vec![Area {
+                area: "delivery",
+                level: Level::Problem,
+                findings: vec![Finding {
+                    code: "microsoftBlocked",
+                    level: Level::Problem,
+                    params: json!({ "ip": "203.0.113.5", "code": "S3150" }),
+                    link: Some("/admin/microsoft".into()),
+                }],
+            }],
+        };
+        assert_eq!(from_health(&microsoft).0[0].key, "microsoftBlocked:203.0.113.5");
         assert_eq!(observations.len(), 1);
         assert_eq!(observations[0].key, "tlsFailures:example.org");
         assert_eq!(observations[0].level, AlertLevel::Warning);

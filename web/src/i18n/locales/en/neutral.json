@@ -186,7 +186,8 @@
       "mailFlow": "Mail flow",
       "backups": "Backups",
       "updates": "Updates",
-      "stats": "Statistics"
+      "stats": "Statistics",
+      "microsoft": "Microsoft"
     },
     "tiles": {
       "news": "new",
@@ -572,7 +573,18 @@
       "overQuota": "The daily limit is used up: {{detail}}",
       "assistUnavailable": "That is not available right now.",
       "badPrice": "A price must be a number from 0 to 100,000.",
-      "badCurrency": "This currency is not supported."
+      "badCurrency": "This currency is not supported.",
+      "bimiNotSvg": "That is not an SVG file.",
+      "bimiSvgTooLarge": "The SVG is too large. You can upload up to 256 KiB, and the cleaned-up logo may be at most 32 KiB.",
+      "bimiSvgUnsupported": "The SVG uses something BIMI does not allow: {{detail}}. Save it again as a plain drawing without effects, masks or scripts.",
+      "bimiSvgExternal": "The SVG refers to something outside the file ({{detail}}). A BIMI logo has to contain everything itself.",
+      "bimiSvgRaster": "The SVG contains a pixel image. BIMI needs a real vector drawing.",
+      "bimiSvgNoSize": "The SVG has no size. It needs a viewBox, or a width and a height.",
+      "bimiNoSvg": "Upload an SVG logo before switching BIMI on.",
+      "bimiTitle": "Please enter a shorter name for the logo, without special characters.",
+      "bimiBackground": "The background colour has to look like #rrggbb.",
+      "bimiCertificateInvalid": "That is not a readable certificate in PEM format.",
+      "bimiCertificateNotBimi": "That certificate is not a VMC or CMC for BIMI."
     }
   },
   "people": {
@@ -917,7 +929,13 @@
       "domainLogo": "{{actor}} set the logo of {{target}}",
       "domainLogoRemoved": "{{actor}} removed the logo of {{target}}",
       "domainPublicPictures": "{{actor}} changed whether addresses of {{target}} may have public pictures",
-      "picturesPublic": "{{actor}} changed whether profile pictures may be public on this server"
+      "picturesPublic": "{{actor}} changed whether profile pictures may be public on this server",
+      "domainBimi": "{{actor}} changed BIMI for {{target}}",
+      "domainBimiLogo": "{{actor}} uploaded a BIMI logo for {{target}}",
+      "domainBimiLogoRemoved": "{{actor}} removed the BIMI logo of {{target}}",
+      "domainBimiCertificate": "{{actor}} added a BIMI certificate for {{target}}",
+      "domainBimiCertificateRemoved": "{{actor}} removed the BIMI certificate of {{target}}",
+      "microsoftResolve": "{{actor}} marked Microsoft's refusal of {{target}} as fixed"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -953,7 +971,8 @@
       "maskedRemovedFrom_other": "taken out of {{count}} masked address settings",
       "pictureVisibility": "seen by: {{value}}",
       "publicAllowed": "public pictures allowed",
-      "publicForbidden": "public pictures forbidden"
+      "publicForbidden": "public pictures forbidden",
+      "microsoftCode": "code {{value}}"
     },
     "entry": {
       "actor": "Who",
@@ -1055,7 +1074,8 @@
         "submission": "Tells mail apps where to send mail with STARTTLS (port 587).",
         "caa": "Lets only Let's Encrypt issue certificates for the server's name, and only to this server's own account. Keeps TLS private behind a UwUMail Gateway.",
         "tlsa": "Tells sending servers which key this server's certificate has, so they only deliver over an encrypted connection to it (DANE). Needs a zone signed with DNSSEC.",
-        "avatars": "Lets other mail servers find the public profile pictures of this domain's addresses."
+        "avatars": "Lets other mail servers find the public profile pictures of this domain's addresses.",
+        "bimi": "Tells mail apps where to find the domain's logo, and its certificate if there is one."
       },
       "notes": {
         "mxUpstream": "Points to the upstream mail server. That's fine.",
@@ -1086,7 +1106,9 @@
         "tlsaKeyKept": "Matches the server's key. The key stays the same when the certificate is renewed.",
         "tlsaMismatch": "Matches no certificate this server presents. Servers that check DANE hold mail for your domains back until the record names the current key.",
         "tlsaUnsigned": "The zone is not signed with DNSSEC, so no server looks at this record yet.",
-        "dnssecBogus": "The DNSSEC signatures of the server's name do not validate. Servers that check them cannot reach the server at all."
+        "dnssecBogus": "The DNSSEC signatures of the server's name do not validate. Servers that check them cannot reach the server at all.",
+        "bimiElsewhere": "Points to another logo or certificate than the one this server serves.",
+        "bimiMultiple": "There are several BIMI records. Only one is allowed."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail to addresses that don't exist goes to this person. It also attracts more spam.",
@@ -1129,7 +1151,8 @@
         "submission": "Sending for mail apps (STARTTLS)",
         "caa": "Certificates only for this server (CAA)",
         "tlsa": "DANE (TLSA)",
-        "avatars": "Profile pictures (Libravatar)"
+        "avatars": "Profile pictures (Libravatar)",
+        "bimi": "Logo in the inbox (BIMI)"
       },
       "tlsaKeyChange": "Before the server's key changes (your own certificate files, a move to another server, or deleting data/tls/acme/key.pem), publish the record for the new key next to this one and wait a day. Otherwise servers that check DANE hold mail for you back."
     },
@@ -1697,7 +1720,10 @@
       "virusScannerAway": "The virus scanner does not answer. Until it is back, mail is delivered unchecked and says so in its headers.",
       "virusSignaturesOld": "The virus signatures are {{since}} old. The scanner is not fetching new ones any more.",
       "maskedStranded_one": "{{domain}} holds a masked address, but nobody can make new ones there.",
-      "maskedStranded_other": "{{domain}} holds {{count}} masked addresses, but nobody can make new ones there."
+      "maskedStranded_other": "{{domain}} holds {{count}} masked addresses, but nobody can make new ones there.",
+      "microsoftBlocked": "Microsoft (Outlook, Hotmail) refuses mail from {{ip}} ({{code}}).",
+      "microsoftThrottled": "Microsoft throttles mail from {{ip}} ({{code}}).",
+      "microsoftAuth": "Microsoft refuses mail from {{domain}}: its authentication is not good enough ({{code}})."
     },
     "hints": {
       "noDomains": "Without a domain the server cannot receive mail.",
@@ -1724,7 +1750,10 @@
       "gatewayRefused": "Pair the gateway again under Server → Setup.",
       "gatewayPort25Blocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then.",
       "gatewayOutboundBlocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then.",
-      "maskedStranded": "Since 0.16.0 a domain nobody logs in on offers masked addresses to nobody. On its page, make it masked-only and choose it for the domains whose people should use it. The addresses there keep working either way."
+      "maskedStranded": "Since 0.16.0 a domain nobody logs in on offers masked addresses to nobody. On its page, make it masked-only and choose it for the domains whose people should use it. The addresses there keep working either way.",
+      "microsoftBlocked": "Ask Microsoft to delist the address at sender.office.com. The Microsoft tab shows the steps.",
+      "microsoftThrottled": "The server tries again by itself. Keep the amount of mail steady; the Microsoft tab has more.",
+      "microsoftAuth": "Check SPF, DKIM and DMARC of the domain. The Microsoft tab shows what is missing."
     }
   },
   "secondFactor": {
@@ -4103,6 +4132,264 @@
       "perMillion": "{{input}} in, {{output}} out per million tokens",
       "manual": "set by hand",
       "unknown": "Price unknown"
+    }
+  },
+  "microsoft": {
+    "intro": "Whether Outlook.com, Hotmail and Live accept mail from this server, and what helps.",
+    "status": {
+      "ok": "Fine",
+      "warning": "Could be better",
+      "problem": "Missing or wrong",
+      "unknown": "Unknown"
+    },
+    "kinds": {
+      "blocked": "Blocked",
+      "throttled": "Throttled",
+      "authentication": "Authentication"
+    },
+    "groups": {
+      "blockList": {
+        "title": "The IP address is on Microsoft's block list",
+        "meaning": "Microsoft has put this IP address on its block list. Outlook.com, Hotmail and Live refuse all mail from it until it is taken off again."
+      },
+      "banned": {
+        "title": "Microsoft does not take mail from this address range",
+        "meaning": "Microsoft refuses mail from the whole address range, often because it belongs to a hosting provider whose other customers sent spam."
+      },
+      "ipRefused": {
+        "title": "Microsoft refuses mail from this IP address",
+        "meaning": "Microsoft does not trust this IP address, for example because of its reputation or a missing reverse DNS name."
+      },
+      "throttled": {
+        "title": "Microsoft is slowing down mail from this IP address",
+        "meaning": "Microsoft accepts less mail from this IP address for a while. No mail is lost: it waits in the queue and the server tries again."
+      },
+      "authentication": {
+        "title": "The sender domain's authentication is not good enough",
+        "meaning": "Microsoft expects SPF, DKIM and DMARC from senders. Mail from this domain did not pass them well enough."
+      },
+      "dmarc": {
+        "title": "Mail failed the domain's DMARC check",
+        "meaning": "Mail from this domain failed its own DMARC check, so Microsoft refused it as the domain's DMARC policy asks."
+      }
+    },
+    "issues": {
+      "title": "Refusals by Microsoft",
+      "none": "Microsoft currently takes mail from this server.",
+      "noneHint": "When Outlook.com, Hotmail or Live refuse or slow down mail, the server notices it and shows here what helps.",
+      "subjectIp": "IP address {{ip}}",
+      "subjectDomain": "Domain {{domain}}",
+      "subjectUnknown": "Sender unknown",
+      "theIp": "your server's IP address",
+      "count_one": "seen once",
+      "count_other": "seen {{count}} times",
+      "seen": "First on {{first}}, last {{last}}",
+      "meaning": "What it means",
+      "todo": "What to do",
+      "reply": "Microsoft's reply",
+      "resolve": "Mark as fixed",
+      "resolveHint": "Otherwise the server marks it as fixed by itself after a day without refusals.",
+      "resolvedToast": "Marked as fixed. If Microsoft refuses mail again, it shows up here again.",
+      "earlier_one": "{{count}} earlier refusal",
+      "earlier_other": "{{count}} earlier refusals",
+      "resolvedAuto": "Fixed {{time}}: mail got through again.",
+      "resolvedBy": "Marked as fixed {{time}} by {{login}}."
+    },
+    "delist": {
+      "step1": "Open Microsoft's delisting page:",
+      "step2": "Enter the IP address {{ip}} and an email address you can read, then solve the check.",
+      "step3": "Microsoft sends a mail with a link. Open it and choose “Delist IP”.",
+      "step4": "Wait: it usually takes up to 24 to 48 hours. Then mark it as fixed here, or let the server do it after a day without refusals.",
+      "banned": "If Microsoft turns the request down, the whole address range has a bad name. Sending through a relay with a good reputation helps then (Settings → Sending)."
+    },
+    "wait": {
+      "retry": "Nothing to do right away: the server tries again later by itself.",
+      "steady": "Keep the amount of mail steady. Large batches at once are what gets throttled.",
+      "snds": "Check the IP address's reputation in SNDS (see the guide below).",
+      "relay": "If it happens often, a relay with a good reputation helps (Settings → Sending)."
+    },
+    "authenticate": {
+      "text": "Check SPF, DKIM and DMARC of {{domain}} and fix what is missing or wrong. The checklist below shows where it stands.",
+      "textAny": "Check SPF, DKIM and DMARC of your domains and fix what is missing or wrong. The checklist below shows where it stands.",
+      "open": "Open {{domain}}"
+    },
+    "checklist": {
+      "title": "Microsoft's rules for senders",
+      "intro": "Since May 2025 Microsoft requires SPF, DKIM and DMARC from anyone who sends more than 5,000 mails a day to Outlook.com, Hotmail and Live. For everyone else they are strongly recommended: they decide whether mail lands in the inbox.",
+      "checkedAt": "Checked {{time}}",
+      "check": "Check again",
+      "checking": "Checking …",
+      "checkedToast": "Checked again.",
+      "domains": "SPF, DKIM and DMARC per domain",
+      "domainsIntro": "Alignment means SPF or DKIM passes for the same domain as in the From address.",
+      "noDomains": "There are no domains yet.",
+      "aligned": "Alignment",
+      "dmarc": {
+        "notChecked": "DNS not checked yet. “Check again” checks it.",
+        "missing": "No DMARC record. Microsoft requires at least p=none.",
+        "none": "p=none meets Microsoft's minimum. quarantine or reject protect your domain better and are recommended.",
+        "partial": "Applies only to {{pct}} % of mail. Better leave pct out so it applies to all of it.",
+        "strict": "Policy {{policy}}: that is how it should be."
+      },
+      "route": {
+        "direct": "Mail goes from this server straight to Microsoft.",
+        "relay": "Mail goes out through the relay {{relay}}, so Microsoft sees the relay's addresses. Their names are up to whoever runs the relay.",
+        "gateway": "Mail goes out through the gateway, so Microsoft sees the gateway's addresses."
+      },
+      "ptr": {
+        "title": "Reverse DNS (PTR)",
+        "intro": "Microsoft checks that every sending IP address has a name (PTR) which points back to the same address (forward-confirmed, FCrDNS).",
+        "ok": "{{ptr}} points back to this address.",
+        "unconfirmed": "{{ptr}} does not point back to this address. Add an A or AAAA record for the name, or ask your provider to change the PTR.",
+        "missing": "No name (PTR). Ask your internet or hosting provider to set one, for example {{hostname}}.",
+        "private": "A private address: Microsoft sees the public address in front of it.",
+        "notHostname": "The name is not the server's host name {{hostname}}. That is allowed, but the same name looks best.",
+        "none": "No sending address is known yet."
+      },
+      "tls": {
+        "title": "Encryption (TLS)",
+        "ok": "The server always uses STARTTLS for mail to Microsoft.",
+        "warning": "The relay is set to send without TLS. Microsoft expects encrypted connections; switch TLS on under Settings → Sending."
+      },
+      "unsubscribe": {
+        "title": "Unsubscribing with one click (List-Unsubscribe)",
+        "text": "UwUMail does not send newsletters itself. If a newsletter or mailing tool sends through this server, it has to add these headers (RFC 8058) so people can unsubscribe with one click:"
+      }
+    },
+    "guides": {
+      "title": "Microsoft's tools for senders",
+      "intro": "Both need a Microsoft account and only work for IP addresses you control, so for your own server, not for a relay's.",
+      "snds": {
+        "title": "SNDS: your IP address's reputation",
+        "intro": "Smart Network Data Services show how Microsoft sees mail from your IP addresses.",
+        "step1": "Open SNDS and sign in with a Microsoft account:",
+        "step2": "Choose “Request Access” and enter the sending IP address or range, for example {{ip}}.",
+        "step3": "Microsoft sends a confirmation mail to an address it picks from the IP address's reverse DNS or WHOIS, for example postmaster@ the PTR name's domain, or the provider's abuse contact. Make sure one of them reaches you, e.g. as an additional address on this server.",
+        "step4": "Open the link in that mail to confirm.",
+        "step5": "From then on SNDS shows daily data per IP address: how much mail arrived, how much of it looked like spam, and a colour. Green is good, yellow mixed, red bad."
+      },
+      "jmrp": {
+        "title": "JMRP: hear about spam complaints",
+        "intro": "With the Junk Mail Reporting Program Microsoft tells you when its users mark your mail as junk.",
+        "step1": "In the same portal, choose “Junk Mail Reporting Program” and create a new agreement.",
+        "step2": "Enter your sending IP addresses and an address that receives the reports, for example a mailbox on this server.",
+        "step3": "Confirm the agreement with the mail Microsoft sends.",
+        "step4": "Whenever someone marks your mail as junk, a report arrives there as an ARF mail. Many of them mean: check who sends what."
+      },
+      "delist": {
+        "title": "Blocked? Ask for delisting",
+        "text": "Microsoft takes IP addresses off its block list on request. The steps are shown with each refusal above:"
+      }
+    },
+    "banner": {
+      "blocked": "Microsoft (Outlook, Hotmail) is blocking mail from this server.",
+      "throttled": "Microsoft (Outlook, Hotmail) is throttling mail from this server.",
+      "authentication": "Microsoft (Outlook, Hotmail) refuses mail from this server because of its authentication.",
+      "codes": "Code: {{codes}}",
+      "ips": "IP: {{ips}}",
+      "delist": "Request delisting",
+      "open": "Details and help"
+    }
+  },
+  "bimi": {
+    "title": "BIMI: logo in the inbox",
+    "intro": "With BIMI, mail apps show your logo next to mail from {{domain}}.",
+    "support": "Gmail, Apple Mail (iCloud), Yahoo/AOL, Fastmail and others show BIMI logos. Microsoft Outlook does not. Gmail and Apple only show logos with a Verified Mark Certificate (VMC) or Common Mark Certificate (CMC), which you buy from a certificate authority (e.g. DigiCert, Entrust/Sectigo, GlobalSign); a VMC needs a registered trademark.",
+    "enable": "Show the logo (BIMI)",
+    "enableHint": "The server then serves the logo. It also needs the DNS record below.",
+    "enableNeedsSvg": "Upload an SVG logo first.",
+    "enabledToast": "BIMI is on.",
+    "disabledToast": "BIMI is off.",
+    "logoUrl": "Logo address",
+    "preview": {
+      "circle": "Round",
+      "square": "Square",
+      "none": "No logo yet.",
+      "alt": "BIMI logo of {{domain}}"
+    },
+    "logo": {
+      "title": "Logo (SVG)",
+      "stored": "{{size}}, changed {{time}}",
+      "pixelLogo": "Your domain logo is a pixel image; BIMI needs the same logo as SVG. Upload the SVG version (ask whoever designed it, or export it from your design tool).",
+      "hint": "An SVG vector drawing of up to 256 KiB. The server turns it into the format BIMI needs (SVG Tiny PS) and takes out scripts and links; the result may be at most 32 KiB.",
+      "choose": "Choose SVG",
+      "replace": "Choose another SVG",
+      "chosen": "Chosen: {{name}}",
+      "readFailed": "The file could not be read.",
+      "titleLabel": "Name in the logo",
+      "titleHint": "Usually the name of the organisation. BIMI requires one.",
+      "background": "Background",
+      "backgroundSolid": "Solid colour",
+      "backgroundKeep": "Keep the logo's own",
+      "color": "Background colour",
+      "backgroundHint": "Mail apps show the logo in a circle or a square. A solid square behind it keeps it looking right in both.",
+      "save": "Save logo",
+      "savedToast": "Logo saved.",
+      "remove": "Remove logo",
+      "removeConfirm": "Remove the BIMI logo? BIMI is switched off with it.",
+      "removedToast": "Logo removed. BIMI is off."
+    },
+    "record": {
+      "title": "DNS record",
+      "intro": "Publish this TXT record so mail apps find the logo. The Cloudflare button in the DNS section above can put it in for you.",
+      "check": "Check now",
+      "checking": "Checking …",
+      "checkedToast": "Checked.",
+      "checkedAt": "Checked {{time}}",
+      "notChecked": "Not checked yet.",
+      "whenOn": "Once BIMI is on, the server checks whether the record is published.",
+      "status": {
+        "ok": "Published",
+        "warning": "Published, with a note",
+        "missing": "Not published yet",
+        "wrong": "Points elsewhere",
+        "error": "Could not be checked"
+      }
+    },
+    "dmarc": {
+      "title": "DMARC",
+      "ok": "DMARC is strict enough for BIMI.",
+      "needs": "BIMI needs DMARC with p=quarantine or p=reject for all mail (pct=100, or no pct) and without sp=none.",
+      "reasons": {
+        "notChecked": "The DMARC record has not been checked yet.",
+        "missing": "There is no DMARC record.",
+        "policy": "The policy is p={{policy}}; BIMI needs quarantine or reject.",
+        "pct": "It applies to only {{pct}} % of mail; BIMI needs all of it.",
+        "subdomains": "Subdomains are left out (sp=none).",
+        "weak": "The policy is not strict enough yet."
+      },
+      "showDns": "Go to the DNS records"
+    },
+    "certificate": {
+      "title": "Certificate (optional)",
+      "intro": "With a VMC or CMC, Gmail and Apple Mail show the logo as well. Add the PEM file you got from the certificate authority, including its chain.",
+      "paste": "Certificate (PEM)",
+      "pasteHint": "Paste the text, or choose the .pem or .crt file.",
+      "file": "Choose file",
+      "save": "Save certificate",
+      "savedToast": "Certificate saved.",
+      "replace": "Replace certificate",
+      "remove": "Remove certificate",
+      "removeConfirm": "Remove the certificate? Gmail and Apple Mail then stop showing the logo.",
+      "removedToast": "Certificate removed.",
+      "kind": "Kind",
+      "kinds": {
+        "vmc": "Verified Mark Certificate (VMC)",
+        "cmc": "Common Mark Certificate (CMC)",
+        "unknown": "Unknown kind"
+      },
+      "subject": "Holder",
+      "issuer": "Issued by",
+      "valid": "Valid",
+      "validRange": "{{from}} to {{to}}",
+      "names": "Names",
+      "warnings": {
+        "expired": "The certificate has expired. Mail apps ignore it.",
+        "notYetValid": "The certificate is not valid yet.",
+        "otherDomain": "The certificate does not name {{domain}}.",
+        "noLogo": "The certificate does not carry a logo.",
+        "unknownKind": "This does not look like a VMC or CMC."
+      }
     }
   }
 }

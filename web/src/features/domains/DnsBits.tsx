@@ -5,7 +5,7 @@ import { CopyButton } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { CheckStatus, RecordCheck } from "@/lib/api";
 
-const STATUS: Record<CheckStatus, { icon: LucideIcon; className: string }> = {
+export const CHECK_STYLES: Record<CheckStatus, { icon: LucideIcon; className: string }> = {
   ok: { icon: CircleCheck, className: "bg-success-tint text-success" },
   warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
   missing: { icon: CircleAlert, className: "bg-danger-tint text-danger" },
@@ -26,7 +26,7 @@ export function DnsStatusPill({ status }: { status: CheckStatus | null }) {
       </span>
     );
   }
-  const { icon: Icon, className } = STATUS[status];
+  const { icon: Icon, className } = CHECK_STYLES[status];
   return (
     <span
       className={clsx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}
@@ -67,9 +67,12 @@ const KNOWN_NOTES = [
   "tlsaMismatch",
   "tlsaUnsigned",
   "dnssecBogus",
+  "bimiElsewhere",
+  "bimiMultiple",
 ];
 
-function Value({ value, label }: { value: string; label: string }) {
+/** A value to publish, with a copy button. */
+export function Value({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex items-start gap-1 rounded-control bg-canvas px-2.5 py-1.5">
       <code className="min-w-0 flex-1 text-[12px] break-all whitespace-pre-wrap select-all">{value.trimEnd()}</code>
@@ -82,7 +85,7 @@ function Value({ value, label }: { value: string; label: string }) {
 export function RecordRow({ record, domain, explain }: { record: RecordCheck; domain: string; explain: boolean }) {
   const { t } = useT();
   const recommended = record.optional && record.status === "missing";
-  const { icon: Icon, className } = recommended ? RECOMMENDED : STATUS[record.status];
+  const { icon: Icon, className } = recommended ? RECOMMENDED : CHECK_STYLES[record.status];
   const note = record.note && KNOWN_NOTES.includes(record.note) ? t(`domains.detail.notes.${record.note}`) : null;
   // What to publish matters when something is off, or when a better value is suggested (e.g. DMARC).
   const expectedShown = record.status !== "ok" || !record.found.includes(record.expected);

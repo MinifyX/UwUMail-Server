@@ -104,6 +104,10 @@ import type {
   WordsView,
   PictureFile,
   PictureVisibility,
+  BimiView,
+  MicrosoftChecklist,
+  MicrosoftIssue,
+  MicrosoftIssues,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 import { assistMockRoutes } from "./mockAssist";
@@ -345,6 +349,55 @@ function record(
   };
 }
 
+/** A small SVG Tiny PS logo as the server would store it after cleaning it up. */
+const MOCK_BIMI_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 64 64">' +
+  "<title>UwU Example</title>" +
+  '<rect width="64" height="64" fill="#ffffff"/>' +
+  '<circle cx="32" cy="32" r="22" fill="#e11d74"/>' +
+  '<path d="M22 28v6a10 10 0 0 0 20 0v-6" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>' +
+  "</svg>";
+
+interface MockBimi {
+  enabled: boolean;
+  svg: string | null;
+  title: string;
+  svgUpdatedAt: number | null;
+  certificate: boolean;
+  checkedAt: number | null;
+}
+
+/** BIMI per domain; only the first domain has it on. */
+const mockBimi = new Map<string, MockBimi>([
+  [
+    "uwu.example",
+    {
+      enabled: true,
+      svg: MOCK_BIMI_SVG,
+      title: "UwU Example",
+      svgUpdatedAt: now - 5 * 86_400,
+      certificate: true,
+      checkedAt: now - 3600,
+    },
+  ],
+]);
+
+const bimiOf = (domain: string): MockBimi =>
+  mockBimi.get(domain) ?? {
+    enabled: false,
+    svg: null,
+    title: "",
+    svgUpdatedAt: null,
+    certificate: false,
+    checkedAt: null,
+  };
+
+function bimiRecordValue(domain: string): string {
+  const state = bimiOf(domain);
+  const certificate = state.certificate ? `https://mail.uwu.example/bimi/${domain}.pem` : "";
+  return `v=BIMI1; l=https://mail.uwu.example/bimi/${domain}.svg; a=${certificate}`;
+}
+
 function report(domain: MockDomain, healthy: boolean): DomainReport {
   const records: RecordCheck[] = [
     record("mx", domain.name, "10 mail.uwu.example", ["10 mail.uwu.example"]),
@@ -416,6 +469,10 @@ function report(domain: MockDomain, healthy: boolean): DomainReport {
         optional: true,
       }),
     );
+  }
+  if (bimiOf(domain.name).enabled) {
+    const value = bimiRecordValue(domain.name);
+    records.push(record("bimi", `default._bimi.${domain.name}`, value, [value], { optional: true }));
   }
   const order = ["ok", "warning", "missing", "wrong", "error"];
   const status = records
@@ -1878,6 +1935,22 @@ function health(): Health {
   const delivery: HealthFinding[] = [
     { code: "relayOk", level: "ok", params: { host: "relay.example.net", lastDeliveredAt: at - 1260 } },
   ];
+  for (const issue of mockMicrosoftIssues.filter((i) => i.resolvedAt === null)) {
+    const code = { blocked: "microsoftBlocked", throttled: "microsoftThrottled", authentication: "microsoftAuth" }[
+      issue.kind
+    ];
+    delivery.push({
+      code,
+      level: issue.kind === "throttled" ? "warning" : "problem",
+      params: {
+        ...(issue.scope === "ip" ? { ip: issue.subject } : { domain: issue.subject }),
+        code: issue.code,
+        count: issue.count,
+        lastSeen: issue.lastSeen,
+      },
+      link: "/admin/microsoft",
+    });
+  }
   const stuck = queue.filter(
     (m) => m.createdAt < at - 3600 && m.recipients.some((r) => r.status === "pending" && r.attempts > 0),
   );
@@ -2573,10 +2646,275 @@ const pictureMockRoutes: [string, RegExp, Handler][] = [
   ],
 ];
 
+const mockMicrosoftIssues: MicrosoftIssue[] = [
+  {
+    id: 2,
+    scope: "ip",
+    subject: "203.0.113.25",
+    kind: "blocked",
+    group: "blockList",
+    code: "S3150",
+    ip: "203.0.113.25",
+    domain: "uwu.example",
+    reply:
+      "550 5.7.1 Unfortunately, messages from [203.0.113.25] weren't sent. Please contact your Internet service " +
+      "provider since part of their network is on our block list (S3150). " +
+      "[AM0EUR02FT012.eop-EUR02.prod.protection.outlook.com 2026-09-30T08:12:44.000Z]",
+    firstSeen: now - 2 * 3600,
+    lastSeen: now - 600,
+    count: 7,
+    resolvedAt: null,
+    resolvedBy: null,
+  },
+  {
+    id: 1,
+    scope: "ip",
+    subject: "203.0.113.25",
+    kind: "throttled",
+    group: "throttled",
+    code: "4.7.650",
+    ip: "203.0.113.25",
+    domain: "verein.example",
+    reply:
+      "451 4.7.650 The mail server [203.0.113.25] has been temporarily rate limited due to IP reputation. " +
+      "[DB5EUR03FT021.eop-EUR03.prod.protection.outlook.com]",
+    firstSeen: now - 9 * 86_400,
+    lastSeen: now - 8 * 86_400,
+    count: 23,
+    resolvedAt: now - 7 * 86_400,
+    resolvedBy: "auto",
+  },
+];
+
+const microsoftIssuesView = (): MicrosoftIssues => ({
+  issues: [...mockMicrosoftIssues].sort(
+    (a, b) => Number(a.resolvedAt !== null) - Number(b.resolvedAt !== null) || b.lastSeen - a.lastSeen,
+  ),
+  delistUrl: "https://sender.office.com",
+});
+
+let mockChecklistAt = now - 1800;
+const microsoftChecklist = (): MicrosoftChecklist => ({
+  checkedAt: mockChecklistAt,
+  hostname: "mail.uwu.example",
+  route: "direct",
+  relayHost: null,
+  addresses: [
+    { ip: "203.0.113.25", private: false, ptr: ["mail.uwu.example"], ptrConfirmed: true, ptrIsHostname: true },
+    {
+      ip: "2001:db8::25",
+      private: false,
+      ptr: ["host-25.provider.example"],
+      ptrConfirmed: false,
+      ptrIsHostname: false,
+    },
+  ],
+  domains: [
+    {
+      domain: "uwu.example",
+      checkedAt: mockChecklistAt,
+      spf: "ok",
+      dkim: "ok",
+      dmarc: "ok",
+      dmarcPolicy: "reject",
+      dmarcPct: null,
+      aligned: "ok",
+    },
+    {
+      domain: "verein.example",
+      checkedAt: mockChecklistAt,
+      spf: "ok",
+      dkim: "ok",
+      dmarc: "warning",
+      dmarcPolicy: "none",
+      dmarcPct: null,
+      aligned: "ok",
+    },
+  ],
+  tls: "ok",
+});
+
+const microsoftMockRoutes: [string, RegExp, Handler][] = [
+  ["GET", /^\/api\/admin\/microsoft\/issues$/, () => [200, microsoftIssuesView()]],
+  [
+    "POST",
+    /^\/api\/admin\/microsoft\/issues\/(\d+)\/resolve$/,
+    (_, [id]) => {
+      const issue = mockMicrosoftIssues.find((candidate) => candidate.id === Number(id));
+      if (!issue) return problem(404, "notFound");
+      if (issue.resolvedAt === null) {
+        issue.resolvedAt = Math.floor(Date.now() / 1000);
+        issue.resolvedBy = "lorin@uwu.example";
+        log("microsoft.resolve", issue.subject, { code: issue.code });
+      }
+      return [200, microsoftIssuesView()];
+    },
+  ],
+  ["GET", /^\/api\/admin\/microsoft\/checklist$/, () => [200, microsoftChecklist()]],
+  [
+    "POST",
+    /^\/api\/admin\/microsoft\/checklist$/,
+    () => {
+      mockChecklistAt = Math.floor(Date.now() / 1000);
+      return [200, microsoftChecklist()];
+    },
+  ],
+];
+
+function bimiView(name: string): BimiView {
+  const state = bimiOf(name);
+  const found = domains.find((d) => d.name === name);
+  const dmarc = found?.report?.records.find((r) => r.kind === "dmarc")?.found[0] ?? null;
+  const policy = dmarc ? (/\bp=(\w+)/.exec(dmarc)?.[1] ?? null) : null;
+  const pct = dmarc ? Number(/\bpct=(\d+)/.exec(dmarc)?.[1] ?? NaN) : NaN;
+  const sp = dmarc ? (/\bsp=(\w+)/.exec(dmarc)?.[1] ?? null) : null;
+  // The first domain stands for one that went strict for BIMI.
+  const strict = name === "uwu.example";
+  const value = bimiRecordValue(name);
+  return {
+    enabled: state.enabled,
+    hasSvg: state.svg !== null,
+    title: state.title,
+    svgUpdatedAt: state.svgUpdatedAt,
+    svgBytes: state.svg?.length ?? null,
+    logoUrl: `https://mail.uwu.example/bimi/${name}.svg`,
+    certificateUrl: state.certificate ? `https://mail.uwu.example/bimi/${name}.pem` : null,
+    certificate: state.certificate
+      ? {
+          kind: "cmc",
+          subject: `CN=UwU Example, O=UwU Example, C=DE`,
+          issuer: "CN=Example Mark Certificates CA, O=Example Trust, C=US",
+          notBefore: now - 60 * 86_400,
+          notAfter: now + 305 * 86_400,
+          expired: false,
+          names: [name],
+          coversDomain: true,
+          hasLogotype: true,
+        }
+      : null,
+    record: { name: `default._bimi.${name}`, value },
+    published:
+      state.enabled && state.checkedAt !== null
+        ? { status: "ok", found: [value], note: null, checkedAt: state.checkedAt }
+        : null,
+    dmarc: strict
+      ? {
+          status: "ok",
+          policy: "reject",
+          pct: null,
+          subdomainPolicy: null,
+          record: "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:dmarc-reports@uwu.example",
+        }
+      : dmarc
+        ? {
+            status: policy === "quarantine" || policy === "reject" ? "ok" : "weak",
+            policy,
+            pct: Number.isNaN(pct) ? null : pct,
+            subdomainPolicy: sp,
+            record: dmarc,
+          }
+        : {
+            status: found?.report ? "missing" : "unknown",
+            policy: null,
+            pct: null,
+            subdomainPolicy: null,
+            record: null,
+          },
+    domainLogo: Boolean(mockPictures.get(`logo/${name}`)?.picture),
+  };
+}
+
+function changeBimi(name: string, change: Partial<MockBimi>): [number, unknown] {
+  const found = domains.find((d) => d.name === name);
+  if (!found) return problem(404, "notFound");
+  mockBimi.set(name, { ...bimiOf(name), ...change });
+  // The DNS list shows the record while BIMI is on.
+  if (found.report) found.report = report(found, found.report.status === "ok");
+  return [200, bimiView(name)];
+}
+
+const bimiMockRoutes: [string, RegExp, Handler][] = [
+  [
+    "GET",
+    /^\/api\/admin\/domains\/([^/]+)\/bimi$/,
+    (_, [name]) => (domains.some((d) => d.name === name) ? [200, bimiView(name!)] : problem(404, "notFound")),
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/bimi$/,
+    (body, [name]) => {
+      const change = body as { enabled?: boolean; title?: string };
+      if (change.enabled && bimiOf(name!).svg === null) return problem(409, "bimiNoSvg");
+      if (change.title !== undefined && !change.title.trim()) return problem(422, "bimiTitle");
+      log("domain.bimi", name!, change);
+      return changeBimi(name!, {
+        ...(change.enabled !== undefined ? { enabled: change.enabled } : {}),
+        ...(change.title !== undefined ? { title: change.title.trim() } : {}),
+        ...(change.enabled ? { checkedAt: Math.floor(Date.now() / 1000) } : {}),
+      });
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/bimi\/svg$/,
+    (body, [name]) => {
+      const { svg, title, background } = body as { svg: string; title?: string; background?: string | null };
+      // Cleaning the SVG is the server's job; the mock only turns away what is plainly not one.
+      if (!/<svg[\s>]/.test(svg)) return problem(422, "bimiNotSvg");
+      if (/<script/i.test(svg)) return [422, { code: "bimiSvgUnsupported", detail: "script" }];
+      if (background && !/^#[0-9a-fA-F]{6}$/.test(background)) return problem(422, "bimiBackground");
+      log("domain.bimiLogo", name!, { bytes: svg.length });
+      return changeBimi(name!, {
+        svg,
+        title: title?.trim() || bimiOf(name!).title || name!,
+        svgUpdatedAt: Math.floor(Date.now() / 1000),
+      });
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)\/bimi\/svg$/,
+    (_, [name]) => {
+      log("domain.bimiLogoRemoved", name!, {});
+      return changeBimi(name!, { svg: null, svgUpdatedAt: null, enabled: false, checkedAt: null });
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/bimi\/certificate$/,
+    (body, [name]) => {
+      const pem = (body as { pem: string }).pem;
+      if (!pem.includes("-----BEGIN CERTIFICATE-----")) return problem(422, "bimiCertificateInvalid");
+      log("domain.bimiCertificate", name!, { kind: "cmc" });
+      return changeBimi(name!, { certificate: true });
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)\/bimi\/certificate$/,
+    (_, [name]) => {
+      log("domain.bimiCertificateRemoved", name!, {});
+      return changeBimi(name!, { certificate: false });
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/domains\/([^/]+)\/bimi\/check$/,
+    (_, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      found.report = report(found, found.published !== false);
+      return changeBimi(name!, bimiOf(name!).enabled ? { checkedAt: Math.floor(Date.now() / 1000) } : {});
+    },
+  ],
+];
+
 const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
   ...pictureMockRoutes,
+  ...microsoftMockRoutes,
+  ...bimiMockRoutes,
   ...assistMockRoutes,
   ["GET", /^\/api\/admin\/alerts$/, () => [200, alertsView()]],
   [
@@ -5262,6 +5600,12 @@ window.fetch = async (input, init) => {
     mockPictureUpload = URL.createObjectURL(init.body);
   }
   await new Promise((resolve) => setTimeout(resolve, 250));
+  // The BIMI logo preview is an SVG, not JSON.
+  const bimiLogo = /^\/api\/admin\/domains\/([^/]+)\/bimi\/logo\.svg$/.exec(url.pathname);
+  if (method === "GET" && bimiLogo) {
+    const svg = bimiOf(decodeURIComponent(bimiLogo[1]!)).svg;
+    if (svg) return new Response(svg, { status: 200, headers: { "Content-Type": "image/svg+xml" } });
+  }
   let result: [number, unknown] = problem(404, "notFound");
   for (const [routeMethod, pattern, handler] of routes) {
     const match = routeMethod === method ? pattern.exec(url.pathname) : null;

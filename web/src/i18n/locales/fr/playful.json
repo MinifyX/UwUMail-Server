@@ -212,5 +212,13 @@
     "account": {
       "noneAskAdmin": "Rien à utiliser pour l'instant. Demande gentiment un fournisseur à ton admin (・ω・)"
     }
+  },
+  "microsoft": {
+    "issues": {
+      "none": "Microsoft accepte gentiment les e-mails de ce serveur (=^･ω･^=)"
+    }
+  },
+  "bimi": {
+    "enabledToast": "BIMI est activé, votre logo est prêt pour sa grande entrée (ﾉ◕ヮ◕)ﾉ"
   }
 }

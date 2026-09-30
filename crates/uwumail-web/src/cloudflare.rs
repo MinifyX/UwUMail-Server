@@ -337,6 +337,7 @@ impl Cloudflare {
                             "dkim" => content.starts_with("v=DKIM1"),
                             "tlsrpt" => content.starts_with("v=TLSRPTv1"),
                             "mtasts" => content.starts_with("v=STSv1"),
+                            "bimi" => content.starts_with("v=BIMI1"),
                             // Only who may issue; an iodef address stays.
                             "caa" => entry["data"]["tag"].as_str().is_some_and(|tag| tag.eq_ignore_ascii_case("issue")),
                             _ => true,

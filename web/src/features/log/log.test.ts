@@ -2,6 +2,7 @@ import i18n from "i18next";
 import { describe, expect, it } from "vitest";
 import { LANGUAGES } from "@/i18n";
 import type { AuditRecord } from "@/lib/api";
+import { formatBytes } from "@/lib/format";
 import { describe as describeRecord, detailText } from "./LogPage";
 
 const record = (action: string, details: Record<string, unknown> = {}): AuditRecord => ({
@@ -14,7 +15,7 @@ const record = (action: string, details: Record<string, unknown> = {}): AuditRec
   ip: "",
 });
 
-// The change log's actions of 0.14 and 0.15; each one has its own sentence instead of the raw key.
+// The change log's actions since 0.14; each one has its own sentence instead of the raw key.
 const ACTIONS = [
   "account.authSource",
   "account.oauthRevoked",
@@ -39,6 +40,12 @@ const ACTIONS = [
   "domain.logo",
   "domain.logoRemoved",
   "domain.publicPictures",
+  "domain.bimi",
+  "domain.bimiLogo",
+  "domain.bimiLogoRemoved",
+  "domain.bimiCertificate",
+  "domain.bimiCertificateRemoved",
+  "microsoft.resolve",
 ];
 
 describe("the change log", () => {
@@ -67,5 +74,16 @@ describe("the change log", () => {
     const policy = record("domain.maskedPolicy", { mode: "dedicated", maskedDomains: ["masked.example"] });
     expect(detailText(policy, t, "en")).toBe("masked addresses: Masked-only domains");
     expect(detailText(record("account.maskedPolicy", { mode: null }), t, "en")).toBe("masked addresses: as the domain");
+  });
+
+  it("says what changed about BIMI and which Microsoft refusal was fixed", () => {
+    const t = i18n.getFixedT("en", "neutral");
+    expect(detailText(record("domain.bimi", { enabled: true }), t, "en")).toBe("switched on");
+    expect(detailText(record("domain.bimi", { title: "Example Org" }), t, "en")).toBe("name “Example Org”");
+    expect(detailText(record("domain.bimiLogo", { bytes: 2048 }), t, "en")).toBe(formatBytes(2048, "en"));
+    expect(detailText(record("domain.bimiCertificate", { kind: "cmc" }), t, "en")).toBe(
+      "Common Mark Certificate (CMC)",
+    );
+    expect(detailText(record("microsoft.resolve", { code: "S3150" }), t, "en")).toBe("code S3150");
   });
 });

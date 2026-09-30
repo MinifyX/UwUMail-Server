@@ -1,7 +1,7 @@
 //! The delivery worker: takes due messages from the queue and hands them to other servers.
 
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use mail_auth::{DnsError, IpLookupStrategy};
@@ -14,6 +14,7 @@ use crate::config::{RelayConfig, RelaySecurity};
 use crate::dane::{self, Dane, Security, ValidatedMx};
 use crate::dsn::{self, FailedRecipient};
 use crate::health::{DeliveryEvent, ProbeStage, Route};
+use crate::microsoft;
 use crate::mta_sts;
 use crate::tlsrpt::{self, PolicyType, ReportPolicy, ResultType};
 use crate::{Context, Smtp, now};
@@ -184,6 +185,88 @@ struct Target {
 impl Target {
     fn elsewhere(host: String, addrs: Vec<SocketAddr>, via: Via) -> Target {
         Target { host, addrs, via, verified_tls: false, sts_testing: false, dane: Dane::Off, report: None }
+    }
+}
+
+/// Watches one session for Microsoft's refusals (docs/microsoft.md): the first one becomes an
+/// issue for the admins, and mail Microsoft accepted counts towards ending them.
+struct MicrosoftWatch<'a> {
+    ctx: &'a Context,
+    /// The session is with a Microsoft mail server, by its host name or its greeting.
+    microsoft: bool,
+    /// The address mail leaves from, when it is one the internet sees.
+    local_ip: Option<IpAddr>,
+    sender_domain: String,
+    noted: bool,
+}
+
+impl<'a> MicrosoftWatch<'a> {
+    fn new(ctx: &'a Context, target: &Target, local_ip: Option<IpAddr>, return_path: &str) -> MicrosoftWatch<'a> {
+        let relay = matches!(target.via, Via::Relay(_));
+        MicrosoftWatch {
+            ctx,
+            microsoft: !relay && microsoft::is_microsoft_host(&target.host),
+            local_ip: local_ip.filter(|ip| !ip.is_unspecified() && !crate::servercheck::is_private(*ip)),
+            sender_domain: return_path
+                .rsplit_once('@')
+                .map(|(_, domain)| domain.to_ascii_lowercase())
+                .unwrap_or_default(),
+            // A relay answers for itself; what Microsoft says to it comes back as a bounce.
+            noted: relay,
+        }
+    }
+
+    /// Microsoft greets with its host name, also behind a static route to an address.
+    fn greeting(&mut self, greeting: &Reply) {
+        if !self.noted && microsoft::is_microsoft_greeting(&greeting.text) {
+            self.microsoft = true;
+        }
+    }
+
+    async fn refused(&mut self, reply: &Reply) {
+        if self.noted || reply.is_positive() {
+            return;
+        }
+        let text = reply.to_string();
+        let Some(refusal) = microsoft::classify(&text, self.microsoft) else { return };
+        self.noted = true;
+        self.microsoft = true;
+        let ip = refusal.ip.or(self.local_ip).map(|ip| ip.to_string()).unwrap_or_default();
+        let scope = refusal.group.scope();
+        let subject = match scope {
+            microsoft::IssueScope::Ip => ip.clone(),
+            microsoft::IssueScope::Domain => self.sender_domain.clone(),
+        };
+        tracing::warn!(code = %refusal.code, %ip, group = refusal.group.as_str(), %text, "Microsoft refused mail");
+        let recorded = self
+            .ctx
+            .store
+            .record_microsoft_refusal(
+                uwumail_store::MicrosoftRefusal {
+                    scope: scope.as_str(),
+                    subject,
+                    group: refusal.group.as_str(),
+                    code: refusal.code,
+                    ip,
+                    domain: self.sender_domain.clone(),
+                    reply: text,
+                },
+                now(),
+            )
+            .await;
+        if let Err(err) = recorded {
+            tracing::error!(%err, "recording a refusal by Microsoft failed");
+        }
+    }
+
+    async fn delivered(&self) {
+        if !self.microsoft {
+            return;
+        }
+        let ip = self.local_ip.map(|ip| ip.to_string());
+        if let Err(err) = self.ctx.store.record_microsoft_delivery(ip, self.sender_domain.clone(), now()).await {
+            tracing::error!(%err, "recording a delivery to Microsoft failed");
+        }
     }
 }
 
@@ -434,8 +517,11 @@ async fn session(
         client = client.tls_handshake(ctx.client_tls.verified.clone(), &target.host).await.map_err(io)?;
     }
 
+    let mut microsoft_watch = MicrosoftWatch::new(ctx, target, client.local_ip(), &message.return_path);
     let greeting = client.read_reply().await.map_err(io)?;
+    microsoft_watch.greeting(&greeting);
     if greeting.code != 220 {
+        microsoft_watch.refused(&greeting).await;
         return Err(format!("greeting: {greeting}"));
     }
     let (reply, mut caps) = client.ehlo(&ctx.hostname).await.map_err(io)?;
@@ -560,6 +646,7 @@ async fn session(
     mail_from.push_str("\r\n");
     let reply = client.send(&mail_from).await.map_err(io)?;
     if !reply.is_positive() {
+        microsoft_watch.refused(&reply).await;
         client.quit().await;
         return Ok(everyone(Outcome::from_reply(&reply)));
     }
@@ -571,6 +658,7 @@ async fn session(
         if reply.is_positive() {
             accepted.push(index);
         } else {
+            microsoft_watch.refused(&reply).await;
             outcomes[index] = Some(Outcome::from_reply(&reply));
         }
     }
@@ -578,11 +666,19 @@ async fn session(
     if !accepted.is_empty() {
         let reply = client.send("DATA\r\n").await.map_err(io)?;
         let final_outcome = if reply.code != 354 {
+            microsoft_watch.refused(&reply).await;
             Outcome::from_reply(&reply)
         } else {
             let data_timeout = Duration::from_secs(settings.command_timeout_secs.max(60) * 2);
             match client.data(raw, data_timeout).await {
-                Ok(reply) => Outcome::from_reply(&reply),
+                Ok(reply) => {
+                    if reply.is_positive() {
+                        microsoft_watch.delivered().await;
+                    } else {
+                        microsoft_watch.refused(&reply).await;
+                    }
+                    Outcome::from_reply(&reply)
+                }
                 // The message may or may not have arrived; retrying later is the safe choice.
                 Err(err) => {
                     for index in accepted {

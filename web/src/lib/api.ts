@@ -359,7 +359,8 @@ export type RecordKind =
   | "submission"
   | "caa"
   | "tlsa"
-  | "avatars";
+  | "avatars"
+  | "bimi";
 
 export interface RecordCheck {
   kind: RecordKind;
@@ -1895,4 +1896,118 @@ export interface DomainLogoState {
   picture: PictureFile | null;
   publicPictures: boolean;
   serverAllowsPublic: boolean;
+}
+
+/** How one of Microsoft's rules for senders is met. */
+export type MsStatus = "ok" | "warning" | "problem" | "unknown";
+
+/** Microsoft (Outlook.com, Hotmail, Live) refusing or slowing down mail from this server. */
+export interface MicrosoftIssue {
+  id: number;
+  /** Whom Microsoft refuses: a sending IP address, or a sender domain. */
+  scope: "ip" | "domain";
+  /** The IP address or the domain; empty when unknown. */
+  subject: string;
+  kind: "blocked" | "throttled" | "authentication";
+  /** What it means. */
+  group: "blockList" | "banned" | "ipRefused" | "throttled" | "authentication" | "dmarc";
+  /** Microsoft's code, e.g. "S3150" or "4.7.650". */
+  code: string;
+  /** The last sending IP address seen; empty when unknown. */
+  ip: string;
+  /** The last sender domain seen; empty when unknown. */
+  domain: string;
+  /** Microsoft's last reply as it came. */
+  reply: string;
+  firstSeen: number;
+  lastSeen: number;
+  count: number;
+  /** Null while open. */
+  resolvedAt: number | null;
+  /** "auto" after a day of deliveries to Microsoft without a new refusal, or the admin's login. */
+  resolvedBy: string | null;
+}
+
+export interface MicrosoftIssues {
+  /** Open ones first, newest first; then those resolved in the last 30 days. */
+  issues: MicrosoftIssue[];
+  delistUrl: string;
+}
+
+export interface MicrosoftAddress {
+  ip: string;
+  private: boolean;
+  ptr: string[];
+  /** The PTR name resolves back to the address (FCrDNS). */
+  ptrConfirmed: boolean;
+  /** The PTR name is the server's host name. */
+  ptrIsHostname: boolean;
+}
+
+export interface MicrosoftDomainCheck {
+  domain: string;
+  /** Null while the domain's DNS has not been checked. */
+  checkedAt: number | null;
+  spf: MsStatus;
+  dkim: MsStatus;
+  dmarc: MsStatus;
+  dmarcPolicy: "none" | "quarantine" | "reject" | null;
+  dmarcPct: number | null;
+  /** SPF or DKIM passes aligned with the From domain. */
+  aligned: MsStatus;
+}
+
+/** Microsoft's rules for senders, checked for this server. */
+export interface MicrosoftChecklist {
+  checkedAt: number;
+  hostname: string;
+  route: "direct" | "relay" | "gateway";
+  relayHost: string | null;
+  /** The addresses Microsoft sees mail come from: the relay's when there is one. */
+  addresses: MicrosoftAddress[];
+  domains: MicrosoftDomainCheck[];
+  /** Warning when a relay is set to go without TLS. */
+  tls: "ok" | "warning";
+}
+
+/** A Verified Mark or Common Mark certificate for BIMI. */
+export interface BimiCertificate {
+  kind: "vmc" | "cmc" | "unknown";
+  subject: string;
+  issuer: string;
+  notBefore: number;
+  notAfter: number;
+  expired: boolean;
+  /** The DNS names in the certificate. */
+  names: string[];
+  coversDomain: boolean;
+  /** The certificate carries the logo (RFC 3709). */
+  hasLogotype: boolean;
+}
+
+export type BimiPublishedStatus = "ok" | "warning" | "missing" | "wrong" | "error";
+
+/** A domain's BIMI logo, its record and what it needs. */
+export interface BimiView {
+  enabled: boolean;
+  hasSvg: boolean;
+  title: string;
+  svgUpdatedAt: number | null;
+  svgBytes: number | null;
+  logoUrl: string;
+  certificateUrl: string | null;
+  certificate: BimiCertificate | null;
+  /** The TXT record to publish at default._bimi.<domain>. */
+  record: { name: string; value: string };
+  /** Null while off or not checked. */
+  published: null | { status: BimiPublishedStatus; found: string[]; note: string | null; checkedAt: number };
+  dmarc: {
+    status: "ok" | "weak" | "missing" | "unknown";
+    policy: string | null;
+    pct: number | null;
+    subdomainPolicy: string | null;
+    record: string | null;
+  };
+  /** The domain has a pixel logo for profile pictures. */
+  domainLogo: boolean;
 }

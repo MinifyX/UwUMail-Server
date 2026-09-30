@@ -208,5 +208,13 @@
     "account": {
       "noneAskAdmin": "还没有可用的功能。去跟管理员撒个娇要个服务商吧 (・ω・)"
     }
+  },
+  "microsoft": {
+    "issues": {
+      "none": "Microsoft 乖乖地接收着本服务器的邮件 (=^･ω･^=)"
+    }
+  },
+  "bimi": {
+    "enabledToast": "BIMI 已开启，你的徽标准备隆重登场啦 (ﾉ◕ヮ◕)ﾉ"
   }
 }

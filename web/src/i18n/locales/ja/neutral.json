@@ -182,7 +182,8 @@
       "mailFlow": "メールの流れ",
       "backups": "バックアップ",
       "updates": "アップデート",
-      "stats": "統計"
+      "stats": "統計",
+      "microsoft": "Microsoft"
     },
     "tiles": {
       "news": "新着",
@@ -560,7 +561,18 @@
       "overQuota": "1 日の上限に達しました: {{detail}}",
       "assistUnavailable": "現在は利用できません。",
       "badPrice": "料金は 0 から 100,000 までの数値にしてください。",
-      "badCurrency": "この通貨には対応していません。"
+      "badCurrency": "この通貨には対応していません。",
+      "bimiNotSvg": "SVG ファイルではありません。",
+      "bimiSvgTooLarge": "SVG が大きすぎます。アップロードできるのは 256 KiB まで、整えた後のロゴは 32 KiB までです。",
+      "bimiSvgUnsupported": "SVG に BIMI で使えないものが含まれています：{{detail}}。効果・マスク・スクリプトのないシンプルな図として保存し直してください。",
+      "bimiSvgExternal": "SVG がファイルの外部を参照しています（{{detail}}）。BIMI のロゴはすべてを自分の中に含む必要があります。",
+      "bimiSvgRaster": "SVG にピクセル画像が含まれています。BIMI には本当のベクター画像が必要です。",
+      "bimiSvgNoSize": "SVG にサイズがありません。viewBox、または幅と高さが必要です。",
+      "bimiNoSvg": "BIMI をオンにする前に SVG ロゴをアップロードしてください。",
+      "bimiTitle": "ロゴの名前をもっと短く、特殊文字なしで入力してください。",
+      "bimiBackground": "背景色は #rrggbb の形式にしてください。",
+      "bimiCertificateInvalid": "PEM 形式の読み取れる証明書ではありません。",
+      "bimiCertificateNotBimi": "この証明書は BIMI 用の VMC でも CMC でもありません。"
     }
   },
   "people": {
@@ -900,7 +912,13 @@
       "domainLogo": "{{actor}} が {{target}} のロゴを設定しました",
       "domainLogoRemoved": "{{actor}} が {{target}} のロゴを削除しました",
       "domainPublicPictures": "{{actor}} が {{target}} のアドレスの公開画像の可否を変更しました",
-      "picturesPublic": "{{actor}} がこのサーバーでのプロフィール画像の公開の可否を変更しました"
+      "picturesPublic": "{{actor}} がこのサーバーでのプロフィール画像の公開の可否を変更しました",
+      "domainBimi": "{{actor}} が {{target}} の BIMI を変更しました",
+      "domainBimiLogo": "{{actor}} が {{target}} の BIMI ロゴをアップロードしました",
+      "domainBimiLogoRemoved": "{{actor}} が {{target}} の BIMI ロゴを削除しました",
+      "domainBimiCertificate": "{{actor}} が {{target}} の BIMI 証明書を追加しました",
+      "domainBimiCertificateRemoved": "{{actor}} が {{target}} の BIMI 証明書を削除しました",
+      "microsoftResolve": "{{actor}} が {{target}} に対する Microsoft の拒否を解決済みにしました"
     },
     "details": {
       "adminOn": "管理者になりました",
@@ -934,7 +952,8 @@
       "maskedRemovedFrom_other": "{{count}} 件のマスクアドレス設定から外しました",
       "pictureVisibility": "公開範囲：{{value}}",
       "publicAllowed": "公開画像を許可",
-      "publicForbidden": "公開画像を禁止"
+      "publicForbidden": "公開画像を禁止",
+      "microsoftCode": "コード {{value}}"
     },
     "entry": {
       "actor": "誰が",
@@ -1033,7 +1052,8 @@
         "submission": "メールアプリに STARTTLS での送信先を伝えます（ポート 587）。",
         "caa": "サーバー名の証明書を発行できるのを Let's Encrypt のみに、しかもこのサーバー自身のアカウントのみに限定します。UwUMail Gateway の背後でも TLS を非公開に保てます。",
         "tlsa": "このサーバーの証明書がどの鍵を持つかを送信側サーバーに伝え、暗号化された接続でのみ配送させます (DANE)。DNSSEC で署名されたゾーンが必要です。",
-        "avatars": "ほかのメールサーバーが、このドメインのアドレスの公開プロフィール画像を見つけられるようにします。"
+        "avatars": "ほかのメールサーバーが、このドメインのアドレスの公開プロフィール画像を見つけられるようにします。",
+        "bimi": "ドメインのロゴ（あれば証明書も）の場所をメールアプリに伝えます。"
       },
       "notes": {
         "mxUpstream": "上流のメールサーバーを指しています。問題ありません。",
@@ -1064,7 +1084,9 @@
         "tlsaKeyKept": "サーバーの鍵と一致しています。証明書を更新しても鍵は変わりません。",
         "tlsaMismatch": "このサーバーが提示するどの証明書とも一致しません。DANE を確認するサーバーは、レコードが現在の鍵を示すまであなたのドメイン宛てのメールを保留します。",
         "tlsaUnsigned": "ゾーンが DNSSEC で署名されていないため、このレコードを見るサーバーはまだありません。",
-        "dnssecBogus": "サーバー名の DNSSEC 署名が検証できません。署名を確認するサーバーは、このサーバーにまったく到達できません。"
+        "dnssecBogus": "サーバー名の DNSSEC 署名が検証できません。署名を確認するサーバーは、このサーバーにまったく到達できません。",
+        "bimiElsewhere": "このサーバーが提供するものとは別のロゴまたは証明書を指しています。",
+        "bimiMultiple": "BIMI レコードが複数あります。許されるのは 1 つだけです。"
       },
       "catchAll": "キャッチオール",
       "catchAllHint": "存在しないアドレス宛てのメールは、この人に届きます。スパムも増えます。",
@@ -1107,7 +1129,8 @@
         "submission": "メールアプリの送信（STARTTLS）",
         "caa": "このサーバー専用の証明書（CAA）",
         "tlsa": "DANE (TLSA)",
-        "avatars": "プロフィール画像（Libravatar）"
+        "avatars": "プロフィール画像（Libravatar）",
+        "bimi": "受信トレイのロゴ（BIMI）"
       },
       "tlsaKeyChange": "サーバーの鍵が変わる前に (独自の証明書ファイル、別のサーバーへの移行、data/tls/acme/key.pem の削除など)、新しい鍵のレコードをこのレコードと並べて公開し、1日待ってください。そうしないと、DANE を確認するサーバーがあなた宛てのメールを保留します。"
     },
@@ -1652,7 +1675,10 @@
       "gatewayOutboundBlocked": "ゲートウェイ経由で他のメールサーバーに接続できません（影響を受けるドメイン：{{count}}件）。",
       "virusScannerAway": "ウイルススキャナーが応答しません。復旧するまで、メールはチェックされずに配信され、その旨がヘッダーに記載されます。",
       "virusSignaturesOld": "ウイルスシグネチャが{{since}}前のものです。スキャナーが新しいシグネチャを取得していません。",
-      "maskedStranded_other": "{{domain}} にはマスクアドレスが {{count}} 件ありますが、そこで新しく作れる人はいません。"
+      "maskedStranded_other": "{{domain}} にはマスクアドレスが {{count}} 件ありますが、そこで新しく作れる人はいません。",
+      "microsoftBlocked": "Microsoft（Outlook、Hotmail）が {{ip}} からのメールを拒否しています（{{code}}）。",
+      "microsoftThrottled": "Microsoft が {{ip}} からのメールを制限しています（{{code}}）。",
+      "microsoftAuth": "Microsoft が {{domain}} からのメールを拒否しています：認証が不十分です（{{code}}）。"
     },
     "hints": {
       "noDomains": "ドメインがないと、サーバーはメールを受信できません。",
@@ -1679,7 +1705,10 @@
       "gatewayRefused": "「サーバー」→「セットアップ」でゲートウェイを再度ペアリングしてください。",
       "gatewayPort25Blocked": "多くの VPS プロバイダーは外向きのポート 25 をブロックしています。サポートに開放を依頼してください。それまではリレーが役立ちます。",
       "gatewayOutboundBlocked": "多くの VPS プロバイダーは外向きのポート 25 をブロックしています。サポートに開放を依頼してください。それまではリレーが役立ちます。",
-      "maskedStranded": "0.16.0 以降、誰もログインしないドメインは誰にもマスクアドレスを提供しません。そのドメインのページでマスクアドレス専用にし、利用させたいドメインで選択してください。既存のアドレスはどちらの場合も使い続けられます。"
+      "maskedStranded": "0.16.0 以降、誰もログインしないドメインは誰にもマスクアドレスを提供しません。そのドメインのページでマスクアドレス専用にし、利用させたいドメインで選択してください。既存のアドレスはどちらの場合も使い続けられます。",
+      "microsoftBlocked": "sender.office.com でブロック解除を申請してください。手順は「Microsoft」タブにあります。",
+      "microsoftThrottled": "サーバーが自動で再送します。送信量をなるべく一定に保ってください。詳しくは「Microsoft」タブへ。",
+      "microsoftAuth": "ドメインの SPF、DKIM、DMARC を確認してください。足りないものは「Microsoft」タブに表示されます。"
     }
   },
   "secondFactor": {
@@ -4019,6 +4048,262 @@
       "perMillion": "100 万トークンあたり 入力 {{input}}、出力 {{output}}",
       "manual": "手動設定",
       "unknown": "料金不明"
+    }
+  },
+  "microsoft": {
+    "intro": "Outlook.com、Hotmail、Live がこのサーバーからのメールを受け取っているか、そして何が役立つか。",
+    "status": {
+      "ok": "問題なし",
+      "warning": "改善の余地あり",
+      "problem": "不足または誤り",
+      "unknown": "不明"
+    },
+    "kinds": {
+      "blocked": "ブロック",
+      "throttled": "制限",
+      "authentication": "認証"
+    },
+    "groups": {
+      "blockList": {
+        "title": "IP アドレスが Microsoft のブロックリストに載っています",
+        "meaning": "Microsoft はこの IP アドレスをブロックリストに載せました。解除されるまで、Outlook.com、Hotmail、Live はこのアドレスからのメールをすべて拒否します。"
+      },
+      "banned": {
+        "title": "Microsoft はこのアドレス範囲からのメールを受け付けていません",
+        "meaning": "Microsoft はアドレス範囲全体からのメールを拒否しています。多くの場合、その範囲のホスティング事業者の他の利用者がスパムを送ったためです。"
+      },
+      "ipRefused": {
+        "title": "Microsoft がこの IP アドレスからのメールを拒否しています",
+        "meaning": "Microsoft はこの IP アドレスを信頼していません。たとえば評判のせい、または逆引き DNS 名がないためです。"
+      },
+      "throttled": {
+        "title": "Microsoft がこの IP アドレスからのメールを制限しています",
+        "meaning": "Microsoft はしばらくの間、この IP アドレスからのメールを少なめにしか受け取りません。メールは失われません。キューで待ち、サーバーが再送します。"
+      },
+      "authentication": {
+        "title": "送信ドメインの認証が不十分です",
+        "meaning": "Microsoft は送信者に SPF、DKIM、DMARC を求めています。このドメインからのメールは十分に通りませんでした。"
+      },
+      "dmarc": {
+        "title": "メールがドメインの DMARC チェックに失敗しました",
+        "meaning": "このドメインからのメールが自身の DMARC チェックに失敗したため、ドメインの DMARC ポリシーのとおり Microsoft が拒否しました。"
+      }
+    },
+    "issues": {
+      "title": "Microsoft による拒否",
+      "none": "Microsoft は現在このサーバーからのメールを受け取っています。",
+      "noneHint": "Outlook.com、Hotmail、Live がメールを拒否したり制限したりすると、サーバーが気づいて、役立つことをここに表示します。",
+      "subjectIp": "IP アドレス {{ip}}",
+      "subjectDomain": "ドメイン {{domain}}",
+      "subjectUnknown": "送信者不明",
+      "theIp": "サーバーの IP アドレス",
+      "count_other": "{{count}} 回確認",
+      "seen": "最初 {{first}}、最後 {{last}}",
+      "meaning": "どういうことか",
+      "todo": "やること",
+      "reply": "Microsoft の返答",
+      "resolve": "解決済みにする",
+      "resolveHint": "そうしなくても、1 日拒否がなければサーバーが自動で解決済みにします。",
+      "resolvedToast": "解決済みにしました。Microsoft がまたメールを拒否すると、ここに再び表示されます。",
+      "earlier_other": "以前の拒否 {{count}} 件",
+      "resolvedAuto": "{{time}} に解決：メールが再び届くようになりました。",
+      "resolvedBy": "{{time}} に {{login}} が解決済みにしました。"
+    },
+    "delist": {
+      "step1": "Microsoft のブロック解除ページを開きます：",
+      "step2": "IP アドレス {{ip}} と、読むことのできるメールアドレスを入力し、確認をクリアします。",
+      "step3": "Microsoft からリンク付きのメールが届きます。開いて「Delist IP」を選びます。",
+      "step4": "待ちます：通常 24〜48 時間ほどかかります。その後ここで解決済みにするか、1 日拒否がなければサーバーが自動で行います。",
+      "banned": "Microsoft が申請を却下した場合、アドレス範囲全体の評判が悪いということです。その場合は評判のよいリレーが役立ちます（「設定」→「送信」）。"
+    },
+    "wait": {
+      "retry": "今すぐやることはありません。サーバーが後で自動的に再送します。",
+      "steady": "送信量をなるべく一定に保ってください。制限されやすいのは一度に大量に送ったときです。",
+      "snds": "SNDS で IP アドレスの評判を確認してください（下のガイドを参照）。",
+      "relay": "頻繁に起きるなら、評判のよいリレーが役立ちます（「設定」→「送信」）。"
+    },
+    "authenticate": {
+      "text": "{{domain}} の SPF、DKIM、DMARC を確認し、足りないものや誤りを直してください。下のチェックリストで状況がわかります。",
+      "textAny": "ドメインの SPF、DKIM、DMARC を確認し、足りないものや誤りを直してください。下のチェックリストで状況がわかります。",
+      "open": "{{domain}} を開く"
+    },
+    "checklist": {
+      "title": "送信者向けの Microsoft のルール",
+      "intro": "2025 年 5 月から、Microsoft は Outlook.com、Hotmail、Live に 1 日 5,000 通を超えて送るすべての送信者に SPF、DKIM、DMARC を求めています。それ以外の送信者にも強く推奨されています。メールが受信トレイに届くかどうかを左右するからです。",
+      "checkedAt": "{{time}} に確認",
+      "check": "もう一度確認",
+      "checking": "確認中…",
+      "checkedToast": "もう一度確認しました。",
+      "domains": "ドメインごとの SPF、DKIM、DMARC",
+      "domainsIntro": "アライメントとは、差出人アドレス（From）と同じドメインで SPF または DKIM が通ることです。",
+      "noDomains": "まだドメインがありません。",
+      "aligned": "アライメント",
+      "dmarc": {
+        "notChecked": "DNS はまだ確認されていません。「もう一度確認」で確認します。",
+        "missing": "DMARC レコードがありません。Microsoft は少なくとも p=none を求めています。",
+        "none": "p=none で Microsoft の最低条件は満たします。quarantine または reject のほうがドメインをよく守れるので推奨です。",
+        "partial": "メールの {{pct}} % にしか適用されません。pct を省くとすべてに適用されるのでおすすめです。",
+        "strict": "ポリシー {{policy}}：このままで大丈夫です。"
+      },
+      "route": {
+        "direct": "メールはこのサーバーから直接 Microsoft へ送られます。",
+        "relay": "メールはリレー {{relay}} を経由して送られるため、Microsoft にはリレーのアドレスが見えます。その名前はリレーの運営者が管理します。",
+        "gateway": "メールはゲートウェイを経由して送られるため、Microsoft にはゲートウェイのアドレスが見えます。"
+      },
+      "ptr": {
+        "title": "逆引き DNS（PTR）",
+        "intro": "Microsoft は、送信する各 IP アドレスに名前（PTR）があり、その名前が同じアドレスを指し返しているか（FCrDNS）を確認します。",
+        "ok": "{{ptr}} はこのアドレスを指し返しています。",
+        "unconfirmed": "{{ptr}} はこのアドレスを指し返していません。その名前に A または AAAA レコードを作るか、プロバイダーに PTR の変更を依頼してください。",
+        "missing": "名前（PTR）がありません。インターネットまたはホスティングのプロバイダーに設定を依頼してください。例：{{hostname}}",
+        "private": "プライベートアドレスです。Microsoft にはその前にある公開アドレスが見えます。",
+        "notHostname": "名前がサーバーのホスト名（{{hostname}}）と違います。問題はありませんが、同じ名前のほうが印象は良くなります。",
+        "none": "送信アドレスはまだわかっていません。"
+      },
+      "tls": {
+        "title": "暗号化（TLS）",
+        "ok": "サーバーは Microsoft へのメールに常に STARTTLS を使います。",
+        "warning": "リレーが TLS なしで送る設定になっています。Microsoft は暗号化された接続を求めています。「設定」→「送信」で TLS をオンにしてください。"
+      },
+      "unsubscribe": {
+        "title": "ワンクリックで配信停止（List-Unsubscribe）",
+        "text": "UwUMail 自体はニュースレターを送りません。ニュースレターや一斉配信のツールがこのサーバー経由で送る場合、ワンクリックで配信停止できるよう、次のヘッダー（RFC 8058）を付ける必要があります："
+      }
+    },
+    "guides": {
+      "title": "送信者向けの Microsoft のツール",
+      "intro": "どちらも Microsoft アカウントが必要で、自分で管理している IP アドレス（つまり自分のサーバー。リレーのものは不可）にしか使えません。",
+      "snds": {
+        "title": "SNDS：IP アドレスの評判",
+        "intro": "Smart Network Data Services では、Microsoft があなたの IP アドレスからのメールをどう見ているかがわかります。",
+        "step1": "SNDS を開き、Microsoft アカウントでサインインします：",
+        "step2": "「Request Access」を選び、送信に使う IP アドレスまたは範囲を入力します。例：{{ip}}",
+        "step3": "Microsoft は、IP アドレスの逆引き DNS や WHOIS から選んだアドレスに確認メールを送ります。たとえば PTR 名のドメインの postmaster@ や、プロバイダーの abuse 窓口です。どれかが自分に届くようにしてください（たとえばこのサーバーの追加アドレスとして）。",
+        "step4": "そのメールのリンクを開いて確認します。",
+        "step5": "以後 SNDS には、IP アドレスごとに毎日、届いたメールの数、そのうちスパムらしかった数、そして色が表示されます。緑は良好、黄は混在、赤は不良です。"
+      },
+      "jmrp": {
+        "title": "JMRP：スパム報告を受け取る",
+        "intro": "Junk Mail Reporting Program では、Microsoft の利用者があなたのメールを迷惑メールにしたときに知らせてくれます。",
+        "step1": "同じポータルで「Junk Mail Reporting Program」を選び、新しい契約を作成します。",
+        "step2": "送信に使う IP アドレスと、報告を受け取るアドレス（たとえばこのサーバーのメールボックス）を入力します。",
+        "step3": "Microsoft から届くメールで契約を確認します。",
+        "step4": "誰かがあなたのメールを迷惑メールにするたびに、そのアドレスに ARF 形式のメールで報告が届きます。多いときは、誰が何を送っているか確認してください。"
+      },
+      "delist": {
+        "title": "ブロックされた？解除を申請",
+        "text": "Microsoft は申請に応じて IP アドレスをブロックリストから外します。手順は上の各拒否に表示されています："
+      }
+    },
+    "banner": {
+      "blocked": "Microsoft（Outlook、Hotmail）がこのサーバーからのメールをブロックしています。",
+      "throttled": "Microsoft（Outlook、Hotmail）がこのサーバーからのメールを制限しています。",
+      "authentication": "Microsoft（Outlook、Hotmail）が認証を理由にこのサーバーからのメールを拒否しています。",
+      "codes": "コード：{{codes}}",
+      "ips": "IP：{{ips}}",
+      "delist": "解除を申請",
+      "open": "詳細とヘルプ"
+    }
+  },
+  "bimi": {
+    "title": "BIMI：受信トレイのロゴ",
+    "intro": "BIMI を使うと、メールアプリが {{domain}} からのメールの横にロゴを表示します。",
+    "support": "Gmail、Apple メール（iCloud）、Yahoo/AOL、Fastmail などが BIMI ロゴを表示します。Microsoft Outlook は表示しません。Gmail と Apple は、認証局（例：DigiCert、Entrust/Sectigo、GlobalSign）から購入する Verified Mark Certificate（VMC）または Common Mark Certificate（CMC）がある場合にのみロゴを表示します。VMC には登録商標が必要です。",
+    "enable": "ロゴを表示（BIMI）",
+    "enableHint": "サーバーがロゴを公開します。下の DNS レコードも必要です。",
+    "enableNeedsSvg": "まず SVG ロゴをアップロードしてください。",
+    "enabledToast": "BIMI をオンにしました。",
+    "disabledToast": "BIMI をオフにしました。",
+    "logoUrl": "ロゴのアドレス",
+    "preview": {
+      "circle": "丸",
+      "square": "四角",
+      "none": "まだロゴがありません。",
+      "alt": "{{domain}} の BIMI ロゴ"
+    },
+    "logo": {
+      "title": "ロゴ（SVG）",
+      "stored": "{{size}}、{{time}} に変更",
+      "pixelLogo": "ドメインのロゴはピクセル画像ですが、BIMI には同じロゴの SVG 版が必要です。SVG 版をアップロードしてください（デザインした人に頼むか、デザインツールから書き出してください）。",
+      "hint": "256 KiB までの SVG ベクター画像。サーバーが BIMI に必要な形式（SVG Tiny PS）に変換し、スクリプトやリンクを取り除きます。結果は 32 KiB までです。",
+      "choose": "SVG を選ぶ",
+      "replace": "別の SVG を選ぶ",
+      "chosen": "選択中：{{name}}",
+      "readFailed": "ファイルを読み込めませんでした。",
+      "titleLabel": "ロゴの名前",
+      "titleHint": "ふつうは組織の名前です。BIMI では必須です。",
+      "background": "背景",
+      "backgroundSolid": "単色",
+      "backgroundKeep": "ロゴの背景のまま",
+      "color": "背景色",
+      "backgroundHint": "メールアプリはロゴを丸または四角で表示します。後ろに単色の四角を置くと、どちらでもきれいに見えます。",
+      "save": "ロゴを保存",
+      "savedToast": "ロゴを保存しました。",
+      "remove": "ロゴを削除",
+      "removeConfirm": "BIMI ロゴを削除しますか？ BIMI も同時にオフになります。",
+      "removedToast": "ロゴを削除しました。BIMI はオフです。"
+    },
+    "record": {
+      "title": "DNS レコード",
+      "intro": "メールアプリがロゴを見つけられるよう、この TXT レコードを公開してください。上の DNS セクションの Cloudflare ボタンで追加することもできます。",
+      "check": "今すぐ確認",
+      "checking": "確認中…",
+      "checkedToast": "確認しました。",
+      "checkedAt": "{{time}} に確認",
+      "notChecked": "まだ確認していません。",
+      "whenOn": "BIMI をオンにすると、サーバーがレコードの公開を確認します。",
+      "status": {
+        "ok": "公開済み",
+        "warning": "公開済み（注意あり）",
+        "missing": "未公開",
+        "wrong": "別の場所を指しています",
+        "error": "確認できませんでした"
+      }
+    },
+    "dmarc": {
+      "title": "DMARC",
+      "ok": "DMARC は BIMI に十分な厳しさです。",
+      "needs": "BIMI には、すべてのメール（pct=100 または pct なし）に p=quarantine か p=reject を適用し、sp=none ではない DMARC が必要です。",
+      "reasons": {
+        "notChecked": "DMARC レコードはまだ確認されていません。",
+        "missing": "DMARC レコードがありません。",
+        "policy": "ポリシーが p={{policy}} です。BIMI には quarantine か reject が必要です。",
+        "pct": "メールの {{pct}} % にしか適用されません。BIMI にはすべてが必要です。",
+        "subdomains": "サブドメインが除外されています（sp=none）。",
+        "weak": "ポリシーがまだ十分に厳しくありません。"
+      },
+      "showDns": "DNS レコードへ"
+    },
+    "certificate": {
+      "title": "証明書（任意）",
+      "intro": "VMC または CMC があれば、Gmail と Apple メールでもロゴが表示されます。認証局から受け取った PEM ファイルを、チェーンも含めて追加してください。",
+      "paste": "証明書（PEM）",
+      "pasteHint": "テキストを貼り付けるか、.pem または .crt ファイルを選んでください。",
+      "file": "ファイルを選ぶ",
+      "save": "証明書を保存",
+      "savedToast": "証明書を保存しました。",
+      "replace": "証明書を置き換える",
+      "remove": "証明書を削除",
+      "removeConfirm": "証明書を削除しますか？ Gmail と Apple メールではロゴが表示されなくなります。",
+      "removedToast": "証明書を削除しました。",
+      "kind": "種類",
+      "kinds": {
+        "vmc": "Verified Mark Certificate（VMC）",
+        "cmc": "Common Mark Certificate（CMC）",
+        "unknown": "不明な種類"
+      },
+      "subject": "所有者",
+      "issuer": "発行者",
+      "valid": "有効期間",
+      "validRange": "{{from}}〜{{to}}",
+      "names": "名前",
+      "warnings": {
+        "expired": "証明書の有効期限が切れています。メールアプリは無視します。",
+        "notYetValid": "証明書はまだ有効になっていません。",
+        "otherDomain": "証明書に {{domain}} が含まれていません。",
+        "noLogo": "証明書にロゴが含まれていません。",
+        "unknownKind": "VMC や CMC ではないようです。"
+      }
     }
   }
 }

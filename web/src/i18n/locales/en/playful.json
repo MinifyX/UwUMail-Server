@@ -210,5 +210,13 @@
     "account": {
       "noneAskAdmin": "Nothing to use yet. Ask your admin nicely for a provider (・ω・)"
     }
+  },
+  "microsoft": {
+    "issues": {
+      "none": "Microsoft happily takes mail from this server (=^･ω･^=)"
+    }
+  },
+  "bimi": {
+    "enabledToast": "BIMI is on, your logo is ready for its big entrance (ﾉ◕ヮ◕)ﾉ"
   }
 }
