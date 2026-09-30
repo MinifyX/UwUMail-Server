@@ -105,8 +105,15 @@ impl Reported {
     }
 }
 
+/// Tokens of one kind a single request can report at most. The numbers come from the provider;
+/// the largest context windows are a few million tokens, and a garbled or hostile count must not
+/// overflow the sums built from it.
+const MAX_REPORTED_TOKENS: i64 = 10_000_000;
+/// US dollars a single request can report at most, for the same reason.
+const MAX_REPORTED_COST_USD: f64 = 1000.0;
+
 fn int(value: &Value, pointer: &str) -> i64 {
-    value.pointer(pointer).and_then(Value::as_i64).unwrap_or(0).max(0)
+    value.pointer(pointer).and_then(Value::as_i64).unwrap_or(0).clamp(0, MAX_REPORTED_TOKENS)
 }
 
 /// The `usage` of Chat Completions, in its variants: OpenAI counts thinking inside
@@ -135,7 +142,11 @@ pub fn chat_usage(usage: &Value) -> Reported {
         0 => int(usage, "/prompt_cache_hit_tokens"),
         cached => cached,
     };
-    let cost_usd = usage.get("cost").and_then(Value::as_f64).filter(|cost| cost.is_finite() && *cost >= 0.0);
+    let cost_usd = usage
+        .get("cost")
+        .and_then(Value::as_f64)
+        .filter(|cost| cost.is_finite() && *cost >= 0.0)
+        .map(|cost| cost.min(MAX_REPORTED_COST_USD));
     Reported {
         input: prompt,
         output,
@@ -640,7 +651,7 @@ async fn stream_anthropic(reader: &mut SseReader, mut collector: Collector<'_>) 
                             (again.input, again.cached, again.cache_write);
                     }
                     if let Some(tokens) = u.get("output_tokens").and_then(Value::as_i64) {
-                        reported.output = tokens.max(0);
+                        reported.output = tokens.clamp(0, MAX_REPORTED_TOKENS);
                     }
                 }
             }
@@ -963,6 +974,28 @@ mod tests {
         let message =
             json!({ "content": [{ "type": "text", "text": "Hi" }], "stop_reason": "end_turn", "usage": anthropic });
         assert_eq!(parse_anthropic(&message).unwrap().input_tokens, 1320, "the cache counts as input");
+    }
+
+    #[test]
+    fn huge_reported_usage_is_capped() {
+        let max = i64::MAX;
+        let chat = json!({ "prompt_tokens": max, "completion_tokens": max, "total_tokens": max,
+            "prompt_tokens_details": { "cached_tokens": max, "cache_write_tokens": max },
+            "completion_tokens_details": { "reasoning_tokens": max }, "cost": 1e308 });
+        let r = chat_usage(&chat);
+        let cap = MAX_REPORTED_TOKENS;
+        assert_eq!((r.input, r.output, r.reasoning, r.cached, r.cache_write), (cap, 0, cap, cap, cap));
+        assert_eq!(r.cost_usd, Some(MAX_REPORTED_COST_USD));
+        // Thinking only in a huge total_tokens.
+        let r = chat_usage(&json!({ "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": max }));
+        assert_eq!((r.output, r.reasoning), (1, cap - 2));
+        let anthropic = json!({ "input_tokens": max, "cache_read_input_tokens": max,
+            "cache_creation_input_tokens": max, "output_tokens": max });
+        let r = anthropic_usage(&anthropic);
+        assert_eq!((r.input, r.output, r.cached, r.cache_write), (3 * cap, cap, cap, cap));
+        let r = responses_usage(&json!({ "input_tokens": max, "output_tokens": max }));
+        assert_eq!((r.input, r.output), (cap, cap));
+        assert_eq!(chat_usage(&json!({ "prompt_tokens": -5, "cost": -1.0 })), Reported::default());
     }
 
     #[test]
