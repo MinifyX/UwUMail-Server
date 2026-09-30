@@ -59,9 +59,9 @@ describe("certificateWarnings", () => {
     expect(certificateWarnings(certificate({ expired: true }), 500)).toEqual(["expired"]);
     expect(certificateWarnings(certificate({}), 2000)).toEqual(["expired"]);
     expect(certificateWarnings(certificate({}), 50)).toEqual(["notYetValid"]);
-    expect(
-      certificateWarnings(certificate({ coversDomain: false, hasLogotype: false, kind: "unknown" }), 500),
-    ).toEqual(["otherDomain", "noLogo", "unknownKind"]);
+    expect(certificateWarnings(certificate({ coversDomain: false, hasLogotype: false, kind: "unknown" }), 500)).toEqual(
+      ["otherDomain", "noLogo", "unknownKind"],
+    );
   });
 });
 

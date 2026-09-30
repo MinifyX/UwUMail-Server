@@ -9,14 +9,17 @@ export function Card({
   action,
   children,
   className,
+  id,
 }: {
   title?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** For links and scrolling to the card. */
+  id?: string;
 }) {
   return (
-    <section className={clsx("rounded-card border border-hairline bg-surface p-5", className)}>
+    <section id={id} className={clsx("rounded-card border border-hairline bg-surface p-5", className)}>
       {(title || action) && (
         <header className="mb-3 flex items-center justify-between gap-3">
           {title && <h2 className="text-[15px] font-bold">{title}</h2>}

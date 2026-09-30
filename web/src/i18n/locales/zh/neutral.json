@@ -182,7 +182,8 @@
       "mailFlow": "邮件流",
       "backups": "备份",
       "updates": "更新",
-      "stats": "统计"
+      "stats": "统计",
+      "microsoft": "Microsoft"
     },
     "tiles": {
       "news": "新",
@@ -560,7 +561,18 @@
       "overQuota": "已达到每日上限：{{detail}}",
       "assistUnavailable": "目前不可用。",
       "badPrice": "价格必须是 0 到 100,000 之间的数字。",
-      "badCurrency": "不支持此货币。"
+      "badCurrency": "不支持此货币。",
+      "bimiNotSvg": "这不是 SVG 文件。",
+      "bimiSvgTooLarge": "SVG 太大了。最多可上传 256 KiB，清理后的徽标最多 32 KiB。",
+      "bimiSvgUnsupported": "SVG 使用了 BIMI 不允许的内容：{{detail}}。请另存为不含效果、蒙版或脚本的简单图形。",
+      "bimiSvgExternal": "SVG 引用了文件之外的内容（{{detail}}）。BIMI 徽标必须自身包含所有内容。",
+      "bimiSvgRaster": "SVG 中包含位图。BIMI 需要真正的矢量图形。",
+      "bimiSvgNoSize": "SVG 没有尺寸。它需要 viewBox，或者宽度和高度。",
+      "bimiNoSvg": "请先上传 SVG 徽标，再开启 BIMI。",
+      "bimiTitle": "请为徽标输入更短的名称，不要包含特殊字符。",
+      "bimiBackground": "背景颜色必须是 #rrggbb 的格式。",
+      "bimiCertificateInvalid": "这不是可读取的 PEM 格式证书。",
+      "bimiCertificateNotBimi": "该证书不是用于 BIMI 的 VMC 或 CMC。"
     }
   },
   "people": {
@@ -1033,7 +1045,8 @@
         "submission": "告诉邮件应用在哪里通过 STARTTLS 发信（端口 587）。",
         "caa": "只允许 Let's Encrypt 为服务器的名称签发证书，且只签发给此服务器自己的账户。让 TLS 在 UwUMail Gateway 之后保持私密。",
         "tlsa": "告诉发送方服务器这台服务器的证书使用哪个密钥，让它们只通过加密连接投递 (DANE)。需要使用 DNSSEC 签名的区域。",
-        "avatars": "让其他邮件服务器找到此域名下地址的公开头像。"
+        "avatars": "让其他邮件服务器找到此域名下地址的公开头像。",
+        "bimi": "告诉邮件应用在哪里找到域名的徽标，如有证书也包括证书。"
       },
       "notes": {
         "mxUpstream": "指向上游邮件服务器。没问题。",
@@ -1064,7 +1077,9 @@
         "tlsaKeyKept": "与服务器的密钥匹配。续期证书时密钥保持不变。",
         "tlsaMismatch": "与这台服务器出示的任何证书都不匹配。检查 DANE 的服务器会暂扣发往你的域名的邮件，直到记录指向当前的密钥。",
         "tlsaUnsigned": "该区域没有使用 DNSSEC 签名，所以还没有服务器会查看这条记录。",
-        "dnssecBogus": "服务器名称的 DNSSEC 签名无法验证。检查签名的服务器完全无法连到这台服务器。"
+        "dnssecBogus": "服务器名称的 DNSSEC 签名无法验证。检查签名的服务器完全无法连到这台服务器。",
+        "bimiElsewhere": "指向的徽标或证书不是本服务器提供的那个。",
+        "bimiMultiple": "存在多条 BIMI 记录。只允许一条。"
       },
       "catchAll": "全收（Catch-all）",
       "catchAllHint": "发往不存在地址的邮件会转给此人。这也会招来更多垃圾邮件。",
@@ -1107,7 +1122,8 @@
         "submission": "邮件应用发信（STARTTLS）",
         "caa": "仅限此服务器的证书（CAA）",
         "tlsa": "DANE (TLSA)",
-        "avatars": "头像（Libravatar）"
+        "avatars": "头像（Libravatar）",
+        "bimi": "收件箱中的徽标（BIMI）"
       },
       "tlsaKeyChange": "在服务器的密钥改变之前 (使用自己的证书文件、迁移到另一台服务器，或删除 data/tls/acme/key.pem)，请先在这条记录旁边发布新密钥的记录并等待一天。否则检查 DANE 的服务器会暂扣发给你的邮件。"
     },
@@ -1652,7 +1668,10 @@
       "gatewayOutboundBlocked": "无法通过网关连接到其他邮件服务器（涉及 {{count}} 个域名）。",
       "virusScannerAway": "病毒扫描器没有响应。在其恢复之前，邮件将不经检查直接投递，并在邮件头中注明。",
       "virusSignaturesOld": "病毒特征库已有 {{since}} 未更新。扫描器已不再获取新的特征库。",
-      "maskedStranded_other": "{{domain}} 上有 {{count}} 个隐藏地址，但没有人能在那里创建新的。"
+      "maskedStranded_other": "{{domain}} 上有 {{count}} 个隐藏地址，但没有人能在那里创建新的。",
+      "microsoftBlocked": "Microsoft（Outlook、Hotmail）拒收来自 {{ip}} 的邮件（{{code}}）。",
+      "microsoftThrottled": "Microsoft 正在限制来自 {{ip}} 的邮件（{{code}}）。",
+      "microsoftAuth": "Microsoft 拒收来自 {{domain}} 的邮件：其身份验证不够完善（{{code}}）。"
     },
     "hints": {
       "noDomains": "没有域名，服务器就无法接收邮件。",
@@ -1679,7 +1698,10 @@
       "gatewayRefused": "请在“服务器 → 设置向导”中重新配对网关。",
       "gatewayPort25Blocked": "许多 VPS 服务商会屏蔽外发端口 25。请联系其客服开放；在此之前可以使用中继。",
       "gatewayOutboundBlocked": "许多 VPS 服务商会屏蔽外发端口 25。请联系其客服开放；在此之前可以使用中继。",
-      "maskedStranded": "自 0.16.0 起，没有人登录的域名不会向任何人提供隐藏地址。请在该域名的页面上将其设为仅用于隐藏地址，并为应使用它的域名选中它。现有的地址在任何情况下都会继续可用。"
+      "maskedStranded": "自 0.16.0 起，没有人登录的域名不会向任何人提供隐藏地址。请在该域名的页面上将其设为仅用于隐藏地址，并为应使用它的域名选中它。现有的地址在任何情况下都会继续可用。",
+      "microsoftBlocked": "请在 sender.office.com 申请将该地址移出列表。“Microsoft”标签页列出了步骤。",
+      "microsoftThrottled": "服务器会自动重试。请尽量保持发信量平稳；更多内容见“Microsoft”标签页。",
+      "microsoftAuth": "请检查该域名的 SPF、DKIM 和 DMARC。“Microsoft”标签页会显示缺少什么。"
     }
   },
   "secondFactor": {
@@ -4019,6 +4041,262 @@
       "perMillion": "每百万 token 输入 {{input}},输出 {{output}}",
       "manual": "手动设置",
       "unknown": "价格未知"
+    }
+  },
+  "microsoft": {
+    "intro": "Outlook.com、Hotmail 和 Live 是否接收来自本服务器的邮件，以及有什么办法。",
+    "status": {
+      "ok": "正常",
+      "warning": "可以更好",
+      "problem": "缺失或错误",
+      "unknown": "未知"
+    },
+    "kinds": {
+      "blocked": "已封锁",
+      "throttled": "已限流",
+      "authentication": "身份验证"
+    },
+    "groups": {
+      "blockList": {
+        "title": "该 IP 地址在 Microsoft 的封锁列表上",
+        "meaning": "Microsoft 已将此 IP 地址列入封锁列表。在移出之前，Outlook.com、Hotmail 和 Live 会拒收来自它的所有邮件。"
+      },
+      "banned": {
+        "title": "Microsoft 不接收来自此地址段的邮件",
+        "meaning": "Microsoft 拒收来自整个地址段的邮件，通常是因为它属于某个托管商，而该托管商的其他客户发送过垃圾邮件。"
+      },
+      "ipRefused": {
+        "title": "Microsoft 拒收来自此 IP 地址的邮件",
+        "meaning": "Microsoft 不信任此 IP 地址，例如因为它的信誉，或缺少反向 DNS 名称。"
+      },
+      "throttled": {
+        "title": "Microsoft 正在限制来自此 IP 地址的邮件",
+        "meaning": "Microsoft 暂时减少接收来自此 IP 地址的邮件。邮件不会丢失：它们在队列中等待，服务器会重试。"
+      },
+      "authentication": {
+        "title": "发件域名的身份验证不够完善",
+        "meaning": "Microsoft 要求发件人具备 SPF、DKIM 和 DMARC。来自此域名的邮件未能充分通过这些检查。"
+      },
+      "dmarc": {
+        "title": "邮件未通过域名的 DMARC 检查",
+        "meaning": "来自此域名的邮件未通过其自身的 DMARC 检查，因此 Microsoft 按照该域名 DMARC 策略的要求拒收了它们。"
+      }
+    },
+    "issues": {
+      "title": "Microsoft 的拒收",
+      "none": "Microsoft 目前正常接收来自本服务器的邮件。",
+      "noneHint": "当 Outlook.com、Hotmail 或 Live 拒收或限制邮件时，服务器会察觉并在这里显示可以怎么做。",
+      "subjectIp": "IP 地址 {{ip}}",
+      "subjectDomain": "域名 {{domain}}",
+      "subjectUnknown": "发件人未知",
+      "theIp": "你服务器的 IP 地址",
+      "count_other": "出现 {{count}} 次",
+      "seen": "首次于 {{first}}，最近 {{last}}",
+      "meaning": "这意味着什么",
+      "todo": "可以怎么做",
+      "reply": "Microsoft 的回复",
+      "resolve": "标记为已解决",
+      "resolveHint": "否则，若一天内没有拒收，服务器会自动将其标记为已解决。",
+      "resolvedToast": "已标记为已解决。如果 Microsoft 再次拒收邮件，它会重新出现在这里。",
+      "earlier_other": "{{count}} 条以前的拒收",
+      "resolvedAuto": "{{time}} 已解决：邮件又能送达了。",
+      "resolvedBy": "{{time}} 由 {{login}} 标记为已解决。"
+    },
+    "delist": {
+      "step1": "打开 Microsoft 的移出列表页面：",
+      "step2": "输入 IP 地址 {{ip}} 和一个你能收信的邮箱地址，然后完成验证。",
+      "step3": "Microsoft 会发送一封带链接的邮件。打开它并选择“Delist IP”。",
+      "step4": "等待：通常最多需要 24 到 48 小时。之后在这里标记为已解决，或者在一天没有拒收后由服务器自动完成。",
+      "banned": "如果 Microsoft 拒绝了申请，说明整个地址段的名声不好。这时使用信誉良好的中继会有帮助（设置 → 发信）。"
+    },
+    "wait": {
+      "retry": "暂时无需操作：服务器稍后会自动重试。",
+      "steady": "尽量保持发信量平稳。一次性大量发送最容易被限流。",
+      "snds": "在 SNDS 中查看该 IP 地址的信誉（见下方指南）。",
+      "relay": "如果经常发生，使用信誉良好的中继会有帮助（设置 → 发信）。"
+    },
+    "authenticate": {
+      "text": "请检查 {{domain}} 的 SPF、DKIM 和 DMARC，修正缺失或错误的部分。下方的检查清单显示了当前情况。",
+      "textAny": "请检查你的域名的 SPF、DKIM 和 DMARC，修正缺失或错误的部分。下方的检查清单显示了当前情况。",
+      "open": "打开 {{domain}}"
+    },
+    "checklist": {
+      "title": "Microsoft 对发件人的规定",
+      "intro": "自 2025 年 5 月起，Microsoft 要求每天向 Outlook.com、Hotmail 和 Live 发送超过 5,000 封邮件的发件人具备 SPF、DKIM 和 DMARC。对其他人也强烈建议如此：这决定了邮件能否进入收件箱。",
+      "checkedAt": "检查于 {{time}}",
+      "check": "重新检查",
+      "checking": "正在检查…",
+      "checkedToast": "已重新检查。",
+      "domains": "各域名的 SPF、DKIM 和 DMARC",
+      "domainsIntro": "对齐是指 SPF 或 DKIM 通过的域名与发件地址（From）中的域名相同。",
+      "noDomains": "还没有域名。",
+      "aligned": "对齐",
+      "dmarc": {
+        "notChecked": "尚未检查 DNS。“重新检查”会进行检查。",
+        "missing": "没有 DMARC 记录。Microsoft 至少要求 p=none。",
+        "none": "p=none 满足 Microsoft 的最低要求。quarantine 或 reject 能更好地保护你的域名，建议使用。",
+        "partial": "只适用于 {{pct}} % 的邮件。最好去掉 pct，这样就适用于全部邮件。",
+        "strict": "策略 {{policy}}：正是应有的设置。"
+      },
+      "route": {
+        "direct": "邮件从本服务器直接发往 Microsoft。",
+        "relay": "邮件经由中继 {{relay}} 发出，因此 Microsoft 看到的是中继的地址。其名称由中继的运营方负责。",
+        "gateway": "邮件经由网关发出，因此 Microsoft 看到的是网关的地址。"
+      },
+      "ptr": {
+        "title": "反向 DNS（PTR）",
+        "intro": "Microsoft 会检查每个发信 IP 地址是否有一个名称（PTR），且该名称指回同一地址（正向确认，FCrDNS）。",
+        "ok": "{{ptr}} 指回此地址。",
+        "unconfirmed": "{{ptr}} 没有指回此地址。请为该名称添加 A 或 AAAA 记录，或请你的服务商修改 PTR。",
+        "missing": "没有名称（PTR）。请你的网络或托管服务商设置一个，例如 {{hostname}}。",
+        "private": "这是私有地址：Microsoft 看到的是它前面的公网地址。",
+        "notHostname": "该名称不是服务器的主机名（{{hostname}}）。这是允许的，但使用同一名称效果最好。",
+        "none": "尚不知道发信地址。"
+      },
+      "tls": {
+        "title": "加密（TLS）",
+        "ok": "服务器向 Microsoft 发信时始终使用 STARTTLS。",
+        "warning": "中继被设置为不使用 TLS 发信。Microsoft 期望加密连接；请在“设置 → 发信”中开启 TLS。"
+      },
+      "unsubscribe": {
+        "title": "一键退订（List-Unsubscribe）",
+        "text": "UwUMail 本身不发送新闻简报。如果有新闻简报或群发工具通过本服务器发信，它必须添加以下标头（RFC 8058），以便收件人一键退订："
+      }
+    },
+    "guides": {
+      "title": "Microsoft 为发件人提供的工具",
+      "intro": "两者都需要 Microsoft 账户，并且只适用于你能掌控的 IP 地址，也就是你自己的服务器，而不是中继的地址。",
+      "snds": {
+        "title": "SNDS：你的 IP 地址的信誉",
+        "intro": "Smart Network Data Services 显示 Microsoft 如何看待来自你的 IP 地址的邮件。",
+        "step1": "打开 SNDS 并用 Microsoft 账户登录：",
+        "step2": "选择“Request Access”，输入发信的 IP 地址或地址段，例如 {{ip}}。",
+        "step3": "Microsoft 会向一个它从该 IP 地址的反向 DNS 或 WHOIS 中选出的地址发送确认邮件，例如 PTR 名称所属域名的 postmaster@，或服务商的 abuse 联系人。请确保其中一个能送到你手里，例如作为本服务器上的附加地址。",
+        "step4": "打开该邮件中的链接进行确认。",
+        "step5": "此后 SNDS 会按 IP 地址每天显示收到多少邮件、其中多少看起来像垃圾邮件，以及一种颜色：绿色表示良好，黄色表示一般，红色表示糟糕。"
+      },
+      "jmrp": {
+        "title": "JMRP：获知垃圾邮件投诉",
+        "intro": "通过 Junk Mail Reporting Program，Microsoft 会在其用户将你的邮件标记为垃圾邮件时通知你。",
+        "step1": "在同一门户中选择“Junk Mail Reporting Program”，并新建一份协议。",
+        "step2": "输入你的发信 IP 地址和一个接收报告的地址，例如本服务器上的一个邮箱。",
+        "step3": "通过 Microsoft 发来的邮件确认协议。",
+        "step4": "每当有人把你的邮件标为垃圾邮件，该地址就会收到一份 ARF 格式的报告邮件。报告很多就意味着：检查一下谁在发送什么。"
+      },
+      "delist": {
+        "title": "被封锁了？申请移出",
+        "text": "Microsoft 会应申请将 IP 地址移出封锁列表。步骤显示在上方每条拒收中："
+      }
+    },
+    "banner": {
+      "blocked": "Microsoft（Outlook、Hotmail）正在封锁来自本服务器的邮件。",
+      "throttled": "Microsoft（Outlook、Hotmail）正在限制来自本服务器的邮件。",
+      "authentication": "Microsoft（Outlook、Hotmail）因身份验证问题拒收来自本服务器的邮件。",
+      "codes": "代码：{{codes}}",
+      "ips": "IP：{{ips}}",
+      "delist": "申请移出",
+      "open": "详情与帮助"
+    }
+  },
+  "bimi": {
+    "title": "BIMI：收件箱中的徽标",
+    "intro": "有了 BIMI，邮件应用会在来自 {{domain}} 的邮件旁显示你的徽标。",
+    "support": "Gmail、Apple 邮件（iCloud）、Yahoo/AOL、Fastmail 等会显示 BIMI 徽标，Microsoft Outlook 不会。Gmail 和 Apple 只在有 Verified Mark Certificate（VMC）或 Common Mark Certificate（CMC）时显示徽标，这类证书需向证书颁发机构购买（例如 DigiCert、Entrust/Sectigo、GlobalSign）；VMC 需要注册商标。",
+    "enable": "显示徽标（BIMI）",
+    "enableHint": "服务器随后会提供该徽标。还需要下方的 DNS 记录。",
+    "enableNeedsSvg": "请先上传 SVG 徽标。",
+    "enabledToast": "BIMI 已开启。",
+    "disabledToast": "BIMI 已关闭。",
+    "logoUrl": "徽标地址",
+    "preview": {
+      "circle": "圆形",
+      "square": "方形",
+      "none": "还没有徽标。",
+      "alt": "{{domain}} 的 BIMI 徽标"
+    },
+    "logo": {
+      "title": "徽标（SVG）",
+      "stored": "{{size}}，{{time}} 修改",
+      "pixelLogo": "你的域名徽标是位图；BIMI 需要同一徽标的 SVG 版本。请上传 SVG 版本（向设计者索取，或从你的设计软件中导出）。",
+      "hint": "最大 256 KiB 的 SVG 矢量图。服务器会将其转换为 BIMI 要求的格式（SVG Tiny PS），并去除脚本和链接；结果最多 32 KiB。",
+      "choose": "选择 SVG",
+      "replace": "选择其他 SVG",
+      "chosen": "已选择：{{name}}",
+      "readFailed": "无法读取该文件。",
+      "titleLabel": "徽标中的名称",
+      "titleHint": "通常是组织的名称。BIMI 要求必须有。",
+      "background": "背景",
+      "backgroundSolid": "纯色",
+      "backgroundKeep": "保留徽标自身的背景",
+      "color": "背景颜色",
+      "backgroundHint": "邮件应用会以圆形或方形显示徽标。在其后放一个纯色方块，两种情况下都会好看。",
+      "save": "保存徽标",
+      "savedToast": "徽标已保存。",
+      "remove": "删除徽标",
+      "removeConfirm": "删除 BIMI 徽标吗？BIMI 也会随之关闭。",
+      "removedToast": "徽标已删除。BIMI 已关闭。"
+    },
+    "record": {
+      "title": "DNS 记录",
+      "intro": "发布这条 TXT 记录，邮件应用才能找到徽标。上方 DNS 部分的 Cloudflare 按钮可以替你添加。",
+      "check": "立即检查",
+      "checking": "正在检查…",
+      "checkedToast": "已检查。",
+      "checkedAt": "检查于 {{time}}",
+      "notChecked": "尚未检查。",
+      "whenOn": "开启 BIMI 后，服务器会检查记录是否已发布。",
+      "status": {
+        "ok": "已发布",
+        "warning": "已发布，有提示",
+        "missing": "尚未发布",
+        "wrong": "指向别处",
+        "error": "无法检查"
+      }
+    },
+    "dmarc": {
+      "title": "DMARC",
+      "ok": "DMARC 对 BIMI 来说足够严格。",
+      "needs": "BIMI 需要对所有邮件（pct=100 或不设 pct）使用 p=quarantine 或 p=reject 的 DMARC，且不能是 sp=none。",
+      "reasons": {
+        "notChecked": "尚未检查 DMARC 记录。",
+        "missing": "没有 DMARC 记录。",
+        "policy": "策略为 p={{policy}}；BIMI 需要 quarantine 或 reject。",
+        "pct": "它只适用于 {{pct}} % 的邮件；BIMI 需要全部。",
+        "subdomains": "子域名被排除在外（sp=none）。",
+        "weak": "策略还不够严格。"
+      },
+      "showDns": "前往 DNS 记录"
+    },
+    "certificate": {
+      "title": "证书（可选）",
+      "intro": "有了 VMC 或 CMC，Gmail 和 Apple 邮件也会显示徽标。请添加从证书颁发机构获得的 PEM 文件，包括证书链。",
+      "paste": "证书（PEM）",
+      "pasteHint": "粘贴文本，或选择 .pem 或 .crt 文件。",
+      "file": "选择文件",
+      "save": "保存证书",
+      "savedToast": "证书已保存。",
+      "replace": "替换证书",
+      "remove": "删除证书",
+      "removeConfirm": "删除证书吗？之后 Gmail 和 Apple 邮件将不再显示徽标。",
+      "removedToast": "证书已删除。",
+      "kind": "类型",
+      "kinds": {
+        "vmc": "Verified Mark Certificate（VMC）",
+        "cmc": "Common Mark Certificate（CMC）",
+        "unknown": "未知类型"
+      },
+      "subject": "持有者",
+      "issuer": "颁发者",
+      "valid": "有效期",
+      "validRange": "{{from}} 至 {{to}}",
+      "names": "名称",
+      "warnings": {
+        "expired": "证书已过期。邮件应用会忽略它。",
+        "notYetValid": "证书尚未生效。",
+        "otherDomain": "证书中没有 {{domain}}。",
+        "noLogo": "证书中不含徽标。",
+        "unknownKind": "这看起来不是 VMC 或 CMC。"
+      }
     }
   }
 }

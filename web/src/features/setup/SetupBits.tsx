@@ -308,6 +308,7 @@ const KINDS = [
   "submissions",
   "submission",
   "avatars",
+  "bimi",
 ] as const;
 
 /** Rewriting these can cut off other senders or another mail server, so they get a warning. */

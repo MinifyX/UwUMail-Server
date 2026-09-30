@@ -184,7 +184,7 @@ export function PortalShell({ session, children }: { session: Session; children:
       to: "/admin",
       label: t("nav.overview"),
       icon: LayoutDashboard,
-      also: ["/admin/stats", "/admin/mail-flow", "/admin/backups"],
+      also: ["/admin/stats", "/admin/mail-flow", "/admin/microsoft", "/admin/backups"],
     },
     {
       to: "/admin/people",

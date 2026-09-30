@@ -10,6 +10,7 @@ import { Link, navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
 import { usePeople } from "@/features/people/queries";
 import { CloudflarePanel } from "@/features/setup/SetupBits";
+import { BimiCard, DNS_CARD_ID } from "./BimiCard";
 import { DnsStatusPill, RecordList } from "./DnsBits";
 import { ForwardsCard } from "./ForwardsCard";
 import { DomainLogoCard } from "@/features/pictures/PictureCard";
@@ -35,6 +36,7 @@ function DnsCard({ domain }: { domain: DomainDetail }) {
 
   return (
     <Card
+      id={DNS_CARD_ID}
       title={t("domains.detail.dns")}
       action={
         <Button size="sm" icon={RefreshCw} busy={check.isPending} onClick={() => check.mutate()}>
@@ -246,11 +248,15 @@ export function DomainPage({ name }: { name: string }) {
         </div>
         <div className="flex flex-col gap-5">
           {maskedOnly ? (
-            <MaskedOnlyCard domain={domain} />
+            <>
+              <MaskedOnlyCard domain={domain} />
+              <BimiCard domain={domain.name} />
+            </>
           ) : (
             <>
               <CatchAllCard domain={domain} />
               <DomainLogoCard domain={domain.name} />
+              <BimiCard domain={domain.name} />
               <MaskedPolicyCard domain={domain} />
               <GroupsCard domain={domain} />
               <ForwardsCard domain={domain} />

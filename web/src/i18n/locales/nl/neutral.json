@@ -186,7 +186,8 @@
       "mailFlow": "Mailverkeer",
       "backups": "Back-ups",
       "updates": "Updates",
-      "stats": "Statistieken"
+      "stats": "Statistieken",
+      "microsoft": "Microsoft"
     },
     "tiles": {
       "news": "nieuw",
@@ -572,7 +573,18 @@
       "overQuota": "De daglimiet is op: {{detail}}",
       "assistUnavailable": "Dat is nu niet beschikbaar.",
       "badPrice": "Een prijs moet een getal van 0 tot 100.000 zijn.",
-      "badCurrency": "Deze valuta wordt niet ondersteund."
+      "badCurrency": "Deze valuta wordt niet ondersteund.",
+      "bimiNotSvg": "Dat is geen SVG-bestand.",
+      "bimiSvgTooLarge": "De SVG is te groot. Je kunt tot 256 KiB uploaden, en het opgeschoonde logo mag hoogstens 32 KiB zijn.",
+      "bimiSvgUnsupported": "De SVG gebruikt iets wat BIMI niet toestaat: {{detail}}. Sla hem opnieuw op als eenvoudige tekening zonder effecten, maskers of scripts.",
+      "bimiSvgExternal": "De SVG verwijst naar iets buiten het bestand ({{detail}}). Een BIMI-logo moet alles zelf bevatten.",
+      "bimiSvgRaster": "De SVG bevat een pixelafbeelding. BIMI heeft een echte vectortekening nodig.",
+      "bimiSvgNoSize": "De SVG heeft geen formaat. Hij heeft een viewBox nodig, of een breedte en hoogte.",
+      "bimiNoSvg": "Upload eerst een SVG-logo voordat je BIMI aanzet.",
+      "bimiTitle": "Vul een kortere naam voor het logo in, zonder speciale tekens.",
+      "bimiBackground": "De achtergrondkleur moet eruitzien als #rrggbb.",
+      "bimiCertificateInvalid": "Dat is geen leesbaar certificaat in PEM-formaat.",
+      "bimiCertificateNotBimi": "Dat certificaat is geen VMC of CMC voor BIMI."
     }
   },
   "people": {
@@ -1055,7 +1067,8 @@
         "submission": "Vertelt mailapps waar ze mail met STARTTLS kunnen verzenden (poort 587).",
         "caa": "Laat alleen Let's Encrypt certificaten uitgeven voor de naam van de server, en alleen aan het eigen account van deze server. Houdt TLS privé achter een UwUMail Gateway.",
         "tlsa": "Vertelt verzendende servers welke sleutel het certificaat van deze server heeft, zodat ze alleen versleuteld bij hem afleveren (DANE). Vereist een met DNSSEC ondertekende zone.",
-        "avatars": "Laat andere mailservers de openbare profielfoto's van de adressen van dit domein vinden."
+        "avatars": "Laat andere mailservers de openbare profielfoto's van de adressen van dit domein vinden.",
+        "bimi": "Vertelt mailapps waar ze het logo van het domein vinden, en het certificaat als er een is."
       },
       "notes": {
         "mxUpstream": "Verwijst naar de voorliggende mailserver. Dat is in orde.",
@@ -1086,7 +1099,9 @@
         "tlsaKeyKept": "Past bij de sleutel van de server. De sleutel blijft hetzelfde als het certificaat wordt vernieuwd.",
         "tlsaMismatch": "Past bij geen enkel certificaat dat deze server laat zien. Servers die DANE controleren houden mail voor je domeinen tegen tot het record de huidige sleutel noemt.",
         "tlsaUnsigned": "De zone is niet ondertekend met DNSSEC, dus nog geen enkele server kijkt naar dit record.",
-        "dnssecBogus": "De DNSSEC-handtekeningen van de naam van de server kloppen niet. Servers die ze controleren bereiken de server helemaal niet."
+        "dnssecBogus": "De DNSSEC-handtekeningen van de naam van de server kloppen niet. Servers die ze controleren bereiken de server helemaal niet.",
+        "bimiElsewhere": "Verwijst naar een ander logo of certificaat dan dat van deze server.",
+        "bimiMultiple": "Er zijn meerdere BIMI-records. Er mag er maar één zijn."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail aan adressen die niet bestaan, gaat naar deze persoon. Dat trekt ook meer spam aan.",
@@ -1129,7 +1144,8 @@
         "submission": "Verzenden voor mailapps (STARTTLS)",
         "caa": "Certificaten alleen voor deze server (CAA)",
         "tlsa": "DANE (TLSA)",
-        "avatars": "Profielfoto's (Libravatar)"
+        "avatars": "Profielfoto's (Libravatar)",
+        "bimi": "Logo in de inbox (BIMI)"
       },
       "tlsaKeyChange": "Voordat de sleutel van de server verandert (eigen certificaatbestanden, een verhuizing naar een andere server of het verwijderen van data/tls/acme/key.pem), publiceer je het record voor de nieuwe sleutel naast dit record en wacht je een dag. Anders houden servers die DANE controleren mail voor je tegen."
     },
@@ -1697,7 +1713,10 @@
       "virusScannerAway": "De virusscanner antwoordt niet. Tot hij terug is, wordt mail ongecontroleerd afgeleverd en staat dat in de headers.",
       "virusSignaturesOld": "De virussignaturen zijn {{since}} oud. De scanner haalt geen nieuwe meer op.",
       "maskedStranded_one": "{{domain}} heeft een gemaskeerd adres, maar niemand kan er nieuwe maken.",
-      "maskedStranded_other": "{{domain}} heeft {{count}} gemaskeerde adressen, maar niemand kan er nieuwe maken."
+      "maskedStranded_other": "{{domain}} heeft {{count}} gemaskeerde adressen, maar niemand kan er nieuwe maken.",
+      "microsoftBlocked": "Microsoft (Outlook, Hotmail) weigert mail van {{ip}} ({{code}}).",
+      "microsoftThrottled": "Microsoft remt mail van {{ip}} af ({{code}}).",
+      "microsoftAuth": "Microsoft weigert mail van {{domain}}: de authenticatie is niet goed genoeg ({{code}})."
     },
     "hints": {
       "noDomains": "Zonder domein kan de server geen mail ontvangen.",
@@ -1724,7 +1743,10 @@
       "gatewayRefused": "Koppel de gateway opnieuw onder Server → Set-up.",
       "gatewayPort25Blocked": "Veel VPS-providers blokkeren uitgaande poort 25. Vraag hun support om hem te openen; tot dan helpt een relay.",
       "gatewayOutboundBlocked": "Veel VPS-providers blokkeren uitgaande poort 25. Vraag hun support om hem te openen; tot dan helpt een relay.",
-      "maskedStranded": "Sinds 0.16.0 biedt een domein waarop niemand inlogt aan niemand gemaskeerde adressen aan. Maak het op zijn pagina een domein alleen voor gemaskeerde adressen en kies het voor de domeinen waarvan de mensen het moeten gebruiken. De adressen die er zijn blijven hoe dan ook werken."
+      "maskedStranded": "Sinds 0.16.0 biedt een domein waarop niemand inlogt aan niemand gemaskeerde adressen aan. Maak het op zijn pagina een domein alleen voor gemaskeerde adressen en kies het voor de domeinen waarvan de mensen het moeten gebruiken. De adressen die er zijn blijven hoe dan ook werken.",
+      "microsoftBlocked": "Vraag Microsoft via sender.office.com om het adres van de lijst te halen. Het tabblad Microsoft toont de stappen.",
+      "microsoftThrottled": "De server probeert het vanzelf opnieuw. Verstuur zo gelijkmatig mogelijk; het tabblad Microsoft vertelt meer.",
+      "microsoftAuth": "Controleer SPF, DKIM en DMARC van het domein. Het tabblad Microsoft toont wat er ontbreekt."
     }
   },
   "secondFactor": {
@@ -4103,6 +4125,264 @@
       "perMillion": "{{input}} invoer, {{output}} uitvoer per miljoen tokens",
       "manual": "met de hand ingesteld",
       "unknown": "Prijs onbekend"
+    }
+  },
+  "microsoft": {
+    "intro": "Of Outlook.com, Hotmail en Live mail van deze server aannemen, en wat helpt.",
+    "status": {
+      "ok": "In orde",
+      "warning": "Kan beter",
+      "problem": "Ontbreekt of fout",
+      "unknown": "Onbekend"
+    },
+    "kinds": {
+      "blocked": "Geblokkeerd",
+      "throttled": "Afgeremd",
+      "authentication": "Authenticatie"
+    },
+    "groups": {
+      "blockList": {
+        "title": "Het IP-adres staat op de blokkeerlijst van Microsoft",
+        "meaning": "Microsoft heeft dit IP-adres op zijn blokkeerlijst gezet. Outlook.com, Hotmail en Live weigeren alle mail ervan tot het weer van de lijst is gehaald."
+      },
+      "banned": {
+        "title": "Microsoft neemt geen mail aan uit deze adresreeks",
+        "meaning": "Microsoft weigert mail uit de hele adresreeks, vaak omdat die van een hostingprovider is waarvan andere klanten spam stuurden."
+      },
+      "ipRefused": {
+        "title": "Microsoft weigert mail van dit IP-adres",
+        "meaning": "Microsoft vertrouwt dit IP-adres niet, bijvoorbeeld door zijn reputatie of een ontbrekende reverse-DNS-naam."
+      },
+      "throttled": {
+        "title": "Microsoft remt mail van dit IP-adres af",
+        "meaning": "Microsoft neemt een tijdje minder mail van dit IP-adres aan. Er gaat niets verloren: de mail wacht in de wachtrij en de server probeert het opnieuw."
+      },
+      "authentication": {
+        "title": "De authenticatie van het afzenderdomein is niet goed genoeg",
+        "meaning": "Microsoft verwacht SPF, DKIM en DMARC van afzenders. Mail van dit domein kwam daar niet goed genoeg doorheen."
+      },
+      "dmarc": {
+        "title": "Mail is gezakt voor de DMARC-controle van het domein",
+        "meaning": "Mail van dit domein kwam niet door de eigen DMARC-controle, dus heeft Microsoft hem geweigerd zoals het DMARC-beleid van het domein vraagt."
+      }
+    },
+    "issues": {
+      "title": "Weigeringen door Microsoft",
+      "none": "Microsoft neemt op dit moment mail van deze server aan.",
+      "noneHint": "Als Outlook.com, Hotmail of Live mail weigeren of afremmen, merkt de server dat en laat hij hier zien wat helpt.",
+      "subjectIp": "IP-adres {{ip}}",
+      "subjectDomain": "Domein {{domain}}",
+      "subjectUnknown": "Afzender onbekend",
+      "theIp": "het IP-adres van je server",
+      "count_one": "één keer gezien",
+      "count_other": "{{count}} keer gezien",
+      "seen": "Eerst op {{first}}, laatst {{last}}",
+      "meaning": "Wat het betekent",
+      "todo": "Wat je kunt doen",
+      "reply": "Antwoord van Microsoft",
+      "resolve": "Markeren als opgelost",
+      "resolveHint": "Anders markeert de server het zelf als opgelost na een dag zonder weigeringen.",
+      "resolvedToast": "Gemarkeerd als opgelost. Weigert Microsoft weer mail, dan verschijnt het hier opnieuw.",
+      "earlier_one": "{{count}} eerdere weigering",
+      "earlier_other": "{{count}} eerdere weigeringen",
+      "resolvedAuto": "Opgelost {{time}}: mail kwam weer door.",
+      "resolvedBy": "{{time}} door {{login}} gemarkeerd als opgelost."
+    },
+    "delist": {
+      "step1": "Open de pagina van Microsoft om van de lijst gehaald te worden:",
+      "step2": "Vul het IP-adres {{ip}} in en een e-mailadres dat je kunt lezen, en los de controle op.",
+      "step3": "Microsoft stuurt een mail met een link. Open die en kies ‘Delist IP’.",
+      "step4": "Wacht af: meestal duurt het tot 24 à 48 uur. Markeer het daarna hier als opgelost, of laat de server dat doen na een dag zonder weigeringen.",
+      "banned": "Wijst Microsoft het verzoek af, dan heeft de hele adresreeks een slechte naam. Een relay met een goede reputatie helpt dan (Instellingen → Verzenden)."
+    },
+    "wait": {
+      "retry": "Nu hoef je niets te doen: de server probeert het later vanzelf opnieuw.",
+      "steady": "Verstuur zo gelijkmatig mogelijk. Vooral grote hoeveelheden tegelijk worden afgeremd.",
+      "snds": "Controleer de reputatie van het IP-adres in SNDS (zie de uitleg hieronder).",
+      "relay": "Gebeurt het vaak, dan helpt een relay met een goede reputatie (Instellingen → Verzenden)."
+    },
+    "authenticate": {
+      "text": "Controleer SPF, DKIM en DMARC van {{domain}} en herstel wat ontbreekt of fout is. De checklist hieronder toont de stand.",
+      "textAny": "Controleer SPF, DKIM en DMARC van je domeinen en herstel wat ontbreekt of fout is. De checklist hieronder toont de stand.",
+      "open": "{{domain}} openen"
+    },
+    "checklist": {
+      "title": "De regels van Microsoft voor afzenders",
+      "intro": "Sinds mei 2025 eist Microsoft SPF, DKIM en DMARC van iedereen die meer dan 5.000 mails per dag naar Outlook.com, Hotmail en Live stuurt. Voor alle anderen wordt het sterk aangeraden: het bepaalt of mail in de inbox belandt.",
+      "checkedAt": "Gecontroleerd {{time}}",
+      "check": "Opnieuw controleren",
+      "checking": "Bezig met controleren …",
+      "checkedToast": "Opnieuw gecontroleerd.",
+      "domains": "SPF, DKIM en DMARC per domein",
+      "domainsIntro": "Uitlijning betekent dat SPF of DKIM slaagt voor hetzelfde domein als in het afzenderadres (From).",
+      "noDomains": "Er zijn nog geen domeinen.",
+      "aligned": "Uitlijning",
+      "dmarc": {
+        "notChecked": "DNS nog niet gecontroleerd. ‘Opnieuw controleren’ doet dat.",
+        "missing": "Geen DMARC-record. Microsoft eist minstens p=none.",
+        "none": "p=none voldoet aan het minimum van Microsoft. quarantine of reject beschermen je domein beter en worden aangeraden.",
+        "partial": "Geldt maar voor {{pct}} % van de mail. Laat pct liever weg, dan geldt het voor alles.",
+        "strict": "Beleid {{policy}}: zo hoort het."
+      },
+      "route": {
+        "direct": "Mail gaat van deze server rechtstreeks naar Microsoft.",
+        "relay": "Mail vertrekt via de relay {{relay}}, dus Microsoft ziet de adressen van de relay. Voor hun namen zorgt wie de relay beheert.",
+        "gateway": "Mail vertrekt via de gateway, dus Microsoft ziet de adressen van de gateway."
+      },
+      "ptr": {
+        "title": "Reverse DNS (PTR)",
+        "intro": "Microsoft controleert of elk verzendend IP-adres een naam (PTR) heeft die weer naar hetzelfde adres wijst (forward-confirmed, FCrDNS).",
+        "ok": "{{ptr}} wijst weer naar dit adres.",
+        "unconfirmed": "{{ptr}} wijst niet naar dit adres. Maak een A- of AAAA-record voor de naam, of vraag je provider de PTR aan te passen.",
+        "missing": "Geen naam (PTR). Vraag je internet- of hostingprovider er een in te stellen, bijvoorbeeld {{hostname}}.",
+        "private": "Een privéadres: Microsoft ziet het openbare adres ervoor.",
+        "notHostname": "De naam is niet de hostnaam van de server ({{hostname}}). Dat mag, maar dezelfde naam maakt de beste indruk.",
+        "none": "Er is nog geen verzendend adres bekend."
+      },
+      "tls": {
+        "title": "Versleuteling (TLS)",
+        "ok": "De server gebruikt voor mail naar Microsoft altijd STARTTLS.",
+        "warning": "De relay is ingesteld zonder TLS. Microsoft verwacht versleutelde verbindingen; zet TLS aan onder Instellingen → Verzenden."
+      },
+      "unsubscribe": {
+        "title": "Afmelden met één klik (List-Unsubscribe)",
+        "text": "UwUMail verstuurt zelf geen nieuwsbrieven. Stuurt een nieuwsbrief- of mailingtool via deze server, dan moet die deze headers (RFC 8058) toevoegen, zodat mensen zich met één klik kunnen afmelden:"
+      }
+    },
+    "guides": {
+      "title": "De hulpmiddelen van Microsoft voor afzenders",
+      "intro": "Voor allebei heb je een Microsoft-account nodig, en ze werken alleen voor IP-adressen die je zelf beheert, dus voor je eigen server, niet voor die van een relay.",
+      "snds": {
+        "title": "SNDS: de reputatie van je IP-adres",
+        "intro": "De Smart Network Data Services laten zien hoe Microsoft mail van je IP-adressen ziet.",
+        "step1": "Open SNDS en meld je aan met een Microsoft-account:",
+        "step2": "Kies ‘Request Access’ en vul het verzendende IP-adres of de reeks in, bijvoorbeeld {{ip}}.",
+        "step3": "Microsoft stuurt een bevestigingsmail naar een adres dat het uit de reverse DNS of WHOIS van het IP-adres haalt, bijvoorbeeld postmaster@ het domein van de PTR-naam, of het abuse-contact van de provider. Zorg dat een daarvan bij jou aankomt, bijvoorbeeld als extra adres op deze server.",
+        "step4": "Open de link in die mail om te bevestigen.",
+        "step5": "Vanaf dan toont SNDS dagelijks per IP-adres hoeveel mail er aankwam, hoeveel daarvan op spam leek, en een kleur: groen is goed, geel gemengd, rood slecht."
+      },
+      "jmrp": {
+        "title": "JMRP: hoor van spamklachten",
+        "intro": "Met het Junk Mail Reporting Program laat Microsoft je weten wanneer zijn gebruikers je mail als ongewenst markeren.",
+        "step1": "Kies in hetzelfde portaal ‘Junk Mail Reporting Program’ en maak een nieuwe overeenkomst.",
+        "step2": "Vul je verzendende IP-adressen in en een adres dat de meldingen ontvangt, bijvoorbeeld een mailbox op deze server.",
+        "step3": "Bevestig de overeenkomst met de mail die Microsoft stuurt.",
+        "step4": "Markeert iemand je mail als ongewenst, dan komt daar een melding binnen als ARF-mail. Veel meldingen betekent: kijk wie wat verstuurt."
+      },
+      "delist": {
+        "title": "Geblokkeerd? Vraag om verwijdering van de lijst",
+        "text": "Microsoft haalt IP-adressen op verzoek van zijn blokkeerlijst. De stappen staan hierboven bij elke weigering:"
+      }
+    },
+    "banner": {
+      "blocked": "Microsoft (Outlook, Hotmail) blokkeert mail van deze server.",
+      "throttled": "Microsoft (Outlook, Hotmail) remt mail van deze server af.",
+      "authentication": "Microsoft (Outlook, Hotmail) weigert mail van deze server vanwege de authenticatie.",
+      "codes": "Code: {{codes}}",
+      "ips": "IP: {{ips}}",
+      "delist": "Verwijdering aanvragen",
+      "open": "Details en hulp"
+    }
+  },
+  "bimi": {
+    "title": "BIMI: logo in de inbox",
+    "intro": "Met BIMI tonen mailapps je logo naast mail van {{domain}}.",
+    "support": "Gmail, Apple Mail (iCloud), Yahoo/AOL, Fastmail en andere tonen BIMI-logo's. Microsoft Outlook niet. Gmail en Apple tonen logo's alleen met een Verified Mark Certificate (VMC) of Common Mark Certificate (CMC), dat je koopt bij een certificaatautoriteit (bijv. DigiCert, Entrust/Sectigo, GlobalSign); voor een VMC heb je een geregistreerd merk nodig.",
+    "enable": "Logo tonen (BIMI)",
+    "enableHint": "De server stelt het logo dan beschikbaar. Daarnaast is het DNS-record hieronder nodig.",
+    "enableNeedsSvg": "Upload eerst een SVG-logo.",
+    "enabledToast": "BIMI staat aan.",
+    "disabledToast": "BIMI staat uit.",
+    "logoUrl": "Adres van het logo",
+    "preview": {
+      "circle": "Rond",
+      "square": "Vierkant",
+      "none": "Nog geen logo.",
+      "alt": "BIMI-logo van {{domain}}"
+    },
+    "logo": {
+      "title": "Logo (SVG)",
+      "stored": "{{size}}, gewijzigd {{time}}",
+      "pixelLogo": "Je domeinlogo is een pixelafbeelding; BIMI heeft hetzelfde logo als SVG nodig. Upload de SVG-versie (vraag het aan wie het ontwierp, of exporteer het uit je ontwerpprogramma).",
+      "hint": "Een SVG-vectortekening van maximaal 256 KiB. De server zet die om naar het formaat dat BIMI eist (SVG Tiny PS) en haalt scripts en links weg; het resultaat mag hoogstens 32 KiB zijn.",
+      "choose": "SVG kiezen",
+      "replace": "Andere SVG kiezen",
+      "chosen": "Gekozen: {{name}}",
+      "readFailed": "Het bestand kon niet worden gelezen.",
+      "titleLabel": "Naam in het logo",
+      "titleHint": "Meestal de naam van de organisatie. BIMI eist er een.",
+      "background": "Achtergrond",
+      "backgroundSolid": "Effen kleur",
+      "backgroundKeep": "Die van het logo houden",
+      "color": "Achtergrondkleur",
+      "backgroundHint": "Mailapps tonen het logo in een cirkel of een vierkant. Een effen vierkant erachter zorgt dat het in beide goed staat.",
+      "save": "Logo opslaan",
+      "savedToast": "Logo opgeslagen.",
+      "remove": "Logo verwijderen",
+      "removeConfirm": "BIMI-logo verwijderen? BIMI gaat daarmee uit.",
+      "removedToast": "Logo verwijderd. BIMI staat uit."
+    },
+    "record": {
+      "title": "DNS-record",
+      "intro": "Publiceer dit TXT-record zodat mailapps het logo vinden. De Cloudflare-knop in het DNS-gedeelte hierboven kan het voor je toevoegen.",
+      "check": "Nu controleren",
+      "checking": "Bezig met controleren …",
+      "checkedToast": "Gecontroleerd.",
+      "checkedAt": "Gecontroleerd {{time}}",
+      "notChecked": "Nog niet gecontroleerd.",
+      "whenOn": "Zodra BIMI aan staat, controleert de server of het record gepubliceerd is.",
+      "status": {
+        "ok": "Gepubliceerd",
+        "warning": "Gepubliceerd, met een opmerking",
+        "missing": "Nog niet gepubliceerd",
+        "wrong": "Wijst ergens anders heen",
+        "error": "Kon niet worden gecontroleerd"
+      }
+    },
+    "dmarc": {
+      "title": "DMARC",
+      "ok": "DMARC is streng genoeg voor BIMI.",
+      "needs": "BIMI heeft DMARC nodig met p=quarantine of p=reject voor alle mail (pct=100, of geen pct) en zonder sp=none.",
+      "reasons": {
+        "notChecked": "Het DMARC-record is nog niet gecontroleerd.",
+        "missing": "Er is geen DMARC-record.",
+        "policy": "Het beleid is p={{policy}}; BIMI heeft quarantine of reject nodig.",
+        "pct": "Het geldt maar voor {{pct}} % van de mail; BIMI heeft alles nodig.",
+        "subdomains": "Subdomeinen zijn uitgezonderd (sp=none).",
+        "weak": "Het beleid is nog niet streng genoeg."
+      },
+      "showDns": "Naar de DNS-records"
+    },
+    "certificate": {
+      "title": "Certificaat (optioneel)",
+      "intro": "Met een VMC of CMC tonen ook Gmail en Apple Mail het logo. Voeg het PEM-bestand toe dat je van de certificaatautoriteit kreeg, inclusief de keten.",
+      "paste": "Certificaat (PEM)",
+      "pasteHint": "Plak de tekst of kies het .pem- of .crt-bestand.",
+      "file": "Bestand kiezen",
+      "save": "Certificaat opslaan",
+      "savedToast": "Certificaat opgeslagen.",
+      "replace": "Certificaat vervangen",
+      "remove": "Certificaat verwijderen",
+      "removeConfirm": "Certificaat verwijderen? Gmail en Apple Mail tonen het logo dan niet meer.",
+      "removedToast": "Certificaat verwijderd.",
+      "kind": "Soort",
+      "kinds": {
+        "vmc": "Verified Mark Certificate (VMC)",
+        "cmc": "Common Mark Certificate (CMC)",
+        "unknown": "Onbekende soort"
+      },
+      "subject": "Houder",
+      "issuer": "Uitgegeven door",
+      "valid": "Geldig",
+      "validRange": "{{from}} tot {{to}}",
+      "names": "Namen",
+      "warnings": {
+        "expired": "Het certificaat is verlopen. Mailapps negeren het.",
+        "notYetValid": "Het certificaat is nog niet geldig.",
+        "otherDomain": "Het certificaat noemt {{domain}} niet.",
+        "noLogo": "Het certificaat bevat geen logo.",
+        "unknownKind": "Dit lijkt geen VMC of CMC."
+      }
     }
   }
 }

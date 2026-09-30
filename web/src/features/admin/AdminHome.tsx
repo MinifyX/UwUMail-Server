@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { Card, KeyValue } from "@/components/ui/Card";
 import { Segmented } from "@/components/ui/Field";
 import { LoadError, Loading } from "@/components/StatusViews";
+import { MicrosoftBanner } from "@/features/microsoft/MicrosoftBanner";
 import { useT } from "@/i18n";
 import { api, type Overview } from "@/lib/api";
 import { formatBytes, formatDuration } from "@/lib/format";
@@ -73,6 +74,7 @@ export function AdminHome() {
   return (
     <div className="flex flex-col gap-5">
       <ViewSwitch />
+      <MicrosoftBanner />
       {view === "simple" ? (
         <>
           <SimpleHome />

@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MicrosoftAddress, MicrosoftDomainCheck, MicrosoftIssue } from "@/lib/api";
-import {
-  actionOf,
-  bannerFacts,
-  dmarcNote,
-  issueDomain,
-  issueIp,
-  ptrStatus,
-  worstKind,
-  worstStatus,
-} from "./microsoft";
+import { actionOf, bannerFacts, dmarcNote, issueDomain, issueIp, ptrStatus, worstKind, worstStatus } from "./microsoft";
 
 const issue = (extra: Partial<MicrosoftIssue>): MicrosoftIssue => ({
   id: 1,
