@@ -1675,6 +1675,68 @@ if header :contains "subject" "Nirgends" { fileinto "Gibt es nicht"; }
     assert_eq!(a.inbox("leni@a.test").await.len(), 2);
 }
 
+/// Labels without a model go on at delivery, before the Sieve script, which sees them as headers;
+/// such a header the sender wrote counts for nothing (docs/sieve.md, "Labels").
+#[tokio::test(flavor = "multi_thread")]
+async fn labels_without_a_model_come_before_the_sieve_script() {
+    let a = start("a.test", &["mini"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let rules = serde_json::json!({ "conditions": [{ "field": "from", "value": "sender.test" }] });
+    let news = uwumail_store::AssistLabelWrite {
+        rules: Some(rules),
+        ..uwumail_store::AssistLabelWrite::simple("Newsletter".into(), String::new(), None)
+    };
+    let news = store.create_assist_label_with(mini, news).await.unwrap();
+    store.create_assist_label(mini, "Fake".into(), String::new(), None).await.unwrap();
+    let script = br#"require ["fileinto", "imap4flags", "mailbox"];
+if header :is "X-UwUMail-Label" "fake" { fileinto :create "Faked"; stop; }
+if anyof (header :is "X-UwUMail-Label" "newsletter", hasflag "newsletter") {
+    setflag "\\Flagged";
+    fileinto :create "Newsletter";
+}
+"#;
+    uwumail_smtp::sieve::validate(script).unwrap();
+    let created = store.create_sieve_script(mini, Some("UwUMail"), script).await.unwrap();
+    store.activate_sieve_script(mini, Some(created.id)).await.unwrap();
+
+    let send = async |subject: &str| {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        let data = format!(
+            "X-UwUMail-Label: fake\r\nFrom: news@sender.test\r\nTo: mini@a.test\r\nSubject: {subject}\r\n\r\nAngebot\r\n."
+        );
+        assert!(session.command(&data).await.starts_with("250"));
+    };
+    send("Neu im Herbst").await;
+    let filed = folder(&a, "mini@a.test", &["Newsletter"]).await.expect("filed by its label");
+    assert_eq!(filed.len(), 1);
+    // The script's setflag does not take off the label set before it.
+    let mut keywords = filed[0].keywords.clone();
+    keywords.sort();
+    assert_eq!(keywords, ["$flagged", "newsletter"]);
+    assert!(folder(&a, "mini@a.test", &["Faked"]).await.is_none(), "the sender's own header is no label");
+    let raw = a.raw(&filed[0]).await;
+    assert!(raw.contains("X-UwUMail-Label: fake") && !raw.contains("X-UwUMail-Label: newsletter"), "{raw}");
+    let log = store.label_log(mini, None, 10).await.unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!((log[0].label_id, log[0].source.as_str(), log[0].code.as_str()), (news.id, "rule", "rule"));
+    assert_eq!(log[0].params["conditions"][0]["value"], "sender.test");
+    assert!(log[0].provider.is_empty());
+
+    // Switched off, nothing is put on without a model.
+    store.set_non_ai_labels(mini, false).await.unwrap();
+    send("Noch mehr").await;
+    assert_eq!(a.wait_for_inbox("mini@a.test", 1).await[0].keywords, Vec::<String>::new());
+    assert_eq!(store.label_log(mini, None, 10).await.unwrap().len(), 1);
+}
+
 /// security-audit-0.7.0 S-44: a redirect without `:copy` that reached nobody -- here because the
 /// message was already passed on from this address once -- used to take the message with it.
 #[tokio::test(flavor = "multi_thread")]

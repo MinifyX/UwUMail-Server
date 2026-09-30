@@ -555,3 +555,29 @@ async fn a_connection_ends_with_its_login() {
     let bye = laptop.line().await;
     assert!(bye.starts_with("* BYE"), "{bye}");
 }
+
+/// A label's keyword set or cleared with STORE is the person labeling by hand: the labels learn from
+/// it (docs/jmap-assist.md, "Learning from the person").
+#[tokio::test]
+async fn labels_learn_from_store() {
+    let server = server().await;
+    let label =
+        server.store.create_assist_label(server.account, "Rechnungen".into(), String::new(), None).await.unwrap();
+    deliver(&server.store, server.account, "Rechnung eins").await;
+    let mut client = Client::login(&server).await;
+    assert!(client.command("SELECT INBOX").await.1.contains("OK"));
+    assert!(client.command("STORE 1 +FLAGS (rechnungen $Forwarded)").await.1.contains("OK"));
+    assert!(client.command("STORE 1 -FLAGS ($Forwarded)").await.1.contains("OK"));
+    let training = server.store.label_training().await.unwrap();
+    assert_eq!(training.iter().map(|t| (t.label_id, t.positive)).collect::<Vec<_>>(), [(label.id, true)]);
+    let knowledge =
+        server.store.label_knowledge(server.account, "nyu@example.net".into(), vec![], vec![]).await.unwrap();
+    assert_eq!(knowledge.senders.get(&label.id), Some(&1));
+
+    assert!(client.command("STORE 1 FLAGS (\\Seen)").await.1.contains("OK"));
+    let training = server.store.label_training().await.unwrap();
+    assert_eq!(training.last().map(|t| (t.label_id, t.positive)), Some((label.id, false)));
+    let knowledge =
+        server.store.label_knowledge(server.account, "nyu@example.net".into(), vec![], vec![]).await.unwrap();
+    assert!(knowledge.senders.is_empty());
+}

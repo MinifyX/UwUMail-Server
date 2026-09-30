@@ -417,3 +417,104 @@ async fn estimates_and_usage_carry_costs_in_the_currency_asked_for() {
     let summary = args(&responses, 0, "Assist/summarize");
     assert_eq!(summary["usage"]["reasoningTokens"], 0, "{summary}");
 }
+
+/// Labels need no model: they are kept, counted and pushed without any provider; only what asks a
+/// model is unavailable (docs/jmap-assist.md, "Labels").
+#[tokio::test]
+async fn labels_work_without_a_provider_and_carry_their_counts() {
+    let plain = server().await;
+    let assist = with_assist(&plain.store).await;
+    let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_assist(assist);
+    let server = Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir };
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    let email = server
+        .deliver(login, "From: Stadtwerke <rechnung@stadtwerke.example>\nSubject: Rechnung\n\nBitte zahlen.\n")
+        .await;
+    let capability = &server.session_of(login).await["accounts"][&account]["accountCapabilities"][ASSIST];
+    assert_eq!(
+        (capability["maxLabelConditions"].clone(), capability["foreignMail"].clone()),
+        (json!(10), json!(false))
+    );
+
+    let rules = json!({ "match": "any", "conditions": [{ "field": "from", "value": "@stadtwerke.example" }] });
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["AssistLabel/set", { "accountId": account, "create": {
+                    "r": { "name": "Rechnungen", "rules": rules, "detector": "invoice", "learnSenders": false },
+                    "bad": { "name": "Kaputt", "rules": { "conditions": [{ "field": "to", "value": "x" }] } },
+                    "odd": { "name": "Seltsam", "detector": "horoscope" }
+                } }, "l"],
+                ["AssistLabel/get", { "accountId": account }, "g"],
+                ["AssistSettings/set", { "accountId": account, "update": { "singleton": { "nonAiLabels": false } } }, "s"],
+                ["AssistSettings/get", { "accountId": account }, "sg"],
+                ["Assist/summarize", { "accountId": account, "emailId": email }, "sum"],
+            ]),
+        )
+        .await;
+    let created = args(&responses, 0, "AssistLabel/set");
+    assert_eq!(created["notCreated"]["bad"]["properties"], json!(["rules"]), "{created}");
+    assert_eq!(created["notCreated"]["odd"]["properties"], json!(["detector"]));
+    let id = created["created"]["r"]["id"].as_str().unwrap().to_owned();
+    let got = args(&responses, 1, "AssistLabel/get");
+    let label = &got["list"][0];
+    assert_eq!(
+        label["rules"],
+        json!({ "match": "any", "conditions": [{ "field": "from", "value": "@stadtwerke.example" }] })
+    );
+    assert_eq!(
+        (label["detector"].clone(), label["learnSenders"].clone(), label["classifier"].clone()),
+        (json!("invoice"), json!(false), json!(true))
+    );
+    assert_eq!(
+        (label["totalEmails"].clone(), label["unreadEmails"].clone(), label["examples"].clone()),
+        (json!(0), json!(0), json!(0))
+    );
+    assert_eq!(args(&responses, 3, "AssistSettings/get")["list"][0]["nonAiLabels"], false);
+    assert_eq!(responses[4][0], "error");
+    assert_eq!(responses[4][1]["type"], "assistUnavailable");
+
+    // Putting the keyword on moves the counts and the label state.
+    let before = got["state"].as_str().unwrap().to_owned();
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["Email/set", { "accountId": account, "update": { email.clone(): { "keywords/rechnungen": true } } }, "e"],
+                ["AssistLabel/get", { "accountId": account }, "g"],
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    id.clone(): { "totalEmails": 1, "unreadEmails": 1, "classifier": false }
+                } }, "same"],
+                ["AssistLabel/set", { "accountId": account, "update": { id.clone(): { "totalEmails": 7 } } }, "changed"],
+            ]),
+        )
+        .await;
+    let got = args(&responses, 1, "AssistLabel/get");
+    assert_ne!(got["state"].as_str().unwrap(), before);
+    assert_eq!((got["list"][0]["totalEmails"].clone(), got["list"][0]["unreadEmails"].clone()), (json!(1), json!(1)));
+    assert!(args(&responses, 2, "AssistLabel/set")["updated"].get(&id).is_some());
+    assert_eq!(args(&responses, 3, "AssistLabel/set")["notUpdated"][&id]["properties"], json!(["totalEmails"]));
+
+    // Mail of other accounts: refused while the admin has not allowed it, and never with an id too.
+    let foreign = json!([{ "from": [{ "name": null, "email": "a@example.net" }], "subject": "Hi", "text": "Hallo" }]);
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["AssistLabel/suggest", { "accountId": account, "foreignMails": foreign,
+                    "foreignLabels": [{ "name": "Arbeit" }] }, "f"],
+                ["AssistLabel/suggest", { "accountId": account, "emailId": email, "foreignMails": foreign }, "both"],
+                ["Assist/summarize", { "accountId": account, "foreignMails": [{ "subject": 5 }] }, "bad"],
+            ]),
+        )
+        .await;
+    assert_eq!(responses[0][1]["type"], "assistUnavailable", "{}", responses[0][1]);
+    assert_eq!(responses[1][1]["type"], "invalidArguments");
+    assert_eq!(responses[2][1]["type"], "invalidArguments");
+    assert!(responses[2][1]["description"].as_str().unwrap().contains("foreignMails[0].subject"));
+}

@@ -255,3 +255,26 @@ async fn a_websocket_ends_with_its_login() {
     send(&mut socket, echo("r4")).await;
     assert!(closed(&mut socket).await);
 }
+
+/// Labels are a push type: their counts move with the mail, so a change to mail names them too once
+/// there are labels (docs/jmap-assist.md, "State and push").
+#[tokio::test]
+async fn labels_are_pushed_with_the_mail_they_count() {
+    let server = server().await;
+    let url = listen(server.router.clone()).await;
+    let account = server.account_id("mini@example.org").await;
+    let mini = server.store.account("mini@example.org").await.unwrap().unwrap().id;
+    let mut socket = connect(&url, Some(&basic("mini@example.org", PASSWORD)), Some("jmap")).await.unwrap();
+    send(&mut socket, json!({ "@type": "WebSocketPushEnable", "dataTypes": ["AssistLabel"] })).await;
+    send(&mut socket, json!({ "@type": "Request", "id": "sync", "using": USING, "methodCalls": [] })).await;
+    assert_eq!(receive(&mut socket).await["requestId"], "sync");
+
+    server.store.create_assist_label(mini, "Rechnungen".into(), String::new(), None).await.unwrap();
+    let change = state_change_for(&mut socket, &account, "AssistLabel").await;
+    assert_eq!(change["changed"][&account]["AssistLabel"], server.store.assist_label_state(mini).await.unwrap());
+
+    server.deliver("mini@example.org", "From: nyu@example.org\nTo: mini@example.org\nSubject: Hi\n\nPurr\n").await;
+    let change = state_change_for(&mut socket, &account, "AssistLabel").await;
+    assert_eq!(change["changed"][&account]["AssistLabel"], server.store.assist_label_state(mini).await.unwrap());
+    assert!(change["changed"][&account].get("Email").is_none(), "only the types asked for");
+}

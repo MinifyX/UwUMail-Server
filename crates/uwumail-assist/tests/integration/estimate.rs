@@ -15,7 +15,7 @@ use crate::common::{INVOICE, Reply, chat, rig};
 
 /// The input tokens of the request the fake provider got, counted like the estimate: the texts and
 /// the frame of Chat Completions around them.
-fn sent_tokens(body: &Value) -> i64 {
+pub fn sent_tokens(body: &Value) -> i64 {
     let schema = body.pointer("/response_format/json_schema/schema").map(Value::to_string).unwrap_or_default();
     estimate_texts([
         body["messages"][0]["content"].as_str().unwrap(),
