@@ -365,3 +365,44 @@ async fn push_to_a_mail_only_app_password_leaves_calendars_out() {
     assert!(changed.contains_key("Email"), "{event}");
     assert!(!changed.keys().any(|kind| kind.starts_with("Calendar")), "{event}");
 }
+
+/// A download never comes as something the browser runs on the portal's origin, whatever type
+/// is asked for: a script, a style sheet, HTML or SVG come as bytes, sandboxed and not embeddable
+/// from other sites. Plain types stay as asked.
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_never_come_as_scripts_or_pages() {
+    let server = server().await;
+    let account = server.account_id("mini@example.org").await;
+    let authorization = basic("mini@example.org", PASSWORD);
+    let upload = Request::post(format!("/jmap/upload/{account}/"))
+        .header(header::AUTHORIZATION, &authorization)
+        .header(header::CONTENT_TYPE, "text/javascript")
+        .body(Body::from("alert(1)"))
+        .unwrap();
+    let (status, body) = server.request(upload).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let blob: Value = serde_json::from_slice(&body).unwrap();
+    let blob = blob["blobId"].as_str().unwrap();
+    for (accept, served) in [
+        ("", "application/octet-stream"),
+        ("?accept=text/javascript", "application/octet-stream"),
+        ("?accept=application/x-javascript;%20charset=utf-8", "application/octet-stream"),
+        ("?accept=text/html", "application/octet-stream"),
+        ("?accept=image/svg%2Bxml", "application/octet-stream"),
+        ("?accept=text/css", "application/octet-stream"),
+        ("?accept=text/plain", "text/plain"),
+        ("?accept=image/png", "image/png"),
+    ] {
+        let request = Request::get(format!("/jmap/download/{account}/{blob}/x.js{accept}"))
+            .header(header::AUTHORIZATION, &authorization)
+            .body(Body::empty())
+            .unwrap();
+        let response = tower::ServiceExt::oneshot(server.router.clone(), request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{accept}");
+        let headers = response.headers();
+        assert_eq!(headers[header::CONTENT_TYPE], served, "{accept}");
+        assert_eq!(headers[header::CONTENT_SECURITY_POLICY], "default-src 'none'; sandbox", "{accept}");
+        assert_eq!(headers["cross-origin-resource-policy"], "same-origin", "{accept}");
+        assert_eq!(headers["x-content-type-options"], "nosniff", "{accept}");
+    }
+}
