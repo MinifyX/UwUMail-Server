@@ -402,8 +402,9 @@ email of the account and forgets its log.
 
 With `AssistSettings.autoLabels` on and at least one label, every mail that is
 delivered to the person (after the spam filter, not into Junk, not for mail they
-sent themselves) is queued. A background worker asks the model which of the
-labels fit (none, one or several) and why, then sets the keywords. Delivery
+sent themselves) is queued. A background worker has the model judge every label
+in turn (a sentence why, then `fits` true or false, so the reason comes before
+the decision) and sets the keywords of the labels that fit. Delivery
 never waits for it and never fails because of it: when the provider is away or
 the quota is used up, the mail simply stays without labels (a job is tried
 three times over a few minutes, then dropped). Mail older than a day in the

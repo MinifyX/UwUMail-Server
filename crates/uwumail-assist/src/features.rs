@@ -46,7 +46,7 @@ const TYPICAL_SUMMARY_TOKENS_PER_MAIL: i64 = 50;
 const TYPICAL_SUMMARY_MAX_TOKENS: i64 = 600;
 const TYPICAL_SPAM_TOKENS: i64 = 150;
 const TYPICAL_EVENTS_TOKENS: i64 = 250;
-const TYPICAL_LABEL_TOKENS: i64 = 80;
+const TYPICAL_LABEL_TOKENS_PER_LABEL: i64 = 40;
 /// Typical thinking, in tokens, of a model that thinks before it answers (at its default effort),
 /// until its own requests tell better.
 const TYPICAL_REASONING_WRITE: i64 = 700;
@@ -929,7 +929,8 @@ impl Assist {
             return Ok(Vec::new());
         }
         let record = self.record(account, email_id).await?;
-        let ticket = self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS);
+        let ticket =
+            self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS_PER_LABEL * labels.len() as i64);
         let mail = self.text(&record, LABEL_MAIL_CHARS).await?;
         let list: Vec<(String, String)> = labels.iter().map(|l| (l.name.clone(), l.description.clone())).collect();
         let prompt = prompts::labels(&mail, &list);
@@ -1207,16 +1208,19 @@ pub fn parse_spam(text: &str) -> Option<(String, f64, Vec<String>)> {
     Some((verdict, confidence.clamp(0.0, 1.0), reasons))
 }
 
-/// Which of the person's labels the model chose, with its reasons. Names that are not labels are
-/// dropped, each label counts once.
+/// Which of the person's labels the model chose, with its reasons. The model judges every label and
+/// says `"fits": false` for the ones that do not fit; those are dropped, like names that are not
+/// labels. An entry without `fits` counts as chosen. Each label counts once, by its first entry.
 pub fn parse_labels(answer: &Value, labels: &[AssistLabel]) -> Vec<LabelPick> {
     let mut picks: Vec<LabelPick> = Vec::new();
+    let mut seen = HashSet::new();
     for entry in answer.get("labels").and_then(Value::as_array).into_iter().flatten().take(50) {
-        let (name, reason) = match entry {
-            Value::String(name) => (name.as_str(), ""),
+        let (name, reason, fits) = match entry {
+            Value::String(name) => (name.as_str(), "", true),
             Value::Object(object) => (
                 object.get("name").and_then(Value::as_str).unwrap_or_default(),
                 object.get("reason").and_then(Value::as_str).unwrap_or_default(),
+                object.get("fits").and_then(Value::as_bool).unwrap_or(true),
             ),
             _ => continue,
         };
@@ -1224,7 +1228,7 @@ pub fn parse_labels(answer: &Value, labels: &[AssistLabel]) -> Vec<LabelPick> {
         let Some(label) = labels.iter().find(|label| label.name.trim().to_lowercase() == name.to_lowercase()) else {
             continue;
         };
-        if picks.iter().any(|pick| pick.label.id == label.id) {
+        if !seen.insert(label.id) || !fits {
             continue;
         }
         picks.push(LabelPick { label: label.clone(), reason: clean(&reason.replace('\n', " "), MAX_REASON_CHARS) });
@@ -1517,6 +1521,19 @@ mod tests {
         let picks = parse_labels(&answer, &labels);
         assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [1, 2]);
         assert_eq!(picks[0].reason, "Eine Rechnung");
+    }
+
+    #[test]
+    fn labels_judged_not_to_fit_are_dropped() {
+        let labels = [label(1, "Rechnungen"), label(2, "Termine"), label(3, "Sicherheit")];
+        let answer = json!({ "labels": [
+            { "name": "Rechnungen", "reason": "Keine Rechnung, sondern ein Sicherheitshinweis.", "fits": false },
+            { "name": "Rechnungen", "reason": "again", "fits": true },
+            { "name": "Termine", "reason": "Kein Termin.", "fits": false },
+            { "name": "Sicherheit", "reason": "Eine neue App hat Zugriff aufs Konto.", "fits": true }
+        ]});
+        let picks = parse_labels(&answer, &labels);
+        assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [3]);
     }
 
     #[test]

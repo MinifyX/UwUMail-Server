@@ -3,6 +3,13 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+- **Auto-labels no longer put labels on mail they do not fit.** The model had to name a label
+  before saying why, so small models listed every label and then explained that it did not fit
+  ("not financial transactions"), and the label was set anyway. Now it judges every label with a
+  reason first and then `fits` true or false; only labels that fit are set.
+
 ## 0.20.0
 
 **Mail from Outlook and Exchange** ([docs/winmail-dat.md](docs/winmail-dat.md)):

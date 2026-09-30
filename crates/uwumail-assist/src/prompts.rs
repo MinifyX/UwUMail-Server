@@ -253,10 +253,11 @@ pub fn labels_schema(names: &[String]) -> Value {
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["name", "reason"],
+                    "required": ["name", "reason", "fits"],
                     "properties": {
                         "name": { "type": "string", "enum": names },
-                        "reason": { "type": "string" }
+                        "reason": { "type": "string" },
+                        "fits": { "type": "boolean" }
                     }
                 }
             }
@@ -268,9 +269,11 @@ pub fn labels_schema(names: &[String]) -> Value {
 pub fn labels(mail: &MailText, labels: &[(String, String)]) -> Prompt {
     let system = format!(
         "You sort one incoming e-mail into the reader's labels. The labels and what belongs in them are listed \
-between <labels> and </labels>. Choose every label that fits the mail, or none: none is a good answer when nothing \
-fits well. Use only names from the list, exactly as written. For each chosen label give one short sentence why, in \
-the language of the label descriptions. {RULES} Answer only with JSON: {{\"labels\": [{{\"name\": \"…\", \"reason\": \"…\"}}]}}."
+between <labels> and </labels>. Go through every label once, in the order of the list: give its name exactly as \
+written, then one short sentence whether the mail belongs in it and why, in the language of the label descriptions, \
+then \"fits\": true only when the mail clearly is what the label describes, otherwise false. Most mails fit no \
+label or only one; a mail that merely mentions a topic does not fit. {RULES} Answer only with JSON: \
+{{\"labels\": [{{\"name\": \"…\", \"reason\": \"…\", \"fits\": false}}]}}."
     );
     let mut list = String::new();
     for (name, description) in labels {
