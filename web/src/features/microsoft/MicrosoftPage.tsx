@@ -61,8 +61,8 @@ const STATUS: Record<MsStatus, { icon: LucideIcon; className: string }> = {
   unknown: { icon: CircleHelp, className: "bg-elevated text-muted" },
 };
 
-/** A small coloured label: what is checked, and how it stands. */
-function StatusChip({ status, label }: { status: MsStatus; label?: ReactNode }) {
+/** A small coloured label: what is checked, and how it stands (`quiet` leaves the status to the colour). */
+function StatusChip({ status, label, quiet = false }: { status: MsStatus; label?: ReactNode; quiet?: boolean }) {
   const { t } = useT();
   const { icon: Icon, className } = STATUS[status];
   return (
@@ -74,7 +74,7 @@ function StatusChip({ status, label }: { status: MsStatus; label?: ReactNode }) 
     >
       <Icon className="size-3.5" aria-hidden />
       {label ?? t(`microsoft.status.${status}`)}
-      {label && <span className="sr-only">: {t(`microsoft.status.${status}`)}</span>}
+      {label && !quiet && <span className="sr-only">: {t(`microsoft.status.${status}`)}</span>}
     </span>
   );
 }
@@ -178,7 +178,7 @@ function IssueCard({ issue, delistUrl }: { issue: MicrosoftIssue; delistUrl: str
   return (
     <li className="flex flex-col gap-3 rounded-card border border-hairline bg-surface p-5">
       <header className="flex flex-wrap items-start gap-3">
-        <StatusChip status={tone} label={t(`microsoft.kinds.${issue.kind}`)} />
+        <StatusChip status={tone} label={t(`microsoft.kinds.${issue.kind}`)} quiet />
         <div className="min-w-0 flex-1 basis-60">
           <h3 className="text-[15px] font-bold">{t(`microsoft.groups.${issue.group}.title`)}</h3>
           <p className="text-[13px] text-muted">
