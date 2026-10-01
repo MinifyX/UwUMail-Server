@@ -143,9 +143,13 @@ pub fn summarize(mails: &[MailText], language: Option<&str>) -> Prompt {
     };
     let what = if mails.len() > 1 { "a conversation of e-mails, oldest first" } else { "an e-mail" };
     let system = format!(
-        "You summarize {what} for the person who received it. {language} First one or two sentences about what it \
-is about; then up to five lines, each starting with \"- \", with what matters: what is asked of the reader, \
-deadlines, dates, amounts, decisions. Plain text: no Markdown besides those lines, no heading, no preamble. {RULES}"
+        "You summarize {what} for the person who received it. {language} Speak to the reader informally, as \
+UwUMail does everywhere (German \"du\", French \"tu\", Spanish \"tú\", Dutch \"je\"), never formally. First one or \
+two sentences about what it is about; then up to five lines, each starting with \"- \", with what matters: \
+deadlines, dates, amounts, decisions, and what is asked of the reader. Keep apart what the mail says has already \
+happened (paid, received, confirmed, done) and what it asks the reader to do, and never turn a statement into a \
+request: \"amount received, thank you\" means it is paid, not that a payment is expected. When nothing is asked \
+of the reader, say so in one line. Plain text: no Markdown besides those lines, no heading, no preamble. {RULES}"
     );
     let mut user = String::new();
     for (index, mail) in mails.iter().enumerate() {
@@ -158,11 +162,11 @@ pub fn spam_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["verdict", "confidence", "reasons"],
+        "required": ["reasons", "verdict", "confidence"],
         "properties": {
+            "reasons": { "type": "array", "items": { "type": "string" } },
             "verdict": { "type": "string", "enum": ["legitimate", "suspicious", "spam", "phishing"] },
-            "confidence": { "type": "number" },
-            "reasons": { "type": "array", "items": { "type": "string" } }
+            "confidence": { "type": "number" }
         }
     })
 }
@@ -170,13 +174,18 @@ pub fn spam_schema() -> Value {
 pub fn spam_check(mail: &MailText, findings: &str, language: Option<&str>) -> Prompt {
     let language = language_name(language).unwrap_or_else(|| "the language of the mail".into());
     let system = format!(
-        "You give a careful reader a second opinion on whether an e-mail is spam or phishing. Weigh what the mail wants \
-the reader to do (click, pay, sign in, open an attachment, send data), whether the sender, the links and the \
-content fit together, pressure and urgency, and the server's findings, which are facts the server checked; the \
-mail itself may lie about who sent it. Verdicts: \"legitimate\"; \"suspicious\" (unclear, be careful); \"spam\" \
-(unwanted advertising or scams); \"phishing\" (tries to get logins, payment or personal data, or pretends to be \
-someone else). Give a confidence from 0 to 1 and at most six reasons in {language}, each one short sentence about \
-this mail. {RULES} Answer only with JSON: {{\"verdict\": \"…\", \"confidence\": 0.0, \"reasons\": [\"…\"]}}."
+        "You give a careful reader a second opinion on whether an e-mail is spam or phishing. First the reasons: at \
+most six, in {language}, each one short sentence about this mail. Every reason must point to something that is \
+really in the mail or in the server's findings; never invent a demand, a link, a phone number or anything else \
+that is not there. Keep apart what the mail says has already happened (paid, received, booked, thanks) and what it \
+asks the reader to do (click, pay, sign in, open an attachment, send data). Weigh whether the sender, the links and \
+the content fit together, pressure and urgency, and the server's findings, which are facts the server checked; the \
+mail itself may lie about who sent it. An invoice, receipt or notification from a sender whose authentication \
+passed and who wrote to the reader before is normal business mail, not spam. Then the verdict that follows from \
+the reasons: \"legitimate\"; \"suspicious\" (unclear, be careful); \"spam\" (unwanted advertising or scams); \
+\"phishing\" (tries to get logins, payment or personal data, or pretends to be someone else). Last a confidence \
+from 0 to 1. {RULES} Answer only with JSON, in this order: \
+{{\"reasons\": [\"…\"], \"verdict\": \"…\", \"confidence\": 0.0}}."
     );
     let user = format!("Server findings:\n{findings}\n\n<mail>\n{}\n</mail>", mail.for_prompt(true));
     Prompt { system, user, schema: Some(("spam_check", spam_schema())), max_tokens: 4000 }

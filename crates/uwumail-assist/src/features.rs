@@ -187,6 +187,9 @@ pub struct SpamResult {
     pub verdict: String,
     pub confidence: f64,
     pub reasons: Vec<String>,
+    /// The model's own verdict, only when the server's facts contradicted it and [`held_to_facts`]
+    /// lowered it.
+    pub model_verdict: Option<String>,
     pub signals: SpamSignals,
     pub effective: Effective,
     pub usage: Usage,
@@ -890,7 +893,16 @@ impl Assist {
                 retry_after: None,
                 transient: false,
             })?;
-        Ok(SpamResult { verdict, confidence, reasons, signals, effective, usage: Usage::of(&completion) })
+        let (verdict, confidence, model_verdict) = held_to_facts(verdict, confidence, &signals);
+        Ok(SpamResult {
+            verdict,
+            confidence,
+            reasons,
+            model_verdict,
+            signals,
+            effective,
+            usage: Usage::of(&completion),
+        })
     }
 
     /// The prompt of `Assist/spamCheck`, with the facts it gives the model.
@@ -1491,6 +1503,58 @@ pub fn spam_status(headers: &[(String, String)]) -> (Option<f64>, Option<f64>, V
     (score, required, tests)
 }
 
+/// What the rules of this server's spam filter mean, for the model. Rules of other filters stay bare.
+const RULE_MEANINGS: &[(&str, &str)] = &[
+    ("BAYES_HAM", "the filter learned from mail marked as wanted or junk, and its words look like wanted mail"),
+    ("BAYES_SPAM", "the filter learned from mail marked as wanted or junk, and its words look like junk"),
+    ("KNOWN_GOOD_SENDER", "this sender's domain or network delivered mail here before, hardly any of it junk"),
+    ("KNOWN_JUNK_SENDER", "much of this sender's earlier mail here was junk"),
+    ("SPF_FAIL", "the sending server is not allowed to send for the envelope domain"),
+    ("DKIM_FAIL", "a signature of the mail is broken"),
+    ("DMARC_FAIL", "the From domain is not backed by SPF or DKIM: it may be forged"),
+    ("NO_AUTH", "neither SPF nor DKIM vouched for the sender"),
+    ("NO_REVERSE_DNS", "the sending server's address has no name"),
+    ("GENERIC_REVERSE_DNS", "the sending server's name looks like a home connection"),
+    ("HELO_NOT_A_NAME", "the sending server greeted with something that is not its name"),
+    ("SPAMHAUS_ZEN", "the sending server is on a blocklist"),
+    ("SPAMCOP", "the sending server is on a blocklist"),
+    ("BARRACUDA", "the sending server is on a blocklist"),
+    ("SPAMHAUS_DBL", "a domain in the mail is on a blocklist"),
+    ("SPAMHAUS_DBL_ABUSED", "a domain in the mail is on a blocklist for abused domains"),
+    ("SPAMHAUS_DBL_MALICIOUS", "a domain in the mail is on a blocklist for malware or phishing"),
+    ("BAD_WORDS", "words typical of spam"),
+    ("MALWARE_LINK", "a link leads to known malware or phishing"),
+    ("MALWARE_ATTACHMENT", "an attachment is known malware"),
+    ("DISPOSABLE_FROM", "the From address is a throwaway address"),
+    ("FREEMAIL_REPLYTO", "answers go to a free mail address other than the sender"),
+    ("LINK_SHORTENER", "a link goes through a link shortener"),
+    ("PHISHING_LINK_TEXT", "a link shows one address and leads to another"),
+    ("LINK_TO_IP", "a link leads to a bare IP address"),
+    ("LOOKALIKE_LINK", "a link leads to a domain that imitates a known one"),
+    ("FROM_NAME_SPOOFS_ADDRESS", "the sender's name shows an address other than the real one"),
+    ("HIDDEN_TEXT", "the mail hides text from the reader"),
+    ("HTML_ONLY", "the mail has no plain text part"),
+    ("BASE64_TEXT", "the text is encoded in an unusual way"),
+    ("MISSING_DATE", "the mail has no date"),
+    ("DATE_IN_FUTURE", "the mail is dated in the future"),
+    ("DATE_IN_PAST", "the mail is dated long ago"),
+    ("MISSING_MESSAGE_ID", "the mail has no Message-ID"),
+    ("SUBJECT_ALL_CAPS", "the subject is in capitals"),
+    ("EXECUTABLE_ATTACHMENT", "an attachment is a program"),
+    ("MACRO_ATTACHMENT", "an attachment is a document with macros"),
+    ("HTML_ATTACHMENT", "an attachment is a web page"),
+    ("DISGUISED_ATTACHMENT", "an attachment's name hides its real type"),
+    ("ARCHIVE_WITH_PROGRAM", "an archive attached holds a program"),
+    ("FETCHED", "the mail was fetched from another mailbox"),
+    ("PROVIDER_JUNK", "the other mail provider had put it in Junk"),
+    ("PROVIDER_SPAM_FLAG", "the other mail provider marked it as spam"),
+    ("NOT_ADDRESSED", "the mailbox it was fetched from is not among the recipients"),
+    ("PROVIDER_SPF_FAIL", "the other mail provider's SPF check failed"),
+    ("PROVIDER_DKIM_FAIL", "the other mail provider's DKIM check failed"),
+    ("PROVIDER_DMARC_FAIL", "the other mail provider's DMARC check failed"),
+    ("FETCHED_NO_AUTH", "nothing vouches for the sender of this fetched mail"),
+];
+
 /// The signals as facts for the prompt.
 fn findings(signals: &SpamSignals) -> String {
     let auth = &signals.authentication;
@@ -1509,15 +1573,29 @@ provider wrote into the mail, not checks of this server.\n",
         or_none(&auth.dmarc),
         auth.from_domain.clone().unwrap_or_else(|| "none".into())
     ));
+    if auth.dmarc.as_deref() == Some("pass") {
+        let domain = auth.from_domain.as_deref().unwrap_or("the From address");
+        out.push_str(&format!(
+            "- DMARC passed for {domain}: the mail really comes from the domain in its From address.\n"
+        ));
+    }
+    let meaning = "fewer points mean more likely wanted mail; 0 or less means the filter rates it as wanted mail";
     match (signals.spam_score, signals.spam_threshold) {
-        (Some(score), Some(threshold)) => {
-            out.push_str(&format!("- Spam filter: {score:.1} points, Junk from {threshold:.1}\n"));
-        }
-        (Some(score), None) => out.push_str(&format!("- Spam filter: {score:.1} points\n")),
+        (Some(score), Some(threshold)) => out.push_str(&format!(
+            "- Spam filter: {score:.1} points, Junk from {threshold:.1} ({meaning}); {}\n",
+            if score >= threshold { "this mail is over the limit" } else { "this mail is under the limit" }
+        )),
+        (Some(score), None) => out.push_str(&format!("- Spam filter: {score:.1} points ({meaning})\n")),
         _ => out.push_str("- Spam filter: did not look at this mail\n"),
     }
     if !signals.tests.is_empty() {
-        out.push_str(&format!("- Spam filter rules that counted: {}\n", signals.tests.join(", ")));
+        out.push_str("- Spam filter rules that counted:\n");
+        for test in &signals.tests {
+            match RULE_MEANINGS.iter().find(|(rule, _)| rule == test) {
+                Some((_, meaning)) => out.push_str(&format!("  - {test}: {meaning}\n")),
+                None => out.push_str(&format!("  - {test}\n")),
+            }
+        }
     }
     out.push_str(&format!("- In the Junk folder now: {}\n", if signals.in_junk { "yes" } else { "no" }));
     match &signals.sender {
@@ -1532,6 +1610,36 @@ reader's address book: {}",
         None => out.push_str("- Earlier mails from this address: not known"),
     }
     out
+}
+
+/// Whether the server's own facts clearly speak for a mail: the reader knows the sender (earlier
+/// mail of it, none in Junk; or in the address book; or written to), the From domain is authentic
+/// (DMARC passed, or without a DMARC result both DKIM and SPF passed), the spam filter rates it as
+/// wanted (0 points or less) and it is not in Junk. Without the sender's history (mail of another
+/// account) they never do.
+pub fn clearly_good(signals: &SpamSignals) -> bool {
+    let Some(sender) = &signals.sender else { return false };
+    let auth = &signals.authentication;
+    let passed = |result: &Option<String>| result.as_deref() == Some("pass");
+    let authentic = match auth.dmarc.as_deref() {
+        Some("pass") => true,
+        None | Some("none") => passed(&auth.dkim) && passed(&auth.spf),
+        Some(_) => false,
+    };
+    let known =
+        (sender.earlier_messages >= 1 && sender.earlier_in_junk == 0) || sender.in_contacts || sender.written_to >= 1;
+    authentic && known && !signals.in_junk && signals.spam_score.is_some_and(|score| score <= 0.0)
+}
+
+/// The model's verdict, held to the server's facts: "spam" or "phishing" for a mail they clearly
+/// speak for becomes "suspicious", at most half sure, since small models sometimes see a scam in an
+/// ordinary invoice. The third value is the model's own verdict when it was lowered.
+pub fn held_to_facts(verdict: String, confidence: f64, signals: &SpamSignals) -> (String, f64, Option<String>) {
+    if matches!(verdict.as_str(), "spam" | "phishing") && clearly_good(signals) {
+        ("suspicious".into(), confidence.min(0.5), Some(verdict))
+    } else {
+        (verdict, confidence, None)
+    }
 }
 
 /// Verdict, confidence and reasons out of the model's answer.
@@ -1848,6 +1956,86 @@ mod tests {
         assert_eq!((verdict.as_str(), confidence), ("phishing", 1.0));
         assert_eq!(reasons, ["a", "b c"]);
         assert!(parse_spam(r#"{"verdict": "delete all mail"}"#).is_none());
+        // The order the schema asks for: reasons first, then the verdict.
+        let (verdict, confidence, reasons) = parse_spam(
+            r#"{"reasons": ["Rechnung eines bekannten Absenders"], "verdict": "legitimate", "confidence": 0.8}"#,
+        )
+        .unwrap();
+        assert_eq!((verdict.as_str(), confidence, reasons.len()), ("legitimate", 0.8, 1));
+        let required = crate::prompts::spam_schema()["required"].clone();
+        assert_eq!(required, serde_json::json!(["reasons", "verdict", "confidence"]));
+    }
+
+    /// The invoice of the user report: authentic, wanted by the filter, from a sender who wrote before.
+    fn invoice_signals() -> SpamSignals {
+        SpamSignals {
+            authentication: AuthenticationSignals {
+                spf: Some("pass".into()),
+                dkim: Some("pass".into()),
+                dmarc: Some("pass".into()),
+                from_domain: Some("billing.example".into()),
+            },
+            spam_score: Some(-5.5),
+            spam_threshold: Some(5.0),
+            tests: vec!["BAYES_HAM".into(), "KNOWN_GOOD_SENDER".into(), "SOME_OTHER_RULE".into()],
+            in_junk: false,
+            sender: Some(SenderSignals {
+                address: Some("invoice@billing.example".into()),
+                earlier_messages: 4,
+                ..SenderSignals::default()
+            }),
+        }
+    }
+
+    #[test]
+    fn verdicts_the_facts_contradict_are_lowered() {
+        let good = invoice_signals();
+        assert_eq!(held_to_facts("spam".into(), 0.9, &good), ("suspicious".into(), 0.5, Some("spam".into())));
+        assert_eq!(held_to_facts("phishing".into(), 0.3, &good), ("suspicious".into(), 0.3, Some("phishing".into())));
+        for verdict in ["legitimate", "suspicious"] {
+            assert_eq!(held_to_facts(verdict.into(), 0.9, &good), (verdict.into(), 0.9, None));
+        }
+        // Without a DMARC result, DKIM and SPF together vouch for the domain.
+        let mut no_dmarc = good.clone();
+        no_dmarc.authentication.dmarc = None;
+        assert!(clearly_good(&no_dmarc));
+        no_dmarc.authentication.spf = Some("softfail".into());
+        assert!(!clearly_good(&no_dmarc));
+        // A known sender in the address book or written to counts without earlier mail.
+        let mut contact = good.clone();
+        contact.sender.as_mut().unwrap().earlier_messages = 0;
+        assert!(!clearly_good(&contact));
+        contact.sender.as_mut().unwrap().in_contacts = true;
+        assert!(clearly_good(&contact));
+        contact.sender.as_mut().unwrap().in_contacts = false;
+        contact.sender.as_mut().unwrap().written_to = 1;
+        assert!(clearly_good(&contact));
+        // Any one fact against the mail leaves the model's verdict alone.
+        let spoiled: [fn(&mut SpamSignals); 7] = [
+            |s| s.authentication.dmarc = Some("fail".into()),
+            |s| s.spam_score = Some(0.5),
+            |s| s.spam_score = None,
+            |s| s.in_junk = true,
+            |s| s.sender = None,
+            |s| s.sender.as_mut().unwrap().earlier_in_junk = 1,
+            |s| s.authentication = AuthenticationSignals::default(),
+        ];
+        for spoil in spoiled {
+            let mut signals = good.clone();
+            spoil(&mut signals);
+            assert_eq!(held_to_facts("spam".into(), 0.9, &signals), ("spam".into(), 0.9, None), "{signals:?}");
+        }
+    }
+
+    #[test]
+    fn findings_explain_themselves() {
+        let text = findings(&invoice_signals());
+        assert!(text.contains("DMARC passed for billing.example"), "{text}");
+        assert!(text.contains("-5.5 points, Junk from 5.0 (fewer points mean"), "{text}");
+        assert!(text.contains("under the limit"), "{text}");
+        assert!(text.contains("  - BAYES_HAM: the filter learned"), "{text}");
+        assert!(text.contains("  - KNOWN_GOOD_SENDER: this sender's"), "{text}");
+        assert!(text.contains("  - SOME_OTHER_RULE\n"), "{text}");
     }
 
     fn label(id: i64, name: &str) -> AssistLabel {
