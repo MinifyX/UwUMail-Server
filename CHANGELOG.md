@@ -3,7 +3,11 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.21.1
+
+**Webmail 0.21.1** (bundled): PDF attachments are previewed again (they were always refused as
+"not a PDF"); the spam check says how sure it is in words instead of a percentage and notes when
+the server lowered the model's verdict.
 
 ### Fixed
 
