@@ -303,6 +303,7 @@ usual "Spam" / "Not spam" actions.
   "verdict": "phishing",
   "confidence": 0.9,
   "reasons": ["Asks to confirm a password through a link", "The link leads to a different domain than the sender's"],
+  "modelVerdict": null,
   "signals": {
     "authentication": { "spf": "fail", "dkim": "none", "dmarc": "fail", "fromDomain": "bank.example" },
     "spamScore": 4.2,
@@ -328,13 +329,15 @@ usual "Spam" / "Not spam" actions.
 | `verdict` | `legitimate`, `suspicious`, `spam` or `phishing` |
 | `confidence` | 0 to 1, the model's own estimate |
 | `reasons` | at most six short sentences |
+| `modelVerdict` | `null`, or the model's own verdict (`spam` or `phishing`) when the server's facts clearly speak for the mail and `verdict` was lowered to `suspicious` (and `confidence` to at most 0.5): the sender wrote before with none of it in Junk, is in the address book or was written to; DMARC passed (without a DMARC result: DKIM and SPF); the spam filter gave 0 points or less; not in Junk. Never for mail of another account |
 | `signals.authentication` | SPF, DKIM and DMARC as this server's `Authentication-Results` recorded them (`pass`, `fail`, `softfail`, `neutral`, `none`, …), `null` each when the mail did not come from another server |
 | `signals.spamScore`, `spamThreshold`, `tests` | the server's spam filter: its points, the limit for Junk and the rules that counted (`X-Spam-Status`); `null` and `[]` when it did not look |
 | `signals.inJunk` | the mail is in Junk now |
 | `signals.sender` | the From address and this account's history with it: mails from it before this one, how many of them are in Junk, mails the person sent to it, whether it is in the address book, and when the first mail came (`UTCDate`) |
 
-The model sees the same signals as facts next to the mail, and the mail itself
-as untrusted data.
+The model sees the same signals as facts next to the mail, with what the
+spam filter's points and rules mean, and the mail itself as untrusted data. It
+gives its reasons before the verdict.
 
 ## Assist/extractEvents
 

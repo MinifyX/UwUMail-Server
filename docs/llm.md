@@ -346,10 +346,14 @@ The model gets the mail and what the server knows: SPF, DKIM and DMARC as
 this server's `Authentication-Results` recorded them (headers of other servers
 are ignored), the spam filter's score and rules, whether the mail is in Junk,
 and the sender's history (earlier mail, how much of it in Junk, whether the
-person wrote to them, whether they are in the contacts). The answer is one of
-*legitimate*, *suspicious*, *spam*, *phishing*, with reasons. The reader shows
-both, the server's facts and the model's opinion; the decision stays with the
-person.
+person wrote to them, whether they are in the contacts), with what the spam
+filter's points and rules mean. The model gives its reasons first, each about
+something in the mail or the findings, then one of *legitimate*, *suspicious*,
+*spam*, *phishing*. When the server's facts clearly speak for the mail (a known
+sender, DMARC passed, 0 points or less, not in Junk), *spam* or *phishing*
+becomes *suspicious*, at most half sure, and `modelVerdict` keeps what the model
+said. The reader shows both, the server's facts and the model's opinion; the
+decision stays with the person.
 
 ## Dates
 

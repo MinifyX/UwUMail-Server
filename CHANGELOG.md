@@ -3,6 +3,23 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.21.1
+
+**Webmail 0.21.1** (bundled): PDF attachments are previewed again (they were always refused as
+"not a PDF"); the spam check says how sure it is in words instead of a percentage and notes when
+the server lowered the model's verdict.
+
+### Fixed
+
+- **The spam check no longer calls ordinary invoices spam.** The model gives its reasons before
+  its verdict, may only name what is really in the mail or the server's findings, and tells apart
+  what a mail says already happened ("amount received") from what it asks of you. The findings
+  explain the spam filter's points and rules. When the server's facts clearly speak for a mail
+  (known sender, DMARC passed, 0 points or less, not in Junk), "spam" or "phishing" becomes
+  "suspicious" at most half sure, and `modelVerdict` says what the model said.
+- **Summaries no longer turn "paid" into "to pay".** They keep what already happened apart from
+  what is asked of you, say so when nothing is, and speak to you informally ("du").
+
 ## 0.21.0
 
 **Labels** ([docs/labels.md](docs/labels.md), [docs/jmap-assist.md](docs/jmap-assist.md#labels)):

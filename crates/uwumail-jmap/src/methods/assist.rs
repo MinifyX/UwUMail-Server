@@ -704,6 +704,7 @@ pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     out.insert("verdict".into(), json!(result.verdict));
     out.insert("confidence".into(), json!(result.confidence));
     out.insert("reasons".into(), json!(result.reasons));
+    out.insert("modelVerdict".into(), json!(result.model_verdict));
     out.insert("signals".into(), json!(result.signals));
     Ok(with_source(out, &result.effective, &result.usage))
 }
