@@ -67,8 +67,12 @@ CREATE TABLE move_mailboxes (
     bytes_done       INTEGER NOT NULL DEFAULT 0,
     -- What the old mailbox holds altogether, when its server says (for the quota warning).
     source_bytes     INTEGER,
+    -- Contacts and calendar entries found in IMAP folders (added up over the rounds), and the ones
+    -- the old provider's CardDAV/CalDAV had the last time it was asked.
     contacts_done    INTEGER NOT NULL DEFAULT 0,
     events_done      INTEGER NOT NULL DEFAULT 0,
+    dav_contacts     INTEGER NOT NULL DEFAULT 0,
+    dav_events       INTEGER NOT NULL DEFAULT 0,
     -- Why contacts or calendars did not come (a code), empty when they did or were not asked for.
     dav_error        TEXT NOT NULL DEFAULT '',
     -- The calendars and address books found in the first round, as JSON, so later rounds ask the

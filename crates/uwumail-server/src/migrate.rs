@@ -21,7 +21,7 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use tokio::sync::watch;
-use uwumail_store::{MigrationJob, MigrationProgress, MigrationRun, Store, StoreError};
+use uwumail_store::{DavKind, MigrationJob, MigrationProgress, MigrationRun, Store, StoreError};
 
 use crate::fetch::Detour;
 use crate::import::imap::{Connection, CopyEnd, CopyEvent, CopyOptions, Source, copy_folders, quoted};
@@ -71,7 +71,7 @@ pub async fn run_migrations(store: Store, egress: uwumail_smtp::egress::Egress, 
     }
 }
 
-fn paused(code: &str, detail: impl std::fmt::Display) -> MigrationRun {
+pub(crate) fn paused(code: &str, detail: impl std::fmt::Display) -> MigrationRun {
     MigrationRun::Paused { code: code.to_owned(), detail: detail.to_string() }
 }
 
@@ -108,12 +108,26 @@ async fn run_job_within(
     grace: Duration,
 ) -> MigrationRun {
     let deadline = tokio::time::Instant::now() + limit + grace;
-    let mut connection = match tokio::time::timeout_at(deadline, connect(store, job, detour, dialer)).await {
-        Ok(Ok(connection)) => connection,
-        Ok(Err(run)) => return run,
-        Err(_) => return paused("unreachable", format!("{} did not answer in time", job.host)),
+    let password = match store.migration_password(job.account_id, job.id).await {
+        Ok(Some(password)) => password,
+        Ok(None) => return MigrationRun::Continue,
+        Err(err) => return paused("failed", err),
     };
-    let copy = copy(store, &mut connection, job, limit);
+    let source = OldMailbox { account_id: job.account_id, host: &job.host, port: job.port, login: &job.login };
+    let mut connection =
+        match tokio::time::timeout_at(deadline, connect(store, &source, password, detour, dialer)).await {
+            Ok(Ok(connection)) => connection,
+            Ok(Err(run)) => return run,
+            Err(_) => return paused("unreachable", format!("{} did not answer in time", job.host)),
+        };
+    let id = job.id;
+    let note = move |store: Store, progress: MigrationProgress| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        // `false` from the store: the person paused the move or ended it meanwhile.
+        Box::pin(async move { store.note_migration_progress(id, progress).await.unwrap_or(true) })
+    };
+    let options = CopyOptions { skip_known: true, ..CopyOptions::default() };
+    let source_name = source_name(job);
+    let copy = copy(store, &mut connection, job.account_id, &source_name, job.progress, options, limit, note);
     let run = match tokio::time::timeout_at(deadline, copy).await {
         Ok(run) => run,
         // A portion that never ended; the next turn starts it again.
@@ -123,10 +137,20 @@ async fn run_job_within(
     run
 }
 
+/// An old mailbox to copy from, and the account here it goes into.
+pub(crate) struct OldMailbox<'a> {
+    pub account_id: i64,
+    pub host: &'a str,
+    pub port: u16,
+    pub login: &'a str,
+}
+
 /// Checks the host again, connects and logs in. What went wrong comes back as the pause to make.
-async fn connect(
+/// Shared by a person's own move and the moves the admin runs (`crate::moves`).
+pub(crate) async fn connect(
     store: &Store,
-    job: &MigrationJob,
+    old: &OldMailbox<'_>,
+    password: String,
     detour: Option<Detour>,
     dialer: Option<uwumail_smtp::egress::Dialer>,
 ) -> Result<Connection, MigrationRun> {
@@ -134,22 +158,17 @@ async fn connect(
     // have come to point at this machine or the local network since (as for fetched mailboxes,
     // security-audit-0.5.2 S-10). The connection itself is only ever made to a public address the
     // dialer found (Source::remote).
-    if detour.is_none() && !crate::import::imap::resolves_publicly(&job.host, job.port).await {
-        return Err(paused("notPublic", format!("{} does not resolve to a public address", job.host)));
+    if detour.is_none() && !crate::import::imap::resolves_publicly(old.host, old.port).await {
+        return Err(paused("notPublic", format!("{} does not resolve to a public address", old.host)));
     }
-    let password = match store.migration_password(job.account_id, job.id).await {
-        Ok(Some(password)) => password,
-        Ok(None) => return Err(MigrationRun::Continue),
-        Err(err) => return Err(paused("failed", err)),
-    };
-    match store.account_by_id(job.account_id).await {
+    match store.account_by_id(old.account_id).await {
         Ok(Some(account)) if account.has_mailbox() => {}
         Ok(_) => return Err(paused("noMailbox", "this account has no mailbox to move into")),
         Err(err) => return Err(paused("failed", err)),
     }
     let source = match detour {
         // Through the proxy when the admin wants fetching to take it; straight otherwise.
-        None => Source::remote(&job.host, job.port, password, dialer),
+        None => Source::remote(old.host, old.port, password, dialer),
         Some(detour) => Source {
             address: detour.address,
             tls_name: Some(detour.tls_name),
@@ -163,17 +182,51 @@ async fn connect(
         Ok(connection) => connection,
         Err(err) => return Err(paused("unreachable", format!("{err:#}"))),
     };
-    if let Err(err) = connection.command(&format!("LOGIN {} {}", quoted(&job.login), quoted(&source.password))).await {
+    if let Err(err) = connection.command(&format!("LOGIN {} {}", quoted(old.login), quoted(&source.password))).await {
         return Err(paused("loginRefused", format!("{err:#}")));
     }
     Ok(connection)
 }
 
-async fn copy(store: &Store, connection: &mut Connection, job: &MigrationJob, limit: Duration) -> MigrationRun {
-    // Earlier turns of this round count too.
-    let base = job.progress;
-    let options = CopyOptions { dry_run: false, skip_known: true, deadline: Some(tokio::time::Instant::now() + limit) };
-    let id = job.id;
+/// Writes down how far a turn got; `false` stops it.
+pub(crate) type Note = dyn Fn(Store, MigrationProgress) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync;
+
+/// One turn of copying: what is new since the last one, for up to `limit`, counted on top of
+/// `base` (the turns of this round before). `Done` when everything there was is here. Contacts
+/// and calendars found in IMAP folders (with [`CopyOptions::objects`]) go to `objects`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn copy(
+    store: &Store,
+    connection: &mut Connection,
+    account_id: i64,
+    source_name: &str,
+    base: MigrationProgress,
+    options: CopyOptions,
+    limit: Duration,
+    note: impl Fn(Store, MigrationProgress) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync + 'static,
+) -> MigrationRun {
+    copy_with(store, connection, account_id, source_name, base, options, limit, Box::new(note), None).await
+}
+
+/// What a turn does with contacts and calendar entries found in IMAP folders.
+pub(crate) type Objects =
+    dyn Fn(DavKind, String, Vec<String>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync;
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn copy_with(
+    store: &Store,
+    connection: &mut Connection,
+    account_id: i64,
+    source_name: &str,
+    base: MigrationProgress,
+    options: CopyOptions,
+    limit: Duration,
+    note: Box<Note>,
+    objects: Option<Box<Objects>>,
+) -> MigrationRun {
+    let options = CopyOptions { deadline: Some(tokio::time::Instant::now() + limit), ..options };
+    let note: std::sync::Arc<Note> = note.into();
+    let objects: Option<std::sync::Arc<Objects>> = objects.map(Into::into);
     let mut report = {
         let store = store.clone();
         let current = std::sync::Arc::new(std::sync::Mutex::new(base));
@@ -196,18 +249,23 @@ async fn copy(store: &Store, connection: &mut Connection, job: &MigrationJob, li
                     return Box::pin(std::future::ready(true));
                 }
                 CopyEvent::Folder { .. } => return Box::pin(std::future::ready(true)),
+                CopyEvent::Objects { folder, kind, texts } => {
+                    let Some(objects) = objects.clone() else { return Box::pin(std::future::ready(true)) };
+                    return Box::pin(async move {
+                        objects(kind, folder, texts).await;
+                        true
+                    });
+                }
             }
             let noted: MigrationProgress = *now;
-            let store = store.clone();
-            // `false` from the store: the person paused the move or ended it meanwhile.
-            Box::pin(async move { store.note_migration_progress(id, noted).await.unwrap_or(true) })
+            note(store.clone(), noted)
         }
     };
-    let result = copy_folders(store, connection, job.account_id, &source_name(job), options, &mut report).await;
+    let result = copy_folders(store, connection, account_id, source_name, options, &mut report).await;
     match result {
         Ok((copied, end)) => {
             tracing::info!(
-                address = %job.address,
+                account_id,
                 copied = copied.messages,
                 skipped = copied.skipped,
                 ?end,
@@ -222,7 +280,7 @@ async fn copy(store: &Store, connection: &mut Connection, job: &MigrationJob, li
             paused("quotaExceeded", "the mailbox here is full")
         }
         Err(err) => {
-            tracing::warn!(address = %job.address, err = %format!("{err:#}"), "moving mail failed");
+            tracing::warn!(account_id, err = %format!("{err:#}"), "moving mail failed");
             paused("failed", format!("{err:#}"))
         }
     }

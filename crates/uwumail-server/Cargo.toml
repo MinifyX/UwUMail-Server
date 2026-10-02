@@ -29,6 +29,7 @@ figment.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 instant-acme.workspace = true
+mail-parser.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
 rustls-pki-types.workspace = true

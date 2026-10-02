@@ -18,7 +18,10 @@ use serde::Serialize;
 use crate::address::normalize_address;
 use crate::fetch::{check_host, seal, unseal};
 use crate::migration_jobs::MigrationProgress;
-use crate::{Result, Store, StoreError, now};
+use crate::{
+    DavCollection, DavImportMode, DavImportReport, DavKind, NewDavCollection, NewImportCollection, Result, Split,
+    Store, StoreError, now,
+};
 
 /// Mailboxes in one move at most.
 pub const MAX_MOVE_MAILBOXES: usize = 2000;
@@ -339,7 +342,8 @@ fn move_from_row(row: &Row<'_>) -> rusqlite::Result<Move> {
 const MAILBOX_COLUMNS: &str = "m.id, m.move_id, m.account_id, a.login, a.display_name, a.quota_bytes, a.used_bytes, \
      m.old_address, m.login, m.imap_host, m.imap_port, m.dav_url, m.created_account, m.password_sealed IS NOT NULL, \
      m.state, m.final_round, m.error, m.error_detail, m.folders_done, m.folders_total, m.messages_done, \
-     m.messages_total, m.messages_skipped, m.bytes_done, m.source_bytes, m.contacts_done, m.events_done, m.dav_error, \
+     m.messages_total, m.messages_skipped, m.bytes_done, m.source_bytes, m.contacts_done + m.dav_contacts, \
+     m.events_done + m.dav_events, m.dav_error, \
      m.dav_found, m.rounds, m.created_at, m.last_run_at, m.last_synced_at, m.next_sync_at, m.finished_at";
 const MAILBOX_FROM: &str = "move_mailboxes m JOIN accounts a ON a.id = m.account_id";
 
@@ -408,7 +412,7 @@ fn summary(conn: &Connection, id: i64) -> Result<MoveSummary> {
                 coalesce(sum(state = 'paused'), 0), coalesce(sum(state = 'synced'), 0),
                 coalesce(sum(state = 'done'), 0), coalesce(sum(messages_done), 0),
                 coalesce(sum(messages_total), 0), coalesce(sum(messages_skipped), 0), coalesce(sum(bytes_done), 0),
-                coalesce(sum(contacts_done), 0), coalesce(sum(events_done), 0)
+                coalesce(sum(contacts_done + dav_contacts), 0), coalesce(sum(events_done + dav_events), 0)
          FROM move_mailboxes WHERE move_id = ?1",
         [id],
         |row| {
@@ -946,8 +950,9 @@ impl Store {
         .await
     }
 
-    /// How contacts and calendars went: counts brought in this round (added to the ones before),
-    /// an error code or empty, and the collections found, when they were looked for.
+    /// How contacts and calendars went: how many the old provider had (they replace the counts of
+    /// the round before, which were the same entries), an error code or empty, and the
+    /// collections found, when they were looked for.
     pub async fn note_move_dav(
         &self,
         id: i64,
@@ -959,10 +964,23 @@ impl Store {
         let error = shorten(error);
         self.write(move |tx| {
             tx.execute(
-                "UPDATE move_mailboxes SET contacts_done = max(contacts_done, ?2), events_done = max(events_done, ?3),
-                     dav_error = ?4, dav_found = coalesce(?5, dav_found)
+                "UPDATE move_mailboxes SET dav_contacts = ?2, dav_events = ?3, dav_error = ?4,
+                     dav_found = coalesce(?5, dav_found)
                  WHERE id = ?1",
                 params![id, contacts, events, error, found],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Contacts and calendar entries a turn found in IMAP folders, added to the counts.
+    pub async fn count_move_objects(&self, id: i64, contacts: i64, events: i64) -> Result<()> {
+        self.write(move |tx| {
+            tx.execute(
+                "UPDATE move_mailboxes SET contacts_done = contacts_done + ?2, events_done = events_done + ?3
+                 WHERE id = ?1",
+                params![id, contacts.max(0), events.max(0)],
             )?;
             Ok(())
         })
@@ -1025,6 +1043,38 @@ impl Store {
             Ok(())
         })
         .await
+    }
+}
+
+impl Store {
+    /// Brings calendar entries or cards a move found (at the old provider, in an IMAP folder or in
+    /// a file) into the account's own collection of the same name, made when there is none: one
+    /// round after the other merges into the same one, by the entries' UIDs, so nothing comes
+    /// twice. What the cutting left out is in the report too.
+    pub async fn move_dav_import(
+        &self,
+        account_id: i64,
+        kind: DavKind,
+        new: NewImportCollection,
+        default: NewDavCollection,
+        split: Split,
+    ) -> Result<(DavCollection, DavImportReport)> {
+        let wanted = if new.name.trim().is_empty() { default.display_name.clone() } else { new.name.trim().to_owned() };
+        let existing = self
+            .dav_collections(account_id, kind, default.clone())
+            .await?
+            .into_iter()
+            .find(|c| c.account_id == account_id && c.display_name.trim().eq_ignore_ascii_case(&wanted));
+        let collection = match existing {
+            Some(collection) => collection,
+            None => self.dav_create_import_collection(account_id, kind, new, default).await?,
+        };
+        let mut report = self.dav_import(account_id, collection.id, split.objects, DavImportMode::Merge).await?;
+        for problem in split.problems {
+            report.total += 1;
+            report.problem(problem.item, problem.reason);
+        }
+        Ok((collection, report))
     }
 }
 

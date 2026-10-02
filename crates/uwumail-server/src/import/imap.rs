@@ -16,7 +16,7 @@ use rustls_pki_types::ServerName;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
-use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store, StoreError};
+use uwumail_store::{BlobHash, DavKind, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store, StoreError};
 
 /// Messages fetched per request.
 const BATCH: usize = 25;
@@ -555,6 +555,10 @@ pub enum CopyEvent {
     Folder { name: String, path: String, new: usize, exists: usize },
     /// How far the copy got, after every portion and every folder.
     Progress(Copied),
+    /// Contacts or calendar entries found in an IMAP folder that holds them as messages (Kolab
+    /// and others keep them so), only when [`CopyOptions::objects`] asked for them: the vCards or
+    /// iCalendar texts of one portion. The messages they came in are not copied as mail.
+    Objects { folder: String, kind: DavKind, texts: Vec<String> },
 }
 
 /// Whoever started a copy hears of it here. The answer says whether to go on: `false` stops the
@@ -571,6 +575,52 @@ pub struct CopyOptions {
     pub skip_known: bool,
     /// Stop after the first portion that ends past this; the next copy goes on from there.
     pub deadline: Option<tokio::time::Instant>,
+    /// Look for contacts and calendars kept as messages in folders named so (see
+    /// [`CopyEvent::Objects`]).
+    pub objects: bool,
+}
+
+/// Whether a folder is one where groupware servers keep contacts or calendar entries as messages
+/// (Kolab, and some others): by its top folder's usual names.
+pub(crate) fn object_folder(folder: &Folder) -> Option<DavKind> {
+    let top = folder.path.first()?.to_lowercase();
+    match top.as_str() {
+        "contacts" | "kontakte" | "adressbuch" | "address book" | "addressbook" => Some(DavKind::Addressbook),
+        "calendar" | "kalender" => Some(DavKind::Calendar),
+        _ => None,
+    }
+}
+
+/// The vCards or iCalendar texts a message carries as parts of their own type.
+pub(crate) fn object_texts(raw: &[u8], kind: DavKind) -> Vec<String> {
+    use mail_parser::{MimeHeaders, PartType};
+    let Some(message) = uwumail_store::mime_limits::parse_message(raw) else { return Vec::new() };
+    let mut texts = Vec::new();
+    for part in &message.parts {
+        let Some(content_type) = part.content_type() else { continue };
+        let ctype = content_type.ctype().to_ascii_lowercase();
+        let subtype = content_type.subtype().unwrap_or_default().to_ascii_lowercase();
+        let wanted = match kind {
+            DavKind::Addressbook => {
+                matches!((ctype.as_str(), subtype.as_str()), ("text", "vcard" | "x-vcard" | "directory"))
+            }
+            DavKind::Calendar => {
+                matches!((ctype.as_str(), subtype.as_str()), ("text", "calendar") | ("application", "ics"))
+            }
+        };
+        if !wanted {
+            continue;
+        }
+        let text = match &part.body {
+            PartType::Text(text) => text.to_string(),
+            PartType::Binary(bytes) | PartType::InlineBinary(bytes) => String::from_utf8_lossy(bytes).into_owned(),
+            _ => continue,
+        };
+        if !text.trim().is_empty() {
+            texts.push(text);
+        }
+    }
+    texts
 }
 
 /// How a copy ended.
@@ -699,7 +749,9 @@ pub(crate) async fn copy_folders(
             copied.folders += 1;
             continue;
         }
-        let mailbox = mailbox_for(store, account_id, &folder).await?;
+        // Made when the first message goes in: a folder of contacts may hold none.
+        let mut mailbox = None;
+        let objects = if options.objects { object_folder(&folder) } else { None };
         for batch in uids.chunks(BATCH) {
             if options.deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                 return Ok((copied, CopyEnd::OutOfTime));
@@ -709,12 +761,26 @@ pub(crate) async fn copy_folders(
                 connection.command(&format!("UID FETCH {set} (UID FLAGS INTERNALDATE BODY.PEEK[])")).await?;
             let mut by_uid: HashMap<u32, Fetched> =
                 responses.iter().filter_map(parse_fetch).map(|fetched| (fetched.uid, fetched)).collect();
+            let mut found_objects = Vec::new();
             for uid in batch {
                 let Some(fetched) = by_uid.remove(uid) else { continue };
                 let Some(body) = fetched.body else { continue };
                 if fetched.flags.iter().any(|flag| flag.eq_ignore_ascii_case("\\Deleted")) {
                     continue;
                 }
+                if let Some(kind) = objects {
+                    let texts = object_texts(&body, kind);
+                    if !texts.is_empty() {
+                        found_objects.extend(texts);
+                        copied.messages += 1;
+                        copied.bytes += body.len();
+                        continue;
+                    }
+                }
+                let mailbox = match mailbox {
+                    Some(mailbox) => mailbox,
+                    None => *mailbox.insert(mailbox_for(store, account_id, &folder).await?),
+                };
                 if options.skip_known {
                     let message_id = uwumail_smtp::header_value(&body, "Message-ID");
                     if store.holds_message(account_id, message_id, BlobHash::of(&body)).await? {
@@ -748,6 +814,14 @@ pub(crate) async fn copy_folders(
                 }
                 copied.messages += 1;
                 copied.bytes += size;
+            }
+            if let Some(kind) = objects
+                && !found_objects.is_empty()
+            {
+                let event = CopyEvent::Objects { folder: folder.raw.clone(), kind, texts: found_objects };
+                if !report(event).await {
+                    return Ok((copied, CopyEnd::Stopped));
+                }
             }
             let last_uid = *batch.last().expect("chunks are never empty");
             store
@@ -791,7 +865,7 @@ pub async fn copy_mail(
             CopyEvent::Folder { name, path, new, exists } => {
                 progress(&format!("{name} → {path}: {new} new of {exists}"))
             }
-            CopyEvent::Planned { .. } | CopyEvent::Progress(_) => {}
+            CopyEvent::Planned { .. } | CopyEvent::Progress(_) | CopyEvent::Objects { .. } => {}
         }
         Box::pin(std::future::ready(true))
     };
