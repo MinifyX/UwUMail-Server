@@ -949,17 +949,29 @@ impl Store {
         id: i64,
         write: AssistLabelWrite,
     ) -> Result<AssistLabel> {
-        check_label(&write.name, &write.description, write.color.as_deref())?;
+        check_label(&write.name, "", write.color.as_deref())?;
         let (label, modseq) = self
             .write(move |tx| {
-                let exists: bool = tx.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE id = ?1 AND account_id = ?2)",
-                    params![id, account_id],
-                    |row| row.get(0),
-                )?;
-                if !exists {
+                let base: Option<Option<String>> = tx
+                    .query_row(
+                        "SELECT base FROM assist_labels WHERE id = ?1 AND account_id = ?2",
+                        params![id, account_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let Some(base) = base else {
                     return Err(StoreError::NotFound(format!("label {id}")));
-                }
+                };
+                // A base label's description is its definition: it stays as it is.
+                let description = match base {
+                    Some(_) => tx.query_row("SELECT description FROM assist_labels WHERE id = ?1", [id], |row| {
+                        row.get::<_, String>(0)
+                    })?,
+                    None => {
+                        check_label(&write.name, &write.description, None)?;
+                        write.description.trim().to_owned()
+                    }
+                };
                 if name_taken(tx, account_id, &write.name, id)? {
                     return Err(StoreError::Rule {
                         code: "invalidProperties",
@@ -968,7 +980,7 @@ impl Store {
                 }
                 tx.execute(
                     "UPDATE assist_labels SET name = ?2, description = ?3, color = ?4 WHERE id = ?1",
-                    params![id, write.name.trim(), write.description.trim(), write.color],
+                    params![id, write.name.trim(), description, write.color],
                 )?;
                 write_label_extras(tx, id, &write)?;
                 bump_prefs(tx, account_id)?;
