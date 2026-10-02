@@ -78,9 +78,10 @@ async fn labels_learn_from_the_hand_and_never_from_the_server() {
     assert!(rig.store.label_training().await.unwrap().is_empty());
     assert_eq!(knowledge(&rig).await.senders.get(&bills), Some(&2));
 
-    // Taken off by hand, the sender is forgotten and the mail becomes an example without it.
+    // Taken off by hand, the sender no longer gets the label by itself (-1) and the mail becomes an
+    // example without it; put on by hand again, the sender starts over at one.
     rig.store.update_emails(rig.mia.id, vec![keyword(second, "rechnungen", false)]).await.unwrap();
-    assert_eq!(knowledge(&rig).await.senders.get(&bills), None);
+    assert_eq!(knowledge(&rig).await.senders.get(&bills), Some(&-1));
     assert!(rig.assist.learn_labels().await);
     assert_eq!(rig.store.label_counts(rig.mia.id).await.unwrap()[&bills].examples, 1);
 

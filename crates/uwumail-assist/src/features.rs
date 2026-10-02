@@ -2050,6 +2050,8 @@ mod tests {
             detector: None,
             learn_senders: true,
             classifier: true,
+            base: None,
+            auto: true,
         }
     }
 
