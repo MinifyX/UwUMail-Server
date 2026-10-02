@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <offer99@rich-fast.example>
+To: Max Muster <max@uwu.example>
+Subject: Replica watches 90% off
+Date: Mon, 14 Sep 2026 11:45:00 +0000
+Message-ID: <157623346849.772@rich-fast.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<a href="http://rich-fast.example/go/632746"><img src="http://rich-fast.example/banner.png" width="600" height="400"></a>

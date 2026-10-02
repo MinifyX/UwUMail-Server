@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: newsletter of Gartenwelt with tracking links showing its own address
+From: Gartenwelt <news@gartenwelt.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Unsere_Empfehlungen_f=C3=BCr_dich?=
+Date: Tue, 15 Sep 2026 19:38:00 +0000
+Message-ID: <645152789371.443@gartenwelt.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://gartenwelt.example/abmelden?u=636853>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: multipart/alternative; boundary="alt-7216032922"
+
+--alt-7216032922
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+unsere neuen Produkte sind da. Alle Angebote: https://gartenwelt.example/angebote
+
+Viele Grüße
+Gartenwelt
+
+Abmelden: https://gartenwelt.example/abmelden
+--alt-7216032922
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<div style="display:none">Die besten Angebote der Woche – jetzt entdecken.</div><p>Hallo Max,</p><p>unsere neuen Produkte sind da.</p><p><a href="https://click.mailer.example/t/9376026009">https://gartenwelt.example/angebote</a></p><p><a href="https://click.mailer.example/t/9376026009x">Jetzt ansehen</a></p><p style="font-size:11px"><a href="https://gartenwelt.example/abmelden">Abmelden</a></p>
+--alt-7216032922--

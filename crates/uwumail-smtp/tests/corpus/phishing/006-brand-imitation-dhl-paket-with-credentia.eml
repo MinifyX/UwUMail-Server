@@ -1,0 +1,28 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand imitation (DHL Paket) with credential request
+From: DHL Paket <zustellung@dhl-paket-zustellung.example>
+To: Max Muster <max@uwu.example>
+Subject: Ihr Paket konnte nicht zugestellt werden
+Date: Mon, 14 Sep 2026 10:43:00 +0000
+Message-ID: <490694742237.338@dhl-paket-zustellung.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-5123229250"
+
+--alt-5123229250
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sehr geehrter Kunde,
+
+Ihre Sendung wartet. Bitte zahlen Sie die Zollgebühr von 1,99 EUR, damit wir sie zustellen können.
+
+Jetzt bestätigen: https://dhl-paket-zustellung.example/zahlung
+--alt-5123229250
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Sehr geehrter Kunde,</p><p>Ihre Sendung wartet. Bitte zahlen Sie die Zollgebühr von 1,99 EUR, damit wir sie zustellen können.</p><p><a href="https://dhl-paket-zustellung.example/zahlung">Jetzt bestätigen</a></p>
+--alt-5123229250--

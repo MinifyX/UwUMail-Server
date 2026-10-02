@@ -1,0 +1,28 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand imitation (Volksbank Online) with credential request
+From: Volksbank Online <service@vb-online-sicherheit.example>
+To: Max Muster <max@uwu.example>
+Subject: Neue Sicherheitsrichtlinie
+Date: Mon, 14 Sep 2026 06:27:00 +0000
+Message-ID: <749727528724.340@vb-online-sicherheit.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-6511757123"
+
+--alt-6511757123
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sehr geehrter Kunde,
+
+Ab sofort ist eine Verifizierung erforderlich. Bitte melden Sie sich an und bestätigen Sie Ihre Daten.
+
+Jetzt bestätigen: https://vb-online-sicherheit.example/login
+--alt-6511757123
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Sehr geehrter Kunde,</p><p>Ab sofort ist eine Verifizierung erforderlich. Bitte melden Sie sich an und bestätigen Sie Ihre Daten.</p><p><a href="https://vb-online-sicherheit.example/login">Jetzt bestätigen</a></p>
+--alt-6511757123--

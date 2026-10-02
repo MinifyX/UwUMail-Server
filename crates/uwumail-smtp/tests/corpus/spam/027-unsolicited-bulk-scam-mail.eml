@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Info <promo77@best-deals.test>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Work_from_home_=E2=80=93_earn_=24500/day?=
+Date: Wed, 16 Sep 2026 07:38:00 +0000
+Message-ID: <389699648866.452@best-deals.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>No experience needed. Earn money from home with just your phone. Start today: <a href="https://kurz.example/75240">https://kurz.example/75240</a></p><div style="display:none">dolor garden ipsum dolor garden piano dolor travel ipsum piano piano travel piano weather lorem dolor garden ipsum piano weather ipsum garden garden ipsum piano ipsum piano weather garden piano garden dolor travel travel piano garden dolor travel garden piano ipsum piano piano travel ipsum travel lorem ipsum garden dolor lorem lorem dolor garden dolor ipsum dolor travel garden dolor</div>

@@ -1,0 +1,16 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Contacts: acme-corp.example
+X-Corpus-Note: CEO/partner fraud without links
+From: Richard Hale <ceo@acme-c0rp.example>
+To: Max Muster <max@uwu.example>
+Subject: Quick favour
+Date: Mon, 14 Sep 2026 02:11:00 +0000
+Message-ID: <756323323714.435@acme-c0rp.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max, are you available? I need you to process a wire transfer today for an acquisition. Keep this confidential. I'll explain later.

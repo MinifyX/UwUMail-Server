@@ -1,0 +1,20 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail from a friend or relative
+From: =?utf-8?q?Paul_Sch=C3=A4fer?= <paul.schaefer@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Elterntreffen Donnerstag
+Date: Mon, 14 Sep 2026 12:44:00 +0000
+Message-ID: <569890200373.403@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo zusammen,
+
+das Elterntreffen ist am Donnerstag um 19:30 Uhr in der Aula. Bitte gebt kurz Bescheid, ob ihr kommt.
+
+Viele Grüße
+Paul

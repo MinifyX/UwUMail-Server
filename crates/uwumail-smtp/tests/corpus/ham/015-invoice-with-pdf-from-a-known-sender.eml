@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: invoice with PDF from a known sender
+From: Stadtwerke Musterstadt <rechnung@stadtwerke.example>
+To: Max Muster <max@uwu.example>
+Subject: Ihre Rechnung 6451850
+Date: Sun, 13 Sep 2026 19:09:00 +0000
+Message-ID: <072523142954.770@stadtwerke.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-6663078369"
+
+--mix-6663078369
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Guten Tag Max Muster,
+
+anbei erhalten Sie Ihre Rechnung Nr. 6451850 über 438,98 EUR.
+Der Betrag wird am 25.09.2026 von Ihrem Konto abgebucht.
+
+Ihre Rechnungen finden Sie auch im Kundenportal: https://stadtwerke.example/portal
+
+Mit freundlichen Grüßen
+Stadtwerke Musterstadt
+--mix-6663078369
+Content-Type: application/pdf; name="Rechnung_6451850.pdf"
+Content-Disposition: attachment; filename="Rechnung_6451850.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKdHJhaWxlciA8PCAvUm9vdCAxIDAgUiA+PgolJUVPRgo=
+--mix-6663078369--

@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=softfail dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Mr. Edward Brown <info55@promo-mail.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Abnehmen_ohne_Di=C3=A4t?=
+Date: Mon, 21 Sep 2026 10:00:00 +0000
+Message-ID: <608662805683.149@promo-mail.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Mit unserem Wundermittel verlieren Sie 10 Kilo in 14 Tagen. Nur heute 70 % Rabatt: <a href="http://203.0.113.32/offer">http://203.0.113.32/offer</a></p><div style="display:none">weather travel weather lorem piano garden lorem piano piano piano weather weather travel piano dolor weather piano garden dolor garden garden garden lorem lorem lorem ipsum travel lorem garden dolor dolor dolor weather piano garden ipsum travel garden garden travel garden dolor piano weather garden garden garden garden lorem piano ipsum weather piano lorem ipsum weather lorem lorem travel travel</div>

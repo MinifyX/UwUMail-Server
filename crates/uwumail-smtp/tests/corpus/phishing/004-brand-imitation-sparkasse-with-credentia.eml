@@ -1,0 +1,28 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand imitation (Sparkasse) with credential request
+From: Sparkasse <info@sparkasse-sicherheit.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Wichtige_Sicherheits=C3=BCberpr=C3=BCfung?=
+Date: Sun, 13 Sep 2026 13:13:00 +0000
+Message-ID: <084367362463.881@sparkasse-sicherheit.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-3729855832"
+
+--alt-3729855832
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sehr geehrter Kunde,
+
+Aufgrund einer Sicherheitsüberprüfung müssen Sie Ihr pushTAN-Verfahren neu registrieren. Ohne Legitimation wird Ihr Zugang gesperrt.
+
+Jetzt bestätigen: https://sparkasse-sicherheit.example/legitimation
+--alt-3729855832
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Sehr geehrter Kunde,</p><p>Aufgrund einer Sicherheitsüberprüfung müssen Sie Ihr pushTAN-Verfahren neu registrieren. Ohne Legitimation wird Ihr Zugang gesperrt.</p><p><a href="https://sparkasse-sicherheit.example/legitimation">Jetzt bestätigen</a></p>
+--alt-3729855832--

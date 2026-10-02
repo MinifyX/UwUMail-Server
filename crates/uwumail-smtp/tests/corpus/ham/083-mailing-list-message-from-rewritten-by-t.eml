@@ -1,0 +1,25 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: mailing list message, From rewritten by the list
+From: Oliver Morgan via dev-list <dev-list@lists.example>
+To: Max Muster <max@uwu.example>
+Subject: Re: Meeting notes
+Date: Mon, 14 Sep 2026 06:39:00 +0000
+Message-ID: <838092480939.791@lists.example>
+MIME-Version: 1.0
+List-Id: <dev-list.lists.example>
+List-Post: <mailto:dev-list@lists.example>
+Reply-To: dev-list@lists.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+I think we should wait until the tests pass again. See https://code.example/project/issues/176
+
+-- 
+Oliver
+
+_______________________________________________
+dev-list mailing list
+https://lists.example/listinfo/dev-list

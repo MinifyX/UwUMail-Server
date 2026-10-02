@@ -1,0 +1,17 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Kundenservice <info81@luckydraw.test>
+To: Max Muster <max@uwu.example>
+Subject: Ihre Webseite bei Google auf Platz 1
+Date: Tue, 15 Sep 2026 22:14:00 +0000
+Message-ID: <657629214196.705@luckydraw.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+U2VociBnZWVocnRlIERhbWVuIHVuZCBIZXJyZW4sIHdpciBicmluZ2VuIElocmUgV2Vic2VpdGUg
+Z2FyYW50aWVydCBhdWYgUGxhdHogMS4gQW50d29ydGVuIFNpZSBmw7xyIGVpbiBrb3N0ZW5sb3Nl
+cyBBbmdlYm90Lg==

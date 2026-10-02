@@ -1,0 +1,35 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: meeting invitation with a calendar part
+From: Greta Wagner <greta@firma.example>
+To: Max Muster <max@uwu.example>
+Subject: Einladung: Projektbesprechung Q4
+Date: Tue, 15 Sep 2026 18:11:00 +0000
+Message-ID: <714544769211.106@firma.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-2637423538"
+
+--alt-2637423538
+Content-Type: text/plain; charset=utf-8
+
+Hallo Max,
+ich lade dich zur Projektbesprechung am Freitag um 11 Uhr ein.
+
+Greta
+--alt-2637423538
+Content-Type: text/calendar; charset=utf-8; method=REQUEST
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//corpus//EN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:9508180940@calendar.example
+DTSTART:20260918T090000Z
+DTEND:20260918T100000Z
+SUMMARY:Projektbesprechung Q4
+END:VEVENT
+END:VCALENDAR
+--alt-2637423538--

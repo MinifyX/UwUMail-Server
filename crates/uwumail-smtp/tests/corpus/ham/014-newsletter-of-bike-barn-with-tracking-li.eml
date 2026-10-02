@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: newsletter of Bike Barn with tracking links showing its own address
+From: Bike Barn <news@bikebarn.example>
+To: Max Muster <max@uwu.example>
+Subject: Last chance: 20% off everything
+Date: Mon, 14 Sep 2026 09:43:00 +0000
+Message-ID: <599745666327.908@bikebarn.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://bikebarn.example/abmelden?u=853414>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<div style="display:none">This week's best offers – take a look.</div><p>Hi Max,</p><p>our new products are here.</p><p><a href="https://click.mailer.example/t/4244498487">www.bikebarn.example/offers</a></p><p><a href="https://click.mailer.example/t/4244498487x">Shop now</a></p><p style="font-size:11px"><a href="https://bikebarn.example/unsubscribe">Unsubscribe</a></p>

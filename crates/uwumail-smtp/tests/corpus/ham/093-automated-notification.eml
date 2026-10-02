@@ -1,0 +1,19 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: automated notification
+From: Bank am See <info@bank.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Ihr_Kontoauszug_ist_verf=C3=BCgbar?=
+Date: Tue, 15 Sep 2026 10:04:00 +0000
+Message-ID: <890929725974.917@bank.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Guten Tag Max Muster,
+
+Ihr neuer Kontoauszug steht im Online-Banking bereit: https://bank.example/login
+
+Ihre Bank am See

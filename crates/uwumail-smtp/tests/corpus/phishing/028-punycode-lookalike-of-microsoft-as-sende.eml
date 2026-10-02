@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: punycode lookalike of Microsoft as sender and link
+From: Microsoft Security <security@xn--micrsoft-qbh.example>
+To: Max Muster <max@uwu.example>
+Subject: Security alert
+Date: Tue, 15 Sep 2026 16:22:00 +0000
+Message-ID: <289924738855.260@xn--micrsoft-qbh.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Suspicious activity detected. Please verify your identity.</p><p><a href="https://xn--micrsoft-qbh.example/signin">Sign in</a></p>

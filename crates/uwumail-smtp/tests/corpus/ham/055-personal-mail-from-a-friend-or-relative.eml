@@ -1,0 +1,21 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: known
+X-Corpus-Note: personal mail from a friend or relative
+From: Lukas Wagner <lukas.wagner@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Fotos
+Date: Sun, 13 Sep 2026 15:45:00 +0000
+Message-ID: <302652652784.662@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+anbei der Link zu den Fotos vom Urlaub: https://fotos.example/album/828548
+Sind ganz schön geworden!
+
+Liebe Grüße
+Lukas

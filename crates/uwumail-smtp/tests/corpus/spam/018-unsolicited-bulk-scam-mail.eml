@@ -1,0 +1,18 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Kundenservice <offer50@best-deals.test>
+To: Max Muster <max@uwu.example>
+Subject: Erbschaft
+Date: Tue, 15 Sep 2026 19:07:00 +0000
+Message-ID: <006021916753.758@best-deals.test>
+MIME-Version: 1.0
+Reply-To: private.4272@mail.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+U2VociBnZWVocnRlciBGcmV1bmQsIGljaCBrb250YWt0aWVyZSBTaWUgd2VnZW4gZWluZXIgRXJi
+c2NoYWZ0IHZvbiA4LDUgTWlsbGlvbmVuIEV1cm8uIEJpdHRlIGFudHdvcnRlbiBTaWUgdmVydHJh
+dWxpY2ggYW4gbWVpbmUgcHJpdmF0ZSBBZHJlc3NlLg==

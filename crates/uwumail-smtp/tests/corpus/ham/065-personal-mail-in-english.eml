@@ -1,0 +1,20 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail in English
+From: Amelia Reed <amelia@post.example>
+To: Max Muster <max@uwu.example>
+Subject: Lunch Friday
+Date: Tue, 15 Sep 2026 02:36:00 +0000
+Message-ID: <003219420144.804@post.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+are we still on for lunch on Friday? I booked a table for 12:30.
+
+Cheers
+Amelia

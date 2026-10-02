@@ -1,0 +1,19 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: automated notification
+From: Praxis Dr. Sommer <termine@praxis-sommer.example>
+To: Max Muster <max@uwu.example>
+Subject: Terminerinnerung
+Date: Mon, 14 Sep 2026 18:59:00 +0000
+Message-ID: <942821431745.499@praxis-sommer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Guten Tag,
+
+wir erinnern Sie an Ihren Termin am 18.09.2026 um 08:30 Uhr. Bitte bringen Sie Ihre Versichertenkarte mit.
+
+Ihr Praxisteam

@@ -16,6 +16,7 @@ pub mod llm;
 pub mod mail;
 pub mod prices;
 pub mod prompts;
+pub mod spam;
 mod worker;
 
 use std::collections::HashMap;

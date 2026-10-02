@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Note: display name shows a bank address, link text shows the bank, href goes elsewhere
+From: "service@bank.example" <alert1@evil.example>
+To: Max Muster <max@uwu.example>
+Subject: Account warning
+Date: Mon, 14 Sep 2026 06:33:00 +0000
+Message-ID: <449219567419.175@evil.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Please sign in to review a suspicious payment:</p><p><a href="http://198.51.100.33/login">https://www.bank.example/login</a></p>

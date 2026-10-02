@@ -1,0 +1,23 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail in English
+From: Oliver Turner <oliver@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Lunch Friday
+Date: Tue, 15 Sep 2026 09:05:00 +0000
+Message-ID: <137394515967.634@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+are we still on for lunch on Friday? I booked a table for 12:30.
+
+Cheers
+Oliver
+
+On Mon, 14 Sep 2026 at 09:12, Max Muster wrote:
+> Sounds good!

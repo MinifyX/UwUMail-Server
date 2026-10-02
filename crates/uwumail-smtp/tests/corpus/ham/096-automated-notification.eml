@@ -1,0 +1,18 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: automated notification
+From: Bibliothek <ausleihe@bibliothek.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Leihfrist_l=C3=A4uft_ab?=
+Date: Sun, 13 Sep 2026 12:16:00 +0000
+Message-ID: <199418507867.432@bibliothek.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max Muster,
+
+die Leihfrist für 2 Medien läuft in 3 Tagen ab. Verlängern: https://bibliothek.example/konto
+

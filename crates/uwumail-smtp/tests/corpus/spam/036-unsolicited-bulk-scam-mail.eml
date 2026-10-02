@@ -1,0 +1,14 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <news16@mega-offers.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Crypto_presale_=E2=80=93_1000x_guaranteed?=
+Date: Sun, 13 Sep 2026 14:33:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<a href="http://203.0.113.208/offer"><img src="http://mega-offers.example/banner.png" width="600" height="400"></a>

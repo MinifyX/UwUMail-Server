@@ -1,0 +1,20 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: known
+X-Corpus-Note: personal mail from a friend or relative
+From: Greta Klein <greta.klein@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Herzlichen_Gl=C3=BCckwunsch?=
+Date: Tue, 15 Sep 2026 02:07:00 +0000
+Message-ID: <760278171876.327@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Lieber Max,
+
+alles Gute zum Geburtstag! Ich hoffe, du hast einen schönen Tag. Wir müssen bald mal wieder telefonieren.
+
+Deine Tante
+Greta

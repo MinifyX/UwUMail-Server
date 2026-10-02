@@ -1,0 +1,16 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Kundenservice <promo30@rich-fast.example>
+To: Max Muster <max@uwu.example>
+Subject: Your website needs an upgrade
+Date: Tue, 15 Sep 2026 01:47:00 +0000
+Message-ID: <110687634820.184@rich-fast.example>
+MIME-Version: 1.0
+Reply-To: private.4709@mail.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi, I noticed your website is not mobile friendly. We redesign sites for just $199. Reply YES for details.

@@ -1,0 +1,25 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: authenticated marketing mail the reader wanted, with urgency words
+From: Gartenwelt <angebote@gartenwelt.example>
+To: Max Muster <max@uwu.example>
+Subject: Nur heute: Gratis-Versand!
+Date: Sun, 13 Sep 2026 12:41:00 +0000
+Message-ID: <560135760965.272@gartenwelt.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://gartenwelt.example/u/63060>
+Content-Type: multipart/alternative; boundary="alt-7718652507"
+
+--alt-7718652507
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Nur heute versenden wir kostenlos. Jetzt zugreifen!
+--alt-7718652507
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<h1>Nur heute!</h1><p><a href="https://gartenwelt.example/sale">Zum Sale</a></p>
+--alt-7718652507--

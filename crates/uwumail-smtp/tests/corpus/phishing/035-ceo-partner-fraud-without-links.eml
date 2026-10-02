@@ -1,0 +1,16 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Contacts: firma.example
+X-Corpus-Note: CEO/partner fraud without links
+From: Thomas Brandt <chef@flrma.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Dringend_=E2=80=93_kurze_Aufgabe?=
+Date: Wed, 16 Sep 2026 00:44:00 +0000
+Message-ID: <303685214478.157@flrma.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max, bist du gerade da? Ich brauche dringend eine Überweisung noch heute an einen neuen Lieferanten. Bitte antworte nur per Mail, ich bin im Termin.

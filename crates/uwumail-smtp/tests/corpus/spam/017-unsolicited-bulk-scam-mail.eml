@@ -1,0 +1,16 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=softfail dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Gewinnspiel-Team <offer7@a7x9k2.example>
+To: Max Muster <max@uwu.example>
+Subject: Erbschaft
+Date: Mon, 14 Sep 2026 04:12:00 +0000
+Message-ID: <277083404156.362@a7x9k2.example>
+MIME-Version: 1.0
+Reply-To: private.8627@mail.example
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<a href="https://kurz.example/45428"><img src="http://a7x9k2.example/banner.png" width="600" height="400"></a>

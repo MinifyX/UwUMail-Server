@@ -1,0 +1,28 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand imitation (Telekom Rechnung) with credential request
+From: Telekom Rechnung <rechnung@telekom-kundencenter.example>
+To: Max Muster <max@uwu.example>
+Subject: Ihre Rechnung konnte nicht abgebucht werden
+Date: Wed, 16 Sep 2026 00:03:00 +0000
+Message-ID: <047302813450.939@telekom-kundencenter.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-9714299638"
+
+--alt-9714299638
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sehr geehrter Kunde,
+
+Die Abbuchung Ihrer letzten Rechnung ist fehlgeschlagen. Bitte aktualisieren Sie Ihre Zahlungsdaten.
+
+Jetzt bestätigen: https://telekom-kundencenter.example/zahlung
+--alt-9714299638
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Sehr geehrter Kunde,</p><p>Die Abbuchung Ihrer letzten Rechnung ist fehlgeschlagen. Bitte aktualisieren Sie Ihre Zahlungsdaten.</p><p><a href="https://telekom-kundencenter.example/zahlung">Jetzt bestätigen</a></p>
+--alt-9714299638--

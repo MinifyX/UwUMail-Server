@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: fake mailbox-full mail imitating the reader's own domain
+From: uwu.example Postmaster <postmaster@uwu-example-mail.test>
+To: Max Muster <max@uwu.example>
+Subject: Ihr Postfach ist voll
+Date: Sun, 13 Sep 2026 14:28:00 +0000
+Message-ID: <918710522687.912@uwu-example-mail.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Ihr Postfach ist voll. Neue Nachrichten werden abgewiesen. Melden Sie sich an, um Speicher freizugeben.</p><p><a href="https://webmail-upgrade.test/uwu.example">Speicher erweitern</a></p>

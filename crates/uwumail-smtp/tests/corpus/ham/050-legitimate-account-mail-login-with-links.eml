@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (login) with links to the service's own domain
+From: Notely <security@notely.example>
+To: Max Muster <max@uwu.example>
+Subject: Unusual sign-in to your account
+Date: Sun, 13 Sep 2026 19:41:00 +0000
+Message-ID: <321413361039.987@notely.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+we noticed an unusual sign-in to your account from a new device. If this was you, nothing to do. Otherwise secure your account at https://notely.example/security

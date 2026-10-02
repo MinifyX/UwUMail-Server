@@ -1,0 +1,14 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <contact16@newsletter-blast.test>
+To: Max Muster <max@uwu.example>
+Subject: You are our lucky winner!!!
+Date: Mon, 14 Sep 2026 13:09:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Congratulations! Your email address was selected and you won USD 950,000. To claim your prize send your full name, address and phone number.</p><div style="display:none">travel dolor weather dolor garden weather ipsum garden dolor piano weather travel piano weather garden weather garden weather piano ipsum travel dolor dolor weather ipsum dolor ipsum garden travel weather piano weather ipsum travel ipsum garden travel piano travel piano piano garden weather travel piano travel ipsum ipsum piano ipsum weather travel garden dolor ipsum piano piano lorem ipsum dolor</div>

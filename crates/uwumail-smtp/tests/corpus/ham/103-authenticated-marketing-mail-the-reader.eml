@@ -1,0 +1,25 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: authenticated marketing mail the reader wanted, with urgency words
+From: Bike Barn <angebote@bikebarn.example>
+To: Max Muster <max@uwu.example>
+Subject: Nur heute: Gratis-Versand!
+Date: Sun, 13 Sep 2026 14:29:00 +0000
+Message-ID: <063311103459.930@bikebarn.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://bikebarn.example/u/17321>
+Content-Type: multipart/alternative; boundary="alt-7489390712"
+
+--alt-7489390712
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Nur heute versenden wir kostenlos. Jetzt zugreifen!
+--alt-7489390712
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<h1>Nur heute!</h1><p><a href="https://bikebarn.example/sale">Zum Sale</a></p>
+--alt-7489390712--

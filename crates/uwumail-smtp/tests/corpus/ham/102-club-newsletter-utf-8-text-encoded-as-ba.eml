@@ -1,0 +1,19 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: known
+X-Corpus-Note: club newsletter, UTF-8 text encoded as base64 (legit)
+From: =?utf-8?q?TSV_Gr=C3=BCnwiese?= <vorstand@tsv-gruenwiese.example>
+To: Max Muster <max@uwu.example>
+Subject: Vereinsnachrichten September
+Date: Sun, 13 Sep 2026 16:49:00 +0000
+Message-ID: <929664996679.861@tsv-gruenwiese.example>
+MIME-Version: 1.0
+List-Unsubscribe: <mailto:abmelden@tsv-gruenwiese.example>
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+TGllYmUgTWl0Z2xpZWRlciwKCmFtIFNvbm50YWcgZmluZGV0IHVuc2VyIFNvbW1lcmZlc3Qgc3Rh
+dHQuIEbDvHIgS3VjaGVuIGlzdCBnZXNvcmd0LCBHcmlsbGd1dCBicmluZ3QgYml0dGUgamVkZXIg
+c2VsYnN0IG1pdC4gRGllIEp1Z2VuZGFidGVpbHVuZyBzdWNodCBub2NoIEhlbGZlciBmw7xyIGRl
+biBBdWZiYXUuCgpTcG9ydGxpY2hlIEdyw7zDn2UKRXVlciBWb3JzdGFuZA==

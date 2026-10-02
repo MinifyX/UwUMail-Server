@@ -1,0 +1,17 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <info23@best-deals.test>
+To: Max Muster <max@uwu.example>
+Subject: INVESTIEREN WIE DIE PROFIS
+Date: Sun, 13 Sep 2026 21:04:00 +0000
+Message-ID: <557551528130.528@best-deals.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+VmVyZGllbmVuIFNpZSB0w6RnbGljaCA4MDAgRXVybyBtaXQgdW5zZXJlciBLSS1UcmFkaW5nLVNv
+ZnR3YXJlLiBKZXR6dCBrb3N0ZW5sb3MgdGVzdGVuOiBodHRwczovL2t1cnouZXhhbXBsZS8wMTgz
+OQ==

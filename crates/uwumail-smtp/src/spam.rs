@@ -15,6 +15,7 @@ mod feeds;
 mod html;
 pub(crate) mod links;
 mod lists;
+pub mod phishing;
 mod uri_lists;
 mod words;
 
@@ -167,6 +168,9 @@ pub struct Score {
     pub(crate) subject: String,
     #[serde(skip)]
     pub(crate) text: String,
+    /// How many points the Bayes filter may add at most, when it is held back (see [`bayes_ceiling`]).
+    #[serde(skip)]
+    pub(crate) bayes_ceiling: Option<f32>,
     /// The sending server's own name, when DNS gave one. Only a missing or a generic name costs
     /// points, so this is kept for the history rather than for the score.
     #[serde(skip)]
@@ -354,18 +358,7 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
     let mut score = Score::default();
 
     if let Some(verdict) = verdict {
-        if verdict.dmarc_failed {
-            score.add("DMARC_FAIL", 2.5, None);
-        }
-        if verdict.spf_failed {
-            score.add("SPF_FAIL", 2.0, None);
-        }
-        if verdict.dkim_failed {
-            score.add("DKIM_FAIL", 1.0, None);
-        }
-        if !verdict.sender_verified {
-            score.add("NO_AUTH", 1.0, None);
-        }
+        authentication_rules(&mut score, &Authentication::of(verdict));
     }
 
     // A fetched message only answers for a greeting somebody wrote down; not knowing one says
@@ -460,19 +453,6 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
         }
     }
 
-    // What the whole server's Bayes filter learned; a person's own knowledge is weighed per recipient.
-    if let Some(chance) = chance {
-        let points = bayes::points(chance);
-        let detail = Some(format!("{:.0} %", chance * 100.0));
-        if points > 0.0 {
-            score.add("BAYES_SPAM", points, detail);
-        } else if points < 0.0 {
-            score.add("BAYES_HAM", points, detail);
-        }
-    }
-    score.tokens = tokens;
-    score.server_chance = chance;
-
     // The whole server's word lists, where a domain's and a person's own count per recipient, and what
     // the built-in lists know.
     let lists = lists::current(ctx).await;
@@ -519,6 +499,21 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
         }
     }
 
+    // What the whole server's Bayes filter learned; a person's own knowledge is weighed per recipient.
+    // Last of the message's own rules, because how far it may go depends on them.
+    score.bayes_ceiling = bayes_ceiling(verdict.is_some_and(|verdict| verdict.dmarc_passed), &score);
+    if let Some(chance) = chance {
+        let points = bayes::points(chance).min(score.bayes_ceiling.unwrap_or(f32::MAX));
+        let detail = Some(format!("{:.0} %", chance * 100.0));
+        if points > 0.0 {
+            score.add("BAYES_SPAM", points, detail);
+        } else if points < 0.0 {
+            score.add("BAYES_HAM", points, detail);
+        }
+    }
+    score.tokens = tokens;
+    score.server_chance = chance;
+
     let Some(subject) = reputation_subject(ip, verdict) else { return Some(score) };
     match ctx.store.reputation(subject).await {
         Ok(reputation) if reputation.is_known() => {
@@ -534,6 +529,73 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
     }
 
     Some(score)
+}
+
+/// What SPF, DKIM and DMARC said, as far as the score cares.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Authentication {
+    pub spf_failed: bool,
+    pub dkim_failed: bool,
+    pub dmarc_failed: bool,
+    pub dmarc_passed: bool,
+    /// SPF or DKIM vouched for the sender.
+    pub sender_verified: bool,
+}
+
+impl Authentication {
+    fn of(verdict: &Verdict) -> Authentication {
+        Authentication {
+            spf_failed: verdict.spf_failed,
+            dkim_failed: verdict.dkim_failed,
+            dmarc_failed: verdict.dmarc_failed,
+            dmarc_passed: verdict.dmarc_passed,
+            sender_verified: verdict.sender_verified,
+        }
+    }
+}
+
+fn authentication_rules(score: &mut Score, auth: &Authentication) {
+    if auth.dmarc_failed {
+        score.add("DMARC_FAIL", 2.5, None);
+    }
+    if auth.spf_failed {
+        score.add("SPF_FAIL", 2.0, None);
+    }
+    if auth.dkim_failed {
+        score.add("DKIM_FAIL", 1.0, None);
+    }
+    if !auth.sender_verified {
+        score.add("NO_AUTH", 1.0, None);
+    }
+}
+
+/// What the filter can tell about a message on its own, without the network and without anything
+/// it learned: the authentication results it is handed and the message's content. This is the part
+/// of [`score`] the corpus test in `tests/corpus` measures; blocklists, the sender's reputation, the
+/// Bayes filter and downloaded lists come on top of it in real delivery.
+pub fn score_offline(raw: &[u8], now: i64, auth: Authentication) -> Score {
+    let mut score = Score::default();
+    authentication_rules(&mut score, &auth);
+    let examination = content::examine(raw, now, auth.dmarc_passed, None);
+    for hit in examination.hits {
+        score.add(hit.rule, hit.points, hit.detail);
+    }
+    score.subject = examination.subject;
+    score.text = examination.text;
+    score
+}
+
+/// The most the Bayes filter adds to a mail DMARC vouches for that trips nothing else.
+///
+/// Word statistics learned from a few hundred marked mails are good at telling one newsletter from
+/// another and bad at telling a newsletter someone wants from one they do not. On real mail, the
+/// filter at full strength (+5) put authenticated, otherwise spotless newsletters and receipts into
+/// Junk on its own; held to this, they are at most greylisted, while a message with anything else
+/// against it still gets the full weight.
+pub(crate) const BAYES_ALONE_MAX: f32 = 3.5;
+
+fn bayes_ceiling(dmarc_passed: bool, score: &Score) -> Option<f32> {
+    (dmarc_passed && score.points_on_its_own() <= 1.0).then_some(BAYES_ALONE_MAX)
 }
 
 /// The chance of spam by what the whole server's Bayes filter learned, when it learned enough.
@@ -559,7 +621,9 @@ pub(crate) async fn personal_bayes_points(ctx: &Context, config: &SpamConfig, sc
     let Ok(counts) = ctx.store.bayes_counts(Some(account_id), score.tokens.clone()).await else { return 0.0 };
     let Some(own) = bayes::spam_chance(&score.tokens, &counts, totals) else { return 0.0 };
     let blended = bayes::blended(score.server_chance, Some((own, totals))).unwrap_or(own);
-    bayes::points(blended) - score.server_chance.map_or(0.0, bayes::points)
+    let ceiling = score.bayes_ceiling.unwrap_or(f32::MAX);
+    let server: f32 = score.hits.iter().filter(|hit| hit.rule.starts_with("BAYES_")).map(|hit| hit.points).sum();
+    bayes::points(blended).min(ceiling) - server
 }
 
 fn tenths(points: f32) -> f32 {
@@ -772,6 +836,17 @@ mod tests {
         let resolver = mail_auth::MessageAuthenticator::new_system_conf().unwrap();
         let codes = domain_list_answers_with(resolver.resolver(), "dbltest.com", DBL_ZONE).await.unwrap();
         assert_eq!(domain_listing(&codes), DomainListing::Spam);
+    }
+
+    #[test]
+    fn word_statistics_alone_do_not_junk_an_authenticated_spotless_mail() {
+        let mut score = Score::default();
+        score.add("HTML_ONLY", 0.5, None);
+        assert_eq!(bayes_ceiling(true, &score), Some(BAYES_ALONE_MAX));
+        assert_eq!(bayes_ceiling(false, &score), None, "without DMARC it counts in full");
+        score.add("PHISHING_LINK_TEXT", 3.0, None);
+        assert_eq!(bayes_ceiling(true, &score), None, "nor with anything else against it");
+        assert!(BAYES_ALONE_MAX < SpamConfig::default().junk_score);
     }
 
     #[test]

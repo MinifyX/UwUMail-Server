@@ -1,0 +1,17 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Gewinnspiel-Team <offer46@a7x9k2.example>
+To: Max Muster <max@uwu.example>
+Subject: GEWINNBENACHRICHTIGUNG
+Date: Tue, 15 Sep 2026 22:08:00 +0000
+Message-ID: <186501682769.116@a7x9k2.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+SGVyemxpY2hlbiBHbMO8Y2t3dW5zY2ghIFNpZSBoYWJlbiAyNS4wMDAgRVVSIGdld29ubmVuLiBa
+dXIgQXVzemFobHVuZyBzZW5kZW4gU2llIHVucyBiaXR0ZSBJaHJlIEJhbmt2ZXJiaW5kdW5nIHVu
+ZCBlaW5lIEF1c3dlaXNrb3BpZS4=

@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (verify) with links to the service's own domain
+From: Codeforge <noreply@codeforge.example>
+To: Max Muster <max@uwu.example>
+Subject: Verify your email address
+Date: Sun, 13 Sep 2026 23:40:00 +0000
+Message-ID: <458148231159.517@codeforge.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+thanks for signing up. Please verify your email address: https://codeforge.example/verify/39951533045926191208

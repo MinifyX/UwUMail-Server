@@ -1,0 +1,17 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Contacts: acme-corp.example
+X-Corpus-Note: CEO/partner fraud without links
+From: Richard Hale <ceo@acme-corp.example>
+To: Max Muster <max@uwu.example>
+Subject: Urgent request
+Date: Sun, 13 Sep 2026 23:26:00 +0000
+Message-ID: <950963146146.332@acme-corp.example>
+MIME-Version: 1.0
+Reply-To: boss.5630@mail.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max, please buy 4 gift cards (Google Play card, 200 each) for a client meeting and send me the codes immediately.

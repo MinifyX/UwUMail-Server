@@ -48,11 +48,12 @@ async fn foreign_mail_needs_the_switch_and_a_provider_that_allows_it() {
 
     rig.fake.push(Reply::Json(
         200,
-        chat(r#"{"verdict": "legitimate", "confidence": 0.8, "reasons": ["Bekannter Versorger"]}"#),
+        chat(r#"{"verdict": "legitimate", "confidence": 0.8, "reasons": [{"text": "Rechnung des Versorgers", "evidence": "Ihre Rechnung September"}]}"#),
         vec![],
     ));
     let result = rig.assist.spam_check(&rig.mia, spam()).await.unwrap();
     assert_eq!(result.verdict, "legitimate");
+    assert_eq!(result.reasons, ["Rechnung des Versorgers"]);
     // The other provider's findings, and no history of the sender.
     assert_eq!(result.signals.authentication.spf.as_deref(), Some("pass"));
     assert_eq!(result.signals.authentication.from_domain.as_deref(), Some("stadtwerke.example"));

@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (code) with links to the service's own domain
+From: Vereinsportal <noreply@vereinsportal.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Dein_Best=C3=A4tigungscode=3A_006549?=
+Date: Tue, 15 Sep 2026 22:05:00 +0000
+Message-ID: <698456807836.989@vereinsportal.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+dein Code lautet 795260. Er gilt 10 Minuten. Gib ihn niemals weiter.

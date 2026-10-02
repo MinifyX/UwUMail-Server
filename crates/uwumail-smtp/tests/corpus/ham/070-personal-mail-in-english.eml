@@ -1,0 +1,23 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail in English
+From: Ella Morgan <ella@home.test>
+To: Max Muster <max@uwu.example>
+Subject: Thank you!
+Date: Sun, 13 Sep 2026 22:49:00 +0000
+Message-ID: <107278210357.869@home.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Max,
+
+thanks again for helping with the move. Pizza is on me next time!
+
+Best
+Ella
+
+On Mon, 14 Sep 2026 at 09:12, Max Muster wrote:
+> Sounds good!

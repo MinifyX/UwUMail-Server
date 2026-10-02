@@ -1,0 +1,20 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: support ticket reply, Reply-To at the helpdesk of the same company
+From: Customer Support <support@softwarehaus.example>
+To: Max Muster <max@uwu.example>
+Subject: [Ticket #515702] Your request
+Date: Sun, 13 Sep 2026 13:45:00 +0000
+Message-ID: <711217943153.345@softwarehaus.example>
+MIME-Version: 1.0
+Reply-To: ticket@helpdesk.softwarehaus.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+we found the problem and fixed it. Please check that everything works again.
+
+Your support team

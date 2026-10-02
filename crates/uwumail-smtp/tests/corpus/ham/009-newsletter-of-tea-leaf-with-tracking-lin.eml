@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: newsletter of Tea & Leaf with tracking links showing its own address
+From: Tea & Leaf <news@teaandleaf.example>
+To: Max Muster <max@uwu.example>
+Subject: Last chance: 20% off everything
+Date: Wed, 16 Sep 2026 03:10:00 +0000
+Message-ID: <574840819835.162@teaandleaf.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://teaandleaf.example/abmelden?u=100724>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: multipart/alternative; boundary="alt-0806459086"
+
+--alt-0806459086
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+our new products are here. All offers: https://teaandleaf.example/offers
+
+Cheers,
+Tea & Leaf
+
+Unsubscribe: https://teaandleaf.example/unsubscribe
+--alt-0806459086
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<div style="display:none">This week's best offers – take a look.</div><p>Hi Max,</p><p>our new products are here.</p><p><a href="https://click.mailer.example/t/1223594196">www.teaandleaf.example/offers</a></p><p><a href="https://click.mailer.example/t/1223594196x">Shop now</a></p><p style="font-size:11px"><a href="https://teaandleaf.example/unsubscribe">Unsubscribe</a></p>
+--alt-0806459086--

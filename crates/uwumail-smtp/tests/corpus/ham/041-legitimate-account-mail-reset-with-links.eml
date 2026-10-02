@@ -1,0 +1,18 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (reset) with links to the service's own domain
+From: Vereinsportal <noreply@vereinsportal.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Passwort_zur=C3=BCcksetzen?=
+Date: Mon, 14 Sep 2026 21:12:00 +0000
+Message-ID: <314432787489.568@vereinsportal.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+du hast angefordert, dein Passwort zurückzusetzen. Das geht hier: https://vereinsportal.example/reset/0573661948543391
+Der Link gilt 30 Minuten. Warst du das nicht, ignoriere diese Mail.

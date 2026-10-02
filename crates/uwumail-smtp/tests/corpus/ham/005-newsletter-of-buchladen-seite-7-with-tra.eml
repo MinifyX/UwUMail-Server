@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: newsletter of Buchladen Seite 7 with tracking links showing its own address
+From: Buchladen Seite 7 <news@seite7.example>
+To: Max Muster <max@uwu.example>
+Subject: Neu im Sortiment: Herbstauswahl
+Date: Mon, 14 Sep 2026 12:54:00 +0000
+Message-ID: <082019896262.918@seite7.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://seite7.example/abmelden?u=144669>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: multipart/alternative; boundary="alt-2029893961"
+
+--alt-2029893961
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+unsere neuen Produkte sind da. Alle Angebote: https://seite7.example/angebote
+
+Viele Grüße
+Buchladen Seite 7
+
+Abmelden: https://seite7.example/abmelden
+--alt-2029893961
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<div style="display:none">Die besten Angebote der Woche – jetzt entdecken.</div><p>Hallo Max,</p><p>unsere neuen Produkte sind da.</p><p><a href="https://click.mailer.example/t/4686700125">https://seite7.example/angebote</a></p><p><a href="https://click.mailer.example/t/4686700125x">Jetzt ansehen</a></p><p style="font-size:11px"><a href="https://seite7.example/abmelden">Abmelden</a></p>
+--alt-2029893961--

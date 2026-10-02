@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Special Offer <contact58@luckydraw.test>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Kredit_ohne_Schufa_=E2=80=93_sofort?=
+Date: Mon, 21 Sep 2026 10:00:00 +0000
+Message-ID: <937843280229.213@luckydraw.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sie brauchen Geld? Wir vergeben Kredite bis 50.000 EUR ohne Schufa, Auszahlung in 24 Stunden. Jetzt anfragen: http://203.0.113.68/offer

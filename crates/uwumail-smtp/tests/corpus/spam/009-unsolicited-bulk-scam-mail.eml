@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <news83@best-deals.test>
+To: Max Muster <max@uwu.example>
+Subject: Ihre Webseite bei Google auf Platz 1
+Date: Mon, 14 Sep 2026 11:57:00 +0000
+Message-ID: <701503833016.628@best-deals.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Sehr geehrte Damen und Herren, wir bringen Ihre Webseite garantiert auf Platz 1. Antworten Sie für ein kostenloses Angebot.</p><div style="display:none">weather travel lorem travel ipsum travel ipsum ipsum travel ipsum travel piano dolor piano ipsum garden ipsum weather lorem dolor travel lorem travel travel weather travel weather travel piano dolor dolor piano garden travel travel lorem travel lorem ipsum lorem ipsum garden ipsum dolor ipsum dolor travel piano weather garden travel dolor piano garden travel dolor garden piano garden travel</div>

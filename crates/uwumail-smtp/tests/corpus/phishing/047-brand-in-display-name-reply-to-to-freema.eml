@@ -1,0 +1,16 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand in display name, Reply-To to freemail, asks for data
+From: FedEx Support <noreply@shipping-notice.example>
+To: Max Muster <max@uwu.example>
+Subject: Delivery failed
+Date: Sun, 13 Sep 2026 21:08:00 +0000
+Message-ID: <787145600672.958@shipping-notice.example>
+MIME-Version: 1.0
+Reply-To: zustellung985@mail.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Your delivery failed. Reply with your address and payment details to reschedule.

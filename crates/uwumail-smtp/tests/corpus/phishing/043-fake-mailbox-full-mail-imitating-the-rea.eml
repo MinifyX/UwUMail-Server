@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: fake mailbox-full mail imitating the reader's own domain
+From: uwu.example Admin <postmaster@uwu-example-mail.test>
+To: Max Muster <max@uwu.example>
+Subject: Your mailbox is full
+Date: Mon, 14 Sep 2026 16:01:00 +0000
+Message-ID: <450697352313.895@uwu-example-mail.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Your mailbox quota is exceeded. Sign in to restore access.</p><p><a href="https://webmail-upgrade.test/uwu.example">Upgrade storage</a></p>

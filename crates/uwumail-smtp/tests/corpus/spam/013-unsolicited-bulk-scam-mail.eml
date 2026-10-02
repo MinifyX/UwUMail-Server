@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Gewinnspiel-Team <info26@luckydraw.test>
+To: Max Muster <max@uwu.example>
+Subject: Gewinnbenachrichtigung
+Date: Tue, 15 Sep 2026 10:20:00 +0000
+Message-ID: <937652891456.845@luckydraw.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Herzlichen Glückwunsch! Sie haben 25.000 EUR gewonnen. Zur Auszahlung senden Sie uns bitte Ihre Bankverbindung und eine Ausweiskopie.

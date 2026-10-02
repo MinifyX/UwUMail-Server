@@ -1,0 +1,17 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Kundenservice <info7@luckydraw.test>
+To: Max Muster <max@uwu.example>
+Subject: IHR GRATIS-IPHONE WARTET
+Date: Sun, 13 Sep 2026 14:49:00 +0000
+Message-ID: <097541111104.111@luckydraw.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+U2llIHd1cmRlbiBhdXNnZXfDpGhsdCEgTmVobWVuIFNpZSBhbiB1bnNlcmVyIFVtZnJhZ2UgdGVp
+bCB1bmQgZXJoYWx0ZW4gU2llIGVpbiBHcmF0aXMtU21hcnRwaG9uZTogaHR0cDovL2x1Y2t5ZHJh
+dy50ZXN0L2dvLzk4MTkyMA==

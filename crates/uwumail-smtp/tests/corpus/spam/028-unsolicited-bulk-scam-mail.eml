@@ -1,0 +1,14 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Info <news7@mega-offers.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Work_from_home_=E2=80=93_earn_=24500/day?=
+Date: Mon, 14 Sep 2026 15:21:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>No experience needed. Earn money from home with just your phone. Start today: <a href="http://mega-offers.example/go/391611">http://mega-offers.example/go/391611</a></p><div style="display:none">dolor lorem lorem weather travel lorem piano piano weather lorem lorem piano lorem dolor weather weather dolor dolor ipsum dolor lorem garden lorem ipsum lorem weather ipsum weather weather lorem travel travel weather garden piano dolor weather dolor garden lorem garden ipsum travel travel lorem garden garden travel dolor garden lorem ipsum garden weather ipsum dolor travel ipsum dolor ipsum</div>

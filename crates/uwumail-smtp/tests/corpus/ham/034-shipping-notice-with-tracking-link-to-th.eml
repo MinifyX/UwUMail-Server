@@ -1,0 +1,29 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: shipping notice with tracking link to the carrier's own site
+From: ParcelGo <tracking@parcelgo.example>
+To: Max Muster <max@uwu.example>
+Subject: Out for delivery today
+Date: Tue, 15 Sep 2026 22:02:00 +0000
+Message-ID: <586497104767.376@parcelgo.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-4754041815"
+
+--alt-4754041815
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+your parcel JJD22658960824726 is on its way and should arrive tomorrow.
+Track it: https://parcelgo.example/track/JJD22658960824726
+
+ParcelGo
+--alt-4754041815
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Hi Max,</p><p>your parcel <b>JJD22658960824726</b> is on its way.</p><p><a href="https://parcelgo.example/track/JJD22658960824726">Track your parcel</a></p>
+--alt-4754041815--

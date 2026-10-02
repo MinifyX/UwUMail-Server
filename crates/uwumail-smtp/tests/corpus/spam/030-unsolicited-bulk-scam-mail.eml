@@ -1,0 +1,16 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <info75@rich-fast.example>
+To: Max Muster <max@uwu.example>
+Subject: Solaranlage zum Nulltarif
+Date: Wed, 16 Sep 2026 08:57:00 +0000
+Message-ID: <643675479956.205@rich-fast.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+SmV0enQgRsO2cmRlcnVuZyBzaWNoZXJuISBTb2xhcmFubGFnZSBvaG5lIEFuemFobHVuZy4gTnVy
+IG5vY2ggd2VuaWdlIFBsw6R0emUgZnJlaTogaHR0cHM6Ly9rdXJ6LmV4YW1wbGUvODg0NjA=

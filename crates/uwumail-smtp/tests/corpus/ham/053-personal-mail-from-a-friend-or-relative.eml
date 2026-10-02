@@ -1,0 +1,18 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail from a friend or relative
+From: Anna Brandt <anna.brandt@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Samstag?
+Date: Tue, 15 Sep 2026 09:58:00 +0000
+Message-ID: <276809203143.118@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hey Max, wie sieht es Samstag aus? Wir grillen ab 18 Uhr bei uns im Garten. Bring gern was zu trinken mit.
+
+LG
+Anna

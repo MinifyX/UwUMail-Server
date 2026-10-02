@@ -1,0 +1,17 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Contacts: firma.example
+X-Corpus-Note: CEO/partner fraud without links
+From: Thomas Brandt <geschaeftsfuehrung@firma-gmbh.example>
+To: Max Muster <max@uwu.example>
+Subject: Vertraulich
+Date: Wed, 16 Sep 2026 07:01:00 +0000
+Message-ID: <764034487123.664@firma-gmbh.example>
+MIME-Version: 1.0
+Reply-To: boss.1661@mail.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max, ich brauche für Kunden 5 Geschenkkarten zu je 100 Euro. Kannst du die heute besorgen und mir die Codes schicken? Bitte vertraulich behandeln.

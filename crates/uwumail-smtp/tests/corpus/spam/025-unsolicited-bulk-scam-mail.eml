@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <offer56@rich-fast.example>
+To: Max Muster <max@uwu.example>
+Subject: Ihr Gratis-iPhone wartet
+Date: Wed, 16 Sep 2026 01:16:00 +0000
+Message-ID: <714630104832.762@rich-fast.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sie wurden ausgewählt! Nehmen Sie an unserer Umfrage teil und erhalten Sie ein Gratis-Smartphone: https://kurz.example/98339

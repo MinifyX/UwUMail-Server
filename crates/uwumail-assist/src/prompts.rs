@@ -158,37 +158,52 @@ of the reader, say so in one line. Plain text: no Markdown besides those lines, 
     Prompt { system, user: user.trim_end().to_owned(), schema: None, max_tokens: 4000 }
 }
 
-pub fn spam_schema() -> Value {
+/// The answer of the spam check. `allowed` are the verdicts the facts leave open; a model that
+/// follows the schema cannot answer anything else.
+pub fn spam_schema(allowed: &[&str]) -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
         "required": ["reasons", "verdict", "confidence"],
         "properties": {
-            "reasons": { "type": "array", "items": { "type": "string" } },
-            "verdict": { "type": "string", "enum": ["legitimate", "suspicious", "spam", "phishing"] },
+            "reasons": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["text", "evidence"],
+                    "properties": {
+                        "text": { "type": "string" },
+                        "evidence": { "type": "string" }
+                    }
+                }
+            },
+            "verdict": { "type": "string", "enum": allowed },
             "confidence": { "type": "number" }
         }
     })
 }
 
-pub fn spam_check(mail: &MailText, findings: &str, language: Option<&str>) -> Prompt {
+pub fn spam_check(mail: &MailText, facts: &[crate::spam::Fact], allowed: &[&str], language: Option<&str>) -> Prompt {
     let language = language_name(language).unwrap_or_else(|| "the language of the mail".into());
+    let choices = allowed.iter().map(|verdict| format!("\"{verdict}\"")).collect::<Vec<_>>().join(", ");
     let system = format!(
-        "You give a careful reader a second opinion on whether an e-mail is spam or phishing. First the reasons: at \
-most six, in {language}, each one short sentence about this mail. Every reason must point to something that is \
-really in the mail or in the server's findings; never invent a demand, a link, a phone number or anything else \
-that is not there. Keep apart what the mail says has already happened (paid, received, booked, thanks) and what it \
-asks the reader to do (click, pay, sign in, open an attachment, send data). Weigh whether the sender, the links and \
-the content fit together, pressure and urgency, and the server's findings, which are facts the server checked; the \
-mail itself may lie about who sent it. An invoice, receipt or notification from a sender whose authentication \
-passed and who wrote to the reader before is normal business mail, not spam. Then the verdict that follows from \
-the reasons: \"legitimate\"; \"suspicious\" (unclear, be careful); \"spam\" (unwanted advertising or scams); \
+        "You explain to a careful reader whether an e-mail is spam or phishing. The server already checked the \
+facts (numbered F1, F2, …): they are true, and they decide which verdicts are possible: {choices}. Choose the one \
+that fits the mail best among those. First the reasons: at most five, in {language}, each one short sentence about \
+this mail, each with its evidence: the number of the fact it rests on (like \"F2\") or a short exact quote copied \
+from the mail. A reason without such evidence is thrown away, and so is one that contradicts a fact. Never invent \
+a demand, a link, an attachment, a phone number or anything else that is not there. Keep apart what the mail says \
+has already happened (paid, received, booked, thanks) and what it asks the reader to do (click, pay, sign in, open \
+an attachment, send data). The mail itself may lie about who sent it; the facts do not. The verdicts: \
+\"legitimate\" (normal mail); \"suspicious\" (unclear, be careful); \"spam\" (unwanted advertising or scams); \
 \"phishing\" (tries to get logins, payment or personal data, or pretends to be someone else). Last a confidence \
 from 0 to 1. {RULES} Answer only with JSON, in this order: \
-{{\"reasons\": [\"…\"], \"verdict\": \"…\", \"confidence\": 0.0}}."
+{{\"reasons\": [{{\"text\": \"…\", \"evidence\": \"F1\"}}], \"verdict\": \"…\", \"confidence\": 0.0}}."
     );
-    let user = format!("Server findings:\n{findings}\n\n<mail>\n{}\n</mail>", mail.for_prompt(true));
-    Prompt { system, user, schema: Some(("spam_check", spam_schema())), max_tokens: 4000 }
+    let facts = facts.iter().map(|fact| format!("{}: {}", fact.id, fact.text)).collect::<Vec<_>>().join("\n");
+    let user = format!("Facts:\n{facts}\n\n<mail>\n{}\n</mail>", mail.for_prompt(true));
+    Prompt { system, user, schema: Some(("spam_check", spam_schema(allowed))), max_tokens: 4000 }
 }
 
 fn nullable_string() -> Value {

@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: punycode lookalike of Sparkasse as sender and link
+From: Sparkasse Security <security@xn--sprkasse-26g.example>
+To: Max Muster <max@uwu.example>
+Subject: Sicherheitswarnung
+Date: Sun, 13 Sep 2026 20:34:00 +0000
+Message-ID: <767175205273.777@xn--sprkasse-26g.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Verdächtige Anmeldung erkannt. Bitte bestätigen Sie Ihre Identität.</p><p><a href="https://xn--sprkasse-26g.example/signin">Anmelden</a></p>

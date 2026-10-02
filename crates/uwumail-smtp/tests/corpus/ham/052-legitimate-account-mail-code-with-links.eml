@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (code) with links to the service's own domain
+From: Notely <security@notely.example>
+To: Max Muster <max@uwu.example>
+Subject: Your sign-in code is 850918
+Date: Sun, 13 Sep 2026 23:30:00 +0000
+Message-ID: <082627637551.782@notely.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+your code is 803528. It expires in 10 minutes. Never share it.

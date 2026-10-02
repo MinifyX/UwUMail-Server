@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: punycode lookalike of PayPal as sender and link
+From: PayPal Security <security@xn--pypal-4ve.example>
+To: Max Muster <max@uwu.example>
+Subject: Sicherheitswarnung
+Date: Mon, 14 Sep 2026 05:54:00 +0000
+Message-ID: <653868421048.231@xn--pypal-4ve.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Verdächtige Anmeldung erkannt. Bitte bestätigen Sie Ihre Identität.</p><p><a href="https://xn--pypal-4ve.example/signin">Anmelden</a></p>
