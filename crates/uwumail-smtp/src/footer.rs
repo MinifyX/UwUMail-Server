@@ -407,6 +407,25 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_base64_in_windows_1252_is_read_and_written_back() {
+        use base64::Engine;
+        // "Grüße aus Köln" in Windows-1252, wrapped as mail programs do.
+        let latin: Vec<u8> = "Grüße aus Köln, ".repeat(8).chars().map(|c| c as u32 as u8).collect();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&latin);
+        let wrapped: Vec<&str> = encoded.as_bytes().chunks(76).map(|c| std::str::from_utf8(c).unwrap()).collect();
+        let raw = format!(
+            "From: mini@example.org\nContent-Type: text/plain; charset=windows-1252\nContent-Transfer-Encoding: base64\n\n{}\n",
+            wrapped.join("\n")
+        );
+        let out = added(&raw);
+        assert!(out.contains("Content-Transfer-Encoding: quoted-printable"));
+        let (text, _) = texts(&out);
+        let text = text.unwrap();
+        assert!(text.starts_with("Grüße aus Köln, Grüße"), "{text}");
+        assert!(text.trim_end().ends_with("Amtsgericht Beispiel HRB 1"));
+    }
+
+    #[test]
     fn signed_and_encrypted_mail_is_left_alone() {
         for ctype in [
             "multipart/signed; protocol=\"application/pkcs7-signature\"; boundary=\"s\"",
