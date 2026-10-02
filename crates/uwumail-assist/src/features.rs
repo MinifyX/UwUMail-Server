@@ -1813,6 +1813,24 @@ pub fn parse_events(answer: &Value, context: &EventContext<'_>) -> Vec<Extracted
         let Some(title) = optional_text(entry.get("title"), 200) else { continue };
         let Some(start) = entry.get("start").and_then(Value::as_str).and_then(parse_when) else { continue };
         let mut all_day = entry.get("allDay").and_then(Value::as_bool).unwrap_or(false);
+        let end_when = entry.get("end").and_then(Value::as_str).and_then(parse_when);
+        // "allDay" with a time of day contradicts itself; the time is what the mail said
+        // ("zwischen 10:00 und 12:00" must not become a whole day).
+        let timed = |when: &When| matches!(when, When::At(at) if at.time() != chrono::NaiveTime::MIN);
+        // "23:59:59" is how some write the end of a whole day.
+        let end_of_day = |when: &When| matches!(when, When::At(at) if at.time() >= chrono::NaiveTime::from_hms_opt(23, 59, 0).unwrap_or_default());
+        if all_day && (timed(&start) || end_when.as_ref().is_some_and(|end| timed(end) && !end_of_day(end))) {
+            all_day = false;
+        }
+        // Midnight to midnight on another day is whole days, whatever the flag says.
+        if !all_day
+            && let (When::At(from), Some(When::At(to))) = (&start, &end_when)
+            && !timed(&start)
+            && to.time() == chrono::NaiveTime::MIN
+            && to.date() > from.date()
+        {
+            all_day = true;
+        }
         let start = match start {
             When::At(at) => at,
             When::Day(day) => {
@@ -1825,12 +1843,12 @@ pub fn parse_events(answer: &Value, context: &EventContext<'_>) -> Vec<Extracted
             continue;
         }
         let default_end = if all_day { start + TimeDelta::days(1) } else { start + TimeDelta::hours(1) };
-        let end = match entry.get("end").and_then(Value::as_str).and_then(parse_when) {
-            Some(When::At(at)) if all_day => at.date().and_hms_opt(0, 0, 0).unwrap_or(at),
+        let end = match end_when {
+            // The last day, as people (and the prompt) write it: the end is the day after.
+            Some(When::At(at)) if all_day => at.date().and_hms_opt(0, 0, 0).unwrap_or(at) + TimeDelta::days(1),
             Some(When::At(at)) => at,
             Some(When::Day(day)) => {
                 let day = day.and_hms_opt(0, 0, 0).unwrap_or_default();
-                // The last day, as people write it: the end is the day after.
                 if all_day { day + TimeDelta::days(1) } else { day }
             }
             None => default_end,
@@ -2152,6 +2170,48 @@ mod tests {
         assert_eq!((events[1].start.as_str(), events[1].end.as_str()), ("2026-10-10T00:00:00", "2026-10-13T00:00:00"));
         assert!(events[1].all_day && events[1].time_zone.is_none() && events[1].url.is_none());
         assert_eq!(events[1].confidence, 0.5);
+    }
+
+    #[test]
+    fn an_all_day_answer_with_times_keeps_the_times() {
+        let (links, people, mine) = (Vec::new(), Vec::new(), HashSet::new());
+        let source = "Samstag 03.10.26, zwischen 10:00 und 12:00 ist Flohmarkt.";
+        let context = EventContext { source, links: &links, people: &people, mine: &mine };
+        let answer = json!({ "events": [
+            { "title": "Flohmarkt", "start": "2026-10-03T10:00:00", "end": "2026-10-03T12:00:00", "allDay": true,
+              "quote": "Samstag 03.10.26, zwischen 10:00 und 12:00", "participants": [] },
+            { "title": "Flohmarkt", "start": "2026-10-03T00:00:00", "end": null, "allDay": true,
+              "quote": "Samstag 03.10.26", "participants": [] }
+        ]});
+        let events = parse_events(&answer, &context);
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert!(!events[0].all_day);
+        assert_eq!((events[0].start.as_str(), events[0].end.as_str()), ("2026-10-03T10:00:00", "2026-10-03T12:00:00"));
+        assert!(events[1].all_day);
+        assert_eq!((events[1].start.as_str(), events[1].end.as_str()), ("2026-10-03T00:00:00", "2026-10-04T00:00:00"));
+    }
+
+    #[test]
+    fn whole_days_end_after_the_last_day() {
+        let (links, people, mine) = (Vec::new(), Vec::new(), HashSet::new());
+        let source = "Die Messe läuft vom 12. bis 15. Oktober 2026.";
+        let context = EventContext { source, links: &links, people: &people, mine: &mine };
+        let quote = "Die Messe läuft vom 12. bis 15. Oktober 2026.";
+        let answer = json!({ "events": [
+            // Midnight to midnight, flagged as timed: whole days.
+            { "title": "Messe", "start": "2026-10-12T00:00:00", "end": "2026-10-15T00:00:00", "allDay": false,
+              "quote": quote, "participants": [] },
+            { "title": "Messe", "start": "2026-10-12T00:00:00", "end": "2026-10-15T23:59:59", "allDay": true,
+              "quote": quote, "participants": [] },
+            { "title": "Messe", "start": "2026-10-12", "end": "2026-10-15", "allDay": true,
+              "quote": quote, "participants": [] }
+        ]});
+        let events = parse_events(&answer, &context);
+        assert_eq!(events.len(), 3, "{events:?}");
+        for event in &events {
+            assert!(event.all_day, "{event:?}");
+            assert_eq!((event.start.as_str(), event.end.as_str()), ("2026-10-12T00:00:00", "2026-10-16T00:00:00"));
+        }
     }
 
     #[test]
