@@ -1246,6 +1246,29 @@
       },
       "unauthenticated_one": "Ein Bericht kam von einem Absender, der sich nicht ausweisen konnte. Seine Zahlen könnten erfunden sein.",
       "unauthenticated_other": "{{count}} Berichte kamen von Absendern, die sich nicht ausweisen konnten. Ihre Zahlen könnten erfunden sein."
+    },
+    "signature": {
+      "title": "Firmen-Signatur",
+      "explain": "Eine Signatur für alle Adressen dieser Domain: als Vorlage, die jede Person anpassen kann, oder als Pflicht-Fußzeile, die der Server beim Senden anhängt.",
+      "mode": "Verwendung",
+      "modes": {
+        "off": "Aus",
+        "template": "Vorlage",
+        "footer": "Pflicht-Fußzeile"
+      },
+      "modeHint": {
+        "off": "Jede Person schreibt ihre Signatur selbst.",
+        "template": "Wer noch keine eigene Signatur hat, bekommt diese. Jede Person darf sie ändern.",
+        "footer": "Der Server hängt sie an jede Mail von dieser Domain an, auch aus Mail-Apps über SMTP."
+      },
+      "text": "Text",
+      "html": "HTML",
+      "htmlHint": "Optional, für formatierte Mails. Ohne HTML wird der Text verwendet.",
+      "placeholders": "Platzhalter: {{placeholders}}",
+      "footerNote": "Signierte oder verschlüsselte Mails (S/MIME, PGP) bekommen keine Fußzeile, sonst wäre die Signatur kaputt.",
+      "footerEmpty": "Eine Pflicht-Fußzeile braucht einen Text.",
+      "save": "Speichern",
+      "saved": "Firmen-Signatur gespeichert"
     }
   },
   "groups": {
@@ -2317,7 +2340,7 @@
     },
     "signatures": {
       "title": "Signaturen",
-      "intro": "Mail-Apps und die Webmail fügen die Signatur der Adresse ein, von der du sendest.",
+      "intro": "Wähle eine Domain und schreib eine Signatur für alle deine Adressen dort. Mail-Apps und die Webmail fügen sie beim Schreiben ein.",
       "loading": "Adressen werden geladen …",
       "loadError": "Die Adressen konnten nicht geladen werden.",
       "empty": "Es gibt noch keine Adresse, von der du senden kannst.",
@@ -2325,7 +2348,25 @@
       "html": "Signatur als HTML",
       "htmlHint": "Optional, für Apps, die formatierte Mails schreiben.",
       "save": "Signatur speichern",
-      "saved": "Signatur gespeichert"
+      "saved": "Signatur gespeichert",
+      "domain": "Domain",
+      "domainOption_one": "{{domain}} (1 Adresse)",
+      "domainOption_other": "{{domain}} ({{count}} Adressen)",
+      "placeholders": "Platzhalter:",
+      "appliesTo": "Gilt für",
+      "allDomains": "Alle Domains (auch künftige)",
+      "replaces": "Ersetzt die eigenen Signaturen von {{domains}}.",
+      "preview": "Vorschau für {{address}}",
+      "remove": "Signatur entfernen",
+      "fromTemplate": "Das ist die Vorlage deiner Organisation. Du kannst sie anpassen und als deine eigene speichern.",
+      "fromAllDomains": "Diese Domain nutzt deine Signatur für alle Domains.",
+      "companyFooter": "Beim Senden hängt der Server von dieser Domain aus automatisch diese Fußzeile an:",
+      "exceptions": "Abweichende Signatur für einzelne Adressen ({{count}})",
+      "ownSignature": "Eigene Signatur",
+      "followsDomain": "Nutzt die Domain-Signatur",
+      "override": "Eigene Signatur für diese Adresse",
+      "backToDomain": "Domain-Signatur verwenden",
+      "tooLarge": "Die Signatur ist zu groß (höchstens 256 KB)."
     }
   },
   "forwardConfirm": {

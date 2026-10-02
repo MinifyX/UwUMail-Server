@@ -1220,6 +1220,29 @@
         "sts-webpki-invalid": "策略证书无效"
       },
       "unauthenticated_other": "有 {{count}} 份报告来自无法证明自身身份的发送方。其中的数据可能是捏造的。"
+    },
+    "signature": {
+      "title": "公司签名",
+      "explain": "此域名所有地址共用的签名：可作为每个人都能修改的模板，或作为服务器在发送时添加的强制页脚。",
+      "mode": "用法",
+      "modes": {
+        "off": "关闭",
+        "template": "模板",
+        "footer": "强制页脚"
+      },
+      "modeHint": {
+        "off": "每个人自己写签名。",
+        "template": "没有自己签名的人会使用此签名，每个人都可以修改。",
+        "footer": "服务器会把它添加到此域名发出的每封邮件，包括通过 SMTP 使用邮件应用发送的邮件。"
+      },
+      "text": "文本",
+      "html": "HTML",
+      "htmlHint": "可选，用于格式化邮件。没有 HTML 时使用文本。",
+      "placeholders": "占位符：{{placeholders}}",
+      "footerNote": "已签名或加密的邮件（S/MIME、PGP）不会添加页脚，否则签名会失效。",
+      "footerEmpty": "强制页脚需要文本。",
+      "save": "保存",
+      "saved": "公司签名已保存"
     }
   },
   "groups": {
@@ -2264,7 +2287,7 @@
     },
     "signatures": {
       "title": "签名",
-      "intro": "邮件应用和网页邮箱会添加你所用发件地址的签名。",
+      "intro": "选择一个域名，为你在该域名下的所有地址写一个签名。邮件应用和网页邮箱会在撰写时插入它。",
       "loading": "正在加载地址…",
       "loadError": "无法加载地址。",
       "empty": "还没有可用于发送的地址。",
@@ -2272,7 +2295,24 @@
       "html": "HTML 签名",
       "htmlHint": "可选，供撰写格式化邮件的应用使用。",
       "save": "保存签名",
-      "saved": "签名已保存"
+      "saved": "签名已保存",
+      "domain": "域名",
+      "domainOption_other": "{{domain}}（{{count}} 个地址）",
+      "placeholders": "占位符：",
+      "appliesTo": "适用于",
+      "allDomains": "所有域名（包括以后的）",
+      "replaces": "将替换 {{domains}} 的单独签名。",
+      "preview": "{{address}} 的预览",
+      "remove": "删除签名",
+      "fromTemplate": "这是你所在组织的模板。你可以修改它并保存为自己的签名。",
+      "fromAllDomains": "此域名使用你的“所有域名”签名。",
+      "companyFooter": "从此域名发送时，服务器会自动添加以下页脚：",
+      "exceptions": "单个地址的不同签名（{{count}}）",
+      "ownSignature": "单独签名",
+      "followsDomain": "使用域名签名",
+      "override": "为此地址设置单独签名",
+      "backToDomain": "使用域名签名",
+      "tooLarge": "签名太大（最多 256 KB）。"
     }
   },
   "forwardConfirm": {

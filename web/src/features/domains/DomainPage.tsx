@@ -15,6 +15,7 @@ import { DnsStatusPill, RecordList } from "./DnsBits";
 import { ForwardsCard } from "./ForwardsCard";
 import { DomainLogoCard } from "@/features/pictures/PictureCard";
 import { GroupsCard } from "./GroupsCard";
+import { SignatureCard } from "./SignatureCard";
 import { MaskedOnlyCard, MaskedOnlyPill, MaskedPolicyCard } from "./MaskedCards";
 import { MtaStsCard, ReportsCard } from "./MtaStsCards";
 import {
@@ -260,6 +261,7 @@ export function DomainPage({ name }: { name: string }) {
               <MaskedPolicyCard domain={domain} />
               <GroupsCard domain={domain} />
               <ForwardsCard domain={domain} />
+              <SignatureCard key={JSON.stringify(domain.signature ?? null)} domain={domain} />
             </>
           )}
           <Card title={t("domains.detail.remove")}>

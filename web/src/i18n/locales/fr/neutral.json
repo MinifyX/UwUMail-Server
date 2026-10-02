@@ -1271,6 +1271,29 @@
       "unauthenticated_one": "Un rapport provenait d'un expéditeur qui n'a pas pu prouver son identité. Ses chiffres pourraient être inventés.",
       "unauthenticated_many": "{{count}} rapports provenaient d'expéditeurs qui n'ont pas pu prouver leur identité. Leurs chiffres pourraient être inventés.",
       "unauthenticated_other": "{{count}} rapports provenaient d'expéditeurs qui n'ont pas pu prouver leur identité. Leurs chiffres pourraient être inventés."
+    },
+    "signature": {
+      "title": "Signature d'entreprise",
+      "explain": "Une signature pour toutes les adresses de ce domaine : comme modèle que chacun peut adapter, ou comme pied de page obligatoire ajouté par le serveur à l'envoi.",
+      "mode": "Utilisation",
+      "modes": {
+        "off": "Désactivée",
+        "template": "Modèle",
+        "footer": "Pied de page obligatoire"
+      },
+      "modeHint": {
+        "off": "Chacun rédige sa propre signature.",
+        "template": "Les personnes sans signature propre reçoivent celle-ci. Chacun peut la modifier.",
+        "footer": "Le serveur l'ajoute à chaque message de ce domaine, y compris depuis les applications via SMTP."
+      },
+      "text": "Texte",
+      "html": "HTML",
+      "htmlHint": "Facultatif, pour les messages mis en forme. Sans HTML, le texte est utilisé.",
+      "placeholders": "Variables : {{placeholders}}",
+      "footerNote": "Les messages signés ou chiffrés (S/MIME, PGP) ne reçoivent pas de pied de page, sinon la signature serait invalide.",
+      "footerEmpty": "Un pied de page obligatoire nécessite un texte.",
+      "save": "Enregistrer",
+      "saved": "Signature d'entreprise enregistrée"
     }
   },
   "groups": {
@@ -2368,7 +2391,7 @@
     },
     "signatures": {
       "title": "Signatures",
-      "intro": "Les applications de messagerie et le webmail ajoutent la signature de l’adresse d’envoi.",
+      "intro": "Choisissez un domaine et rédigez une seule signature pour toutes vos adresses de ce domaine. Les applications de messagerie et le webmail l'insèrent lors de la rédaction.",
       "loading": "Chargement des adresses …",
       "loadError": "Impossible de charger les adresses.",
       "empty": "Il n’y a encore aucune adresse d’envoi.",
@@ -2376,7 +2399,26 @@
       "html": "Signature en HTML",
       "htmlHint": "Facultatif, pour les applications qui écrivent des messages mis en forme.",
       "save": "Enregistrer la signature",
-      "saved": "Signature enregistrée"
+      "saved": "Signature enregistrée",
+      "domain": "Domaine",
+      "domainOption_one": "{{domain}} (1 adresse)",
+      "domainOption_many": "{{domain}} ({{count}} adresses)",
+      "domainOption_other": "{{domain}} ({{count}} adresses)",
+      "placeholders": "Variables :",
+      "appliesTo": "S'applique à",
+      "allDomains": "Tous les domaines (y compris futurs)",
+      "replaces": "Remplace les signatures propres de {{domains}}.",
+      "preview": "Aperçu pour {{address}}",
+      "remove": "Supprimer la signature",
+      "fromTemplate": "Voici le modèle de votre organisation. Vous pouvez l'adapter et l'enregistrer comme le vôtre.",
+      "fromAllDomains": "Ce domaine utilise votre signature pour tous les domaines.",
+      "companyFooter": "À l'envoi depuis ce domaine, le serveur ajoute automatiquement ce pied de page :",
+      "exceptions": "Signature différente pour certaines adresses ({{count}})",
+      "ownSignature": "Signature propre",
+      "followsDomain": "Utilise la signature du domaine",
+      "override": "Signature propre pour cette adresse",
+      "backToDomain": "Utiliser la signature du domaine",
+      "tooLarge": "La signature est trop volumineuse (256 Ko au maximum)."
     }
   },
   "forwardConfirm": {

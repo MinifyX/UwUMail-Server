@@ -424,6 +424,8 @@ export interface DomainDetail extends Omit<DomainSummary, "dns"> {
   report: DomainReport | null;
   mtaSts: MtaStsView | null;
   setup: { hostname: string; relayHost: string | null; upstreamMx: boolean };
+  /** The company signature (docs/signatures.md); missing from older servers. */
+  signature?: { mode: "off" | "template" | "footer"; text: string; html: string };
 }
 
 export type MtaStsMode = "testing" | "enforce";
