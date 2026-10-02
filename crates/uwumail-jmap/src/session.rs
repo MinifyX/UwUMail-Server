@@ -57,6 +57,9 @@ pub const PROFILE: &str = "urn:uwumail:jmap:profile";
 pub const BIRTHDAYS: &str = "urn:uwumail:jmap:birthdays";
 /// Our own extension: the AI assistant, whose models are asked by the server (docs/jmap-assist.md).
 pub const ASSIST: &str = "urn:uwumail:jmap:assist";
+/// Our own extension: signatures per domain and the domains' company signatures
+/// (`SignatureSettings/get`, `SignatureSettings/set`, docs/jmap-signatures.md).
+pub const SIGNATURES: &str = "urn:uwumail:jmap:signatures";
 /// The server's VAPID key for Web Push subscriptions (RFC 9749); see docs/jmap-push.md.
 pub const WEBPUSH_VAPID: &str = "urn:ietf:params:jmap:webpush-vapid";
 
@@ -143,6 +146,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SENDERS: {},
             SETTINGS: {},
             SUGGEST: {},
+            SIGNATURES: crate::methods::signatures::capability(),
             SIEVE: { "implementation": "UwUMail Server" },
             MASKED: {},
             WEBMAIL: {},
@@ -183,6 +187,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
                     UNSUBSCRIBE: {},
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
                     SUGGEST: { "maxLimit": crate::methods::MAX_SUGGESTIONS },
+                    SIGNATURES: crate::methods::signatures::capability(),
                     SETTINGS: {
                         "maxKeys": uwumail_store::USER_SETTINGS_MAX_KEYS,
                         "maxSize": uwumail_store::USER_SETTINGS_MAX_SIZE,
@@ -207,6 +212,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SENDERS: account_id.clone(),
             SETTINGS: account_id.clone(),
             SUGGEST: account_id.clone(),
+            SIGNATURES: account_id.clone(),
             SIEVE: account_id.clone(),
             MASKED: account_id.clone(),
             UNSUBSCRIBE: account_id.clone(),
