@@ -247,7 +247,8 @@ pub fn read(text: &str, domain: Option<&str>, max_rows: usize) -> CsvRead {
             row.target = format!("{local}@{}", domain.trim().to_lowercase());
         }
         if !row.target.is_empty() {
-            let on_domain = domain.is_none_or(|domain| row.target.ends_with(&format!("@{}", domain.trim().to_lowercase())));
+            let on_domain =
+                domain.is_none_or(|domain| row.target.ends_with(&format!("@{}", domain.trim().to_lowercase())));
             if !address_ok(&row.target) || !on_domain {
                 read.problems.push(CsvProblem { line, field: "target", code: "targetInvalid" });
             } else if !seen_target.insert(row.target.clone()) {
@@ -319,7 +320,10 @@ mod tests {
         assert!(read.header);
         assert_eq!(read.delimiter, "\t");
         let mini = &read.rows[0];
-        assert_eq!((mini.old_address.as_str(), mini.login.as_str(), mini.password.as_str()), ("mini@example.org", "mini", "secret"));
+        assert_eq!(
+            (mini.old_address.as_str(), mini.login.as_str(), mini.password.as_str()),
+            ("mini@example.org", "mini", "secret")
+        );
         assert_eq!(mini.target, "", "without a domain nothing is made up");
     }
 

@@ -467,6 +467,16 @@ fn check_url(url: &str) -> Result<String> {
     Ok(url.to_owned())
 }
 
+/// A server name as an admin may name it for a move: a name with a dot, or a public address.
+pub fn check_server_name(host: &str) -> Result<String> {
+    check_host(host)
+}
+
+/// An `https://` address of a CalDAV/CardDAV server, checked as a move takes it; empty stays empty.
+pub fn check_server_url(url: &str) -> Result<String> {
+    check_url(url)
+}
+
 fn check_settings(parallel: i64, sync_minutes: i64) -> Result<()> {
     if !(1..=MAX_MOVE_PARALLEL).contains(&parallel) {
         return Err(StoreError::Invalid(format!("between 1 and {MAX_MOVE_PARALLEL} mailboxes at once")));
@@ -669,6 +679,16 @@ impl Store {
             Ok(found) => Ok(Some(found)),
             Err(StoreError::NotFound(_)) => Ok(None),
             Err(err) => Err(err),
+        })
+        .await
+    }
+
+    /// The accounts that are in a move that is not done for them yet.
+    pub async fn accounts_in_open_moves(&self) -> Result<std::collections::HashSet<i64>> {
+        self.read(|conn| {
+            let mut stmt = conn.prepare("SELECT DISTINCT account_id FROM move_mailboxes WHERE state != 'done'")?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
         })
         .await
     }

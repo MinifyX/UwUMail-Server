@@ -21,6 +21,8 @@ pub mod links;
 pub mod mailbox;
 pub mod masked;
 pub mod microsoft;
+pub mod moves;
+pub mod moves_csv;
 pub mod moving;
 pub mod oauth;
 pub mod own;

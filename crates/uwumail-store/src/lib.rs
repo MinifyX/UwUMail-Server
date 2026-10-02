@@ -172,7 +172,7 @@ pub use migration_jobs::{
 pub use moves::{
     DEFAULT_MOVE_PARALLEL, DEFAULT_MOVE_SYNC_MINUTES, DavMode, MAX_MOVE_MAILBOXES, MAX_MOVE_PARALLEL,
     MAX_MOVE_SYNC_MINUTES, MAX_OPEN_MOVES, MIN_MOVE_SYNC_MINUTES, Move, MoveKind, MoveMailbox, MoveMailboxState,
-    MoveSettings, MoveState, MoveSummary, MoveTurn, NewMove, NewMoveMailbox,
+    MoveSettings, MoveState, MoveSummary, MoveTurn, NewMove, NewMoveMailbox, check_server_name, check_server_url,
 };
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange, valid_keyword};
 pub use oauth::{

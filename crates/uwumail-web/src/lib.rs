@@ -650,6 +650,40 @@ impl Web {
             .route("/api/admin/backups/mailbox", delete(routes::backups::close_snapshot))
             .route("/api/admin/backups/mailbox/open", post(routes::backups::open_snapshot))
             .route("/api/admin/backups/mailbox/restore", post(routes::backups::restore_mailbox))
+            .route(
+                "/api/admin/moves",
+                get(routes::moves::list)
+                    .post(routes::moves::create)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::moves::MAX_LIST_BYTES)),
+            )
+            .route("/api/admin/moves/discover", post(routes::moves::discover))
+            .route(
+                "/api/admin/moves/csv",
+                post(routes::moves::read_csv)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::moves::MAX_LIST_BYTES)),
+            )
+            .route(
+                "/api/admin/moves/{id}",
+                get(routes::moves::detail).patch(routes::moves::change).delete(routes::moves::remove),
+            )
+            .route("/api/admin/moves/{id}/pause", post(routes::moves::pause))
+            .route("/api/admin/moves/{id}/resume", post(routes::moves::resume))
+            .route("/api/admin/moves/{id}/finish", post(routes::moves::finish))
+            .route("/api/admin/moves/{id}/mx", post(routes::moves::mx))
+            .route("/api/admin/moves/{id}/links", post(routes::moves::links))
+            .route(
+                "/api/admin/moves/{id}/mailboxes",
+                post(routes::moves::add_mailboxes)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::moves::MAX_LIST_BYTES)),
+            )
+            .route("/api/admin/moves/{id}/mailboxes/{mailbox}", delete(routes::moves::remove_mailbox))
+            .route("/api/admin/moves/{id}/mailboxes/{mailbox}/retry", post(routes::moves::retry_mailbox))
+            .route("/api/admin/moves/{id}/mailboxes/{mailbox}/pause", post(routes::moves::pause_mailbox))
+            .route(
+                "/api/admin/moves/{id}/mailboxes/{mailbox}/import",
+                post(routes::moves::upload)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::moves::MAX_UPLOAD_BYTES)),
+            )
             .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
             .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))
             .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))
