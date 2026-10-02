@@ -607,5 +607,6 @@ async fn labels_learn_from_store() {
     assert_eq!(training.last().map(|t| (t.label_id, t.positive)), Some((label.id, false)));
     let knowledge =
         server.store.label_knowledge(server.account, "nyu@example.net".into(), vec![], vec![]).await.unwrap();
-    assert!(knowledge.senders.is_empty());
+    // Taken off by hand: the sender's mail does not get the label by itself any more.
+    assert_eq!(knowledge.senders.get(&label.id), Some(&-1));
 }
