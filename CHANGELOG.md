@@ -3,6 +3,20 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.0 (unreleased)
+
+- **Signatures per domain.** Pick a domain and write one signature for all your addresses there,
+  apply it to several or all domains, and give single addresses their own only where needed
+  (portal and webmail). Placeholders `{name}`, `{adresse}`/`{address}` and `{domain}` are filled per
+  address. JMAP `Identity/get` returns the effective signature, so every mail program keeps
+  working; new extension `urn:uwumail:jmap:signatures` (docs/signatures.md,
+  docs/jmap-signatures.md). Where all addresses of a domain had the same signature, the update
+  makes it the domain's.
+- **Company signature per domain** for admins: as a template people without their own get, or as
+  a mandatory footer the server appends on sending, through JMAP and SMTP submission alike, before
+  DKIM signing. Only the body text parts are rewritten; signed or encrypted mail (S/MIME, PGP) is
+  left alone and a footer already there is not added twice.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with

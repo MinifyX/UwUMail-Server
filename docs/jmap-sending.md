@@ -123,6 +123,14 @@ as it is and every client cleans it before showing it, like mail HTML.
 } } }, "0"]
 ```
 
+Since 0.22 these are the **effective** signatures: an address's own, else its
+domain's, else the one for every domain, else the domain's company template,
+with placeholders like `{name}` filled. Writing one with `Identity/set` makes it
+the address's own; writing back what `Identity/get` returned changes nothing.
+Signatures per domain and company signatures are described in
+[signatures.md](signatures.md) and managed with
+[`urn:uwumail:jmap:signatures`](jmap-signatures.md).
+
 The webmail's own signatures in `UserSettings` (`signature:<id>`, with
 `forNew`/`forReplies`) are separate: they belong to the webmail and the apps,
 the identity signatures to every JMAP client.
