@@ -146,6 +146,66 @@ name, or three under shared endings like `co.uk` or `github.io`, not the full
 public suffix list. The attachment endings are the ones the UwUMail apps ask
 about before opening a file.
 
+### Phishing checks
+
+Phishing pretends to be someone the reader trusts. These checks compare the
+sender, the display name, the links and the subject against a built-in list of
+about 50 brands that phishing likes to imitate (banks, payment services, parcel
+services, shops, streaming, mail and cloud providers, authorities) and, in the
+AI spam check, against the domains of the reader's contacts. They need no
+network.
+
+A domain imitates a brand when it is one letter away from the brand's name
+(`paypa1`, `amazom`), looks like it once confusable letters are mapped
+(`rn` for `m`, `0` for `o`, Cyrillic `а` for Latin `a`), decodes from punycode
+(`xn--…`) into such a name, or carries the name in one part of a hyphenated
+label (`netfllx-billing`). The brand's own domains, its country domains and
+regional names (Sparkassen, Volksbanken) count as the brand itself.
+
+| Rule | Points | When |
+| --- | --- | --- |
+| `LOOKALIKE_BRAND_FROM` | +4.0 | the sender's domain imitates a brand |
+| `BRAND_IN_FROM_DOMAIN` | +2.0 | the sender's domain carries a brand's name without being the brand (`paypal-service.example`) |
+| `LOOKALIKE_CONTACT_FROM` | +4.0 | the sender's domain imitates the domain of one of the reader's contacts (AI spam check only) |
+| `FROM_NAME_SPOOFS_ADDRESS` | +3.0 | the display name shows an address of another site |
+| `FROM_NAME_SHOWS_DOMAIN` | +2.0 | the display name shows a domain of another site (not for mailing lists) |
+| `BRAND_IN_FROM_NAME` | +2.5 | the display name is a brand's ("PayPal Service") and the mail comes from elsewhere (not for mailing lists) |
+| `REPLY_TO_OTHER_SITE` | +0.5 | answers go to a different site than the sender's (not for mailing lists) |
+| `LOOKALIKE_BRAND_LINK` | +3.0 | a link leads to a domain that imitates a brand |
+| `BRAND_LINK_TEXT` | +3.0 | a link's text shows a brand's (or a contact's) address and the link leads elsewhere, whoever sent it |
+| `PHISHING_LINK_TEXT` | +3.0 | a link's text shows another site than the target, which is neither the sender's own (a tracking link) nor a brand's; not for mail DMARC vouches for |
+| `BRAND_IN_SUBJECT` | +1.5 | the subject names a brand together with a warning ("Konto gesperrt", "verify your account") and the mail is not from the brand |
+| `CREDENTIAL_REQUEST` | +2.0 | the mail asks to sign in, confirm or update data (German or English) and its links lead somewhere else than the sender's own site, or it claims a brand it does not come from |
+
+A newsletter whose link text shows its own shop while the link goes through a
+tracking service is not counted (`TRACKED_LINK_TEXT`, 0 points). A user name
+with dots ("lia.lunare") is not taken for a domain: only names with a known
+ending are.
+
+### How well it does
+
+`crates/uwumail-smtp/tests/corpus` holds 195 made-up mails in German and
+English (108 wanted, 40 spam, 47 phishing, all with reserved domains; see its
+README). A test in CI scores them with the message rules and the stated
+authentication results, without the network, and fails when more than 1 % of
+the wanted mail would go to Junk, more than 10 % would be greylisted, or less
+than 70 % of the phishing would go to Junk.
+
+| Rules alone, without reputation | 0.21 | 0.22 |
+| --- | --- | --- |
+| Wanted mail to Junk | 0 of 108 | 0 of 108 |
+| Wanted mail greylisted | 7 | 0 |
+| Phishing to Junk | 12 of 47 | 36 of 47 |
+| Phishing at least greylisted | 18 of 47 | 43 of 47 |
+| Spam at least greylisted | 24 of 40 | 25 of 40 |
+
+On a local sample of about 500 real mails (never committed), wanted mail
+greylisted by the message rules went from 41 to 2, mostly Instagram-style
+user names that were read as link domains, with none to Junk before or after.
+Spam that only a real network reveals (blocklists, reputation) and partner
+fraud from a look-alike of a contact are left to the blocklists and the AI
+spam check.
+
 ### Unanswered questions and reputation
 
 A question that could not be answered is worth nothing in either direction:
@@ -198,7 +258,13 @@ from wanted mail the other, and tokens seen only a few times count little. The
 | `BAYES_SPAM` | up to +5.0 | the chance is 80 % or more, +5.0 at 100 % |
 | `BAYES_HAM` | down to −3.0 | the chance is 20 % or less, −3.0 at 0 % |
 
-In between it gives no points. The sender reputation and the clear cases below
+In between it gives no points. For a message DMARC vouches for that collects
+at most 1 point otherwise, it adds at most +3.5: word statistics tell one
+newsletter from another well, but not a newsletter someone wants from one they
+do not, and at full strength they put authenticated, otherwise spotless
+receipts and newsletters into Junk on real mail. Such a message is greylisted
+at most. A person's own knowledge goes past that limit when it is 99 % sure,
+so someone who keeps moving one newsletter to Junk gets it there. The sender reputation and the clear cases below
 look at a message's points without the learned rules (these two and the
 reputation rules), so what was learned never feeds on itself.
 

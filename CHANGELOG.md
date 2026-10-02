@@ -5,6 +5,32 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## 0.22.0 (unreleased)
 
+### Added
+
+- **AI spam check: facts decide, the AI explains.** The server first weighs what it knows
+  (authentication, its spam filter, your history with the sender, the new phishing checks) into a
+  score; the score sets which verdicts are possible, and the model may only choose among them.
+  Every reason must quote the mail or cite one of the facts; reasons it makes up are dropped and
+  counted. The confidence now comes mostly from the facts. `Assist/spamCheck` returns the weighing
+  (`facts`), `reasonDetails` and `droppedReasons`; webmail 0.22.0 shows them.
+- **Phishing checks without the network.** Look-alike, homoglyph and punycode domains of about 50
+  brands (and, in the AI spam check, of your contacts' domains), a display name showing another
+  address or domain, a brand's name in the display name or subject of mail from elsewhere, link
+  text naming a brand while the link leads elsewhere, a request for login data with links off the
+  sender's site, and a Reply-To to another site. New rules in docs/spam-filter.md.
+- **A spam corpus for CI.** 195 made-up German and English mails (wanted mail, spam, phishing, all
+  with reserved domains) and a test that fails when more than 1 % of the wanted mail would go to
+  Junk or less than 70 % of the phishing would.
+
+### Changed
+
+- **Fewer false positives.** On the corpus, phishing that goes to Junk by the rules alone rose
+  from 26 % to 77 % while wanted mail stays out of Junk and is no longer greylisted (7 before).
+  User names with dots in link texts are no longer taken for domains, which greylisted many
+  social-network notifications. The Bayes filter adds at most +3.5 to mail DMARC vouches for
+  that trips nothing else (it alone put authenticated receipts and newsletters into Junk), unless
+  your own marks make it 99 % sure.
+
 ### Fixed
 
 - **Wartende Nachrichten: retries of one message are one entry.** A greylisted sender that comes
