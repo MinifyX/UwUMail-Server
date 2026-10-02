@@ -1271,6 +1271,29 @@
       },
       "unauthenticated_one": "Eén rapport kwam van een afzender die niet kon bewijzen wie hij is. De cijfers kunnen verzonnen zijn.",
       "unauthenticated_other": "{{count}} rapporten kwamen van afzenders die niet konden bewijzen wie ze zijn. De cijfers kunnen verzonnen zijn."
+    },
+    "signature": {
+      "title": "Bedrijfshandtekening",
+      "explain": "Eén handtekening voor alle adressen van dit domein: als sjabloon dat iedereen mag aanpassen, of als verplichte voettekst die de server bij verzenden toevoegt.",
+      "mode": "Gebruik",
+      "modes": {
+        "off": "Uit",
+        "template": "Sjabloon",
+        "footer": "Verplichte voettekst"
+      },
+      "modeHint": {
+        "off": "Iedereen schrijft zelf een handtekening.",
+        "template": "Wie nog geen eigen handtekening heeft, krijgt deze. Iedereen mag hem aanpassen.",
+        "footer": "De server voegt hem toe aan elk bericht van dit domein, ook vanuit mail-apps via SMTP."
+      },
+      "text": "Tekst",
+      "html": "HTML",
+      "htmlHint": "Optioneel, voor opgemaakte mail. Zonder HTML wordt de tekst gebruikt.",
+      "placeholders": "Plaatshouders: {{placeholders}}",
+      "footerNote": "Ondertekende of versleutelde mail (S/MIME, PGP) krijgt geen voettekst, anders klopt de handtekening niet meer.",
+      "footerEmpty": "Een verplichte voettekst heeft tekst nodig.",
+      "save": "Opslaan",
+      "saved": "Bedrijfshandtekening opgeslagen"
     }
   },
   "groups": {
@@ -2342,7 +2365,7 @@
     },
     "signatures": {
       "title": "Handtekeningen",
-      "intro": "Mail-apps en de webmail voegen de handtekening toe van het adres waarmee je verstuurt.",
+      "intro": "Kies een domein en schrijf één handtekening voor al je adressen daar. Mail-apps en de webmail voegen hem in tijdens het schrijven.",
       "loading": "Adressen laden …",
       "loadError": "De adressen konden niet worden geladen.",
       "empty": "Er is nog geen adres om vanaf te versturen.",
@@ -2350,7 +2373,25 @@
       "html": "Handtekening als HTML",
       "htmlHint": "Optioneel, voor apps die opgemaakte mail schrijven.",
       "save": "Handtekening opslaan",
-      "saved": "Handtekening opgeslagen"
+      "saved": "Handtekening opgeslagen",
+      "domain": "Domein",
+      "domainOption_one": "{{domain}} (1 adres)",
+      "domainOption_other": "{{domain}} ({{count}} adressen)",
+      "placeholders": "Plaatshouders:",
+      "appliesTo": "Geldt voor",
+      "allDomains": "Alle domeinen (ook toekomstige)",
+      "replaces": "Vervangt de eigen handtekeningen van {{domains}}.",
+      "preview": "Voorbeeld voor {{address}}",
+      "remove": "Handtekening verwijderen",
+      "fromTemplate": "Dit is het sjabloon van je organisatie. Je kunt het aanpassen en als je eigen opslaan.",
+      "fromAllDomains": "Dit domein gebruikt je handtekening voor alle domeinen.",
+      "companyFooter": "Bij verzenden vanaf dit domein voegt de server automatisch deze voettekst toe:",
+      "exceptions": "Afwijkende handtekening voor afzonderlijke adressen ({{count}})",
+      "ownSignature": "Eigen handtekening",
+      "followsDomain": "Gebruikt de domeinhandtekening",
+      "override": "Eigen handtekening voor dit adres",
+      "backToDomain": "Domeinhandtekening gebruiken",
+      "tooLarge": "De handtekening is te groot (maximaal 256 KB)."
     }
   },
   "forwardConfirm": {

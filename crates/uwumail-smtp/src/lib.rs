@@ -20,7 +20,9 @@ pub mod dnscheck;
 mod dsn;
 pub mod egress;
 pub mod fetch;
+
 mod fetched;
+pub mod footer;
 mod forward;
 mod headers;
 pub mod health;

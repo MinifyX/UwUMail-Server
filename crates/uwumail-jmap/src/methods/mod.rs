@@ -20,6 +20,7 @@ mod query_changes;
 mod senders;
 mod settings;
 mod sieve;
+pub mod signatures;
 mod snippet;
 mod submission;
 mod suggest;
@@ -36,7 +37,8 @@ use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
     ASSIST, AVAILABILITY, BIRTHDAYS, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED, PROFILE,
-    SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
+    SENDERS, SETTINGS, SIEVE, SIGNATURES, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID,
+    WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -64,6 +66,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     IMAGETEXT,
     BIRTHDAYS,
     ASSIST,
+    SIGNATURES,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
@@ -243,6 +246,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "AddressSuggestion" => SUGGEST,
         "MaskedEmail" => MASKED,
         "ProfilePicture" => PROFILE,
+        "SignatureSettings" => SIGNATURES,
         "Birthdays" => BIRTHDAYS,
         "Assist" | "AssistProvider" | "AssistSettings" | "AssistLabel" => ASSIST,
         _ => return Err(MethodError::kind("unknownMethod")),
@@ -370,6 +374,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "MaskedEmail/get" => single(masked::get(ctx, &args).await?),
         "MaskedEmail/changes" => single(changes(ctx, &args, "MaskedEmail", 'x').await?),
         "MaskedEmail/set" => single(masked::set(ctx, &args).await?),
+        "SignatureSettings/get" => single(signatures::get(ctx, &args).await?),
+        "SignatureSettings/set" => single(signatures::set(ctx, &args).await?),
         "ProfilePicture/get" => single(profile::get(ctx, &args).await?),
         "ProfilePicture/set" => single(profile::set(ctx, &args).await?),
         "AssistProvider/get" => single(assist::provider_get(ctx, &args).await?),

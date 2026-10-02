@@ -24,6 +24,17 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   none, and the list says so.
 - **Single mailbox moves by the admin** in the same wizard, into an existing mailbox or a new one;
   personal moves under My account → Moving share the copying code and the progress.
+- **Signatures per domain.** Pick a domain and write one signature for all your addresses there,
+  apply it to several or all domains, and give single addresses their own only where needed
+  (portal and webmail). Placeholders `{name}`, `{adresse}`/`{address}` and `{domain}` are filled per
+  address. JMAP `Identity/get` returns the effective signature, so every mail program keeps
+  working; new extension `urn:uwumail:jmap:signatures` (docs/signatures.md,
+  docs/jmap-signatures.md). Where all addresses of a domain had the same signature, the update
+  makes it the domain's.
+- **Company signature per domain** for admins: as a template people without their own get, or as
+  a mandatory footer the server appends on sending, through JMAP and SMTP submission alike, before
+  DKIM signing. Only the body text parts are rewritten; signed or encrypted mail (S/MIME, PGP) is
+  left alone and a footer already there is not added twice.
 
 ### Fixed
 
@@ -35,6 +46,7 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   with AI" keeps a time range, is told to set all-day only when the mail gives no time, and its
   answer never replaces a found time with a whole day (or the other way round). The server turns
   an all-day answer with a time of day into a timed event and counts an all-day end as the last day.
+
 
 ## 0.21.2
 
@@ -112,7 +124,6 @@ existing providers; the switch decides).
   Providers that hold the model to the answer's shape (OpenAI, llama.cpp, Ollama …) now also get
   the keys in that order (they had them sorted, `fits` first) and one verdict per label, so a small
   model no longer stops after the first label or proposes new labels before judging the old ones.
-
 
 **Webmail 0.21.0** (bundled): sidebar, list and reader can be resized by dragging (per device,
 double-click resets) and the reader fills its pane; labels get their own sidebar section with unread

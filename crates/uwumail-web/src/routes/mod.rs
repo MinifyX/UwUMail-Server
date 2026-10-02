@@ -35,6 +35,7 @@ pub mod security;
 pub mod settings;
 pub mod setup;
 pub mod sharing;
+pub mod signatures;
 pub mod spam;
 pub mod stats;
 pub mod updates;

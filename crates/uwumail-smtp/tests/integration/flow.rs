@@ -226,6 +226,45 @@ async fn submitted_mail_reaches_local_and_remote_people_with_dkim() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_company_footer_is_added_before_signing_for_smtp_clients_too() {
+    use lettre::message::MultiPart;
+    use uwumail_store::{CompanySignature, CompanySignatureMode};
+    let b = start("b.test", &["nyu"], &[]).await;
+    let a = start("a.test", &["mini"], &[("b.test", b.mx)]).await;
+    let keys = uwumail_smtp::dkim::ensure_domain_keys(a.smtp.store(), "a.test").await.unwrap();
+    for key in &keys {
+        let (name, value) = key.dns_record();
+        b.smtp.dns_cache().pin_txt(&name, &value).unwrap();
+    }
+    for name in ["a.test", "mx.a.test", "_dmarc.a.test"] {
+        b.smtp.dns_cache().pin_no_txt(name);
+    }
+    let footer = CompanySignature {
+        mode: CompanySignatureMode::Footer,
+        text: "A-Test GmbH · {name}".into(),
+        html: "<p>A-Test GmbH &middot; {name}</p>".into(),
+    };
+    a.smtp.store().set_domain_signature("a.test", footer).await.unwrap();
+
+    let message = Message::builder()
+        .from("Mini & Co <mini@a.test>".parse::<LettreMailbox>().unwrap())
+        .to("nyu@b.test".parse::<LettreMailbox>().unwrap())
+        .subject("Mit Fusszeile")
+        .multipart(MultiPart::alternative_plain_html("Hallo Nyu".to_owned(), "<p>Hallo Nyu</p>".to_owned()))
+        .unwrap();
+    a.mailer("mini@a.test", PASSWORD, false).send(message).await.unwrap();
+
+    let remote = b.wait_for_inbox("nyu@b.test", 1).await;
+    let raw = b.raw(&remote[0]).await;
+    assert_eq!(raw.matches("dkim=pass").count(), 2, "the footer went in before signing: {raw}");
+    let parsed = mail_parser::MessageParser::new().parse(raw.as_bytes()).unwrap();
+    let text = parsed.body_text(0).unwrap();
+    assert!(text.contains("Hallo Nyu") && text.contains("A-Test GmbH · Mini & Co"), "{text}");
+    let html = parsed.body_html(0).unwrap();
+    assert!(html.contains("<p>A-Test GmbH &middot; Mini &amp; Co</p>"), "the name is escaped in HTML: {html}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn implicit_tls_submission_works() {
     let a = start("a.test", &["mini", "ami"], &[]).await;
     a.mailer("mini@a.test", PASSWORD, true).send(mail("mini@a.test", &["ami@a.test"], "Über 465")).await.unwrap();

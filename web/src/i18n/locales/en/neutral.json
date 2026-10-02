@@ -1271,6 +1271,29 @@
       },
       "unauthenticated_one": "One report came from a sender that could not prove who it is. Its numbers could be made up.",
       "unauthenticated_other": "{{count}} reports came from senders that could not prove who they are. Their numbers could be made up."
+    },
+    "signature": {
+      "title": "Company signature",
+      "explain": "One signature for all addresses of this domain: as a template everyone may change, or as a mandatory footer the server adds when sending.",
+      "mode": "Use",
+      "modes": {
+        "off": "Off",
+        "template": "Template",
+        "footer": "Mandatory footer"
+      },
+      "modeHint": {
+        "off": "Everyone writes their own signature.",
+        "template": "People without a signature of their own get this one. Everyone may change it.",
+        "footer": "The server adds it to every message from this domain, also from mail apps over SMTP."
+      },
+      "text": "Text",
+      "html": "HTML",
+      "htmlHint": "Optional, for formatted mail. Without HTML the text is used.",
+      "placeholders": "Placeholders: {{placeholders}}",
+      "footerNote": "Signed or encrypted mail (S/MIME, PGP) gets no footer, as it would break the signature.",
+      "footerEmpty": "A mandatory footer needs a text.",
+      "save": "Save",
+      "saved": "Company signature saved"
     }
   },
   "groups": {
@@ -2342,7 +2365,7 @@
     },
     "signatures": {
       "title": "Signatures",
-      "intro": "Mail apps and the webmail add the signature of the address you send from.",
+      "intro": "Pick a domain and write one signature for all your addresses there. Mail apps and the webmail insert it as you write.",
       "loading": "Loading addresses …",
       "loadError": "The addresses could not be loaded.",
       "empty": "There is no address to send from yet.",
@@ -2350,7 +2373,25 @@
       "html": "Signature as HTML",
       "htmlHint": "Optional, for apps that write formatted mail.",
       "save": "Save signature",
-      "saved": "Signature saved"
+      "saved": "Signature saved",
+      "domain": "Domain",
+      "domainOption_one": "{{domain}} (1 address)",
+      "domainOption_other": "{{domain}} ({{count}} addresses)",
+      "placeholders": "Placeholders:",
+      "appliesTo": "Applies to",
+      "allDomains": "All domains (including future ones)",
+      "replaces": "Replaces the own signatures of {{domains}}.",
+      "preview": "Preview for {{address}}",
+      "remove": "Remove signature",
+      "fromTemplate": "This is your organisation's template. You can change it and save it as your own.",
+      "fromAllDomains": "This domain uses your signature for all domains.",
+      "companyFooter": "When you send from this domain, the server adds this footer automatically:",
+      "exceptions": "Different signature for single addresses ({{count}})",
+      "ownSignature": "Own signature",
+      "followsDomain": "Uses the domain signature",
+      "override": "Own signature for this address",
+      "backToDomain": "Use the domain signature",
+      "tooLarge": "The signature is too large (256 KB at most)."
     }
   },
   "forwardConfirm": {

@@ -6,6 +6,7 @@ use serde::Serialize;
 use crate::address::{EmailAddress, base_local_part, normalize_address};
 use crate::blobs::BlobHash;
 use crate::db::{next_modseq, record_change};
+use crate::signatures::{SignatureContext, SignatureSource, SignatureText};
 use crate::{Result, Store, StoreError, now};
 
 /// Uploads are kept this long unless something else references their blob.
@@ -30,10 +31,18 @@ pub struct Identity {
     pub email: String,
     pub reply_to: Option<Vec<EmailAddress>>,
     pub bcc: Option<Vec<EmailAddress>>,
+    /// The signature it sends with, placeholders filled: its own, else its domain's (see
+    /// [`crate::signatures`]).
     pub text_signature: String,
     pub html_signature: String,
+    /// Its own signature, as written, when it has one.
+    pub signature_override: Option<SignatureText>,
+    /// Where `text_signature` and `html_signature` come from.
+    pub signature_source: SignatureSource,
 }
 
+/// A change to an identity. A signature written here becomes the identity's own, unless it is the
+/// effective one it already has (a mail program saving every identity as it read it).
 #[derive(Debug, Clone, Default)]
 pub struct IdentityUpdate {
     pub name: Option<String>,
@@ -67,20 +76,35 @@ pub struct VacationResponse {
     pub html_body: Option<String>,
 }
 
+/// An identity as stored: its own signature only when it has one, the effective one still empty.
 fn identity_from_row(row: &Row<'_>) -> rusqlite::Result<Identity> {
     let addresses = |value: Option<String>| value.and_then(|v| serde_json::from_str(&v).ok());
+    let own: bool = row.get(7)?;
     Ok(Identity {
         id: row.get(0)?,
         name: row.get(1)?,
         email: row.get(2)?,
         reply_to: addresses(row.get(3)?),
         bcc: addresses(row.get(4)?),
-        text_signature: row.get(5)?,
-        html_signature: row.get(6)?,
+        text_signature: String::new(),
+        html_signature: String::new(),
+        signature_override: own.then(|| {
+            SignatureText::new(row.get::<_, String>(5).unwrap_or_default(), row.get::<_, String>(6).unwrap_or_default())
+        }),
+        signature_source: SignatureSource::None,
     })
 }
 
-const IDENTITY_COLUMNS: &str = "id, name, email, reply_to, bcc, text_signature, html_signature";
+/// Fills in the effective signature of an identity read with [`identity_from_row`].
+fn resolve_identity(context: &SignatureContext, identity: &mut Identity) {
+    let (signature, source) = context.effective(&identity.email, identity.signature_override.as_ref());
+    let filled = signature.filled(context.name_for(&identity.name), &identity.email);
+    identity.text_signature = filled.text;
+    identity.html_signature = filled.html;
+    identity.signature_source = source;
+}
+
+const IDENTITY_COLUMNS: &str = "id, name, email, reply_to, bcc, text_signature, html_signature, signature_override";
 
 /// Whether an account may send as `email`: its own addresses and their sub-addresses, and any address
 /// of a domain an admin let it send as.
@@ -303,11 +327,30 @@ impl Store {
                 if let Some(bcc) = &update.bcc {
                     tx.execute("UPDATE identities SET bcc = ?1 WHERE id = ?2", params![json(bcc), id])?;
                 }
-                if let Some(text) = &update.text_signature {
-                    tx.execute("UPDATE identities SET text_signature = ?1 WHERE id = ?2", params![text, id])?;
-                }
-                if let Some(html) = &update.html_signature {
-                    tx.execute("UPDATE identities SET html_signature = ?1 WHERE id = ?2", params![html, id])?;
+                if update.text_signature.is_some() || update.html_signature.is_some() {
+                    let mut identity = tx.query_row(
+                        &format!("SELECT {IDENTITY_COLUMNS} FROM identities WHERE id = ?1"),
+                        [id],
+                        identity_from_row,
+                    )?;
+                    if let Some(name) = &update.name {
+                        identity.name = name.trim().to_owned();
+                    }
+                    let context = SignatureContext::load(tx, account_id)?;
+                    resolve_identity(&context, &mut identity);
+                    // What a mail program read and writes back unchanged stays what it was:
+                    // following the domain's signature, not a copy of it.
+                    let unchanged = update.text_signature.as_ref().is_none_or(|text| *text == identity.text_signature)
+                        && update.html_signature.as_ref().is_none_or(|html| *html == identity.html_signature);
+                    if !unchanged {
+                        let (written, _) = context.effective(&identity.email, identity.signature_override.as_ref());
+                        let text = update.text_signature.clone().unwrap_or(written.text);
+                        let html = update.html_signature.clone().unwrap_or(written.html);
+                        tx.execute(
+                            "UPDATE identities SET text_signature = ?1, html_signature = ?2, signature_override = 1 WHERE id = ?3",
+                            params![text, html, id],
+                        )?;
+                    }
                 }
                 tx.execute("UPDATE identities SET updated_modseq = ?1 WHERE id = ?2", params![modseq, id])?;
                 record_change(tx, account_id, modseq, "Identity", id, "updated")?;
@@ -501,7 +544,14 @@ fn load_identities(conn: &rusqlite::Connection, account_id: i64) -> Result<Vec<I
     let mut stmt =
         conn.prepare(&format!("SELECT {IDENTITY_COLUMNS} FROM identities WHERE account_id = ?1 ORDER BY id"))?;
     let rows = stmt.query_map([account_id], identity_from_row)?;
-    Ok(rows.collect::<Result<_, _>>()?)
+    let mut list: Vec<Identity> = rows.collect::<Result<_, _>>()?;
+    if !list.is_empty() {
+        let context = SignatureContext::load(conn, account_id)?;
+        for identity in &mut list {
+            resolve_identity(&context, identity);
+        }
+    }
+    Ok(list)
 }
 
 #[cfg(test)]

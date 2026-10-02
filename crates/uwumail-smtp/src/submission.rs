@@ -5,7 +5,7 @@ use mail_parser::MessageParser;
 use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, clamav, dkim, forward, headers, profile_pictures, random_id, vacation};
+use crate::{Smtp, clamav, dkim, footer, forward, headers, profile_pictures, random_id, vacation};
 
 pub struct Submission {
     pub account: Account,
@@ -209,6 +209,8 @@ impl Smtp {
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
         let raw = headers::strip_faces(&raw);
+        // The company footer goes in before anything is signed (docs/signatures.md).
+        let raw = self.with_company_footer(&account, &from[0], raw, &id).await;
 
         let mut added = String::new().into_bytes();
         // The person's picture, when they asked for it and send from their own address; signed
@@ -388,6 +390,38 @@ impl Smtp {
         tracing::info!(%id, login = %account.login, local = local_deliveries, remote = remote_recipients, "submitted message");
         ctx.store.stats().count(uwumail_store::Stat::Submitted);
         Ok(Submitted { id, queue_message_id, local_deliveries, remote_recipients })
+    }
+
+    /// The message with the mandatory footer of the sender's domain, when its admin set one.
+    /// Placeholders are filled for the sender: the name in `From`, else the account's.
+    async fn with_company_footer(&self, account: &Account, from: &str, raw: Vec<u8>, id: &str) -> Vec<u8> {
+        let domain = from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+        let footer = match self.inner.store.company_footer(domain).await {
+            Ok(Some(footer)) => footer,
+            Ok(None) => return raw,
+            Err(err) => {
+                tracing::warn!(%id, %err, "reading the company footer failed");
+                return raw;
+            }
+        };
+        let name = MessageParser::new()
+            .parse_headers(&raw)
+            .and_then(|message| {
+                message
+                    .from()
+                    .and_then(|from| from.first())
+                    .and_then(|address| address.name.as_deref().map(str::to_owned))
+            })
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| account.display_name.clone());
+        match footer::append(&raw, &footer.filled(&name, &from.to_ascii_lowercase())) {
+            footer::Footer::Added(with_footer) => with_footer,
+            footer::Footer::AlreadyThere => raw,
+            footer::Footer::Skipped(reason) => {
+                tracing::info!(%id, %domain, reason, "sent without the company footer");
+                raw
+            }
+        }
     }
 
     /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the

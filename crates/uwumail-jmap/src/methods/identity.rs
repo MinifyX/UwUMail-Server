@@ -86,8 +86,18 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 let update = IdentityUpdate {
                     reply_to: object.get("replyTo").map(|v| addresses(v, "replyTo")).transpose()?,
                     bcc: object.get("bcc").map(|v| addresses(v, "bcc")).transpose()?,
-                    text_signature: object.get("textSignature").and_then(Value::as_str).map(str::to_owned),
-                    html_signature: object.get("htmlSignature").and_then(Value::as_str).map(str::to_owned),
+                    // An empty signature on a new identity is no signature of its own: it takes
+                    // its domain's (docs/signatures.md).
+                    text_signature: object
+                        .get("textSignature")
+                        .and_then(Value::as_str)
+                        .filter(|text| !text.is_empty())
+                        .map(str::to_owned),
+                    html_signature: object
+                        .get("htmlSignature")
+                        .and_then(Value::as_str)
+                        .filter(|html| !html.is_empty())
+                        .map(str::to_owned),
                     ..IdentityUpdate::default()
                 };
                 store.update_identity(account_id, id, update).await?;
