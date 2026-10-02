@@ -3,6 +3,19 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.0 (unreleased)
+
+### Fixed
+
+- **Appointments keep their times.** "Samstag 03.10.26, zwischen 10:00 und 12:00" becomes
+  10:00–12:00 instead of an all-day event. The webmail's date finder knows "zwischen … und",
+  "10.00–12.00", "halb drei", "nachmittags", "c.t.", parcel time windows and date ranges with
+  "zwischen", and offers fewer false ones (login and pickup timestamps, billing periods, phone
+  numbers, "Auftrag … vom"); titles and places no longer read "Betrag", "Datum" or "Dorf". "Check
+  with AI" keeps a time range, is told to set all-day only when the mail gives no time, and its
+  answer never replaces a found time with a whole day (or the other way round). The server turns
+  an all-day answer with a time of day into a timed event and counts an all-day end as the last day.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with
