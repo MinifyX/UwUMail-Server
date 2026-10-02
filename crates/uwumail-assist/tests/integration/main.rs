@@ -7,3 +7,4 @@ mod labels;
 mod learning;
 mod prices;
 mod providers;
+mod spam_eval;

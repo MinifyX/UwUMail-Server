@@ -1657,7 +1657,7 @@ const RULE_MEANINGS: &[(&str, &str)] = &[
 ];
 
 /// What a rule of this server's spam filter or phishing checks means, for the model.
-fn rule_meaning(rule: &str) -> Option<&'static str> {
+pub fn rule_meaning(rule: &str) -> Option<&'static str> {
     RULE_MEANINGS.iter().find(|(known, _)| *known == rule).map(|(_, meaning)| *meaning)
 }
 
