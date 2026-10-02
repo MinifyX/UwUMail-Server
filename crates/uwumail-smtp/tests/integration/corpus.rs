@@ -54,11 +54,11 @@ fn corpus() -> Vec<Sample> {
             let mut rest = &text[..];
             // The corpus headers come first and are not part of the mail.
             while rest.starts_with(b"X-Corpus-") {
-                let end = rest.windows(2).position(|pair| pair == b"\r\n").unwrap();
-                let line = String::from_utf8_lossy(&rest[..end]).into_owned();
+                let end = rest.iter().position(|byte| *byte == b'\n').unwrap();
+                let line = String::from_utf8_lossy(&rest[..end]).trim_end_matches('\r').to_owned();
                 let (name, value) = line.split_once(": ").unwrap();
                 meta.insert(name.trim_start_matches("X-Corpus-").to_owned(), value.to_owned());
-                rest = &rest[end + 2..];
+                rest = &rest[end + 1..];
             }
             assert_eq!(meta["Class"], class, "{}", path.display());
             samples.push(Sample {
