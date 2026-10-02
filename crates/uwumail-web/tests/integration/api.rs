@@ -294,6 +294,93 @@ async fn logging_into_ones_own_account_does_not_reset_the_guesses_at_another() {
 }
 
 #[tokio::test]
+async fn signatures_per_domain_and_the_company_signature() {
+    let (app, _dir) = setup().await;
+    let (leni, leni_csrf) = login(&app, "leni@example.org").await;
+    let (nyu, nyu_csrf) = login(&app, "nyu@example.org").await;
+    let put =
+        |cookie, csrf, path, body| Call { cookie: Some(cookie), csrf: Some(csrf), ..Call::send("PUT", path, body) };
+
+    let (status, _, overview) = call(&app, Call { cookie: Some(&leni), ..Call::get("/api/account/signatures") }).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(overview["domains"][0]["domain"], "example.org");
+    assert_eq!(overview["domains"][0]["addressCount"], 1);
+    assert_eq!(overview["limits"]["placeholders"][0], "name");
+    let identity = overview["identities"][0]["id"].as_i64().unwrap();
+
+    let body = json!({ "domains": { "example.org": { "text": "{name}, {domain}", "html": "<p>{name}</p>" } } });
+    let (status, _, overview) = call(&app, put(&leni, &leni_csrf, "/api/account/signatures", body)).await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    assert_eq!(overview["identities"][0]["effective"]["text"], "leni, example.org");
+    assert_eq!(overview["identities"][0]["source"], "domain");
+    // The old identity endpoint shows the effective signature too.
+    let (_, _, list) = call(&app, Call { cookie: Some(&leni), ..Call::get("/api/account/identities") }).await;
+    assert_eq!(list[0]["textSignature"], "leni, example.org");
+
+    // Only her own domains and identities; nothing unknown; no CSRF, no change.
+    let nyu_identity = {
+        let (_, _, list) = call(&app, Call { cookie: Some(&nyu), ..Call::get("/api/account/signatures") }).await;
+        list["identities"][0]["id"].as_i64().unwrap()
+    };
+    for (body, expected) in [
+        (json!({ "domains": { "example.com": { "text": "x" } } }), StatusCode::UNPROCESSABLE_ENTITY),
+        (json!({ "identities": { nyu_identity.to_string(): { "text": "x" } } }), StatusCode::NOT_FOUND),
+        (json!({ "identities": { "abc": null } }), StatusCode::UNPROCESSABLE_ENTITY),
+        (json!({ "domains": { "example.org": { "colour": "red" } } }), StatusCode::UNPROCESSABLE_ENTITY),
+        (json!({ "domains": { "example.org": { "text": "x".repeat(300 * 1024) } } }), StatusCode::UNPROCESSABLE_ENTITY),
+        (json!({ "other": 1 }), StatusCode::UNPROCESSABLE_ENTITY),
+    ] {
+        let (status, _, _) = call(&app, put(&leni, &leni_csrf, "/api/account/signatures", body.clone())).await;
+        assert!(status == expected || status == StatusCode::BAD_REQUEST, "{body}: {status}");
+    }
+    let (status, _, _) = call(
+        &app,
+        Call { cookie: Some(&leni), ..Call::send("PUT", "/api/account/signatures", json!({ "domains": {} })) },
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "without the CSRF token");
+    let (_, _, overview) = call(&app, Call { cookie: Some(&nyu), ..Call::get("/api/account/signatures") }).await;
+    assert!(overview["identities"][0]["signature"].is_null(), "Nyu's identity is untouched");
+
+    // An address of her own, then back to the domain's.
+    let body = json!({ "identities": { identity.to_string(): { "text": "Nur hier" } } });
+    let (_, _, overview) = call(&app, put(&leni, &leni_csrf, "/api/account/signatures", body)).await;
+    assert_eq!(overview["identities"][0]["effective"]["text"], "Nur hier");
+    let body = json!({ "identities": { identity.to_string(): null } });
+    let (_, _, overview) = call(&app, put(&leni, &leni_csrf, "/api/account/signatures", body)).await;
+    assert_eq!(overview["identities"][0]["source"], "domain");
+
+    // The company signature is the admin's: Leni may not, Nyu may.
+    let path = "/api/admin/domains/example.org/signature";
+    let template = json!({ "mode": "template", "text": "Beispiel AG, {name}", "html": "" });
+    let (status, _, _) = call(&app, put(&leni, &leni_csrf, path, template.clone())).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = call(&app, Call { cookie: Some(&leni), ..Call::get(path) }).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, saved) = call(&app, put(&nyu, &nyu_csrf, path, template)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["mode"], "template");
+    let (_, _, detail) = call(&app, Call { cookie: Some(&nyu), ..Call::get("/api/admin/domains/example.org") }).await;
+    assert_eq!(detail["signature"]["text"], "Beispiel AG, {name}");
+    for bad in
+        [json!({ "mode": "sometimes" }), json!({ "mode": "footer", "text": " " }), json!({ "mode": "off", "x": 1 })]
+    {
+        let (status, _, _) = call(&app, put(&nyu, &nyu_csrf, path, bad.clone())).await;
+        assert!(status == StatusCode::UNPROCESSABLE_ENTITY || status == StatusCode::BAD_REQUEST, "{bad}: {status}");
+    }
+    let (status, _, _) =
+        call(&app, put(&nyu, &nyu_csrf, "/api/admin/domains/unknown.example/signature", json!({ "mode": "off" })))
+            .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Without a signature of her own, Leni gets the template.
+    let body = json!({ "domains": { "example.org": null } });
+    let (_, _, overview) = call(&app, put(&leni, &leni_csrf, "/api/account/signatures", body)).await;
+    assert_eq!(overview["identities"][0]["effective"]["text"], "Beispiel AG, leni");
+    assert_eq!(overview["domains"][0]["company"]["mode"], "template");
+}
+
+#[tokio::test]
 async fn signatures_and_the_undo_window_are_set_in_my_account() {
     let (app, _dir) = setup().await;
     let (cookie, csrf) = login(&app, "leni@example.org").await;

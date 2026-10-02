@@ -470,6 +470,7 @@ impl Web {
             .route("/api/account/preferences", patch(routes::account::update_preferences))
             .route("/api/account/identities", get(routes::account::identities))
             .route("/api/account/identities/{id}", patch(routes::account::update_identity))
+            .route("/api/account/signatures", get(routes::signatures::show).put(routes::signatures::update))
             .route("/api/account/webmail", get(routes::webmail::access))
             .route("/api/account/security", get(routes::security::overview))
             .route("/api/account/password", post(routes::security::change_password))
@@ -653,6 +654,10 @@ impl Web {
             .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
             .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))
             .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))
+            .route(
+                "/api/admin/domains/{name}/signature",
+                get(routes::signatures::show_domain).put(routes::signatures::update_domain),
+            )
             .route("/api/admin/domains/{name}/forwards", put(routes::domains::set_forward_address))
             .route("/api/admin/domains/{name}/forwards/{local}", delete(routes::domains::remove_forward_address))
             .route("/api/admin/domains/{name}/self-service", put(routes::own::set_domain_self_service))

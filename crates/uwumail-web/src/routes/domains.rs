@@ -95,6 +95,8 @@ pub(crate) async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
         }).collect::<Vec<_>>(),
         "report": web.report(&domain.name),
         "selfServiceAliases": web.store().domain_self_service(&domain.name).await?,
+        // The company signature (docs/signatures.md).
+        "signature": web.store().domain_signature(&domain.name).await?,
         "mtaSts": super::reports::mta_sts_json(web.store().mta_sts(&domain.name).await?),
         "setup": {
             "hostname": web.settings().hostname,
