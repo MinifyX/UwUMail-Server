@@ -3,6 +3,39 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.0 (unreleased)
+
+### Labels
+
+- **Eight base labels for everyone**: Rechnung, Versand, Termin, Newsletter, Konto & Sicherheit,
+  Persönlich, Arbeit & Geschäftliches and Werbung (Invoice, Shipping, Appointment, Newsletter,
+  Account & security, Personal, Work & business, Promotions in English), each with a fixed,
+  non-overlapping definition and examples, switched on or off one by one (`auto`). A label of the
+  same meaning someone had already (`Rechnungen`, `Termine` …) becomes the base label; own labels
+  stay.
+- **At most a main label and a second one, and none when in doubt.** Every way that puts labels on
+  now says how sure it is; a main label needs 0.8, a second one 0.88, and base labels that exclude
+  each other (personal and newsletter, say) never go on together. Four new detectors (account,
+  personal, work, advertising) and stricter old ones; facts read from every mail (sender type,
+  List-Unsubscribe, amounts, invoice and tracking numbers, codes, greetings …) decide with them.
+- **The model only in doubt, held to the facts.** The label worker decides with rules, detectors,
+  learned senders, similar mails and the classifier first and asks the model only about the labels
+  they leave open, with the facts, hints and the person's corrections; it answers yes, no or
+  unsure. A lone yes is never a second label, a mass mail is never personal, and a model saying
+  yes to everything is not believed. On a corpus of invented mails, labels without a model went
+  from 74 % to 98 % precision (recall 33 % → 67 %).
+- **Similar mails** decide labels: with the new admin provider kinds *OpenAI embeddings*, *Ollama
+  embeddings* and *OpenAI-compatible embeddings* by vectors of the person's labeled mails (one byte
+  per dimension, deleted with the mail), without one by their words.
+- **Corrections teach more**: taking a label off a sender's mail by hand keeps it off that sender's
+  mail, and hand-labelings are shown to the model as examples (sender domain, subject, start of
+  the text; the newest few per label).
+- **Overlap warning**: `AssistLabel/checkOverlap` tells which labels a new or changed label would
+  overlap with (same name, the meaning of a base label, largely the same words); the webmail warns
+  while a label is written.
+- **Small-model hint**: the portal warns for chat models below 7 billion parameters and recommends
+  Qwen3-8B, Qwen3-14B or gemma-3-12b-it; docs/llm.md has a llama.cpp setup for chat and embeddings.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with
