@@ -12,6 +12,7 @@ pub mod chatgpt;
 mod features;
 pub mod foreign;
 pub mod kinds;
+mod labeling;
 pub mod llm;
 pub mod mail;
 pub mod prices;

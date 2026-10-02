@@ -9,6 +9,7 @@
 //! learned in its database; the UwUMail app, which copies this crate as it is for its other
 //! accounts, keeps it on the device. Both decide alike.
 
+pub mod ai;
 mod base;
 mod classifier;
 mod detect;
@@ -23,6 +24,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
+pub use ai::{AiAnswer, AiVerdict, ai_candidates, ask_about, merge, ruled_out};
 pub use base::{Base, BaseText};
 pub use classifier::{
     BACKGROUND_CANDIDATES, BACKGROUND_DAYS, MAX_EXAMPLES, MAX_TOKENS, MIN_EVIDENCE, MIN_EXAMPLES, MIN_TOKEN_EXAMPLES,
