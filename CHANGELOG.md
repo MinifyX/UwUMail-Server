@@ -3,6 +3,19 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.21.2
+
+**Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with
+Nyu as a character: ":3" becomes Nyu and "<3" a heart, never in times like 10:30 and never while
+typing), and a font picker under Settings → Appearance (UwU Sans, Rubik, DM Sans or the system
+font, kept on the device).
+
+### Fixed
+
+- **HTML mails without a font of their own no longer show up in Times.** They get the chosen font;
+  under Settings → Reading → Sender fonts, serif fonts like Times or Georgia are replaced by it
+  too (can be turned off), and a missing Calibri or Aptos falls back to it.
+
 ## 0.21.1
 
 **Webmail 0.21.1** (bundled): PDF attachments are previewed again (they were always refused as
