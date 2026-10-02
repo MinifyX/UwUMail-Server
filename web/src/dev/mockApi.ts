@@ -1201,6 +1201,8 @@ const mockGreylist: GreylistHold[] = [
     score: 2.4,
     size: 18_400,
     expiresAt: now + 2 * 86_400,
+    attempts: 3,
+    lastAt: now - 60,
   },
   {
     id: 6,
@@ -1213,6 +1215,8 @@ const mockGreylist: GreylistHold[] = [
     score: 3.8,
     size: 64_200,
     expiresAt: now + 2 * 86_400 - 5400,
+    attempts: 1,
+    lastAt: now - 5400,
   },
 ];
 

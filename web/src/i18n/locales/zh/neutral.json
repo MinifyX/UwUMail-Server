@@ -2917,6 +2917,7 @@
       "emptyHint": "被延迟的邮件会在这里等待，直到它们自行到达或由你作出决定。",
       "noSubject": "无主题",
       "sentTo": "发给 {{address}}",
+      "attempts_other": "投递尝试 {{count}} 次，最近一次 {{last}}",
       "decide": {
         "deliver": "投递",
         "discard": "丢弃",

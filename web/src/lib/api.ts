@@ -946,6 +946,10 @@ export interface GreylistHold {
   size: number;
   /** When it is given up on, if nobody decided and the sender never returns. */
   expiresAt: number;
+  /** How often the sender tried so far; retries of one message are one entry. */
+  attempts: number;
+  /** When the sender last tried. */
+  lastAt: number;
 }
 
 export interface GreylistView {

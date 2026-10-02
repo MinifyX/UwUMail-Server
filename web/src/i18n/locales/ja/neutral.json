@@ -2917,6 +2917,7 @@
       "emptyHint": "保留されたメッセージは、自然に届くか、あなたが判断するまでここで待機します。",
       "noSubject": "件名なし",
       "sentTo": "宛先：{{address}}",
+      "attempts_other": "配信試行 {{count}} 回、最終 {{last}}",
       "decide": {
         "deliver": "配信",
         "discard": "破棄",

@@ -2974,6 +2974,8 @@
       "emptyHint": "Zurückgestellte Nachrichten stehen hier, bis sie von selbst ankommen oder du entscheidest.",
       "noSubject": "Kein Betreff",
       "sentTo": "An {{address}}",
+      "attempts_one": "{{count}} Zustellversuch, zuletzt {{last}}",
+      "attempts_other": "{{count}} Zustellversuche, zuletzt {{last}}",
       "decide": {
         "deliver": "Zustellen",
         "discard": "Verwerfen",

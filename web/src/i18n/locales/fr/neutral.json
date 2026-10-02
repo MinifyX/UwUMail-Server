@@ -3029,6 +3029,9 @@
       "emptyHint": "Les messages retardés attendent ici jusqu'à ce qu'ils arrivent d'eux-mêmes ou que vous en décidiez.",
       "noSubject": "Sans objet",
       "sentTo": "À {{address}}",
+      "attempts_one": "{{count}} tentative de remise, dernière le {{last}}",
+      "attempts_many": "{{count}} tentatives de remise, dernière le {{last}}",
+      "attempts_other": "{{count}} tentatives de remise, dernière le {{last}}",
       "decide": {
         "deliver": "Distribuer",
         "discard": "Jeter",

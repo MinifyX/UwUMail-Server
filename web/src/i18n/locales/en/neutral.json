@@ -2974,6 +2974,8 @@
       "emptyHint": "Delayed messages wait here until they arrive by themselves or you decide about them.",
       "noSubject": "No subject",
       "sentTo": "To {{address}}",
+      "attempts_one": "{{count}} delivery attempt, last at {{last}}",
+      "attempts_other": "{{count}} delivery attempts, last at {{last}}",
       "decide": {
         "deliver": "Deliver",
         "discard": "Discard",

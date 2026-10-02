@@ -47,6 +47,16 @@ to the same person is not delayed again. Mail that scores below
 services arrive at once. Setting `greylist_score` to `junk_score` turns
 greylisting off.
 
+While a sender is asked to come back, the message waits under *Mein Konto →
+Spamfilter → Wartende Nachrichten* (`greylist_hold`). Retries of the same
+message are one entry with a count of attempts: the same bytes, or the same
+Message-ID from the same envelope sender (large senders retry from another
+machine, which writes another `Received` line). Once the message arrives by
+itself, every waiting entry of it disappears; a retry of a message that was
+already delivered or discarded by hand does not show up again. Whether a retry
+is dropped because someone decided about it is still a question of the exact
+bytes only — a Message-ID is a line anyone can write.
+
 Refusing is off unless `reject_score` is set: any filter is wrong now and then,
 and Junk loses nothing while a refusal does.
 

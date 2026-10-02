@@ -3,6 +3,15 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.0 (unreleased)
+
+### Fixed
+
+- **Wartende Nachrichten: retries of one message are one entry.** A greylisted sender that comes
+  back several times no longer fills the list with copies; the entry shows how often it tried and
+  when it last did. Once the message arrives, every waiting copy disappears, and a retry of a
+  message already delivered or discarded by hand no longer comes back onto the list.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with
