@@ -864,7 +864,6 @@
       "domainCreate": "{{actor}} 添加了域名 {{target}}",
       "domainRemove": "{{actor}} 移除了域名 {{target}}",
       "domainCatchAll": "{{actor}} 更改了 {{target}} 的全收设置",
-      "other": "{{actor}}：{{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} 为 {{target}} 创建了新的 DKIM 密钥",
       "domainDkimActivate": "{{actor}} 将 {{target}} 切换到新的 DKIM 密钥",
       "domainDkimRemove": "{{actor}} 移除了 {{target}} 的一个旧 DKIM 密钥",
@@ -933,7 +932,19 @@
       "domainBimiLogoRemoved": "{{actor}} 移除了 {{target}} 的 BIMI 徽标",
       "domainBimiCertificate": "{{actor}} 为 {{target}} 添加了 BIMI 证书",
       "domainBimiCertificateRemoved": "{{actor}} 移除了 {{target}} 的 BIMI 证书",
-      "microsoftResolve": "{{actor}} 将 Microsoft 对 {{target}} 的拒收标记为已解决"
+      "microsoftResolve": "{{actor}} 将 Microsoft 对 {{target}} 的拒收标记为已解决",
+      "moveCreate": "{{actor}} 开始了 {{target}} 的迁移",
+      "moveAddMailboxes": "{{actor}} 为 {{target}} 的迁移添加了人员",
+      "moveSettings": "{{actor}} 更改了 {{target}} 迁移的节奏",
+      "movePause": "{{actor}} 暂停了 {{target}} 的迁移",
+      "moveResume": "{{actor}} 继续了 {{target}} 的迁移",
+      "moveFinish": "{{actor}} 完成了 {{target}} 的迁移",
+      "moveDelete": "{{actor}} 删除了 {{target}} 的迁移",
+      "moveRetry": "{{actor}} 重试了 {{target}} 的迁移",
+      "movePauseMailbox": "{{actor}} 暂停了 {{target}} 的迁移",
+      "moveRemoveMailbox": "{{actor}} 将 {{target}} 移出了迁移",
+      "moveUpload": "{{actor}} 为 {{target}} 上传了联系人或日历",
+      "other": "{{actor}}：{{action}} {{target}}"
     },
     "details": {
       "adminOn": "现在是管理员",

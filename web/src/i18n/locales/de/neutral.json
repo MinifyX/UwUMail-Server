@@ -881,7 +881,6 @@
       "domainCreate": "{{actor}} hat die Domain {{target}} angelegt",
       "domainRemove": "{{actor}} hat die Domain {{target}} entfernt",
       "domainCatchAll": "{{actor}} hat die Sammeladresse von {{target}} geändert",
-      "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} hat neue DKIM-Schlüssel für {{target}} erzeugt",
       "domainDkimActivate": "{{actor}} hat {{target}} auf die neuen DKIM-Schlüssel umgestellt",
       "domainDkimRemove": "{{actor}} hat einen alten DKIM-Schlüssel von {{target}} entfernt",
@@ -950,7 +949,19 @@
       "domainBimiLogoRemoved": "{{actor}} hat das BIMI-Logo von {{target}} entfernt",
       "domainBimiCertificate": "{{actor}} hat ein BIMI-Zertifikat für {{target}} hinterlegt",
       "domainBimiCertificateRemoved": "{{actor}} hat das BIMI-Zertifikat von {{target}} entfernt",
-      "microsoftResolve": "{{actor}} hat die Ablehnung von {{target}} durch Microsoft als behoben markiert"
+      "microsoftResolve": "{{actor}} hat die Ablehnung von {{target}} durch Microsoft als behoben markiert",
+      "moveCreate": "{{actor}} hat einen Umzug von {{target}} gestartet",
+      "moveAddMailboxes": "{{actor}} hat Leute zum Umzug von {{target}} hinzugefügt",
+      "moveSettings": "{{actor}} hat das Tempo des Umzugs von {{target}} geändert",
+      "movePause": "{{actor}} hat den Umzug von {{target}} pausiert",
+      "moveResume": "{{actor}} hat den Umzug von {{target}} fortgesetzt",
+      "moveFinish": "{{actor}} hat den Umzug von {{target}} abgeschlossen",
+      "moveDelete": "{{actor}} hat den Umzug von {{target}} gelöscht",
+      "moveRetry": "{{actor}} hat den Umzug von {{target}} neu angestoßen",
+      "movePauseMailbox": "{{actor}} hat den Umzug von {{target}} pausiert",
+      "moveRemoveMailbox": "{{actor}} hat {{target}} aus dem Umzug genommen",
+      "moveUpload": "{{actor}} hat Kontakte oder Kalender für {{target}} hochgeladen",
+      "other": "{{actor}}: {{action}} {{target}}"
     },
     "details": {
       "adminOn": "ist jetzt Admin",

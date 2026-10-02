@@ -3,6 +3,28 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.0 (unreleased)
+
+### Added
+
+- **Moving a whole domain, by the admin** (Admin → People → Moves): a wizard makes the domain
+  (with DKIM) and the mailboxes if they are missing, takes the people as a table or a CSV list
+  (`;` or `,`, with or without header, errors by line) with old login, password, name, address
+  here, quota and aliases, and copies mail over IMAP (folders and special-use folders merged,
+  nothing twice by Message-ID, flags and dates kept) and contacts and calendars over
+  CalDAV/CardDAV (autodiscovery, presets for mailcow/SOGo, Nextcloud, iCloud, GMX and WEB.DE,
+  `.vcf`/`.ics` upload per mailbox, Kolab-style IMAP contact and calendar folders). Progress per
+  mailbox and overall, readable errors, retry with a new login, pause/continue, a small
+  configurable number of mailboxes at once, and moves go on after a restart.
+- **Delta sync until the MX switch:** mailboxes keep syncing on a schedule until the admin
+  finishes the move (with an MX check); the last round runs, then the old passwords (sealed until
+  then) are wiped.
+- **Password links for a moved domain:** one invite link per new mailbox (7 days), with copy
+  buttons, CSV download and a printable overview; mailboxes that already have a password get
+  none, and the list says so.
+- **Single mailbox moves by the admin** in the same wizard, into an existing mailbox or a new one;
+  personal moves under My account → Moving share the copying code and the progress.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with

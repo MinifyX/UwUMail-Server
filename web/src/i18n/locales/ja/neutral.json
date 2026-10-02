@@ -864,7 +864,6 @@
       "domainCreate": "{{actor}}がドメイン{{target}}を追加しました",
       "domainRemove": "{{actor}}がドメイン{{target}}を削除しました",
       "domainCatchAll": "{{actor}}が{{target}}のキャッチオールを変更しました",
-      "other": "{{actor}}：{{action}} {{target}}",
       "domainDkimPrepare": "{{actor}}が{{target}}の新しい DKIM 鍵を作成しました",
       "domainDkimActivate": "{{actor}}が{{target}}を新しい DKIM 鍵に切り替えました",
       "domainDkimRemove": "{{actor}}が{{target}}の古い DKIM 鍵を削除しました",
@@ -933,7 +932,19 @@
       "domainBimiLogoRemoved": "{{actor}} が {{target}} の BIMI ロゴを削除しました",
       "domainBimiCertificate": "{{actor}} が {{target}} の BIMI 証明書を追加しました",
       "domainBimiCertificateRemoved": "{{actor}} が {{target}} の BIMI 証明書を削除しました",
-      "microsoftResolve": "{{actor}} が {{target}} に対する Microsoft の拒否を解決済みにしました"
+      "microsoftResolve": "{{actor}} が {{target}} に対する Microsoft の拒否を解決済みにしました",
+      "moveCreate": "{{actor}} が {{target}} の移行を開始しました",
+      "moveAddMailboxes": "{{actor}} が {{target}} の移行にユーザーを追加しました",
+      "moveSettings": "{{actor}} が {{target}} の移行ペースを変更しました",
+      "movePause": "{{actor}} が {{target}} の移行を一時停止しました",
+      "moveResume": "{{actor}} が {{target}} の移行を再開しました",
+      "moveFinish": "{{actor}} が {{target}} の移行を完了しました",
+      "moveDelete": "{{actor}} が {{target}} の移行を削除しました",
+      "moveRetry": "{{actor}} が {{target}} の移行を再試行しました",
+      "movePauseMailbox": "{{actor}} が {{target}} の移行を一時停止しました",
+      "moveRemoveMailbox": "{{actor}} が {{target}} を移行から外しました",
+      "moveUpload": "{{actor}} が {{target}} の連絡先またはカレンダーをアップロードしました",
+      "other": "{{actor}}：{{action}} {{target}}"
     },
     "details": {
       "adminOn": "管理者になりました",

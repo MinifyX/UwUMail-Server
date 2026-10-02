@@ -881,7 +881,6 @@
       "domainCreate": "{{actor}} added the domain {{target}}",
       "domainRemove": "{{actor}} removed the domain {{target}}",
       "domainCatchAll": "{{actor}} changed the catch-all of {{target}}",
-      "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} created new DKIM keys for {{target}}",
       "domainDkimActivate": "{{actor}} switched {{target}} to the new DKIM keys",
       "domainDkimRemove": "{{actor}} removed an old DKIM key of {{target}}",
@@ -950,7 +949,19 @@
       "domainBimiLogoRemoved": "{{actor}} removed the BIMI logo of {{target}}",
       "domainBimiCertificate": "{{actor}} added a BIMI certificate for {{target}}",
       "domainBimiCertificateRemoved": "{{actor}} removed the BIMI certificate of {{target}}",
-      "microsoftResolve": "{{actor}} marked Microsoft's refusal of {{target}} as fixed"
+      "microsoftResolve": "{{actor}} marked Microsoft's refusal of {{target}} as fixed",
+      "moveCreate": "{{actor}} started a move of {{target}}",
+      "moveAddMailboxes": "{{actor}} added people to the move of {{target}}",
+      "moveSettings": "{{actor}} changed the pace of the move of {{target}}",
+      "movePause": "{{actor}} paused the move of {{target}}",
+      "moveResume": "{{actor}} resumed the move of {{target}}",
+      "moveFinish": "{{actor}} finished the move of {{target}}",
+      "moveDelete": "{{actor}} deleted the move of {{target}}",
+      "moveRetry": "{{actor}} retried the move of {{target}}",
+      "movePauseMailbox": "{{actor}} paused the move of {{target}}",
+      "moveRemoveMailbox": "{{actor}} took {{target}} out of its move",
+      "moveUpload": "{{actor}} uploaded contacts or calendars for {{target}}",
+      "other": "{{actor}}: {{action}} {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",

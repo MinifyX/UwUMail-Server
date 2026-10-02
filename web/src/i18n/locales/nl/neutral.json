@@ -881,7 +881,6 @@
       "domainCreate": "{{actor}} heeft het domein {{target}} toegevoegd",
       "domainRemove": "{{actor}} heeft het domein {{target}} verwijderd",
       "domainCatchAll": "{{actor}} heeft de catch-all van {{target}} gewijzigd",
-      "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} heeft nieuwe DKIM-sleutels voor {{target}} gemaakt",
       "domainDkimActivate": "{{actor}} heeft {{target}} overgezet op de nieuwe DKIM-sleutels",
       "domainDkimRemove": "{{actor}} heeft een oude DKIM-sleutel van {{target}} verwijderd",
@@ -950,7 +949,19 @@
       "domainBimiLogoRemoved": "{{actor}} heeft het BIMI-logo van {{target}} verwijderd",
       "domainBimiCertificate": "{{actor}} heeft een BIMI-certificaat voor {{target}} toegevoegd",
       "domainBimiCertificateRemoved": "{{actor}} heeft het BIMI-certificaat van {{target}} verwijderd",
-      "microsoftResolve": "{{actor}} heeft de weigering van {{target}} door Microsoft als opgelost gemarkeerd"
+      "microsoftResolve": "{{actor}} heeft de weigering van {{target}} door Microsoft als opgelost gemarkeerd",
+      "moveCreate": "{{actor}} heeft een verhuizing van {{target}} gestart",
+      "moveAddMailboxes": "{{actor}} heeft mensen aan de verhuizing van {{target}} toegevoegd",
+      "moveSettings": "{{actor}} heeft het tempo van de verhuizing van {{target}} gewijzigd",
+      "movePause": "{{actor}} heeft de verhuizing van {{target}} gepauzeerd",
+      "moveResume": "{{actor}} heeft de verhuizing van {{target}} hervat",
+      "moveFinish": "{{actor}} heeft de verhuizing van {{target}} afgerond",
+      "moveDelete": "{{actor}} heeft de verhuizing van {{target}} verwijderd",
+      "moveRetry": "{{actor}} heeft de verhuizing van {{target}} opnieuw gestart",
+      "movePauseMailbox": "{{actor}} heeft de verhuizing van {{target}} gepauzeerd",
+      "moveRemoveMailbox": "{{actor}} heeft {{target}} uit de verhuizing gehaald",
+      "moveUpload": "{{actor}} heeft contacten of agenda's voor {{target}} geüpload",
+      "other": "{{actor}}: {{action}} {{target}}"
     },
     "details": {
       "adminOn": "is nu beheerder",

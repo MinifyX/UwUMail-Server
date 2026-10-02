@@ -6,8 +6,10 @@ over by themselves: the old address and its password are all it takes, and the
 server copies everything in the background.
 
 Calendars and contacts move separately, under *My account → Calendars &
-contacts → Bring them over* ([calendar-import.md](calendar-import.md)). A whole
-server with all its people moves on the command line instead
+contacts → Bring them over* ([calendar-import.md](calendar-import.md)). A
+whole domain with all its people, or a single mailbox, is moved by an admin under
+**Admin → People → Moves** ([below](#moving-a-domain-admins)); a whole server
+with a master user still moves on the command line
 ([migrating-from-mailcow.md](migrating-from-mailcow.md)).
 
 ## Starting a move
@@ -96,9 +98,153 @@ that came stays.
 - Answers of the old provider are size-capped like those of the command-line
   import, so a hostile server cannot fill the memory.
 
+## Moving a domain (admins)
+
+Under **Admin → People → Moves** an admin moves a whole domain with everyone on
+it, or one mailbox, from another server: mail, contacts and calendars. The same
+copying code as *My account → Moving* does the work, so everything under
+[What comes along](#what-comes-along) holds here too.
+
+### The wizard
+
+1. **What moves.** *Domain move*: everyone of a domain. The domain is made if it
+   is not here yet, with DKIM keys (check its DNS afterwards under *Domains*).
+   *Single mailbox*: one old mailbox into an existing mailbox here (its mail
+   stays, folders are merged, nothing comes twice) or into a new one.
+2. **Old server.** One IMAP server (TLS, port 993) for the whole move; *Find
+   server* looks it up like a fetched mailbox does. Best is a name that keeps
+   pointing to the old server after the MX switch. Contacts and calendars come
+   over CalDAV/CardDAV with the same login: *Find automatically* (known
+   providers, the domain's records, `/.well-known/caldav` and `carddav`, then
+   the IMAP server), or a preset: mailcow/SOGo (`https://host/SOGo/dav/`),
+   Nextcloud (`https://host/remote.php/dav/`), iCloud, GMX, WEB.DE, an own
+   address, or *Files only*. Every row can name its own IMAP server and DAV
+   address.
+3. **People.** One row per person: old address, old login (empty = the old
+   address), old password, display name, address here (empty = the old local
+   part on this domain), quota and aliases (aliases do not come over IMAP).
+   The table fills from a CSV list too, see below.
+4. **Check and start.** The check changes nothing and names every problem by
+   row and field (address taken, alias on a foreign domain, mailbox already in
+   another move and so on). *Start move* makes what is missing: the domain,
+   mailboxes **without a password** (their people get a link), and aliases.
+   Name and quota are only set on mailboxes the move makes; existing ones keep
+   theirs.
+
+Starting the same list again is harmless: existing mailboxes are filled, not
+made twice, and a mailbox can be in only one open move.
+
+### CSV lists
+
+Paste or upload what a spreadsheet exports (at most 1 MiB, 2000 rows). The
+delimiter is found by itself: `;`, `,` or a tab; quotes work as usual. A header
+line is recognised by its names, in English or German:
+
+| Column | Header names |
+| --- | --- |
+| Old address (required) | `old address`, `address`, `email`, `alte adresse`, `adresse` |
+| Old password (required) | `password`, `passwort`, `kennwort` |
+| Display name | `name`, `display name`, `anzeigename` |
+| Address here | `new address`, `target`, `neue adresse`, `ziel` |
+| Quota | `quota`, `kontingent` (`2 GB`, `500 MB`, `1,5G`; a bare number is MB) |
+| Aliases | `aliases`, `aliase` (separated by spaces, commas or `\|`) |
+| Old login | `login`, `user`, `benutzer` |
+
+Without a header the columns go in this order: old address; password; name;
+address here; quota; aliases; login. Lines that cannot be read are listed with
+their line number and what is wrong; the good ones go into the table.
+
+```
+Alte Adresse;Passwort;Name;Neue Adresse;Quota;Aliase
+mini@example.com;geheim;Mini Muster;;2 GB;info@example.com
+nyu@example.com;nyan;Nyu;nyu.neko@example.com;;
+```
+
+### Progress and control
+
+The page of a move shows how far it got overall and per mailbox: folders,
+messages (and how many were here already), contacts and calendar entries.
+Each mailbox has its own state: *waiting*, *copying*, *paused*, *up to date*
+and *finished*.
+
+- **Pace.** *Mailboxes at once* (1–8, default 2) limits how many mailboxes of
+  this move are copied at the same time, so the old server is not overrun; the
+  whole server copies at most four mailboxes of all moves at once, each for
+  up to five minutes per turn. *Minutes between rounds* (5–1440, default 60)
+  sets how often new mail is fetched once a mailbox is up to date.
+- **Errors** pause only the mailbox concerned and say why (old server refused
+  the login, unreachable, not on the internet, mailbox here full). *Retry*
+  goes on where it stopped and can take a new login or password; nothing is
+  retried behind the admin's back, so a wrong password does not run into the
+  provider's lockout.
+- **Pause / Continue** for the whole move or one mailbox; *Take out of the
+  move* forgets that mailbox's old password.
+- **Restarts.** Every folder remembers how far it got; after a restart of the
+  server the moves go on by themselves.
+- **Quota warning.** When the old server says how big the old mailbox is and it
+  does not fit into the quota here, the row says so before it runs full.
+- Contacts and calendars come in the first complete round and again in the
+  last one; the collections found then are kept, so a DNS change after the MX
+  switch does not send them elsewhere. When they cannot be fetched, the row
+  says why and offers an upload of `.vcf` and `.ics` files instead. Contact and
+  calendar folders on the IMAP server (Kolab style: top-level folders named
+  Contacts/Kontakte/Adressbuch or Calendar/Kalender holding vCards or
+  iCalendar parts) are imported into address books and calendars as well.
+
+### Finishing after the MX switch
+
+Until the move is finished, every mailbox is synced again and again, so mail
+that still arrives at the old server keeps coming over. Point the domain's MX
+records to this server, *Check MX* shows whether they do, wait until mail
+arrives here, then **Finish move**: every mailbox gets one last round, then the
+old passwords are wiped and the move is done. *Finish without last round* wipes
+them at once, for an old server that is gone already.
+
+### Password links
+
+The mailboxes a move made have no password. *Make links* creates a link per
+mailbox to choose one (the usual invite links, valid for 7 days), shown once:
+copy them one by one, download them as a CSV file (`;`, UTF-8 with BOM, opens
+in spreadsheets) or print an overview to hand out. *Make new links* replaces
+the old ones. Mailboxes whose people have a password already get no link and
+the list says so, as it does for disabled accounts and ones that sign in at the
+directory.
+
+### Security
+
+- Only admins see and use moves; every step lands in the audit log
+  (`move.create`, `move.finish`, `move.retry` and so on, plus the accounts,
+  aliases, domain and password links the move made).
+- The old passwords are sealed in the database (AES-256-GCM, the key of fetched
+  mailboxes) until the move is finished or the mailbox is taken out, and are
+  never shown again.
+- Old servers must be on the internet, the same rule as fetched mailboxes and
+  personal moves; servers in the local network go through
+  `uwumail-server import imap` instead. CalDAV/CardDAV addresses must be
+  `https` without a user name in them.
+- At most 20 moves can be open at once, 2000 mailboxes per move; server lookups
+  are limited to 30 an hour per admin; uploads to 20 MiB.
+
+### API
+
+All under `/api/admin/moves`, for admins only (403 otherwise):
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /` | the moves with their totals and the limits |
+| `POST /` | start a move (`dryRun: true` only checks; row problems come back as 409 `moveRows` with `blockers`) |
+| `POST /discover`, `POST /csv` | find the old server of an address; read a CSV text into rows |
+| `GET /{id}`, `PATCH /{id}`, `DELETE /{id}` | a move with its mailboxes; change its pace; delete it (old passwords go with it) |
+| `POST /{id}/pause`, `/resume`, `/finish` | pause, continue, finish (`skipLastRound`) |
+| `POST /{id}/mx`, `POST /{id}/links` | check the domain's MX; make password links |
+| `POST /{id}/mailboxes` | add people to a domain move |
+| `POST /{id}/mailboxes/{mailbox}/retry`, `/pause`, `/import?kind=calendar\|addressbook`; `DELETE /{id}/mailboxes/{mailbox}` | per mailbox: retry (optionally with a new login or password), pause, upload `.ics`/`.vcf`, take out |
+
 ## For admins
 
-The moves are kept in the table `migration_jobs` (migration 0040); where each
-folder got is in `import_progress` under `move:<login>@<host>`. The worker runs
+Personal moves are kept in the table `migration_jobs` (migration 0040), admin
+moves in `moves` and `move_mailboxes`; where each folder got is in
+`import_progress` under `move:<login>@<host>` for both, so a personal move and
+an admin move of the same old mailbox go on from each other. The worker runs
 inside the server; there is nothing to set up. `uwumail-server import imap`
 remains the way to move many mailboxes at once with a master user.

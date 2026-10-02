@@ -897,7 +897,6 @@
       "domainCreate": "{{actor}} a ajouté le domaine {{target}}",
       "domainRemove": "{{actor}} a supprimé le domaine {{target}}",
       "domainCatchAll": "{{actor}} a modifié le catch-all de {{target}}",
-      "other": "{{actor}} : {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} a créé de nouvelles clés DKIM pour {{target}}",
       "domainDkimActivate": "{{actor}} a basculé {{target}} sur les nouvelles clés DKIM",
       "domainDkimRemove": "{{actor}} a supprimé une ancienne clé DKIM de {{target}}",
@@ -966,7 +965,19 @@
       "domainBimiLogoRemoved": "{{actor}} a supprimé le logo BIMI de {{target}}",
       "domainBimiCertificate": "{{actor}} a ajouté un certificat BIMI pour {{target}}",
       "domainBimiCertificateRemoved": "{{actor}} a supprimé le certificat BIMI de {{target}}",
-      "microsoftResolve": "{{actor}} a marqué comme résolu le refus de {{target}} par Microsoft"
+      "microsoftResolve": "{{actor}} a marqué comme résolu le refus de {{target}} par Microsoft",
+      "moveCreate": "{{actor}} a lancé une migration de {{target}}",
+      "moveAddMailboxes": "{{actor}} a ajouté des personnes à la migration de {{target}}",
+      "moveSettings": "{{actor}} a changé le rythme de la migration de {{target}}",
+      "movePause": "{{actor}} a mis en pause la migration de {{target}}",
+      "moveResume": "{{actor}} a repris la migration de {{target}}",
+      "moveFinish": "{{actor}} a terminé la migration de {{target}}",
+      "moveDelete": "{{actor}} a supprimé la migration de {{target}}",
+      "moveRetry": "{{actor}} a relancé la migration de {{target}}",
+      "movePauseMailbox": "{{actor}} a mis en pause la migration de {{target}}",
+      "moveRemoveMailbox": "{{actor}} a retiré {{target}} de sa migration",
+      "moveUpload": "{{actor}} a téléversé des contacts ou agendas pour {{target}}",
+      "other": "{{actor}} : {{action}} {{target}}"
     },
     "details": {
       "adminOn": "est maintenant admin",
