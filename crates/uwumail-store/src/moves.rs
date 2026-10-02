@@ -617,7 +617,7 @@ impl Store {
             }
             let open: i64 = tx.query_row("SELECT count(*) FROM moves WHERE state != 'done'", [], |row| row.get(0))?;
             if open as usize >= MAX_OPEN_MOVES {
-                return Err(rule("moveLimit", format!("at most {MAX_OPEN_MOVES} moves at once")));
+                return Err(rule("movesLimit", format!("at most {MAX_OPEN_MOVES} moves at once")));
             }
             tx.execute(
                 "INSERT INTO moves (kind, domain, imap_host, imap_port, dav_mode, dav_host, dav_url, contacts,

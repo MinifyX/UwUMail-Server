@@ -1,19 +1,21 @@
-import { ChartNoAxesColumn, Globe, Users } from "lucide-react";
+import { ChartNoAxesColumn, Globe, Truck, Users } from "lucide-react";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { DomainsPage } from "@/features/domains/DomainsPage";
+import { MovesPage } from "@/features/moves/MovesPage";
 import { ReportsPage } from "@/features/reports/ReportsPage";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { PeoplePage } from "./PeoplePage";
 
-/** Server → Accounts & domains: who has a mailbox here, for which domains, and what others report. */
-export type DirectoryTab = "people" | "domains" | "reports";
+/** Server → Accounts & domains: who has a mailbox here, for which domains, moves from elsewhere, and what others report. */
+export type DirectoryTab = "people" | "domains" | "moves" | "reports";
 export const DIRECTORY_PATHS: Record<DirectoryTab, string> = {
   people: "/admin/people",
   domains: "/admin/domains",
+  moves: "/admin/moves",
   reports: "/admin/reports",
 };
-const ICONS = { people: Users, domains: Globe, reports: ChartNoAxesColumn };
+const ICONS = { people: Users, domains: Globe, moves: Truck, reports: ChartNoAxesColumn };
 
 export function DirectoryPage({ tab = "people", session }: { tab?: DirectoryTab; session: Session }) {
   const { t } = useT();
@@ -32,6 +34,7 @@ export function DirectoryPage({ tab = "people", session }: { tab?: DirectoryTab;
     >
       {tab === "people" && <PeoplePage session={session} />}
       {tab === "domains" && <DomainsPage />}
+      {tab === "moves" && <MovesPage />}
       {tab === "reports" && <ReportsPage />}
     </TabbedPage>
   );

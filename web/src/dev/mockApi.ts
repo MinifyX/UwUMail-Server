@@ -111,6 +111,7 @@ import type {
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 import { assistMockRoutes } from "./mockAssist";
+import { moveMockRoutes } from "./mockMoves";
 import { ruleRoutes } from "./mockRules";
 
 const now = Math.floor(Date.now() / 1000);
@@ -2913,6 +2914,7 @@ const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
   ...pictureMockRoutes,
+  ...moveMockRoutes,
   ...microsoftMockRoutes,
   ...bimiMockRoutes,
   ...assistMockRoutes,

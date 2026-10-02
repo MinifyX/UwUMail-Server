@@ -8,6 +8,8 @@ import { AccountAssistPage } from "@/features/assist/AccountAssistPage";
 import { CalendarsPage } from "@/features/calendars/CalendarsPage";
 import { FetchPage } from "@/features/fetch/FetchPage";
 import { MovingPage } from "@/features/moving/MovingPage";
+import { MovePage } from "@/features/moves/MovePage";
+import { NewMovePage } from "@/features/moves/NewMovePage";
 import { AddressesPage } from "@/features/addresses/AddressesPage";
 import { MaskedPage } from "@/features/masked/MaskedPage";
 import { SERVER_PATHS, ServerPage, type ServerTab } from "@/features/admin/ServerPage";
@@ -88,6 +90,9 @@ function page(path: string, session: Session): ReactNode {
   if (moved) return <Redirect to={moved} />;
   const serverTab = tabOf<ServerTab>(SERVER_PATHS, path);
   if (serverTab) return <ServerPage tab={serverTab} session={session} />;
+  if (path === "/admin/moves/new") return <NewMovePage />;
+  const moveId = matchPath("/admin/moves/:id", path)?.id;
+  if (moveId && /^\d+$/.test(moveId)) return <MovePage key={moveId} id={Number(moveId)} />;
   const directoryTab = tabOf<DirectoryTab>(DIRECTORY_PATHS, path);
   if (directoryTab) return <DirectoryPage tab={directoryTab} session={session} />;
   const person = matchPath("/admin/people/:login", path);

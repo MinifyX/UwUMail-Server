@@ -169,6 +169,20 @@ const KNOWN = [
   "bimiBackground",
   "bimiCertificateInvalid",
   "bimiCertificateNotBimi",
+  "moveRows",
+  "moveTooMany",
+  "moveSingle",
+  "moveFinished",
+  "moveFinishing",
+  "moveMailboxBusy",
+  "moveOtherDomain",
+  "moveNotActive",
+  "moveNotPaused",
+  "movesLimit",
+  "hostInvalid",
+  "urlInvalid",
+  "domainMaskedOnly",
+  "noMailbox",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

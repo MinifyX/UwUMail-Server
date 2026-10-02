@@ -4705,6 +4705,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "instant-acme",
+ "mail-parser",
  "rcgen",
  "rustls",
  "rustls-pki-types",
