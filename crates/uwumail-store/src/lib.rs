@@ -71,6 +71,7 @@ mod sender_lists;
 mod shared_mailboxes;
 mod sharing;
 mod sieve;
+mod signatures;
 mod spam;
 mod spam_log;
 mod stats;
@@ -214,6 +215,11 @@ pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, S
 pub use sieve::{
     SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
     validate_sieve_name,
+};
+pub use signatures::{
+    CompanySignature, CompanySignatureMode, DomainSignatureInfo, IdentitySignatureInfo, MAX_SIGNATURE_CHANGES,
+    PLACEHOLDERS as SIGNATURE_PLACEHOLDERS, SIGNATURE_ALL_DOMAINS, SignatureChanges, SignatureOverview,
+    SignatureSource, SignatureText, escape_html, fill_placeholders,
 };
 pub use spam::{
     GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation, SPAM_LIMIT_RANGE,
