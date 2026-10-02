@@ -52,6 +52,7 @@ mod masked_domains;
 mod microsoft;
 mod migration_jobs;
 pub mod mime_limits;
+mod moves;
 mod mutate;
 mod oauth;
 mod objects;
@@ -167,6 +168,11 @@ pub use masked_domains::{
 pub use microsoft::{MICROSOFT_RESOLVE_AFTER_SECS, MicrosoftIssue, MicrosoftRefusal};
 pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
+};
+pub use moves::{
+    DEFAULT_MOVE_PARALLEL, DEFAULT_MOVE_SYNC_MINUTES, DavMode, MAX_MOVE_MAILBOXES, MAX_MOVE_PARALLEL,
+    MAX_MOVE_SYNC_MINUTES, MAX_OPEN_MOVES, MIN_MOVE_SYNC_MINUTES, Move, MoveKind, MoveMailbox, MoveMailboxState,
+    MoveSettings, MoveState, MoveSummary, MoveTurn, NewMove, NewMoveMailbox,
 };
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange, valid_keyword};
 pub use oauth::{
