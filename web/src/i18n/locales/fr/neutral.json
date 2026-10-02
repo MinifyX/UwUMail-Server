@@ -4079,7 +4079,10 @@
       "priceLists_other": "Prix mis à jour le {{date}}, {{count}} modèles connus.",
       "priceListsNone": "Les prix n'ont pas encore été récupérés.",
       "foreignMail": "IA pour le courrier d'autres comptes",
-      "foreignMailHint": "Les utilisateurs peuvent se servir de l'assistant dans l'app UwUMail pour le courrier de leurs autres comptes (Exchange, Gmail, IMAP). L'app envoie alors le texte de ce courrier ici ; seul l'usage en est conservé. Seuls les fournisseurs qui l'autorisent sont utilisés."
+      "foreignMailHint": "Les utilisateurs peuvent se servir de l'assistant dans l'app UwUMail pour le courrier de leurs autres comptes (Exchange, Gmail, IMAP). L'app envoie alors le texte de ce courrier ici ; seul l'usage en est conservé. Seuls les fournisseurs qui l'autorisent sont utilisés.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Mails similaires pour les libellés",
+      "smallModel": "Ce modèle n'a qu'environ {{size}} milliards de paramètres ; les libellés et le spam sont mal évalués. Recommandés : {{recommended}}."
     },
     "choices": {
       "title": "Quel fournisseur pour quoi",
@@ -4191,7 +4194,8 @@
         "featuresRequired": "Choisissez au moins une fonction.",
         "limitInvalid": "Un nombre entier supérieur à zéro, ou vide.",
         "priceInvalid": "Saisissez un prix de 0 ou plus, par exemple 0,25.",
-        "requestPriceInvalid": "Saisissez un prix de 0 à 100, par exemple 0,005."
+        "requestPriceInvalid": "Saisissez un prix de 0 à 100, par exemple 0,005.",
+        "embeddingsModelRequired": "Indique le modèle d'embeddings."
       },
       "price": "Prix",
       "priceIntro": "En dollars US par million de tokens, pour afficher les coûts. Vide : le prix vient des listes de prix publiques.",
@@ -4204,7 +4208,13 @@
       "showCostHint": "Elles voient alors ce que coûtent leurs requêtes. Vous le voyez toujours.",
       "requestPrice": "Par requête, en dollars US",
       "foreignMail": "Courrier d'autres comptes",
-      "foreignMailHint": "Peut servir pour le courrier des autres comptes des utilisateurs quand « IA pour le courrier d'autres comptes » est activé."
+      "foreignMailHint": "Peut servir pour le courrier des autres comptes des utilisateurs quand « IA pour le courrier d'autres comptes » est activé.",
+      "chatGroup": "Modèles de chat",
+      "embeddingsGroup": "Embeddings (mails similaires pour les libellés)",
+      "embeddingsTitle": "Embeddings : mails similaires pour les libellés",
+      "embeddingsHelp": "Un modèle d'embeddings transforme les mails en vecteurs. Grâce à eux, les libellés automatiques trouvent des mails similaires qui ont déjà un libellé et peuvent décider de nombreux libellés sans interroger le modèle de chat. Il ne sert à aucune autre fonction et n'a pas besoin de modèle rapide.",
+      "embeddingsStorage": "Les vecteurs sont stockés de façon compacte pour chaque mail libellé et supprimés avec le mail ou le compte.",
+      "embeddingsModelNeeded": "Pour ce type, indique le modèle d'embeddings proposé par le serveur."
     },
     "chatgpt": {
       "title": "Connexion ChatGPT",

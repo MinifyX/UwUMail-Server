@@ -14,10 +14,13 @@ import { ChatgptLogin } from "./ChatgptLogin";
 import {
   FEATURES,
   FOREIGN_MAIL,
+  adminKinds,
   changeKind,
   draftOf,
   emptyDraft,
+  isEmbeddings,
   parseLimit,
+  personalKinds,
   providerBody,
   validateDraft,
   type Access,
@@ -144,7 +147,17 @@ function ProviderForm({
   };
 
   const creating = !current;
-  const shownKinds = kinds.filter((candidate) => candidate.kind === draft.kind || !(admin && candidate.personalOnly));
+  // The admin never adds kinds only people may add, people never add embeddings models.
+  const allowed = admin ? adminKinds(kinds) : personalKinds(kinds);
+  const shownKinds = kinds.filter((candidate) => candidate.kind === draft.kind || allowed.includes(candidate));
+  const chatKinds = shownKinds.filter((candidate) => !candidate.embeddings);
+  const embeddingKinds = shownKinds.filter((candidate) => candidate.embeddings);
+  const kindOption = (candidate: KindInfo) => (
+    <option key={candidate.kind} value={candidate.kind}>
+      {candidate.experimental ? `${candidate.name} (${t("assist.experimental")})` : candidate.name}
+    </option>
+  );
+  const embeddings = isEmbeddings(kind);
   const keyShown = kind?.key === "required" || kind?.key === "optional";
   const defaultModel = models?.model ?? kind?.model ?? null;
   const defaultFast = models?.fastModel ?? kind?.fastModel ?? null;
@@ -165,11 +178,14 @@ function ProviderForm({
                 markDirty(true);
               }}
             >
-              {shownKinds.map((candidate) => (
-                <option key={candidate.kind} value={candidate.kind}>
-                  {candidate.experimental ? `${candidate.name} (${t("assist.experimental")})` : candidate.name}
-                </option>
-              ))}
+              {embeddingKinds.length === 0 ? (
+                chatKinds.map(kindOption)
+              ) : (
+                <>
+                  <optgroup label={t("assist.form.chatGroup")}>{chatKinds.map(kindOption)}</optgroup>
+                  <optgroup label={t("assist.form.embeddingsGroup")}>{embeddingKinds.map(kindOption)}</optgroup>
+                </>
+              )}
             </Select>
           )}
         </Field>
@@ -178,6 +194,14 @@ function ProviderForm({
           {t("assist.form.kindFixed", { kind: kind?.name ?? draft.kind })}
           {kind?.experimental && <ExperimentalBadge />}
         </p>
+      )}
+
+      {embeddings && (
+        <Notice tone="info" title={t("assist.form.embeddingsTitle")}>
+          <p>{t("assist.form.embeddingsHelp")}</p>
+          <p>{t("assist.form.embeddingsStorage")}</p>
+          {kind?.kind === "embeddingsCompatible" && <p>{t("assist.form.embeddingsModelNeeded")}</p>}
+        </Notice>
       )}
 
       {kind?.kind === "anthropic" && <Notice tone="info">{t("assist.form.anthropicNote")}</Notice>}
@@ -226,7 +250,11 @@ function ProviderForm({
               spellCheck={false}
               placeholder={
                 kind.defaultBaseUrl ??
-                (kind.kind === "ollama" ? "http://192.0.2.10:11434" : "https://llm.example.com/v1")
+                (kind.kind === "ollama" || kind.kind === "ollamaEmbeddings"
+                  ? "http://192.0.2.10:11434"
+                  : kind.kind === "embeddingsCompatible"
+                    ? "http://192.0.2.10:8081/v1"
+                    : "https://llm.example.com/v1")
               }
               value={draft.baseUrl}
               onChange={(event) => change("baseUrl", event.target.value)}
@@ -297,6 +325,7 @@ function ProviderForm({
       <Field
         label={t("assist.form.model")}
         hint={models ? t("assist.form.modelHint") : t("assist.form.modelHintUnloaded")}
+        error={errorOf("model")}
       >
         {(id) => (
           <ModelPicker
@@ -311,20 +340,22 @@ function ProviderForm({
           />
         )}
       </Field>
-      <Field label={t("assist.form.fastModel")} hint={t("assist.form.fastModelHint")}>
-        {(id) => (
-          <ModelPicker
-            id={id}
-            value={draft.fastModel}
-            onChange={(value) => change("fastModel", value)}
-            models={models?.models ?? null}
-            emptyLabel={
-              defaultFast ? t("assist.form.modelDefault", { model: defaultFast }) : t("assist.form.fastModelSame")
-            }
-            placeholder={defaultFast ?? ""}
-          />
-        )}
-      </Field>
+      {!embeddings && (
+        <Field label={t("assist.form.fastModel")} hint={t("assist.form.fastModelHint")}>
+          {(id) => (
+            <ModelPicker
+              id={id}
+              value={draft.fastModel}
+              onChange={(value) => change("fastModel", value)}
+              models={models?.models ?? null}
+              emptyLabel={
+                defaultFast ? t("assist.form.modelDefault", { model: defaultFast }) : t("assist.form.fastModelSame")
+              }
+              placeholder={defaultFast ?? ""}
+            />
+          )}
+        </Field>
+      )}
       <div className="flex flex-col gap-1.5">
         <div>
           <Button icon={PlugZap} busy={busy === "test"} disabled={busy === "save"} onClick={() => void test()}>
@@ -346,6 +377,7 @@ function ProviderForm({
           domainSuggestions={domainSuggestions}
           peopleSuggestions={peopleSuggestions}
           language={i18n.language}
+          embeddings={embeddings}
         />
       )}
 
@@ -431,6 +463,7 @@ function AdminFields({
   domainSuggestions,
   peopleSuggestions,
   language,
+  embeddings,
 }: {
   draft: ProviderDraft;
   change: <K extends keyof ProviderDraft>(key: K, value: ProviderDraft[K]) => void;
@@ -438,6 +471,8 @@ function AdminFields({
   domainSuggestions: string[];
   peopleSuggestions: string[];
   language: string;
+  /** An embeddings model serves no feature: there is nothing to tick. */
+  embeddings: boolean;
 }) {
   const { t } = useT();
   const limitHint = (text: string) => {
@@ -494,45 +529,47 @@ function AdminFields({
           </Field>
         )}
       </div>
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-[13px] font-semibold text-muted">{t("assist.form.features")}</legend>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {FEATURES.map((feature) => (
-            <label key={feature} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-pink"
-                checked={draft.features.includes(feature)}
-                onChange={(event) =>
-                  change(
-                    "features",
-                    event.target.checked
-                      ? [...draft.features, feature]
-                      : draft.features.filter((other) => other !== feature),
-                  )
-                }
-              />
-              {t(`assist.features.${feature}`)}
-            </label>
-          ))}
-        </div>
-        <Toggle
-          checked={draft.features.includes(FOREIGN_MAIL)}
-          onChange={(value) =>
-            change(
-              "features",
-              value ? [...draft.features, FOREIGN_MAIL] : draft.features.filter((other) => other !== FOREIGN_MAIL),
-            )
-          }
-          label={t("assist.form.foreignMail")}
-          description={t("assist.form.foreignMailHint")}
-        />
-        {errorOf("features") && (
-          <p role="alert" className="text-[13px] text-danger">
-            {errorOf("features")}
-          </p>
-        )}
-      </fieldset>
+      {!embeddings && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-2 text-[13px] font-semibold text-muted">{t("assist.form.features")}</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {FEATURES.map((feature) => (
+              <label key={feature} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-pink"
+                  checked={draft.features.includes(feature)}
+                  onChange={(event) =>
+                    change(
+                      "features",
+                      event.target.checked
+                        ? [...draft.features, feature]
+                        : draft.features.filter((other) => other !== feature),
+                    )
+                  }
+                />
+                {t(`assist.features.${feature}`)}
+              </label>
+            ))}
+          </div>
+          <Toggle
+            checked={draft.features.includes(FOREIGN_MAIL)}
+            onChange={(value) =>
+              change(
+                "features",
+                value ? [...draft.features, FOREIGN_MAIL] : draft.features.filter((other) => other !== FOREIGN_MAIL),
+              )
+            }
+            label={t("assist.form.foreignMail")}
+            description={t("assist.form.foreignMailHint")}
+          />
+          {errorOf("features") && (
+            <p role="alert" className="text-[13px] text-danger">
+              {errorOf("features")}
+            </p>
+          )}
+        </fieldset>
+      )}
       <div className="flex flex-col gap-2">
         <p className="text-[13px] font-semibold text-muted">{t("assist.form.quota")}</p>
         <p className="-mt-1 text-[12px] text-muted">{t("assist.form.quotaIntro")}</p>

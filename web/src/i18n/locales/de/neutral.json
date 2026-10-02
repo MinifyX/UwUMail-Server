@@ -3999,7 +3999,10 @@
       "priceLists_other": "Preise aktualisiert {{date}}, {{count}} Modelle bekannt.",
       "priceListsNone": "Die Preise wurden noch nicht abgerufen.",
       "foreignMail": "KI für Mail aus anderen Konten",
-      "foreignMailHint": "Nutzer dürfen den Assistenten in der UwUMail-App für die Mail ihrer anderen Konten (Exchange, Gmail, IMAP) verwenden. Die App schickt dazu den Text dieser Mail hierher; gespeichert wird davon nur die Nutzung. Es werden nur Anbieter verwendet, die das erlauben."
+      "foreignMailHint": "Nutzer dürfen den Assistenten in der UwUMail-App für die Mail ihrer anderen Konten (Exchange, Gmail, IMAP) verwenden. Die App schickt dazu den Text dieser Mail hierher; gespeichert wird davon nur die Nutzung. Es werden nur Anbieter verwendet, die das erlauben.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Ähnliche Mails für Labels",
+      "smallModel": "Dieses Modell hat nur etwa {{size}} Milliarden Parameter; Labels und Spam werden damit schlecht beurteilt. Empfohlen: {{recommended}}."
     },
     "choices": {
       "title": "Welcher Anbieter wofür",
@@ -4109,7 +4112,8 @@
         "featuresRequired": "Wähle mindestens eine Funktion.",
         "limitInvalid": "Eine ganze Zahl über null, oder leer.",
         "priceInvalid": "Gib einen Preis ab 0 ein, zum Beispiel 0,25.",
-        "requestPriceInvalid": "Gib einen Preis von 0 bis 100 ein, zum Beispiel 0,005."
+        "requestPriceInvalid": "Gib einen Preis von 0 bis 100 ein, zum Beispiel 0,005.",
+        "embeddingsModelRequired": "Gib das Embeddings-Modell an."
       },
       "price": "Preis",
       "priceIntro": "US-Dollar pro Million Tokens, um Kosten anzuzeigen. Leer übernimmt den Preis aus öffentlichen Preislisten.",
@@ -4122,7 +4126,13 @@
       "showCostHint": "Sie sehen dann, was ihre Anfragen kosten. Du siehst es immer.",
       "requestPrice": "Pro Anfrage, US-Dollar",
       "foreignMail": "Mail aus anderen Konten",
-      "foreignMailHint": "Darf für die Mail anderer Konten der Nutzer verwendet werden, wenn „KI für Mail aus anderen Konten“ an ist."
+      "foreignMailHint": "Darf für die Mail anderer Konten der Nutzer verwendet werden, wenn „KI für Mail aus anderen Konten“ an ist.",
+      "chatGroup": "Chat-Modelle",
+      "embeddingsGroup": "Embeddings (ähnliche Mails für Labels)",
+      "embeddingsTitle": "Embeddings: ähnliche Mails für Labels",
+      "embeddingsHelp": "Ein Embeddings-Modell macht aus Mails Vektoren. Damit finden die automatischen Labels ähnliche Mails, die schon ein Label haben, und können viele Labels entscheiden, ohne das Chat-Modell zu fragen. Für andere Funktionen wird es nicht genutzt und braucht kein schnelles Modell.",
+      "embeddingsStorage": "Die Vektoren werden kompakt pro gelabelter Mail gespeichert und mit der Mail oder dem Konto gelöscht.",
+      "embeddingsModelNeeded": "Gib bei dieser Art das Embeddings-Modell an, das der Server anbietet."
     },
     "chatgpt": {
       "title": "ChatGPT-Anmeldung",

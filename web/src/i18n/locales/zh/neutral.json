@@ -3917,7 +3917,10 @@
       "priceLists_other": "价格已于 {{date}} 更新,已知 {{count}} 个模型。",
       "priceListsNone": "尚未获取价格。",
       "foreignMail": "为其他账户的邮件使用 AI",
-      "foreignMailHint": "允许用户在 UwUMail 应用中为其其他账户(Exchange、Gmail、IMAP)的邮件使用助手。应用会把该邮件的文本发送到这里;除用量外不保存任何内容。只使用允许此项的提供商。"
+      "foreignMailHint": "允许用户在 UwUMail 应用中为其其他账户(Exchange、Gmail、IMAP)的邮件使用助手。应用会把该邮件的文本发送到这里;除用量外不保存任何内容。只使用允许此项的提供商。",
+      "embeddings": "嵌入",
+      "embeddingsUse": "用于标签的相似邮件",
+      "smallModel": "此模型只有约 {{size}}B 参数，判断标签和垃圾邮件的效果较差。推荐：{{recommended}}。"
     },
     "choices": {
       "title": "哪个功能用哪个服务商",
@@ -4025,7 +4028,8 @@
         "featuresRequired": "请至少选择一个功能。",
         "limitInvalid": "请输入大于零的整数，或留空。",
         "priceInvalid": "请输入 0 或更大的价格,例如 0.25。",
-        "requestPriceInvalid": "请输入 0 到 100 之间的价格,例如 0.005。"
+        "requestPriceInvalid": "请输入 0 到 100 之间的价格,例如 0.005。",
+        "embeddingsModelRequired": "请填写嵌入模型。"
       },
       "price": "价格",
       "priceIntro": "每百万 token 的美元价格,用于显示费用。留空则使用公开价格表中的价格。",
@@ -4038,7 +4042,13 @@
       "showCostHint": "他们将看到自己请求的费用。你始终可以看到。",
       "requestPrice": "每次请求,美元",
       "foreignMail": "其他账户的邮件",
-      "foreignMailHint": "开启“为其他账户的邮件使用 AI”后,可用于用户其他账户的邮件。"
+      "foreignMailHint": "开启“为其他账户的邮件使用 AI”后,可用于用户其他账户的邮件。",
+      "chatGroup": "聊天模型",
+      "embeddingsGroup": "嵌入（用于标签的相似邮件）",
+      "embeddingsTitle": "嵌入：用于标签的相似邮件",
+      "embeddingsHelp": "嵌入模型会把邮件转换为向量。借助这些向量，自动标签可以找到已有标签的相似邮件，无需询问聊天模型就能决定许多标签。它不用于其他功能，也不需要快速模型。",
+      "embeddingsStorage": "向量按每封已加标签的邮件紧凑存储，并随邮件或账户一起删除。",
+      "embeddingsModelNeeded": "此类型需要填写服务器提供的嵌入模型。"
     },
     "chatgpt": {
       "title": "ChatGPT 登录",

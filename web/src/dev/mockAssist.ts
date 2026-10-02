@@ -18,6 +18,7 @@ import {
   type Effective,
   type Feature,
   type KindInfo,
+  type ModelHint,
   type LabelSummary,
   type ProviderFeature,
   type Price,
@@ -46,6 +47,7 @@ const KINDS: KindInfo[] = [
     keyUrl: "https://platform.openai.com/api-keys",
     experimental: false,
     personalOnly: false,
+    embeddings: false,
   },
   {
     kind: "anthropic",
@@ -58,6 +60,7 @@ const KINDS: KindInfo[] = [
     keyUrl: "https://console.anthropic.com/settings/keys",
     experimental: false,
     personalOnly: false,
+    embeddings: false,
   },
   {
     kind: "gemini",
@@ -70,6 +73,7 @@ const KINDS: KindInfo[] = [
     keyUrl: "https://aistudio.google.com/apikey",
     experimental: false,
     personalOnly: false,
+    embeddings: false,
   },
   {
     kind: "mistral",
@@ -82,6 +86,7 @@ const KINDS: KindInfo[] = [
     keyUrl: "https://console.mistral.ai/api-keys",
     experimental: false,
     personalOnly: false,
+    embeddings: false,
   },
   {
     kind: "openrouter",
@@ -94,6 +99,7 @@ const KINDS: KindInfo[] = [
     keyUrl: "https://openrouter.ai/settings/keys",
     experimental: false,
     personalOnly: false,
+    embeddings: false,
   },
   {
     kind: "ollama",
@@ -106,6 +112,7 @@ const KINDS: KindInfo[] = [
     keyUrl: null,
     experimental: false,
     personalOnly: false,
+    embeddings: false,
   },
   {
     kind: "openaiCompatible",
@@ -118,6 +125,7 @@ const KINDS: KindInfo[] = [
     keyUrl: null,
     experimental: false,
     personalOnly: false,
+    embeddings: false,
   },
   {
     kind: "chatgpt",
@@ -130,6 +138,46 @@ const KINDS: KindInfo[] = [
     keyUrl: null,
     experimental: true,
     personalOnly: true,
+    embeddings: false,
+  },
+  {
+    kind: "openaiEmbeddings",
+    name: "OpenAI embeddings",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    baseUrl: "optional",
+    key: "required",
+    model: "text-embedding-3-small",
+    fastModel: null,
+    keyUrl: "https://platform.openai.com/api-keys",
+    experimental: false,
+    personalOnly: false,
+    embeddings: true,
+  },
+  {
+    kind: "ollamaEmbeddings",
+    name: "Ollama embeddings",
+    defaultBaseUrl: null,
+    baseUrl: "required",
+    key: "none",
+    model: "nomic-embed-text",
+    fastModel: null,
+    keyUrl: null,
+    experimental: false,
+    personalOnly: false,
+    embeddings: true,
+  },
+  {
+    kind: "embeddingsCompatible",
+    name: "OpenAI-compatible embeddings",
+    defaultBaseUrl: null,
+    baseUrl: "required",
+    key: "optional",
+    model: null,
+    fastModel: null,
+    keyUrl: null,
+    experimental: false,
+    personalOnly: false,
+    embeddings: true,
   },
 ];
 
@@ -142,6 +190,9 @@ const MODELS: Record<ProviderKind, string[]> = {
   ollama: ["gemma3:12b", "llama3.2:3b", "llama3.3:70b", "qwen3:14b"],
   openaiCompatible: ["qwen3-32b", "mistral-small-3.2"],
   chatgpt: ["gpt-5", "gpt-5-codex", "gpt-5-mini"],
+  openaiEmbeddings: ["text-embedding-3-small", "text-embedding-3-large"],
+  ollamaEmbeddings: ["nomic-embed-text", "bge-m3"],
+  embeddingsCompatible: ["bge-m3", "multilingual-e5-large"],
 };
 
 const kindOf = (kind: string) => KINDS.find((candidate) => candidate.kind === kind);
@@ -289,6 +340,52 @@ const serverProviders: AdminProvider[] = [
     price: null,
     createdAt: now() - 12 * 86_400,
   },
+  {
+    id: 3,
+    name: "Gemma im Büro",
+    kind: "openaiCompatible",
+    baseUrl: "http://192.0.2.11:8080/v1",
+    hasKey: false,
+    keyHint: null,
+    model: "gemma-3-4b-it",
+    fastModel: null,
+    enabled: false,
+    access: "people",
+    domains: [],
+    people: [ME],
+    features: ["autoLabels", "spamCheck"],
+    requestsPerDay: null,
+    tokensPerDay: null,
+    inputPricePerMillion: null,
+    outputPricePerMillion: null,
+    pricePerRequest: null,
+    showCostToUsers: false,
+    price: null,
+    createdAt: now() - 5 * 86_400,
+  },
+  {
+    id: 4,
+    name: "Ähnliche Mails",
+    kind: "ollamaEmbeddings",
+    baseUrl: "http://192.0.2.10:11434",
+    hasKey: false,
+    keyHint: null,
+    model: "nomic-embed-text",
+    fastModel: null,
+    enabled: true,
+    access: "everyone",
+    domains: [],
+    people: [],
+    features: [],
+    requestsPerDay: null,
+    tokensPerDay: null,
+    inputPricePerMillion: null,
+    outputPricePerMillion: null,
+    pricePerRequest: null,
+    showCostToUsers: false,
+    price: null,
+    createdAt: now() - 2 * 86_400,
+  },
 ];
 keys.set(2, "sk-mock-a1b2");
 
@@ -403,6 +500,16 @@ function allowedFeatures(features: ProviderFeature[]): ProviderFeature[] {
   );
 }
 
+/** What the default model's name says about its size, as the server reads it ("gemma-3-4b-it": 4). */
+function modelHint(provider: AdminProvider): ModelHint | null {
+  const kind = kindOf(provider.kind);
+  if (!kind || kind.embeddings) return null;
+  const size = /(?:^|[^a-z0-9.])(\d+(?:\.\d+)?)b(?![a-z0-9])/i.exec(provider.model ?? kind.model ?? "");
+  if (!size) return null;
+  const billions = Number(size[1]);
+  return { billions, small: billions < 7, recommended: ["Qwen3-8B", "Qwen3-14B", "gemma-3-12b-it"] };
+}
+
 function adminPrice(provider: AdminProvider): Price | null {
   return priceOf(
     provider.kind,
@@ -420,28 +527,31 @@ function costShown(providerId: number): boolean {
 }
 
 function accountProviders(): AssistProvider[] {
-  const server = serverProviders.filter(mayUse).map((provider): AssistProvider => ({
-    id: provider.id,
-    name: provider.name,
-    kind: provider.kind,
-    scope: "server",
-    baseUrl: null,
-    hasKey: provider.hasKey,
-    keyHint: null,
-    model: provider.model ?? kindOf(provider.kind)?.model ?? null,
-    fastModel: provider.fastModel ?? kindOf(provider.kind)?.fastModel ?? null,
-    features: allowedFeatures(provider.features),
-    quota:
-      provider.requestsPerDay === null && provider.tokensPerDay === null
-        ? null
-        : { requestsPerDay: provider.requestsPerDay, tokensPerDay: provider.tokensPerDay },
-    experimental: false,
-    connected: true,
-    inputPricePerMillion: provider.showCostToUsers ? provider.inputPricePerMillion : null,
-    outputPricePerMillion: provider.showCostToUsers ? provider.outputPricePerMillion : null,
-    pricePerRequest: provider.showCostToUsers ? (provider.pricePerRequest ?? null) : null,
-    price: provider.showCostToUsers ? adminPrice(provider) : null,
-  }));
+  // Embeddings providers serve no feature: people never see them.
+  const server = serverProviders
+    .filter((provider) => mayUse(provider) && !kindOf(provider.kind)?.embeddings)
+    .map((provider): AssistProvider => ({
+      id: provider.id,
+      name: provider.name,
+      kind: provider.kind,
+      scope: "server",
+      baseUrl: null,
+      hasKey: provider.hasKey,
+      keyHint: null,
+      model: provider.model ?? kindOf(provider.kind)?.model ?? null,
+      fastModel: provider.fastModel ?? kindOf(provider.kind)?.fastModel ?? null,
+      features: allowedFeatures(provider.features),
+      quota:
+        provider.requestsPerDay === null && provider.tokensPerDay === null
+          ? null
+          : { requestsPerDay: provider.requestsPerDay, tokensPerDay: provider.tokensPerDay },
+      experimental: false,
+      connected: true,
+      inputPricePerMillion: provider.showCostToUsers ? provider.inputPricePerMillion : null,
+      outputPricePerMillion: provider.showCostToUsers ? provider.outputPricePerMillion : null,
+      pricePerRequest: provider.showCostToUsers ? (provider.pricePerRequest ?? null) : null,
+      price: provider.showCostToUsers ? adminPrice(provider) : null,
+    }));
   const own = policy.allowPersonal
     ? ownProviders.map((provider): AssistProvider => {
         const kind = kindOf(provider.kind);
@@ -705,6 +815,7 @@ const adminView = () => ({
     hasKey: keys.has(provider.id),
     keyHint: hint(provider.id),
     price: adminPrice(provider),
+    modelHint: modelHint(provider),
   })),
   kinds: KINDS,
   priceLists: { fetchedAt: now() - 3 * 3600, models: 1874, openrouterModels: 0, ratesDay: null },
@@ -712,7 +823,15 @@ const adminView = () => ({
 
 const adminProvider = (id: number) => {
   const provider = serverProviders.find((candidate) => candidate.id === id);
-  return provider ? { ...provider, hasKey: keys.has(id), keyHint: hint(id), price: adminPrice(provider) } : undefined;
+  return provider
+    ? {
+        ...provider,
+        hasKey: keys.has(id),
+        keyHint: hint(id),
+        price: adminPrice(provider),
+        modelHint: modelHint(provider),
+      }
+    : undefined;
 };
 
 const accountProvider = (id: number) => accountProviders().find((provider) => provider.id === id);
@@ -741,6 +860,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
       const input = body as ProviderInput;
       const kind = kindOf(input.kind ?? "");
       if (!kind || kind.personalOnly) return problem(409, "badProviderKind");
+      if (kind.kind === "embeddingsCompatible" && !input.model) return problem(409, "badModel");
       const failed = inputError({ ...input, name: input.name ?? "" }, true);
       if (failed) return failed;
       if (kind.key === "required" && !input.apiKey) return problem(409, "badProviderKey");
@@ -759,7 +879,9 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         access: input.access ?? "everyone",
         domains: input.domains ?? [],
         people: input.people ?? [],
-        features: (input.features as ProviderFeature[] | undefined) ?? [...FEATURES, FOREIGN_MAIL],
+        features: kind.embeddings
+          ? []
+          : ((input.features as ProviderFeature[] | undefined) ?? [...FEATURES, FOREIGN_MAIL]),
         requestsPerDay: input.requestsPerDay ?? null,
         tokensPerDay: input.tokensPerDay ?? null,
         inputPricePerMillion: input.inputPricePerMillion ?? null,
@@ -845,7 +967,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
       if (ownProviders.length >= 10) return problem(409, "tooManyProviders");
       const input = body as ProviderInput;
       const kind = kindOf(input.kind ?? "");
-      if (!kind) return problem(409, "badProviderKind");
+      if (!kind || kind.embeddings) return problem(409, "badProviderKind");
       const failed = inputError({ ...input, name: input.name ?? "" }, policy.allowPersonalPrivate);
       if (failed) return failed;
       if (kind.key === "required" && !input.apiKey) return problem(409, "badProviderKey");
