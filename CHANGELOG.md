@@ -8,7 +8,7 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 ### Labels
 
 - **Eight base labels for everyone**: Rechnung, Versand, Termin, Newsletter, Konto & Sicherheit,
-  Persönlich, Arbeit & Geschäftliches and Werbung (Invoice, Shipping, Appointment, Newsletter,
+  Persönlich, Arbeit/Geschäftlich and Werbung (Invoice, Shipping, Appointment, Newsletter,
   Account & security, Personal, Work & business, Promotions in English), each with a fixed,
   non-overlapping definition and examples, switched on or off one by one (`auto`). A label of the
   same meaning someone had already (`Rechnungen`, `Termine` …) becomes the base label; own labels

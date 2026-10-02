@@ -29,7 +29,7 @@ of what looks alike but does not; the definitions do not overlap.
 | `newsletter` | Newsletter | Newsletter | regular issues of subscribed content: news, digests, blog posts, project or club updates |
 | `account` | Konto & Sicherheit | Account & security | the person's account at a service: sign-up, confirming the address, login codes, password reset, new sign-in, security alerts, changes of plan, terms or privacy policy |
 | `personal` | Persönlich | Personal | written personally by a private person: friends, family, acquaintances |
-| `work` | Arbeit & Geschäftliches | Work & business | written by a person in a professional context: colleagues, customers, partners, applications, authorities |
+| `work` | Arbeit/Geschäftlich | Work & business | written by a person in a professional context: colleagues, customers, partners, applications, authorities |
 | `advertising` | Werbung | Promotions | mainly meant to sell: offers, discounts, sales, coupons, review requests |
 
 French, Dutch, Japanese and Chinese names exist too; the definitions are German for German and

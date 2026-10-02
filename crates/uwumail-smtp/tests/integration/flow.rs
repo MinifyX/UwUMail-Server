@@ -1526,7 +1526,8 @@ async fn delivered_mail_is_queued_for_labels_but_junk_is_not() {
     assert!(store.due_label_jobs(10).await.unwrap().is_empty(), "not switched on");
 
     store.set_assist_prefs(account.id, Default::default(), true).await.unwrap();
-    store.create_assist_label(account.id, "Newsletter".into(), "Werbung und Newsletter".into(), None).await.unwrap();
+    // The base labels came with the first mail; an own label besides them.
+    store.create_assist_label(account.id, "Reisen".into(), "Flüge und Hotels".into(), None).await.unwrap();
     let flagged = String::from_utf8(fetched_message(None, "X-Spam-Flag: YES\r\n")).unwrap().replace("<one@", "<two@");
     assert_eq!(take(true, flagged.into_bytes()).await, uwumail_smtp::Taken::Kept);
     assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);

@@ -305,7 +305,7 @@ little:
 
 A person switches them on under the assistant's settings. Everyone has the
 eight base labels (*Rechnung*, *Versand*, *Termin*, *Newsletter*, *Konto &
-Sicherheit*, *Persönlich*, *Arbeit & Geschäftliches*, *Werbung*, in the
+Sicherheit*, *Persönlich*, *Arbeit/Geschäftlich*, *Werbung*, in the
 person's language), each with a fixed definition and switched on or off one by
 one, plus labels of their own, each a name and a description of what belongs
 there. A label is a JMAP keyword (`rechnung`, …), so IMAP apps see it as a tag.

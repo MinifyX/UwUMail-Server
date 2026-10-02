@@ -400,8 +400,8 @@ only decides whether the webmail calls it by itself when a mail opens. A
 ## Labels
 
 Labels are kinds of mail: the eight **base labels** everyone has (Rechnung,
-Versand, Termin, Newsletter, Konto & Sicherheit, Persönlich, Arbeit &
-Geschäftliches, Werbung, in the person's language, each with a fixed
+Versand, Termin, Newsletter, Konto & Sicherheit, Persönlich,
+Arbeit/Geschäftlich, Werbung, in the person's language, each with a fixed
 definition; see [labels.md](labels.md#base-labels)) and the person's own, in
 their own words ("Reisen: flights, trains, hotels"). A label is a JMAP keyword on the email, so
 every client sees it: IMAP apps show it as a tag or keyword. Labels never
