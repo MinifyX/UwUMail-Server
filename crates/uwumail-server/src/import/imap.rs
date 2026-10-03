@@ -618,7 +618,14 @@ const OBJECT_STUB_CHARS: usize = 400;
 pub(crate) fn pure_object_texts(raw: &[u8], kind: DavKind) -> Vec<String> {
     use mail_parser::{MimeHeaders, PartType};
     let Some(message) = uwumail_store::mime_limits::parse_message(raw) else { return Vec::new() };
-    let kolab = message.header("X-Kolab-Type").is_some();
+    // Kolab's header alone (anyone can write it) lifts nothing: its own format has to be there too.
+    let kolab = message.header("X-Kolab-Type").is_some()
+        && message.parts.iter().any(|part| {
+            part.content_type().is_some_and(|ct| {
+                ct.ctype().eq_ignore_ascii_case("application")
+                    && ct.subtype().unwrap_or_default().to_ascii_lowercase().starts_with("x-vnd.kolab.")
+            })
+        });
     let mut texts = Vec::new();
     for part in &message.parts {
         let (ctype, subtype) = part
@@ -639,6 +646,13 @@ pub(crate) fn pure_object_texts(raw: &[u8], kind: DavKind) -> Vec<String> {
                 PartType::Binary(bytes) | PartType::InlineBinary(bytes) => String::from_utf8_lossy(bytes).into_owned(),
                 _ => return Vec::new(),
             };
+            // An iTIP message (an invitation, a reply) is mail someone sent; stored objects carry no
+            // METHOD (security review 0.22 R2-INFO-2).
+            let itip = part.content_type().is_some_and(|ct| ct.attribute("method").is_some())
+                || text.lines().any(|line| line.trim_start().to_ascii_uppercase().starts_with("METHOD:"));
+            if itip && kind == DavKind::Calendar {
+                return Vec::new();
+            }
             if !text.trim().is_empty() {
                 texts.push(text);
             }
@@ -1202,9 +1216,20 @@ mod tests {
         ] {
             assert!(pure_object_texts(&mail(&body), DavKind::Addressbook).is_empty(), "{body}");
         }
-        // With Kolab's header the note may be longer.
-        let long_note = format!(
+        // An invitation with a short note is mail, not a stored event.
+        let invitation = mail(
+            "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nKommst du?\r\n--b\r\nContent-Type: text/calendar\r\n\r\nBEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:1\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n--b--\r\n",
+        );
+        assert!(pure_object_texts(&invitation, DavKind::Calendar).is_empty());
+        // The header alone does not lift the limit on the note.
+        let forged = format!(
             "X-Kolab-Type: application/x-vnd.kolab.contact\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n{}\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b--\r\n",
+            "Lange Nachricht. ".repeat(40)
+        );
+        assert!(pure_object_texts(&mail(&forged), DavKind::Addressbook).is_empty());
+        // With Kolab's header and format the note may be longer.
+        let long_note = format!(
+            "X-Kolab-Type: application/x-vnd.kolab.contact\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n{}\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b\r\nContent-Type: application/x-vnd.kolab.contact\r\n\r\n<contact/>\r\n--b--\r\n",
             "Hinweis. ".repeat(80)
         );
         assert_eq!(pure_object_texts(&mail(&long_note), DavKind::Addressbook).len(), 1);
