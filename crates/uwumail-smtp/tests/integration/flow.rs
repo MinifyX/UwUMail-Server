@@ -452,6 +452,7 @@ async fn submitted_mail_cannot_bring_our_verdicts() {
     let written = "Authentication-Results: mx.a.test; spf=pass; dkim=pass; dmarc=pass\r\n\
                    Authentication-Results: elsewhere.test; spf=pass\r\n\
                    X-Spam-Status: No, score=-50.0 required=5.0 tests=none\r\nX-Spam-Score: -50.0\r\n\
+                   X-UwUMail-Label: $label-wichtig\r\n\
                    From: ami@a.test\r\nTo: mini@a.test\r\nSubject: Alles sicher\r\n\r\nHallo\r\n";
     let envelope =
         lettre::address::Envelope::new(Some("ami@a.test".parse().unwrap()), vec!["mini@a.test".parse().unwrap()])
@@ -463,6 +464,7 @@ async fn submitted_mail_cannot_bring_our_verdicts() {
     assert!(!raw.contains("mx.a.test; spf=pass"), "{raw}");
     assert!(!raw.contains("score=-50") && !raw.contains("X-Spam-Score: -50"), "{raw}");
     assert!(raw.contains("Authentication-Results: elsewhere.test"), "another server's claim is left as it is");
+    assert!(!raw.contains("X-UwUMail-Label"), "labels are this server's to write: {raw}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

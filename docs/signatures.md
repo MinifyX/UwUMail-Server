@@ -107,6 +107,13 @@ contains the footer anywhere, also hidden (e.g. in an HTML comment) or in a quot
 Each skip is logged as `sent without the company footer` with the reason. Where a legal notice
 must be on every message, do not rely on the footer alone.
 
+### Known limitations (security review)
+
+- The footer is put in on the async runtime, not in `spawn_blocking`; a large message ties up one
+  runtime thread for the time it takes (bounded by `smtp.max_message_size`).
+- `X-UwUMail-Label` headers a sender wrote are removed at submission (since 0.22.0), as inbound
+  delivery already did, so no submitted message can bring its own label.
+
 ## Signature HTML is not sanitised by the server
 
 The server stores and hands out signature HTML (the person's, per address and the company
