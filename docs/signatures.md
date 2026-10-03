@@ -111,6 +111,7 @@ must be on every message, do not rely on the footer alone.
 
 - The footer is put in on the async runtime, not in `spawn_blocking`; a large message ties up one
   runtime thread for the time it takes (bounded by `smtp.max_message_size`).
+- The domain picker counts identities, not addresses: two identities for one address show as two.
 - `X-UwUMail-Label` headers a sender wrote are removed at submission (since 0.22.0), as inbound
   delivery already did, so no submitted message can bring its own label.
 

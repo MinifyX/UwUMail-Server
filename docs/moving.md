@@ -267,6 +267,8 @@ directory.
 - There is no limit on the number or the depth of the folders a move copies.
 - DAV import merges into a collection of the same name and can overwrite items with the same UID when it fills a mailbox that already has them.
 - Imported events keep their alarms (`VALARM`).
+- Contacts a move brings in count as known senders for the spam check and labels, like any other contact.
+- An old server name that does not exist is reported as "does not resolve to a public address", not as "not found".
 
 ### API
 

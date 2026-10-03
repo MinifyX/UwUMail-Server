@@ -417,3 +417,11 @@ no labels in practice. On the real mails, what the facts rule out made the diffe
 notifications of a social network (recaps, new followers) were 78 of the model's 96 wrong labels
 before the notification fact.
 
+
+## Known limitations (security review)
+
+- Embeddings (`label_vectors`) stay when AI labels are switched off or the embeddings provider is
+  removed; the examples (`label_shots`) are deleted, the vectors go only with their mail. They are
+  local data and never leave the server.
+- `llm::embed` reads answers of up to 8 MiB into a JSON value, which can briefly take about 100 MB
+  per job. Only an admin can set the embeddings provider.

@@ -57,7 +57,9 @@ message arrives by itself, every waiting entry of it disappears (by Message-ID
 only when the envelope sender is the same too); a retry of a message that was
 already delivered or discarded by hand does not show up again. Whether a retry
 is dropped because someone decided about it is still a question of the exact
-bytes only — a Message-ID is a line anyone can write.
+bytes only — a Message-ID is a line anyone can write. Entries that were already separate
+before 0.22 are not merged by the upgrade; they go once the message is
+delivered or after their waiting time.
 
 Refusing is off unless `reject_score` is set: any filter is wrong now and then,
 and Junk loses nothing while a refusal does.
@@ -676,6 +678,13 @@ These are left as they are on purpose, because their impact is low:
 - **A provider's client address written only in a comment is not read (0.22 R5 I-3).** The server then runs no SPF check of
   its own for that fetched mail and relies on the provider's results. This makes detection slightly weaker, but the
   server never trusts more because of it.
+- **Mail stored before 0.22 counts as delivered by our SMTP (0.22 F-L3).** Migration 0074 sets
+  `smtp_delivered` to 1 for every existing mail, so a copy someone put in by IMAP APPEND or import
+  before the upgrade, with a forged header block of ours on top, is still read by the assistant.
+  Mail stored from 0.22 on is marked by the path it came in by.
+- **Mail between two local people counts as unchecked (info).** It goes through submission, not
+  SMTP delivery, so the assistant sees no authentication for it and may show a phishing hint
+  where none is needed. This fails safe.
 - **Domain signatures check `ifInState` before writing, not in the same transaction (0.22 webmail WF-3).** Two saves in the
   same instant can still overwrite each other. The signatures belong to the person, and only their own sessions write them.
 
