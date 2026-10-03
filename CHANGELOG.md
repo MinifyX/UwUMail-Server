@@ -131,27 +131,6 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   it again (migration 0075).
 - **Submission removes `X-UwUMail-Label`** a sender wrote, as inbound delivery already did.
 - docs/moving.md and docs/signatures.md list the known limitations the review left as they are.
-
-### Fixed
-
-- **Appointments keep their times.** "Samstag 03.10.26, zwischen 10:00 und 12:00" becomes
-  10:00–12:00 instead of an all-day event. The webmail's date finder knows "zwischen … und",
-  "10.00–12.00", "halb drei", "nachmittags", "c.t.", parcel time windows and date ranges with
-  "zwischen", and offers fewer false ones (login and pickup timestamps, billing periods, phone
-  numbers, "Auftrag … vom"); titles and places no longer read "Betrag", "Datum" or "Dorf". "Check
-  with AI" keeps a time range, is told to set all-day only when the mail gives no time, and its
-  answer never replaces a found time with a whole day (or the other way round). The server turns
-  an all-day answer with a time of day into a timed event and counts an all-day end as the last day.
-- **Wartende Nachrichten: retries of one message are one entry.** A greylisted sender that comes
-  back several times no longer fills the list with copies; the entry shows how often it tried and
-  when it last did. Once the message arrives, every waiting copy disappears, and a retry of a
-  message already delivered or discarded by hand no longer comes back onto the list.
-- **Push no longer reports a change with an older state.** A change notification handled late
-  read changes written meanwhile and sent them with the older state (JMAP push and web push); it now
-  reads only up to its own state.
-
-### Security (review round 1, spam and labels)
-
 - **Regional bank names only under their own endings (SPAM-1).** `sparkasse-…` and `volksbank-…`
   count as the bank's own domain only under `.de` and `.at`; `sparkasse-login.com` and the like are
   imitations again, and such a domain never vouches for a link that shows `sparkasse.de`.
@@ -199,9 +178,6 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - **Neighbour search off the async runtime (LABELS22-L4).** Comparing a mail with the person's
   examples (words or vectors) runs on a blocking thread, the mail's words are made a set once, and
   `AssistLabel/apply` runs one call at a time per person.
-
-### Security (review round 2, spam and labels)
-
 - **Authenticated means aligned, in the AI paths too (R2-M1).** The AI spam check and the AI labels
   call a From authenticated only when DMARC passed, or — without a DMARC policy — a DKIM signature
   or SPF pass belongs to the From domain, a parent or a subdomain of it, as the SMTP checks decide
@@ -220,9 +196,6 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   one number of the mail, and a reason calling the sender verified needs authentication behind it.
   Correction examples also mask codes of letters and digits (`AB7-K2X`), and a mail with a one-time
   code keeps no example.
-
-### Security (review round 3, spam and labels)
-
 - **An extreme date from the model can no longer stop the server (final review DATES-H1).** Event
   extraction ignores start and end dates outside 1970–2200 before doing any date arithmetic, so a
   model answer (or a personal provider) naming the year 262142 no longer overflows and aborts.
@@ -266,6 +239,26 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   non-atomic `ifInState` check on domain signatures.
 - **No startup rewrite of every mail (R3 I-2).** Migration 0074 now adds `smtp_delivered` with a
   default instead of updating every row. Correction examples mask digits of any script.
+- Low findings of the review that were left as they are are listed under "Known limitations
+  (security review)" in `docs/spam-filter.md`, `docs/labels.md`, `docs/moving.md` and `docs/signatures.md`.
+
+### Fixed
+
+- **Appointments keep their times.** "Samstag 03.10.26, zwischen 10:00 und 12:00" becomes
+  10:00–12:00 instead of an all-day event. The webmail's date finder knows "zwischen … und",
+  "10.00–12.00", "halb drei", "nachmittags", "c.t.", parcel time windows and date ranges with
+  "zwischen", and offers fewer false ones (login and pickup timestamps, billing periods, phone
+  numbers, "Auftrag … vom"); titles and places no longer read "Betrag", "Datum" or "Dorf". "Check
+  with AI" keeps a time range, is told to set all-day only when the mail gives no time, and its
+  answer never replaces a found time with a whole day (or the other way round). The server turns
+  an all-day answer with a time of day into a timed event and counts an all-day end as the last day.
+- **Wartende Nachrichten: retries of one message are one entry.** A greylisted sender that comes
+  back several times no longer fills the list with copies; the entry shows how often it tried and
+  when it last did. Once the message arrives, every waiting copy disappears, and a retry of a
+  message already delivered or discarded by hand no longer comes back onto the list.
+- **Push no longer reports a change with an older state.** A change notification handled late
+  read changes written meanwhile and sent them with the older state (JMAP push and web push); it now
+  reads only up to its own state.
 
 ## 0.21.2
 
