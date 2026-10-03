@@ -137,7 +137,14 @@ impl Assist {
         // Known only when authentication backs the From address (security review 0.22 LABELS22-L1).
         mail.known_sender =
             mail.from_trusted && !mail.from.is_empty() && store.knows_sender(account.id, mail.from.clone()).await?;
-        let facts = Facts::of(&mail);
+        // Off the async runtime, and made once: the detectors below take the same facts (final
+        // client review X-1).
+        let (mail, facts) = tokio::task::spawn_blocking(move || {
+            let facts = Facts::of(&mail);
+            (mail, facts)
+        })
+        .await
+        .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))?;
 
         let rules: Vec<Option<Rules>> =
             stored.iter().map(|label| label.rules.as_ref().and_then(|r| Rules::check(r).ok().flatten())).collect();
@@ -145,7 +152,8 @@ impl Assist {
         let classifiers = stored.iter().filter(|label| label.classifier).map(|label| label.id).collect();
         let mut knowledge = store.label_knowledge(account.id, mail.from.clone(), tokens.clone(), classifiers).await?;
         knowledge.similar = self.similar(account, email_id, &mail_text, &tokens).await?;
-        let mut candidates = uwumail_labels::candidates(&labels, &mail, &present, &knowledge, &tokens);
+        let mut candidates =
+            uwumail_labels::candidates_with_facts(&labels, &mail, &facts, &present, &knowledge, &tokens);
         let prefs = store.assist_prefs(account.id).await?;
         if !prefs.non_ai_labels {
             for candidate in &mut candidates {

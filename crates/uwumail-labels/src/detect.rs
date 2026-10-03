@@ -186,7 +186,7 @@ pub fn detect(detector: Detector, mail: &Mail) -> Option<Finding> {
 
 /// The folded parts of a mail and its facts, made once for all detectors.
 pub(crate) struct View<'a> {
-    mail: &'a Mail,
+    pub(crate) mail: &'a Mail,
     subject: String,
     text: String,
     pub(crate) facts: Facts,
@@ -198,6 +198,12 @@ impl<'a> View<'a> {
         let text = fold(&mail.text);
         let facts = Facts::of_folded(mail, &subject, &text);
         View { mail, subject, text, facts }
+    }
+
+    /// With the facts already made by [`Facts::of`] for this same mail, so they are made once per
+    /// mail (final client review X-1).
+    pub(crate) fn with_facts(mail: &'a Mail, facts: Facts) -> View<'a> {
+        View { mail, subject: fold(&mail.subject), text: fold(&mail.text), facts }
     }
 
     pub(crate) fn run(&self, detector: Detector) -> Option<Finding> {
@@ -274,6 +280,13 @@ fn invoice(view: &View<'_>) -> Option<Finding> {
 /// The first amount of money in folded text, as written: a number with two decimals right before or
 /// after a currency.
 pub fn amount(text: &str) -> Option<String> {
+    amount_at(text).map(|(found, _)| found)
+}
+
+/// [`amount`] and the byte range of `text` it stands at, so a caller looking for the next one goes
+/// on behind it instead of searching for its text, which could find an earlier, rejected copy
+/// (final client review X-1).
+pub fn amount_at(text: &str) -> Option<(String, std::ops::Range<usize>)> {
     let bytes = text.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
@@ -298,7 +311,8 @@ pub fn amount(text: &str) -> Option<String> {
             let rest = &after[currency.len()..];
             if !currency.chars().all(char::is_alphabetic) || boundary(rest.chars().next()) {
                 let spaced = text[end..].starts_with(' ');
-                return Some(format!("{number}{}{currency}", if spaced { " " } else { "" }));
+                let stop = end + usize::from(spaced) + currency.len();
+                return Some((format!("{number}{}{currency}", if spaced { " " } else { "" }), start..stop));
             }
         }
         let before = text[..start].strip_suffix(' ').unwrap_or(&text[..start]);
@@ -306,7 +320,8 @@ pub fn amount(text: &str) -> Option<String> {
             let rest = &before[..before.len() - currency.len()];
             if !currency.chars().all(char::is_alphabetic) || boundary(rest.chars().next_back()) {
                 let spaced = text[..start].ends_with(' ');
-                return Some(format!("{currency}{}{number}", if spaced { " " } else { "" }));
+                let from = start - usize::from(spaced) - currency.len();
+                return Some((format!("{currency}{}{number}", if spaced { " " } else { "" }), from..end));
             }
         }
     }
@@ -853,6 +868,10 @@ mod tests {
     #[test]
     fn amounts_dates_and_times() {
         assert_eq!(amount("gesamt 49,90 € inkl. mwst").as_deref(), Some("49,90 €"));
+        for text in ["gesamt 49,90 € inkl. mwst", "total: $1,249.00 due", "eur 12.50", "x49,90 € und 5,00€!"] {
+            let (found, at) = amount_at(text).unwrap();
+            assert_eq!(&text[at], found, "{text}");
+        }
         assert_eq!(amount("total: $1,249.00 due").as_deref(), Some("$1,249.00"));
         assert_eq!(amount("eur 12.50").as_deref(), Some("eur 12.50"));
         assert_eq!(amount("version 1.2.34 euro"), None);

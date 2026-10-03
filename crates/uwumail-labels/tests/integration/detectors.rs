@@ -222,3 +222,44 @@ fn a_long_subject_costs_no_more_than_its_length() {
     assert!(detect(Detector::Newsletter, &uncut).is_none_or(|f| f.confidence < uwumail_labels::MAIN_THRESHOLD));
     assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
 }
+
+/// Final client review X-1: thousands of rejected copies of an amount before the real one took
+/// time growing with their square, because each round searched for the text found and landed on a
+/// rejected copy. Now each round goes on behind the amount it found.
+#[test]
+fn rejected_copies_of_an_amount_cost_no_more_than_their_length() {
+    let text = format!("{}Betrag 49,90 € und 12,00 €", "x49,90 € ".repeat(20_000));
+    let mail = uwumail_labels::Mail::new("billing@shop.example", "Rechnung", &text, Vec::new(), false, Vec::new());
+    let uncut = uwumail_labels::Mail { text, ..mail };
+    let started = std::time::Instant::now();
+    let facts = uwumail_labels::Facts::of(&uncut);
+    assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
+    assert_eq!(facts.amounts, ["49,90 €", "12,00 €"]);
+}
+
+/// Labels from facts made once give what labels from the mail alone give.
+#[test]
+fn candidates_with_facts_match_candidates() {
+    let mail = with_attachment(
+        &["From: billing@shop.example", "Subject: Ihre Rechnung RE-2026-4711"],
+        "Betrag 49,90 € bis 10.10.2026",
+        "application/pdf",
+        "rechnung.pdf",
+    );
+    let label = uwumail_labels::Label {
+        id: 1,
+        keyword: "rechnung",
+        rules: None,
+        detector: Some(Detector::Invoice),
+        learn_senders: false,
+        classifier: false,
+        base: None,
+        auto: true,
+    };
+    let knowledge = uwumail_labels::Knowledge::default();
+    let facts = uwumail_labels::Facts::of(&mail);
+    let alone = uwumail_labels::candidates(&[label], &mail, &[], &knowledge, &[]);
+    let shared = uwumail_labels::candidates_with_facts(&[label], &mail, &facts, &[], &knowledge, &[]);
+    assert!(!alone.is_empty());
+    assert_eq!(format!("{alone:?}"), format!("{shared:?}"));
+}

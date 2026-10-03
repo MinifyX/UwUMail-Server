@@ -172,7 +172,30 @@ pub fn candidates(
     knowledge: &Knowledge,
     tokens: &[i64],
 ) -> Vec<Decision> {
-    let view = detect::View::new(mail);
+    candidates_of(labels, detect::View::new(mail), present, knowledge, tokens)
+}
+
+/// [`candidates`] with the facts already made by [`Facts::of`] for this same `mail`, so they are
+/// not made a second time (final client review X-1).
+pub fn candidates_with_facts(
+    labels: &[Label<'_>],
+    mail: &Mail,
+    facts: &Facts,
+    present: &[String],
+    knowledge: &Knowledge,
+    tokens: &[i64],
+) -> Vec<Decision> {
+    candidates_of(labels, detect::View::with_facts(mail, facts.clone()), present, knowledge, tokens)
+}
+
+fn candidates_of(
+    labels: &[Label<'_>],
+    view: detect::View<'_>,
+    present: &[String],
+    knowledge: &Knowledge,
+    tokens: &[i64],
+) -> Vec<Decision> {
+    let mail = view.mail;
     let mut found: HashMap<Detector, Option<Finding>> = HashMap::new();
     let mut out = Vec::new();
     for label in labels {

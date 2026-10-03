@@ -841,16 +841,15 @@ fn name_in_address_loose(name_words: &[&str], local: &str) -> bool {
 /// Every amount of money in folded text, as written (at most [`MAX_FOUND`]).
 fn amounts(text: &str) -> Vec<String> {
     let mut out = Vec::new();
-    let mut rest = text;
     let mut offset = 0;
+    // On behind each amount found, never searching for its text again: that could land on an
+    // earlier, rejected copy ("x49,90 €") and rescan the rest each round (final client review X-1).
     while out.len() < MAX_FOUND {
-        let Some(found) = crate::detect::amount(rest) else { break };
-        let Some(at) = rest.find(found.as_str()) else { break };
+        let Some((found, at)) = crate::detect::amount_at(&text[offset..]) else { break };
         if !out.contains(&found) {
-            out.push(found.clone());
+            out.push(found);
         }
-        offset += at + found.len();
-        rest = &text[offset..];
+        offset += at.end;
     }
     out
 }
