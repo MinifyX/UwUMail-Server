@@ -327,7 +327,7 @@ async fn read_response<R: AsyncBufRead + Unpin>(stream: &mut R, budget: &mut usi
 }
 
 /// [`read_response`]; with `drop_large`, a literal that does not fit `budget` (but is no larger
-/// than [`MAX_LITERAL`]) is read past without being kept and becomes [`Token::Dropped`].
+/// than twice [`MAX_LITERAL`]) is read past without being kept and becomes [`Token::Dropped`].
 async fn read_response_dropping<R: AsyncBufRead + Unpin>(
     stream: &mut R,
     budget: &mut usize,
