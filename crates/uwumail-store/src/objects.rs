@@ -136,10 +136,15 @@ impl Store {
     }
 
     /// Object kinds that changed after `since`.
-    pub async fn changed_kinds(&self, account_id: i64, since: i64) -> Result<Vec<String>> {
+    ///
+    /// Only changes up to `upto` count: a later one may already be written while an earlier
+    /// notification is handled, and reporting it under the earlier state would hand out a state
+    /// that is older than the change (it is reported with its own notification).
+    pub async fn changed_kinds(&self, account_id: i64, since: i64, upto: i64) -> Result<Vec<String>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare("SELECT DISTINCT kind FROM changes WHERE account_id = ?1 AND modseq > ?2")?;
-            let rows = stmt.query_map(params![account_id, since], |row| row.get(0))?;
+            let mut stmt = conn
+                .prepare("SELECT DISTINCT kind FROM changes WHERE account_id = ?1 AND modseq > ?2 AND modseq <= ?3")?;
+            let rows = stmt.query_map(params![account_id, since, upto], |row| row.get(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
         .await

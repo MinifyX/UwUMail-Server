@@ -233,7 +233,7 @@ impl Watcher {
     /// The `changed` map of a `StateChange` for everything since the last one, in the types asked
     /// for; `None` when none of them changed.
     pub async fn changed(&mut self, modseq: i64) -> Option<Map<String, Value>> {
-        let kinds = self.store.changed_kinds(self.account_id, self.last_modseq).await.unwrap_or_default();
+        let kinds = self.store.changed_kinds(self.account_id, self.last_modseq, modseq).await.unwrap_or_default();
         self.last_modseq = self.last_modseq.max(modseq);
         let changed = type_states(&self.store, self.account_id, &kinds, modseq, false, |kind| self.wants(kind)).await;
         (!changed.is_empty()).then_some(changed)
