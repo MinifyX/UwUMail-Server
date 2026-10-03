@@ -79,7 +79,7 @@ pub use headers::first_value as header_value;
 /// Every value of one header of a raw message, in order.
 pub use headers::values as header_values;
 /// Reading `Authentication-Results` the one way, for the strip of forged ones and the assistant.
-pub use headers::{AuthResultsParts, auth_results_parts, authserv_id};
+pub use headers::{AuthResultsParts, auth_results_parts, authserv_id, is_bidi_control, without_bidi};
 pub use inbound::{ListenerKind, Taken, deliver_fetched, serve, serve_stream};
 pub use outbound::run_queue;
 pub use relay::IpNetwork;

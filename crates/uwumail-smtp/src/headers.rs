@@ -11,7 +11,13 @@ impl RawHeader<'_> {
     pub fn value(&self) -> String {
         let text = String::from_utf8_lossy(self.raw);
         let value = text.split_once(':').map(|(_, v)| v).unwrap_or_default();
-        value.split(['\r', '\n']).map(str::trim).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
+        // Only ASCII whitespace is trimmed at the folds, as the assistant unfolds (client review C6-3).
+        value
+            .split(['\r', '\n'])
+            .map(|line| line.trim_matches(|c: char| c.is_ascii_whitespace()))
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -164,14 +170,28 @@ pub fn authserv_id(value: &str) -> Option<String> {
 /// `victim.example.attacker.example` would otherwise read as the victim's (client review C4-1).
 /// Callers hand in the whole value, never a cut one. The assistant reads our own results with it,
 /// and the strip of forged ones its authserv-id ([`authserv_id`]).
+///
+/// Whether the value was well formed is known once every part was read
+/// ([`AuthResultsParts::well_formed`]): a provider that echoes a sender's unescaped `(`, `)` or
+/// `"` into a comment leaves it unbalanced, and what follows can not be told apart from its own
+/// word (security review 0.22 R5 L-1).
 pub fn auth_results_parts(value: &str) -> AuthResultsParts<'_> {
-    AuthResultsParts { chars: value.chars(), done: false }
+    AuthResultsParts { chars: value.chars(), done: false, malformed: false }
 }
 
 /// See [`auth_results_parts`].
 pub struct AuthResultsParts<'a> {
     chars: std::str::Chars<'a>,
     done: bool,
+    malformed: bool,
+}
+
+impl AuthResultsParts<'_> {
+    /// Whether every comment and quoted string was closed and no `)` stood outside a comment.
+    /// Final only after the last part was read; `false` before that.
+    pub fn well_formed(&self) -> bool {
+        self.done && !self.malformed
+    }
 }
 
 impl Iterator for AuthResultsParts<'_> {
@@ -212,6 +232,9 @@ impl Iterator for AuthResultsParts<'_> {
         loop {
             let Some(c) = self.chars.next() else {
                 self.done = true;
+                if quoted || depth > 0 {
+                    self.malformed = true;
+                }
                 end_word(&mut part, &mut overflow, &mut word, &mut too_long);
                 return Some(if overflow { Vec::new() } else { part });
             };
@@ -237,6 +260,10 @@ impl Iterator for AuthResultsParts<'_> {
             } else {
                 match c {
                     '"' => quoted = true,
+                    ')' => {
+                        self.malformed = true;
+                        end_word(&mut part, &mut overflow, &mut word, &mut too_long);
+                    }
                     '(' => {
                         end_word(&mut part, &mut overflow, &mut word, &mut too_long);
                         depth = 1;
@@ -254,6 +281,18 @@ impl Iterator for AuthResultsParts<'_> {
             }
         }
     }
+}
+
+/// A Unicode bidi control: an embedding, override or isolate (U+202A–U+202E, U+2066–U+2069) or
+/// a direction mark (U+200E, U+200F, U+061C).
+pub fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
+
+/// `text` without bidi controls, so mail text in a detail or quote can not reorder what stands
+/// around it on screen (security review 0.22 webmail WF-2).
+pub fn without_bidi(text: &str) -> String {
+    text.chars().filter(|c| !is_bidi_control(*c)).collect()
 }
 
 /// Turns every CR or LF on its own into CRLF, the only line ending RFC 5322 allows.
@@ -373,6 +412,23 @@ mod tests {
     }
 
     /// Security review 0.22 R3-L1: many parts or a very long word before SPF and DMARC hide neither.
+    /// Security review 0.22 R5 L-1: whether every comment and quote was closed.
+    #[test]
+    fn well_formed_is_known_after_the_last_part() {
+        let read = |value: &str| {
+            let mut parts = auth_results_parts(value);
+            assert!(!parts.well_formed(), "not known before the end");
+            parts.by_ref().for_each(drop);
+            parts.well_formed()
+        };
+        assert!(read("mx.example.org; spf=pass (ok (nested) \\) \"q;\") smtp.mailfrom=\"a;b\"@a.example; dmarc=pass"));
+        assert!(read(""));
+        assert!(!read("mx.example.org; spf=pass (open"));
+        assert!(!read("mx.example.org; spf=pass (a (b) c"));
+        assert!(!read("mx.example.org; spf=pass smtp.mailfrom=\"open"));
+        assert!(!read("mx.example.org; spf=pass (of \"a)b\"@x.example) x; dmarc=fail"));
+    }
+
     /// Security review 0.22 R4 I-2: only ASCII whitespace ends a word.
     #[test]
     fn unicode_spaces_do_not_split_a_word() {

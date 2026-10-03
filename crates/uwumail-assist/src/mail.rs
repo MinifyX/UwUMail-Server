@@ -183,8 +183,16 @@ fn header_block_ends(raw: &[u8]) -> bool {
     raw.windows(4).any(|w| w == b"\r\n\r\n") || raw.windows(2).any(|w| w == b"\n\n")
 }
 
+/// One line out of a folded value. Only ASCII whitespace is trimmed at the folds, as by
+/// `uwumail_smtp::headers::RawHeader::value`, so a no-break space at a fold stays in its word
+/// (client review C6-3).
 fn unfold(value: &str) -> String {
-    value.split(['\r', '\n']).map(str::trim).filter(|line| !line.is_empty()).collect::<Vec<_>>().join(" ")
+    value
+        .split(['\r', '\n'])
+        .map(|line| line.trim_matches(|c: char| c.is_ascii_whitespace()))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// At most `max` characters, with a mark where it was cut.

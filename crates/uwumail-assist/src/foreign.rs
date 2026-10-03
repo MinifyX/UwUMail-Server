@@ -158,11 +158,11 @@ pub fn foreign_mails(value: &Value, count: std::ops::RangeInclusive<usize>) -> R
                     let value = string(header, &here, "value", max)?.unwrap_or_default();
                     let value = value
                         .split(['\r', '\n'])
-                        .map(str::trim)
+                        .map(|line| line.trim_matches(|c: char| c.is_ascii_whitespace()))
                         .filter(|line| !line.is_empty())
                         .collect::<Vec<_>>()
                         .join(" ");
-                    headers.push((name.trim().to_owned(), value.trim().to_owned()));
+                    headers.push((name.trim().to_owned(), value.to_owned()));
                 }
                 headers
             }

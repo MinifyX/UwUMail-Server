@@ -1522,8 +1522,8 @@ pub fn authentication(
     let from_domain = from
         .first()
         .and_then(|address| address.email.rsplit_once('@'))
-        .map(|(_, domain)| domain.trim().to_ascii_lowercase())
-        .filter(|domain| !domain.is_empty());
+        .map(|(_, domain)| domain.trim_matches(|c: char| c.is_ascii_whitespace()).to_ascii_lowercase())
+        .filter(|domain| !domain.is_empty() && !domain.chars().any(char::is_whitespace));
     let mut signals = AuthenticationSignals { from_domain, ..AuthenticationSignals::default() };
     // The authserv-id is read exactly as the strip of forged results reads it (security review
     // 0.22 R3-L2).
@@ -1535,9 +1535,12 @@ pub fn authentication(
     });
     let Some((_, value)) = ours else { return signals };
     // Every part is read, however many DKIM results stand before SPF and DMARC; only what is kept
-    // of the DKIM ones is capped (security review 0.22 R3-L1).
-    let (mut first_dkim, mut dkim_passed) = (None, false);
-    for part in uwumail_smtp::auth_results_parts(value).skip(1) {
+    // of the DKIM ones is capped (security review 0.22 R3-L1). A method named twice keeps its worse
+    // result, so a result smuggled in through a provider's comment can not outvote the real one
+    // (R5 L-1).
+    let (mut first_dkim, mut dkim_passed, mut dkim_unattributed_fail) = (None, false, false);
+    let mut parts = uwumail_smtp::auth_results_parts(value);
+    for part in parts.by_ref().skip(1) {
         let Some((method, result)) = part.first().and_then(|first| first.split_once('=')) else { continue };
         let result: String =
             result.chars().filter(|c| c.is_ascii_alphanumeric()).take(20).collect::<String>().to_ascii_lowercase();
@@ -1551,31 +1554,55 @@ pub fn authentication(
             })
         };
         match method.to_ascii_lowercase().as_str() {
-            "spf" if signals.spf.is_none() => {
-                if result == "pass" {
-                    signals.spf_pass_domain = property("smtp.mailfrom").and_then(domain_part);
-                }
+            "spf" if signals.spf.as_deref().is_none_or(|known| badness(&result) > badness(known)) => {
+                signals.spf_pass_domain =
+                    if result == "pass" { property("smtp.mailfrom").and_then(domain_part) } else { None };
                 signals.spf = Some(result);
             }
-            "dmarc" if signals.dmarc.is_none() => signals.dmarc = Some(result),
+            "dmarc" if signals.dmarc.as_deref().is_none_or(|known| badness(&result) > badness(known)) => {
+                signals.dmarc = Some(result);
+            }
             "dkim" => {
+                let signer = property("header.d").or_else(|| property("header.i")).and_then(domain_part);
                 if result == "pass" {
                     dkim_passed = true;
                     if signals.dkim_pass_domains.len() < MAX_DKIM_PASS_DOMAINS
-                        && let Some(domain) =
-                            property("header.d").or_else(|| property("header.i")).and_then(domain_part)
+                        && let Some(domain) = signer
                         && !signals.dkim_pass_domains.contains(&domain)
                     {
                         signals.dkim_pass_domains.push(domain);
                     }
+                } else if signer.is_none() && badness(&result) == 2 {
+                    dkim_unattributed_fail = true;
                 }
                 first_dkim.get_or_insert(result);
             }
             _ => {}
         }
     }
-    signals.dkim = if dkim_passed { Some("pass".into()) } else { first_dkim };
+    // An unclosed comment or quote, or a stray `)`: what was read may be a sender's text that a
+    // provider echoed, so nothing of it is believed (R5 L-1).
+    if !parts.well_formed() {
+        return AuthenticationSignals { from_domain: signals.from_domain, ..AuthenticationSignals::default() };
+    }
+    // A failed DKIM result that names no signer can not be told apart from the passing one; for
+    // another server's results it outweighs them (R5 L-1). Our own results are read as written.
+    if dkim_unattributed_fail && hostname.is_none() {
+        signals.dkim = Some("fail".into());
+        signals.dkim_pass_domains.clear();
+    } else {
+        signals.dkim = if dkim_passed { Some("pass".into()) } else { first_dkim };
+    }
     signals
+}
+
+/// How bad an `Authentication-Results` result is: a pass 0, a failure 2, anything else 1.
+fn badness(result: &str) -> u8 {
+    match result {
+        "pass" => 0,
+        "fail" | "permerror" | "hardfail" => 2,
+        _ => 1,
+    }
 }
 
 /// The most DKIM signers kept from one `Authentication-Results`.
@@ -1583,9 +1610,20 @@ const MAX_DKIM_PASS_DOMAINS: usize = 16;
 
 /// The domain of an `Authentication-Results` value: `header.d=signer.example`, the part after the
 /// last `@` of `smtp.mailfrom=user@envelope.example` or `header.i=@signer.example`.
+///
+/// Only ASCII whitespace is trimmed, and a domain with any whitespace left in it is none: a
+/// no-break space at a fold point must not split `victim.example` off
+/// `victim.example<U+00A0>x.example` (client review C6-3, checked on the server).
 fn domain_part(value: &str) -> Option<String> {
-    let domain = value.rsplit('@').next().unwrap_or(value).trim().trim_end_matches('.').to_ascii_lowercase();
-    (!domain.is_empty() && domain.len() <= 253 && domain.contains('.')).then_some(domain)
+    let domain = value
+        .rsplit('@')
+        .next()
+        .unwrap_or(value)
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    (!domain.is_empty() && domain.len() <= 253 && domain.contains('.') && !domain.chars().any(char::is_whitespace))
+        .then_some(domain)
 }
 
 /// The headers of an own mail in which this server's verdicts may stand: all of them when its SMTP
@@ -2093,6 +2131,51 @@ mod tests {
     }
 
     /// Security review 0.22 R3-L1: junk DKIM signatures before SPF and DMARC do not hide them.
+    /// Security review 0.22 R5 L-1: another server's results, steered by text it echoed.
+    #[test]
+    fn foreign_results_are_read_strictly() {
+        let from = [uwumail_store::EmailAddress { name: None, email: "service@victim.example".into() }];
+        let read =
+            |value: &str| authentication(&[("Authentication-Results".to_owned(), value.to_owned())], None, &from);
+        // Unbalanced: nothing is believed.
+        let auth = read(
+            "mx.example.net; spf=fail (domain of \"a)b;dmarc=pass\"@victim.example) smtp.mailfrom=victim.example; dmarc=fail",
+        );
+        assert!(auth.spf.is_none() && auth.dmarc.is_none() && auth.dkim.is_none(), "{auth:?}");
+        assert_eq!(auth.from_domain.as_deref(), Some("victim.example"));
+        // Balanced again: the worse result wins, and a failed DKIM without a signer outweighs a pass.
+        let auth = read(
+            "mx.example.net; spf=fail (domain of \"a);dmarc=pass;dkim=pass header.d=victim.example;x=(\"@victim.example) smtp.mailfrom=victim.example; dkim=fail; dmarc=fail",
+        );
+        assert_eq!(auth.dmarc.as_deref(), Some("fail"), "{auth:?}");
+        assert_eq!(auth.dkim.as_deref(), Some("fail"), "{auth:?}");
+        assert!(auth.dkim_pass_domains.is_empty() && !crate::spam::authentic(&auth), "{auth:?}");
+        let auth =
+            read("mx.example.net; spf=pass smtp.mailfrom=victim.example; spf=softfail smtp.mailfrom=victim.example");
+        assert_eq!((auth.spf.as_deref(), auth.spf_pass_domain.as_deref()), (Some("softfail"), None));
+        // A Unicode space keeps a signer whole, also at a fold, and a domain with one is none
+        // (client C6-3).
+        for space in ['\u{a0}', '\u{2002}'] {
+            let auth = read(&format!("mx.example.net; dkim=pass header.d=victim.example{space}x.attacker.example"));
+            assert!(auth.dkim_pass_domains.is_empty(), "{auth:?}");
+            let auth = read(&format!("mx.example.net; dkim=pass header.d={space}victim.example{space}"));
+            assert!(auth.dkim_pass_domains.is_empty() && !crate::spam::authentic(&auth), "{auth:?}");
+            let raw = format!(
+                "Authentication-Results: mx.example.net; dkim=pass header.d=victim.example{space}\r\n x.attacker.example\r\n\
+                 From: <service@victim.example>\r\nSubject: Hi\r\n\r\nText\r\n"
+            );
+            let mail = crate::mail::MailText::parse(raw.as_bytes(), 100);
+            let auth = authentication(&mail.headers, None, &from);
+            assert!(auth.dkim_pass_domains.is_empty(), "{auth:?}");
+        }
+        assert_eq!(domain_part(" victim.example.\t").as_deref(), Some("victim.example"));
+        // Different signers side by side stay as they are.
+        let auth =
+            read("mx.example.net; dkim=fail header.d=old.example; dkim=pass header.d=victim.example; dmarc=pass");
+        assert_eq!(auth.dkim.as_deref(), Some("pass"));
+        assert!(crate::spam::authentic(&auth), "{auth:?}");
+    }
+
     #[test]
     fn many_dkim_results_hide_neither_spf_nor_dmarc() {
         let mut results = String::from("mx.example.org");
