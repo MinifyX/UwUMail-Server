@@ -161,7 +161,7 @@ impl Assist {
         let mut effective = None;
         if !asked.is_empty() {
             let asked_labels: Vec<&AssistLabel> = stored.iter().filter(|l| asked.contains(&l.id)).collect();
-            match self.ask_labels(account, &asked_labels, &mail_text, &facts, &candidates).await {
+            match self.ask_labels(account, &asked_labels, &mail_text, &facts, &candidates, prefs.auto_labels).await {
                 Ok((verdicts, used)) => {
                     from_model = ai_candidates(&labels, &facts, &asked, &verdicts, &candidates);
                     effective = Some(used);
@@ -194,6 +194,7 @@ impl Assist {
         mail: &MailText,
         facts: &Facts,
         candidates: &[Decision],
+        with_shots: bool,
     ) -> Result<(Vec<AiVerdict>, crate::Effective)> {
         let ticket =
             self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS_PER_LABEL * asked.len() as i64);
@@ -208,10 +209,9 @@ impl Assist {
                 Some((name.to_string(), format!("{}{sure}", candidate.reason)))
             })
             .collect();
-        let shots: Vec<PromptShot> = self
-            .store()
-            .label_shots(account.id)
-            .await?
+        // The person's corrections only while they have AI labels on (security review LABELS22-L3).
+        let stored_shots = if with_shots { self.store().label_shots(account.id).await? } else { Vec::new() };
+        let shots: Vec<PromptShot> = stored_shots
             .into_iter()
             .filter_map(|shot| {
                 Some(PromptShot {

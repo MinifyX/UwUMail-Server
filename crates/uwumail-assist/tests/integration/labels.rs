@@ -399,6 +399,27 @@ Authentication-Results: mx.example.org; spf=pass smtp.mailfrom=example.com; dkim
     assert!(known_line(&rig, 1).ends_with("yes"), "{}", known_line(&rig, 1));
 }
 
+/// Security review 0.22 LABELS22-L3: corrections kept as examples carry no codes or links, and
+/// they go when AI labels are switched off.
+#[tokio::test]
+async fn correction_examples_hide_codes_and_go_with_ai_labels() {
+    let (rig, _, _) = labelled_rig().await;
+    let raw = "From: Konto <noreply@bank.example>\nTo: Mia <mia@example.org>\nSubject: Dein Code 482913\n\
+Date: Mon, 28 Sep 2026 10:00:00 +0000\nMessage-ID: <code-1@bank.example>\n\n\
+Dein Einmalcode lautet 482 913. Oder klick https://login.bank.example/reset?t=abc\n";
+    let email = rig.deliver(&rig.mia, raw).await;
+    rig.store.update_emails(rig.mia.id, vec![keyword(email, "rechnungen", true)]).await.unwrap();
+    let shots = rig.store.label_shots(rig.mia.id).await.unwrap();
+    assert_eq!(shots.len(), 1);
+    assert_eq!(shots[0].subject, "Dein Code ######");
+    assert!(!shots[0].snippet.contains("482") && !shots[0].snippet.contains("https"), "{}", shots[0].snippet);
+    assert!(shots[0].snippet.contains("### ###") && shots[0].snippet.contains("[link]"), "{}", shots[0].snippet);
+
+    let off = SettingsPatch { auto_labels: Some(false), ..SettingsPatch::default() };
+    rig.assist.set_settings(&rig.mia, off).await.unwrap();
+    assert!(rig.store.label_shots(rig.mia.id).await.unwrap().is_empty(), "gone with AI labels");
+}
+
 #[tokio::test]
 async fn a_label_taken_off_a_senders_mail_is_not_asked_about_again() {
     let (rig, _, _) = labelled_rig().await;

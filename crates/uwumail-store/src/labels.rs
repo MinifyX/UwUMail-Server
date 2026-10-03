@@ -344,6 +344,49 @@ pub const MAX_SHOTS_NEGATIVE: i64 = 3;
 const SHOT_SUBJECT_CHARS: usize = 120;
 const SHOT_SNIPPET_CHARS: usize = 200;
 
+/// A text for a correction example with what could be a code, a number of an account or a link
+/// taken out: runs of four digits or more (spaces and hyphens inside a run count with it) become
+/// `#`, and web addresses `[link]` (security review 0.22 LABELS22-L3). What kind of mail it was
+/// stays readable.
+fn masked(text: &str) -> String {
+    let words: Vec<String> = text
+        .split_whitespace()
+        .map(|word| {
+            let lower = word.to_lowercase();
+            if lower.contains("://") || lower.starts_with("www.") { "[link]".to_owned() } else { word.to_owned() }
+        })
+        .collect();
+    let text = words.join(" ");
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while at < chars.len() {
+        if !chars[at].is_ascii_digit() {
+            out.push(chars[at]);
+            at += 1;
+            continue;
+        }
+        // A run: digits, with single spaces or hyphens between them.
+        let mut end = at;
+        let mut digits = 0;
+        while end < chars.len() {
+            if chars[end].is_ascii_digit() {
+                digits += 1;
+                end += 1;
+            } else if matches!(chars[end], ' ' | '-') && chars.get(end + 1).is_some_and(char::is_ascii_digit) {
+                end += 1;
+            } else {
+                break;
+            }
+        }
+        for c in &chars[at..end] {
+            out.push(if digits >= 4 && c.is_ascii_digit() { '#' } else { *c });
+        }
+        at = end;
+    }
+    out
+}
+
 fn cut(text: &str, max: usize) -> String {
     let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     match text.char_indices().nth(max) {
@@ -379,8 +422,8 @@ fn keep_shot(
             email_id,
             positive,
             cut(domain, 100),
-            cut(&subject, SHOT_SUBJECT_CHARS),
-            cut(&preview, SHOT_SNIPPET_CHARS),
+            cut(&masked(&subject), SHOT_SUBJECT_CHARS),
+            cut(&masked(&preview), SHOT_SNIPPET_CHARS),
             now()
         ],
     )?;

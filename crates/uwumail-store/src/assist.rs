@@ -580,6 +580,7 @@ pub(crate) fn bump_prefs(tx: &Connection, account_id: i64) -> Result<()> {
 pub(crate) fn stop_personal_assist(tx: &Connection, account_id: i64) -> Result<()> {
     let providers = tx.execute("DELETE FROM assist_providers WHERE account_id = ?1", [account_id])?;
     tx.execute("DELETE FROM assist_label_queue WHERE account_id = ?1", [account_id])?;
+    tx.execute("DELETE FROM label_shots WHERE account_id = ?1", [account_id])?;
     let prefs = tx.execute(
         "UPDATE assist_prefs SET choices = '{}', auto_labels = 0 WHERE account_id = ?1 AND (choices <> '{}' OR auto_labels)",
         [account_id],
@@ -856,6 +857,9 @@ impl Store {
             )?;
             if !auto_labels {
                 tx.execute("DELETE FROM assist_label_queue WHERE account_id = ?1", [account_id])?;
+                // The corrections kept as examples for the model go too: nothing is sent with AI
+                // labels off, and nothing of other mails is kept for it (security review LABELS22-L3).
+                tx.execute("DELETE FROM label_shots WHERE account_id = ?1", [account_id])?;
             }
             Ok(tx.query_row("SELECT modseq FROM assist_prefs WHERE account_id = ?1", [account_id], |row| row.get(0))?)
         })

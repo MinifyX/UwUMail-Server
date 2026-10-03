@@ -156,6 +156,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - **An adopted label keeps your own description (LABELS22-L2).** A label of yours that becomes a
   base label because of its name keeps the description you had written as `previousDescription`
   (migration 0073, shown in `AssistLabel/get`); the model gets it as a hint next to the definition.
+- **Correction examples without codes, and gone with AI labels (LABELS22-L3).** Examples kept from
+  hand-labelings mask runs of four digits or more and web addresses, are only sent while AI labels
+  are on, and are deleted when AI labels are switched off.
 
 ## 0.21.2
 

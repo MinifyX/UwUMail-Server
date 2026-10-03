@@ -348,7 +348,10 @@ answers that put four labels on one mail.
 Each label put on or taken off by hand (while AI labels are on) is kept as an example for the
 model: the sender's domain (never the address), the subject (at most 120 characters) and the start of the text (at most
 200), the newest 4 positive and 3 negative per label. The prompt shows those of the labels asked
-about, at most 12. They go with the label and the mail.
+about, at most 12. They go with the label and the mail. Runs of four digits or more (codes, account
+and order numbers) are kept as `#` and web addresses as `[link]`. The examples are sent to the
+model along with other mails, so they are only sent while AI labels are on, and all of them are
+deleted when the person switches AI labels off.
 
 ## Overlapping labels
 
