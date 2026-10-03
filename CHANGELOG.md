@@ -212,6 +212,19 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   Correction examples also mask codes of letters and digits (`AB7-K2X`), and a mail with a one-time
   code keeps no example.
 
+### Security (review round 3, spam and labels)
+
+- **`Authentication-Results` read whole and one way (R3-L1, R3-L2, client C4-1).** The parser is
+  shared by the strip of forged results and the assistant (`uwumail_smtp::auth_results_parts`,
+  `authserv_id`), reads every part however many DKIM results come first, and never keeps a word or
+  part a limit cut: a signer `victim.example.<own domain>` can no longer read as the victim's. A
+  stored message cut for parsing inside its header block leaves the cut header out.
+- **Warnings stay warnings (R3-L3).** "Unverified", "not trustworthy", "kein verifizierter
+  Absender" and other negated praise no longer count as calling the sender verified, so the AI spam
+  check keeps such reasons.
+- **No startup rewrite of every mail (R3 I-2).** Migration 0074 now adds `smtp_delivered` with a
+  default instead of updating every row. Correction examples mask digits of any script.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with
