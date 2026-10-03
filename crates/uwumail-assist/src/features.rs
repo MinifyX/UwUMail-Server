@@ -942,13 +942,21 @@ impl Assist {
         language: Option<&str>,
     ) -> Result<SpamCheckPrompt> {
         let raw = self.store().blob(&record.blob).await?;
-        let mail = MailText::read(record, &raw, MAX_MAIL_CHARS);
         let (domains, contacts) = self.contact_domains(account).await?;
+        // Parsing and the phishing checks read a whole message the sender wrote: off the async
+        // runtime, so one large or crafted mail does not hold up others (security review SPAM-4).
+        let owned = record.clone();
+        let hostname = self.hostname().to_owned();
+        let (mail, phishing, attachments) = tokio::task::spawn_blocking(move || {
+            let mail = MailText::read(&owned, &raw, MAX_MAIL_CHARS);
+            let auth = authentication(&mail.headers, Some(&hostname), &owned.from);
+            let phishing = uwumail_smtp::phishing::check_message(&raw, &domains, crate::spam::authentic(&auth));
+            (mail, phishing, record_attachments(&raw))
+        })
+        .await
+        .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))?;
         let signals = self.spam_signals(account, record, &mail, &contacts).await?;
-        let authentic = crate::spam::authentic(&signals.authentication);
-        let phishing = uwumail_smtp::phishing::check_message(&raw, &domains, authentic);
-        let shape =
-            crate::spam::MailShape { has_links: !mail.links.is_empty(), attachments: Some(record_attachments(&raw)) };
+        let shape = crate::spam::MailShape { has_links: !mail.links.is_empty(), attachments: Some(attachments) };
         Ok(spam_check_prompt(mail, signals, &phishing, shape, language))
     }
 
@@ -960,7 +968,11 @@ impl Assist {
         language: Option<&str>,
     ) -> Result<SpamCheckPrompt> {
         let (domains, _) = self.contact_domains(account).await?;
-        Ok(foreign_spam_check_prompt(foreign, &domains, language))
+        let foreign = foreign.clone();
+        let language = language.map(str::to_owned);
+        tokio::task::spawn_blocking(move || foreign_spam_check_prompt(&foreign, &domains, language.as_deref()))
+            .await
+            .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))
     }
 
     /// The text of a mail's pictures for a prompt. With [`PictureRead::KnownOnly`], a picture that
@@ -1342,8 +1354,12 @@ fn foreign_spam_check_prompt(
 
 /// How many attachments a stored message has.
 fn record_attachments(raw: &[u8]) -> usize {
-    mail_parser::MessageParser::default().parse(raw).map_or(0, |message| message.attachments().count())
+    let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
+    uwumail_store::mime_limits::parse_message(raw).map_or(0, |message| message.attachments().count())
 }
+
+/// A message is parsed for its attachments up to this size, like the phishing checks.
+const MAX_PARSE_BYTES: usize = 25 * 1024 * 1024;
 
 /// A label `AssistLabel/suggest` asks about: one of the person's, or of another account.
 struct SuggestLabel {
@@ -2029,6 +2045,24 @@ mod tests {
         let codes: Vec<&str> = check.assessment.evidence.iter().map(|evidence| evidence.code.as_str()).collect();
         assert!(codes.contains(&"BRAND_IN_FROM_NAME") && codes.contains(&"CREDENTIAL_REQUEST"), "{codes:?}");
         assert!(!check.assessment.allowed.contains(&"legitimate"), "{:?}", check.assessment);
+    }
+
+    /// Security review 0.22 SPAM-4: a client-supplied megabyte name and subject, and the most contact
+    /// domains, stay cheap. Generous limit for loaded machines; uncapped this took many seconds.
+    #[test]
+    fn huge_foreign_fields_are_cheap() {
+        let huge = "PayPal Service Konto ".repeat(50_000);
+        let foreign = ForeignMail {
+            from: vec![uwumail_store::EmailAddress { name: Some(huge.clone()), email: "a@konto-hilfe.example".into() }],
+            subject: huge.clone(),
+            text: "Bitte bestätigen Sie Ihre Daten: https://konto-check.example/login".into(),
+            ..ForeignMail::default()
+        };
+        let contacts: Vec<String> = (0..MAX_CONTACT_DOMAINS).map(|i| format!("partner-firma-{i}.example")).collect();
+        let started = std::time::Instant::now();
+        let check = foreign_spam_check_prompt(&foreign, &contacts, None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
+        assert!(check.assessment.evidence.iter().any(|evidence| evidence.code == "BRAND_IN_FROM_NAME"));
     }
 
     fn label(id: i64, name: &str) -> AssistLabel {

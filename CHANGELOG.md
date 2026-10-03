@@ -122,6 +122,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   own site and leads elsewhere is a harmless tracking link only when DMARC vouches for the From
   domain; from a spoofable domain it counts as `PHISHING_LINK_TEXT` (+3) again, in the filter and
   in the AI spam check.
+- **Phishing checks stay cheap on hostile headers (SPAM-4).** The display name (256 characters),
+  subject and text are capped inside the checks, host names longer than DNS allows are skipped,
+  brand names are split into words once, at most 2,000 contact domains are compared, and the AI
+  spam check parses the mail and runs the checks off the async runtime.
 
 ## 0.21.2
 

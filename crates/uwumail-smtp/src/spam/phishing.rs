@@ -284,6 +284,20 @@ impl SeenLink {
 
 /// Runs every check. Each rule counts once.
 pub fn check(input: &Input<'_>) -> Vec<Finding> {
+    // Header fields are not length-limited on the way in: cap what the word and lookalike
+    // matching sees, whoever calls (security review 0.22 SPAM-4).
+    let from_name = input.from_name.map(|name| clip(name, MAX_NAME_CHARS));
+    let subject = clip(input.subject, MAX_SUBJECT_CHARS);
+    let text = clip(input.text, MAX_TEXT);
+    let contact_domains: Vec<&str> = input
+        .contact_domains
+        .iter()
+        .map(String::as_str)
+        .filter(|domain| valid_domain(domain))
+        .take(MAX_CONTACT_DOMAINS)
+        .collect();
+    let input = Input { from_name, subject, text, ..input.clone() };
+    let input = &input;
     let mut found = Vec::new();
     let from_domain = input.from_address.and_then(domain_of);
     let from_site = from_domain.as_deref().map(site);
@@ -307,7 +321,7 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
                     ),
                 }
             }
-            if let Some(contact) = imitated_contact(from_site, input.contact_domains) {
+            if let Some(contact) = imitated_contact(from_site, &contact_domains) {
                 push(&mut found, "LOOKALIKE_CONTACT_FROM", 4.0, format!("{from_site} looks like {contact}"));
             }
         }
@@ -342,6 +356,9 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
             }
             continue;
         };
+        if !valid_domain(host) {
+            continue;
+        }
         let target_site = site(host);
         if own_brand(&target_site).is_none()
             && from_site.as_deref() != Some(target_site.as_str())
@@ -349,14 +366,14 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
         {
             push(&mut found, "LOOKALIKE_BRAND_LINK", 3.0, format!("{target_site} looks like {}", brand.names[0]));
         }
-        if let Some(named) = &link.named {
+        if let Some(named) = link.named.as_deref().filter(|named| valid_domain(named)) {
             let named_site = site(named);
             // A link whose text is a brand's address and leads elsewhere is the classic trick, whoever
             // sent it. Its text naming the sender's own site is what every tracking link of a
             // newsletter does, and says little by itself — when the sender is who it claims to be
             // (security review 0.22 SPAM-3).
             if named_site != target_site && !same_brand(&named_site, &target_site) {
-                if own_brand(&named_site).is_some() || input.contact_domains.iter().any(|d| site(d) == named_site) {
+                if own_brand(&named_site).is_some() || contact_domains.iter().any(|d| site(d) == named_site) {
                     push(&mut found, "BRAND_LINK_TEXT", 3.0, format!("{named} -> {target_site}"));
                 } else if input.from_authenticated && from_site.as_deref() == Some(named_site.as_str()) {
                     push(&mut found, "TRACKED_LINK_TEXT", 0.0, format!("{named} -> {target_site}"));
@@ -526,8 +543,38 @@ fn one_line(text: &str) -> String {
 /// The domain of an address, lower case, without a trailing dot.
 pub fn domain_of(address: &str) -> Option<String> {
     let (_, domain) = address.trim().trim_matches(['<', '>']).rsplit_once('@')?;
-    let domain = domain.trim().trim_end_matches('.').to_ascii_lowercase();
-    (domain.contains('.') && !domain.is_empty()).then_some(domain)
+    let domain = domain.trim().trim_end_matches('.');
+    if !valid_domain(domain) {
+        return None;
+    }
+    let domain = domain.to_ascii_lowercase();
+    domain.contains('.').then_some(domain)
+}
+
+/// The longest From display name the checks read, in characters.
+const MAX_NAME_CHARS: usize = 256;
+/// The longest subject the checks read, in characters.
+const MAX_SUBJECT_CHARS: usize = 1000;
+/// At most this many contact domains are compared with the sender's.
+pub const MAX_CONTACT_DOMAINS: usize = 2000;
+
+/// Whether a name can be a DNS domain at all: at most 253 bytes, labels of 1 to 63. Anything
+/// longer is no real host and only costs time in the lookalike matching.
+fn valid_domain(domain: &str) -> bool {
+    let domain = domain.strip_suffix('.').unwrap_or(domain);
+    !domain.is_empty() && domain.len() <= 253 && domain.split('.').all(|label| !label.is_empty() && label.len() <= 63)
+}
+
+/// The first `max` bytes' worth of a text, cut at a character boundary.
+fn clip(text: &str, max: usize) -> &str {
+    if text.len() <= max {
+        return text;
+    }
+    let mut cut = max;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    &text[..cut]
 }
 
 /// The first label of a site and its ending: `("paypal", "co.uk")`.
@@ -550,7 +597,10 @@ fn own_brand_by(site: &str) -> Option<(&'static Brand, bool)> {
         }
         let prefixed = brand.own_prefix
             && PREFIX_ENDINGS.contains(&ending)
-            && brand.labels.iter().any(|own| label.strip_prefix(own).is_some_and(|rest| rest.len() > 1 && rest.starts_with('-')));
+            && brand
+                .labels
+                .iter()
+                .any(|own| label.strip_prefix(own).is_some_and(|rest| rest.len() > 1 && rest.starts_with('-')));
         prefixed.then_some((brand, true))
     })
 }
@@ -621,7 +671,7 @@ fn carries(skeleton: &str, own: &str, brand: &Brand) -> bool {
 
 /// Which contact's domain a site imitates: one letter off, or spelled to look like it, but not the
 /// same name under another ending (which is usually the same company).
-fn imitated_contact(site: &str, contacts: &[String]) -> Option<String> {
+fn imitated_contact(site: &str, contacts: &[&str]) -> Option<String> {
     let (label, _) = label_and_ending(site);
     let seen = skeleton(&unicode_label(label));
     contacts.iter().map(|domain| self::site(domain)).find(|contact| {
@@ -733,10 +783,16 @@ fn words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether `name` (one or more words) stands in `words` at `at`.
-fn name_at(words: &[String], at: usize, name: &str) -> Option<usize> {
-    let parts = self::words(name);
-    (words.len() >= at + parts.len() && words[at..at + parts.len()] == parts[..]).then_some(parts.len())
+/// Whether `parts` (a name's words) stand in `words` at `at`.
+fn name_at(words: &[String], at: usize, parts: &[String]) -> Option<usize> {
+    (!parts.is_empty() && words.len() >= at + parts.len() && words[at..at + parts.len()] == parts[..])
+        .then_some(parts.len())
+}
+
+/// Each brand's names as words, split once ([`BRANDS`] order).
+fn brand_words() -> &'static [Vec<Vec<String>>] {
+    static WORDS: std::sync::OnceLock<Vec<Vec<Vec<String>>>> = std::sync::OnceLock::new();
+    WORDS.get_or_init(|| BRANDS.iter().map(|brand| brand.names.iter().map(|name| words(name)).collect()).collect())
 }
 
 /// The brand a display name claims to be.
@@ -745,27 +801,29 @@ fn brand_in_name(name: &str) -> Option<&'static Brand> {
     if words.is_empty() {
         return None;
     }
-    BRANDS.iter().find(|brand| {
-        brand.names.iter().any(|candidate| {
-            (0..words.len()).any(|at| {
-                let Some(len) = name_at(&words, at, candidate) else { return false };
-                if brand.distinct {
-                    return true;
-                }
-                // An ordinary word only as the whole name, or with a service word around it.
-                at == 0 && words[len..].iter().all(|word| SERVICE_WORDS.contains(&word.as_str()))
+    BRANDS.iter().zip(brand_words()).find_map(|(brand, names)| {
+        names
+            .iter()
+            .any(|parts| {
+                (0..words.len()).any(|at| {
+                    let Some(len) = name_at(&words, at, parts) else { return false };
+                    if brand.distinct {
+                        return true;
+                    }
+                    // An ordinary word only as the whole name, or with a service word around it.
+                    at == 0 && words[len..].iter().all(|word| SERVICE_WORDS.contains(&word.as_str()))
+                })
             })
-        })
+            .then_some(brand)
     })
 }
 
 /// A distinctive brand named in a (lower case) text.
 fn brand_in_text(text: &str) -> Option<&'static Brand> {
     let words = words(text);
-    BRANDS
-        .iter()
-        .filter(|brand| brand.distinct)
-        .find(|brand| brand.names.iter().any(|name| (0..words.len()).any(|at| name_at(&words, at, name).is_some())))
+    BRANDS.iter().zip(brand_words()).filter(|(brand, _)| brand.distinct).find_map(|(brand, names)| {
+        names.iter().any(|parts| (0..words.len()).any(|at| name_at(&words, at, parts).is_some())).then_some(brand)
+    })
 }
 
 /// The first phrase in a (lower case) text that asks for a login or data.
@@ -1041,5 +1099,35 @@ mod tests {
         };
         let _ = check(&input);
         let _ = check_message(b"\xff\xfe garbage", &[], false);
+    }
+
+    /// Security review 0.22 SPAM-4: a megabyte display name, subject or host costs next to nothing.
+    /// The limit is generous so a loaded machine still passes; uncapped this took seconds.
+    #[test]
+    fn huge_header_fields_are_cheap() {
+        let name = "PayPal Apple Steam Service ".repeat(40_000);
+        let label = "netfllx-".repeat(250_000);
+        let host = format!("{label}.example");
+        let long_address = format!("a@{host}");
+        let contacts: Vec<String> = (0..5000).map(|i| format!("firma{i}-{}.example", "x".repeat(50))).collect();
+        let links: Vec<SeenLink> = (0..200).map(|_| link(Some(&host), &host)).collect();
+        let started = std::time::Instant::now();
+        let input = Input {
+            from_name: Some(&name),
+            from_address: Some("a@paypa1-konto.example"),
+            reply_to: Some(&long_address),
+            subject: &name,
+            text: &name,
+            links,
+            contact_domains: &contacts,
+            ..Input::default()
+        };
+        let found = check(&input);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+        // The capped name still names the brand; the overlong host is no domain at all.
+        assert!(found.iter().any(|finding| finding.rule == "BRAND_IN_FROM_NAME"), "{found:?}");
+        assert!(domain_of(&long_address).is_none());
+        assert!(!valid_domain(&format!("{}.example", "a".repeat(64))));
+        assert!(valid_domain(&format!("{}.example", "a".repeat(63))));
     }
 }
