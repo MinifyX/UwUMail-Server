@@ -5,7 +5,10 @@
 //! Only the message's own text is touched: the plain text and the HTML part of the body, both
 //! parts of a `multipart/alternative`, the first part of a `multipart/mixed` or `related` (the
 //! body before the attachments). A changed part is written anew as UTF-8, `7bit` when it is plain
-//! ASCII with short lines, else quoted-printable; every other byte of the message stays as it was.
+//! ASCII with short lines, else quoted-printable, and base64 when a line starts with `--` (so no
+//! text can ever end up as a boundary of an enclosing multipart); every other byte of the message
+//! stays as it was. The result must parse into the same MIME structure, else the message is sent
+//! without the footer.
 //! Signed or encrypted mail (S/MIME, PGP/MIME, inline PGP) is left alone: a footer would break the
 //! signature or end up outside the encryption. A part that already carries the footer gets it no
 //! second time.
@@ -192,6 +195,37 @@ fn quoted_printable(text: &str) -> String {
     out
 }
 
+/// Base64 (RFC 2045, 6.8) in lines of 76 characters with CRLF; its alphabet has no `-`, so no line
+/// can look like a boundary.
+fn base64_lines(text: &str) -> String {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+    let mut out = String::with_capacity(encoded.len() + encoded.len() / 38 + 2);
+    for chunk in encoded.as_bytes().chunks(76) {
+        // The alphabet is ASCII.
+        out.push_str(std::str::from_utf8(chunk).unwrap_or_default());
+        out.push_str("\r\n");
+    }
+    out
+}
+
+/// The MIME structure of a message as far as it matters here: every part's type, whether it is an
+/// attachment and how many children it has.
+fn shape(message: &Message<'_>) -> Vec<(String, String, bool, usize)> {
+    (0..message.parts.len())
+        .map(|part| {
+            let (ctype, subtype) = content_type(message, part);
+            let mime = &message.parts[part];
+            let attachment = mime.content_disposition().is_some_and(|d| d.is_attachment());
+            let children = match &mime.body {
+                PartType::Multipart(children) => children.len(),
+                _ => 0,
+            };
+            (ctype, subtype, attachment, children)
+        })
+        .collect()
+}
+
 /// The part's new header block: everything it had but its type and encoding, then those anew.
 fn part_headers(original: &[u8], kind: Kind, format: Option<&str>, encoding: &str, top: bool) -> Vec<u8> {
     let (fields, _) = headers::split(original);
@@ -267,9 +301,17 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
             Kind::Plain => plain_with_footer(&text, &text_footer),
             Kind::Html => html_with_footer(&text, &html_footer),
         };
+        // A line starting with `--` could close or open a part of an enclosing multipart once
+        // written as 7bit or quoted-printable (security review 0.22 SIG-1): base64 cannot.
+        let boundary_like = body.split("\r\n").any(|line| line.starts_with("--"));
         let short_ascii = body.is_ascii() && body.split("\r\n").all(|line| line.len() <= 998);
-        let (encoding, mut encoded) =
-            if short_ascii { ("7bit", body) } else { ("quoted-printable", quoted_printable(&body)) };
+        let (encoding, mut encoded) = if boundary_like {
+            ("base64", base64_lines(&body))
+        } else if short_ascii {
+            ("7bit", body)
+        } else {
+            ("quoted-printable", quoted_printable(&body))
+        };
         let mime = &message.parts[target.part];
         let (start, body_start, end) =
             (mime.offset_header as usize, mime.offset_body as usize, mime.offset_end as usize);
@@ -299,7 +341,12 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
     for (start, end, part) in replacements {
         out.splice(start..end, part);
     }
-    Footer::Added(out)
+    // Whatever the text held, the message the recipients get has the structure every check before
+    // saw (security review 0.22 SIG-1).
+    match MessageParser::new().parse(&out) {
+        Some(changed) if shape(&changed) == shape(&message) => Footer::Added(out),
+        _ => Footer::Skipped("the footer would change the message structure"),
+    }
 }
 
 #[cfg(test)]
@@ -475,6 +522,61 @@ mod tests {
         }
         deep.push_str("Content-Type: text/plain\r\n\r\nHi\r\n");
         let _ = append(deep.as_bytes(), &footer());
+    }
+
+    /// The parts a message parses into, as type and decoded text.
+    fn parts(raw: &[u8]) -> Vec<(String, String)> {
+        let message = MessageParser::new().parse(raw).unwrap();
+        (0..message.parts.len())
+            .map(|i| {
+                let (ctype, subtype) = content_type(&message, i);
+                let text = match &message.parts[i].body {
+                    PartType::Text(t) | PartType::Html(t) => t.to_string(),
+                    _ => String::new(),
+                };
+                (format!("{ctype}/{subtype}"), text)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_boundary_in_the_text_or_the_footer_never_becomes_a_real_part() {
+        use base64::Engine;
+        // The text part of a mixed message holds, base64-encoded, a line that is the outer
+        // boundary followed by an attachment: written back as 7bit it would become a real part,
+        // one the virus scanner never saw (security review 0.22 SIG-1).
+        let hidden = "Hallo\r\n--m\r\nContent-Type: application/x-msdownload\r\nContent-Disposition: attachment; filename=\"evil.exe\"\r\n\r\nTVqQAAMAAAAEAAAA\r\n--m--\r\n";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(hidden);
+        let raw = format!(
+            "From: mini@example.org\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=\"m\"\n\n--m\nContent-Type: text/plain; charset=utf-8\nContent-Transfer-Encoding: base64\n\n{encoded}\n--m\nContent-Type: application/pdf\nContent-Disposition: attachment; filename=\"a.pdf\"\nContent-Transfer-Encoding: base64\n\nJVBERi0x\n--m--\n"
+        )
+        .replace('\n', "\r\n");
+        let before = parts(raw.as_bytes());
+        let Footer::Added(out) = append(raw.as_bytes(), &footer()) else { panic!("expected the footer") };
+        let after = parts(&out);
+        assert_eq!(after.len(), before.len(), "{}", String::from_utf8_lossy(&out));
+        assert_eq!(MessageParser::new().parse(&out).unwrap().attachment_count(), 1);
+        let text = String::from_utf8(out.clone()).unwrap();
+        assert!(text.contains("Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64"));
+        assert!(!text.contains("evil.exe"), "the hidden part stays inside the encoded text");
+        assert!(after[1].1.starts_with("Hallo\r\n--m\r\n") && after[1].1.contains("Mustermann GmbH"));
+
+        // A hostile footer (a `{name}` with line breaks, say) cannot add parts either, in text or HTML.
+        let hostile = SignatureText::new(
+            "Mini\n--a\nContent-Type: text/html\n\n<script>x</script>\n--a--",
+            "<p>Mini</p>\r\n--a\r\nContent-Type: application/octet-stream\r\n\r\nAAAA\r\n--a--",
+        );
+        let raw = "From: mini@example.org\nMIME-Version: 1.0\nContent-Type: multipart/alternative; boundary=\"a\"\n\n--a\nContent-Type: text/plain\n\nHi\n--a\nContent-Type: text/html\n\n<p>Hi</p>\n--a--\n"
+            .replace('\n', "\r\n");
+        let before = parts(raw.as_bytes());
+        let Footer::Added(out) = append(raw.as_bytes(), &hostile) else { panic!("expected the footer") };
+        let after = parts(&out);
+        assert_eq!(after.iter().map(|p| &p.0).collect::<Vec<_>>(), before.iter().map(|p| &p.0).collect::<Vec<_>>());
+        assert!(after[1].1.contains("\n--a\r\nContent-Type: text/html"), "the footer is text in the plain part");
+        assert!(after[2].1.contains("application/octet-stream"), "and in the HTML part");
+        // Every line of the new message that looks like the boundary is one of the original three.
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text.split("\r\n").filter(|line| line.starts_with("--a")).count(), 3);
     }
 
     #[test]
