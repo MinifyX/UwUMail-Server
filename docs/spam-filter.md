@@ -159,8 +159,11 @@ A domain imitates a brand when it is one letter away from the brand's name
 (`paypa1`, `amazom`), looks like it once confusable letters are mapped
 (`rn` for `m`, `0` for `o`, Cyrillic `а` for Latin `a`), decodes from punycode
 (`xn--…`) into such a name, or carries the name in one part of a hyphenated
-label (`netfllx-billing`). The brand's own domains, its country domains and
-regional names (Sparkassen, Volksbanken) count as the brand itself.
+label (`netfllx-billing`). The brand's own domains and its country domains
+count as the brand itself. Regional names of Sparkassen and Volksbanken
+(`sparkasse-musterstadt.de`) count only under `.de` and `.at`; the same prefix
+under any other ending (`sparkasse-login.com`) is an imitation. A regional name
+never vouches for a link whose text shows the brand's main site.
 
 | Rule | Points | When |
 | --- | --- | --- |

@@ -113,6 +113,12 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   read changes written meanwhile and sent them with the older state (JMAP push and web push); it now
   reads only up to its own state.
 
+### Security (review round 1, spam and labels)
+
+- **Regional bank names only under their own endings (SPAM-1).** `sparkasse-…` and `volksbank-…`
+  count as the bank's own domain only under `.de` and `.at`; `sparkasse-login.com` and the like are
+  imitations again, and such a domain never vouches for a link that shows `sparkasse.de`.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with

@@ -42,8 +42,9 @@ pub struct Brand {
     /// "Booking", "Steam") only counts in a display name when the name is all of it, or followed by
     /// a word like "Service" or "Support".
     pub distinct: bool,
-    /// Every label that starts with the brand's label counts as its own under a common ending, for
-    /// brands with many regional domains (`sparkasse-musterstadt.de`).
+    /// Every label that starts with the brand's label and a hyphen counts as its own, for brands with
+    /// many regional domains (`sparkasse-musterstadt.de`) — only under the endings these banks
+    /// really use ([`PREFIX_ENDINGS`]). Anybody can register `sparkasse-login.com`.
     pub own_prefix: bool,
 }
 
@@ -146,6 +147,10 @@ const COMMON_ENDINGS: &[&str] = &[
     "com", "de", "at", "ch", "net", "org", "eu", "co.uk", "fr", "it", "es", "nl", "be", "lu", "pl", "se", "dk", "no",
     "fi", "ie", "pt", "cz", "ca", "us", "com.au", "co.jp", "com.br", "com.mx", "com.tr", "in", "co.in",
 ];
+
+/// Endings under which a regional brand's prefixed labels (`sparkasse-musterstadt`) count as its
+/// own. Elsewhere such a label is an imitation (security review 0.22 SPAM-1).
+const PREFIX_ENDINGS: &[&str] = &["de", "at"];
 
 /// Words after a brand name in a display name that make an ordinary word the brand ("Apple Support").
 const SERVICE_WORDS: &[&str] = &[
@@ -525,18 +530,32 @@ fn label_and_ending(site: &str) -> (&str, &str) {
 
 /// The brand a site belongs to, if it is one of a brand's own.
 pub fn own_brand(site: &str) -> Option<&'static Brand> {
+    own_brand_by(site).map(|(brand, _)| brand)
+}
+
+/// The brand a site belongs to, and whether it only belongs to it through the prefix rule of a
+/// regional brand (`sparkasse-musterstadt.de`), which is weaker evidence than an exact match.
+fn own_brand_by(site: &str) -> Option<(&'static Brand, bool)> {
     let (label, ending) = label_and_ending(site);
-    BRANDS.iter().find(|brand| {
-        brand.sites.contains(&site)
-            || (COMMON_ENDINGS.contains(&ending)
-                && brand.labels.iter().any(|own| {
-                    label == *own || (brand.own_prefix && label.starts_with(own) && label[own.len()..].starts_with('-'))
-                }))
+    BRANDS.iter().find_map(|brand| {
+        if brand.sites.contains(&site) || (COMMON_ENDINGS.contains(&ending) && brand.labels.contains(&label)) {
+            return Some((brand, false));
+        }
+        let prefixed = brand.own_prefix
+            && PREFIX_ENDINGS.contains(&ending)
+            && brand.labels.iter().any(|own| label.strip_prefix(own).is_some_and(|rest| rest.len() > 1 && rest.starts_with('-')));
+        prefixed.then_some((brand, true))
     })
 }
 
+/// Whether two sites are the same brand's own. A site that only counts as the brand's through the
+/// prefix rule never vouches for another one: `sparkasse.de` shown on a link to
+/// `sparkasse-musterstadt.de` is still a mismatch worth a hint.
 fn same_brand(a: &str, b: &str) -> bool {
-    matches!((own_brand(a), own_brand(b)), (Some(x), Some(y)) if std::ptr::eq(x, y))
+    matches!(
+        (own_brand_by(a), own_brand_by(b)),
+        (Some((x, false)), Some((y, false))) if std::ptr::eq(x, y)
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -808,6 +827,45 @@ mod tests {
         assert!(rules(&input).is_empty());
         let sparkasse = "info@sparkasse-musterstadt.de";
         assert!(own_brand(&site(&domain_of(sparkasse).unwrap())).is_some(), "regional banks have many domains");
+    }
+
+    /// Security review 0.22 SPAM-1: the prefix rule of regional banks only holds under their own
+    /// endings; `sparkasse-<anything>` elsewhere is what phishing registers.
+    #[test]
+    fn regional_prefixes_only_count_under_their_endings() {
+        for domain in ["sparkasse-sicherheit.net", "sparkasse-login.com", "volksbank-hilfe.eu"] {
+            assert!(own_brand(domain).is_none(), "{domain}");
+            let address = format!("info@{domain}");
+            assert_eq!(
+                rules(&Input { from_address: Some(&address), ..Input::default() }),
+                ["BRAND_IN_FROM_DOMAIN"],
+                "{domain}"
+            );
+        }
+        assert!(own_brand("sparkasse-musterstadt.at").is_some());
+        assert!(own_brand("sparkasse-.de").is_none(), "a bare hyphen is no regional name");
+        // The brand's address shown on a link to a prefix domain elsewhere is the classic trick.
+        let input = Input {
+            from_address: Some("info@sparkasse-login.com"),
+            links: vec![link(Some("www.sparkasse.de"), "sparkasse-login.com")],
+            ..Input::default()
+        };
+        assert_eq!(rules(&input), ["BRAND_IN_FROM_DOMAIN", "BRAND_LINK_TEXT"]);
+        // Even under .de a prefix domain does not vouch for a link that shows the brand's own site.
+        let input = Input {
+            from_address: Some("info@sparkasse-musterstadt.de"),
+            links: vec![link(Some("www.sparkasse.de"), "sparkasse-musterstadt.de")],
+            ..Input::default()
+        };
+        assert_eq!(rules(&input), ["BRAND_LINK_TEXT"]);
+        // A credential request from a fake prefix domain is one.
+        let input = Input {
+            from_address: Some("info@sparkasse-sicherheit.net"),
+            text: "Bitte Konto verifizieren.",
+            links: vec![link(None, "sparkasse-sicherheit.net")],
+            ..Input::default()
+        };
+        assert_eq!(rules(&input), ["BRAND_IN_FROM_DOMAIN", "CREDENTIAL_REQUEST"]);
     }
 
     #[test]
