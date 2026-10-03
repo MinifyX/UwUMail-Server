@@ -214,6 +214,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ### Security (review round 3, spam and labels)
 
+- **An extreme date from the model can no longer stop the server (final review DATES-H1).** Event
+  extraction ignores start and end dates outside 1970–2200 before doing any date arithmetic, so a
+  model answer (or a personal provider) naming the year 262142 no longer overflows and aborts.
 - **`Authentication-Results` read whole and one way (R3-L1, R3-L2, client C4-1).** The parser is
   shared by the strip of forged results and the assistant (`uwumail_smtp::auth_results_parts`,
   `authserv_id`), reads every part however many DKIM results come first, and never keeps a word or

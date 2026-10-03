@@ -1827,7 +1827,16 @@ enum When {
     Day(NaiveDate),
 }
 
+/// Only years [`sane`] accepts come back, so adding a day or an hour to the result can never
+/// overflow, whatever date the model wrote.
 fn parse_when(text: &str) -> Option<When> {
+    parse_any_when(text).filter(|when| match when {
+        When::At(at) => sane(*at),
+        When::Day(day) => sane(day.and_hms_opt(0, 0, 0).unwrap_or_default()),
+    })
+}
+
+fn parse_any_when(text: &str) -> Option<When> {
     let text = text.trim();
     for format in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
         if let Ok(at) = NaiveDateTime::parse_from_str(text, format) {
@@ -2459,6 +2468,27 @@ mod tests {
         assert_eq!((events[1].start.as_str(), events[1].end.as_str()), ("2026-10-10T00:00:00", "2026-10-13T00:00:00"));
         assert!(events[1].all_day && events[1].time_zone.is_none() && events[1].url.is_none());
         assert_eq!(events[1].confidence, 0.5);
+    }
+
+    #[test]
+    fn extreme_dates_from_the_model_are_ignored() {
+        let (links, people, mine) = (Vec::new(), Vec::new(), HashSet::new());
+        let source = "Samstag 03.10.26 ist Flohmarkt.";
+        let context = EventContext { source, links: &links, people: &people, mine: &mine };
+        let answer = json!({ "events": [
+            { "title": "A", "start": "2026-10-03", "end": "+262142-12-31T00:00:00", "allDay": true,
+              "quote": "Samstag 03.10.26", "participants": [] },
+            { "title": "B", "start": "2026-10-03", "end": "+262142-12-31", "allDay": true,
+              "quote": "Samstag 03.10.26", "participants": [] },
+            { "title": "C", "start": "+262142-12-31", "quote": "Samstag 03.10.26", "participants": [] },
+            { "title": "D", "start": "+262142-12-31T23:30:00", "allDay": false,
+              "quote": "Samstag 03.10.26", "participants": [] }
+        ]});
+        let events = parse_events(&answer, &context);
+        assert_eq!(events.len(), 2, "{events:?}");
+        for event in &events {
+            assert_eq!((event.start.as_str(), event.end.as_str()), ("2026-10-03T00:00:00", "2026-10-04T00:00:00"));
+        }
     }
 
     #[test]
