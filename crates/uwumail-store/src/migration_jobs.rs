@@ -154,6 +154,15 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<MigrationJob> {
     })
 }
 
+/// An admin's move fills this mailbox: the person's own move waits until it is done, so two
+/// copies never run into one mailbox at once (security review 0.22 MOV-4).
+fn admin_busy() -> StoreError {
+    StoreError::Rule {
+        code: "moveAdminBusy",
+        message: "an admin is moving mail into this mailbox; try again when that move is finished".into(),
+    }
+}
+
 /// What another server said, short enough for a table and a page.
 fn shorten(value: &str) -> String {
     let value = value.trim();
@@ -235,6 +244,9 @@ impl Store {
                     code: "moveExists",
                     message: format!("{address} is being moved already"),
                 });
+            }
+            if crate::moves::admin_move_open(tx, new.account_id)? {
+                return Err(admin_busy());
             }
             let sealed = seal(tx, &new.password)?;
             tx.execute(
@@ -370,6 +382,9 @@ impl Store {
                     )?;
                 }
                 MigrationState::Paused => {}
+            }
+            if crate::moves::admin_move_open(tx, account_id)? {
+                return Err(admin_busy());
             }
             if let Some(password) = password.filter(|password| !password.is_empty()) {
                 let sealed = seal(tx, &password)?;

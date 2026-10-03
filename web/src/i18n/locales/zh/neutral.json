@@ -584,6 +584,9 @@
       "moveNotActive": "此迁移未在进行。",
       "moveNotPaused": "此迁移未暂停。",
       "movesLimit": "最多同时进行 20 个迁移。请先完成或删除一个。",
+      "movePersonalBusy": "该邮箱的所有者正在自行迁移邮件（我的邮箱 → 迁移）。请等待完成，或请其暂停。",
+      "moveAdminBusy": "管理员正在向此邮箱迁移邮件。请在该迁移完成后重试。",
+      "movePasswordNeeded": "旧邮箱的密码已被删除。请输入密码以继续。",
       "hostInvalid": "服务器名称不可用。只能使用互联网上的服务器。",
       "urlInvalid": "该地址不是可用的 https 地址。",
       "domainMaskedOnly": "该域名仅用于隐藏地址。",
@@ -4605,6 +4608,7 @@
       "notPublic": "从本服务器看，旧服务器不在互联网上。这里不能使用局域网内的服务器，请改用命令行导入。",
       "noMailbox": "该账户没有可迁入邮件的邮箱。",
       "stopped": "已手动暂停。随时可以继续。",
+      "accountDeleted": "此账户已移至回收站，因此迁移已停止，旧密码已删除。恢复账户后，请重新输入密码并重试。",
       "failed": "出了点问题。请重试。"
     },
     "davErrors": {

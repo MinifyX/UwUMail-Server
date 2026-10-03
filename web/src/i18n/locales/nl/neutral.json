@@ -596,6 +596,9 @@
       "moveNotActive": "Deze verhuizing loopt niet.",
       "moveNotPaused": "Deze verhuizing is niet gepauzeerd.",
       "movesLimit": "Hoogstens 20 verhuizingen kunnen tegelijk open zijn. Rond er eerst een af of verwijder er een.",
+      "movePersonalBusy": "De eigenaar verhuist zelf net mail naar deze mailbox (Mijn mailbox → Verhuizen). Wacht tot dat klaar is, of vraag om het te pauzeren.",
+      "moveAdminBusy": "Een beheerder verhuist net mail naar deze mailbox. Probeer het opnieuw als die verhuizing klaar is.",
+      "movePasswordNeeded": "Het wachtwoord van de oude mailbox is verwijderd. Vul het in om verder te gaan.",
       "hostInvalid": "De servernaam is niet bruikbaar. Alleen servers op internet kunnen.",
       "urlInvalid": "Het adres is geen bruikbaar https-adres.",
       "domainMaskedOnly": "Dit domein neemt alleen gemaskeerde adressen.",
@@ -4698,6 +4701,7 @@
       "notPublic": "De oude server staat niet op internet, voor zover deze server kan zien. Servers in het lokale netwerk kunnen hier niet; gebruik de import op de opdrachtregel.",
       "noMailbox": "Dit account heeft geen mailbox om mail naartoe te verhuizen.",
       "stopped": "Handmatig gepauzeerd. Ga verder wanneer je wilt.",
+      "accountDeleted": "Dit account staat in de prullenbak, daarom is de verhuizing gestopt en het oude wachtwoord verwijderd. Zet het account terug, vul het wachtwoord opnieuw in en probeer opnieuw.",
       "failed": "Er ging iets mis. Probeer het opnieuw."
     },
     "davErrors": {

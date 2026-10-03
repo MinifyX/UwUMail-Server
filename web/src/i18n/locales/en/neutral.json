@@ -596,6 +596,9 @@
       "moveNotActive": "This move is not copying.",
       "moveNotPaused": "This move is not paused.",
       "movesLimit": "At most 20 moves can be open at once. Finish or delete one first.",
+      "movePersonalBusy": "The owner of this mailbox is moving mail into it themselves right now (My mailbox → Move). Wait until that is done, or ask them to pause it.",
+      "moveAdminBusy": "An admin is moving mail into this mailbox right now. Try again once that move is finished.",
+      "movePasswordNeeded": "The password for the old mailbox was deleted. Enter it to go on.",
       "hostInvalid": "The server name is not usable. Only servers on the internet can be used.",
       "urlInvalid": "The address is not a usable https address.",
       "domainMaskedOnly": "This domain takes masked addresses only.",
@@ -4698,6 +4701,7 @@
       "notPublic": "The old server is not on the internet as far as this server can see. Servers in the local network cannot be used here; use the command line import instead.",
       "noMailbox": "This account has no mailbox to move mail into.",
       "stopped": "Paused by hand. Retry whenever you like.",
+      "accountDeleted": "This account was moved to the trash, so the move stopped and the old password was deleted. After restoring the account, enter the password again and retry.",
       "failed": "Something went wrong. Retry to try again."
     },
     "davErrors": {

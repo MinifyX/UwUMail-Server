@@ -21,7 +21,7 @@ export function useMove(id: number) {
     queryKey: moveKey(id),
     queryFn: () => api<MoveDetail>(`/api/admin/moves/${id}`),
     // While something is copied the page follows it closely; otherwise now and then.
-    refetchInterval: (query) => (query.state.data && isBusy(query.state.data.move) ? 3000 : 30000),
+    refetchInterval: (query) => (query.state.data && isBusy(query.state.data.move) ? 5000 : 30000),
   });
 }
 

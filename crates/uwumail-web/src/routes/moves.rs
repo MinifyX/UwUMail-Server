@@ -65,24 +65,16 @@ pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value
 async fn detail_json(web: &Web, id: i64) -> ApiResult<Value> {
     let found = load(web, id).await?;
     let mailboxes = web.store().move_mailboxes(id).await?;
-    let people: HashMap<String, Person> =
-        web.store().people().await?.into_iter().map(|person| (person.account.login.clone(), person)).collect();
+    // Only the move's own people, not everyone: the page asks every few seconds while it runs
+    // (security review 0.22 MOV-4).
+    let people = web.store().move_people(id).await?;
     let mailboxes: Vec<Value> = mailboxes
         .iter()
         .map(|mailbox| {
             let mut value = json!(mailbox);
-            let person = people.get(&mailbox.address);
-            value["hasPortalPassword"] = json!(person.is_none_or(|person| person.has_password));
-            value["aliases"] = json!(
-                person
-                    .map(|person| person
-                        .addresses
-                        .iter()
-                        .filter(|address| address.kind == "alias")
-                        .map(|address| address.address.clone())
-                        .collect::<Vec<_>>())
-                    .unwrap_or_default()
-            );
+            let person = people.get(&mailbox.account_id);
+            value["hasPortalPassword"] = json!(person.is_none_or(|(has_password, _)| *has_password));
+            value["aliases"] = json!(person.map(|(_, aliases)| aliases.clone()).unwrap_or_default());
             value
         })
         .collect();
@@ -331,12 +323,58 @@ fn blocked(problems: Vec<RowProblem>) -> ApiError {
     ApiError::Blocked("moveRows", format!("{} problems in the list", problems.len()), json!(problems))
 }
 
+/// What a move made before the move itself was written, so it can be taken back when that fails.
+#[derive(Default)]
+struct Made {
+    domain: Option<String>,
+    accounts: Vec<String>,
+    aliases: Vec<String>,
+}
+
+impl Made {
+    /// Takes back what was made, newest first: a refused move leaves no orphaned domain, accounts
+    /// or aliases behind (security review 0.22 MOV-3).
+    async fn undo(self, web: &Web, session: &crate::session::Session) {
+        for alias in self.aliases.iter().rev() {
+            match web.store().remove_alias(alias).await {
+                Ok(()) => audit(web, session, "alias.remove", alias, json!({ "move": true, "undone": true })).await,
+                Err(err) => tracing::warn!(%err, alias, "taking back an alias of a refused move failed"),
+            }
+        }
+        for login in self.accounts.iter().rev() {
+            match web.store().delete_account(login).await {
+                Ok(()) => audit(web, session, "account.delete", login, json!({ "move": true, "undone": true })).await,
+                Err(err) => tracing::warn!(%err, login, "taking back a mailbox of a refused move failed"),
+            }
+        }
+        if let Some(domain) = self.domain {
+            match web.store().delete_domain(&domain).await {
+                Ok(()) => audit(web, session, "domain.delete", &domain, json!({ "move": true, "undone": true })).await,
+                Err(err) => tracing::warn!(%err, domain, "taking back the domain of a refused move failed"),
+            }
+        }
+    }
+}
+
+/// The accounts the rows go into that exist already.
+async fn existing_accounts(web: &Web, rows: &[Row]) -> ApiResult<Vec<i64>> {
+    let mut ids = Vec::with_capacity(rows.len());
+    for row in rows {
+        if let Some(account) = web.store().account(&row.target).await? {
+            ids.push(account.id);
+        }
+    }
+    Ok(ids)
+}
+
 /// Makes the mailboxes and aliases the rows need, and says which mailbox each row goes into.
+/// Everything made is noted in `made`, also when a later row fails.
 async fn make_mailboxes(
     web: &Web,
     session: &crate::session::Session,
     rows: &[Row],
     people: &[Person],
+    made: &mut Made,
 ) -> ApiResult<Vec<NewMoveMailbox>> {
     let owners = address_owners(people);
     let mut mailboxes = Vec::with_capacity(rows.len());
@@ -356,6 +394,7 @@ async fn make_mailboxes(
                     tracing::warn!(%err, target = %row.target, "a mailbox for a move could not be made");
                     blocked(vec![RowProblem { row: index, field: "target", code: "targetTaken" }])
                 })?;
+                made.accounts.push(account.login.clone());
                 let details =
                     json!({ "role": account.role, "quotaBytes": account.quota_bytes, "invited": true, "move": true });
                 audit(web, session, "account.create", &account.login, details).await;
@@ -370,6 +409,7 @@ async fn make_mailboxes(
                 tracing::warn!(%err, alias, "an alias for a move could not be added");
                 blocked(vec![RowProblem { row: index, field: "aliases", code: "aliasTaken" }])
             })?;
+            made.aliases.push(alias.clone());
             audit(web, session, "alias.add", alias, json!({ "account": row.target, "move": true })).await;
         }
         mailboxes.push(NewMoveMailbox {
@@ -439,15 +479,26 @@ pub async fn create(
         host => uwumail_store::check_server_name(host)
             .map_err(|_| ApiError::Rule("hostInvalid", "the CalDAV/CardDAV server's name is not usable".into()))?,
     };
+    // The limit of open moves and the mailboxes that exist already, before anything is made.
+    web.store().check_move_start(existing_accounts(&web, &body.rows).await?, true).await?;
+    let mut made = Made::default();
     if existing.is_none() {
-        let made = web.store().create_domain(&domain).await?;
-        if let Err(err) = uwumail_smtp::dkim::ensure_domain_keys(web.store(), &made.name).await {
-            tracing::error!(%err, domain = %made.name, "creating DKIM keys failed");
+        let created = web.store().create_domain(&domain).await?;
+        made.domain = Some(created.name.clone());
+        audit(&web, &session, "domain.create", &created.name, json!({ "kind": created.kind, "move": true })).await;
+        if let Err(err) = uwumail_smtp::dkim::ensure_domain_keys(web.store(), &created.name).await {
+            tracing::error!(%err, domain = %created.name, "creating DKIM keys failed");
+            made.undo(&web, &session).await;
             return Err(ApiError::Internal);
         }
-        audit(&web, &session, "domain.create", &made.name, json!({ "kind": made.kind, "move": true })).await;
     }
-    let mailboxes = make_mailboxes(&web, &session, &body.rows, &people).await?;
+    let mailboxes = match make_mailboxes(&web, &session, &body.rows, &people, &mut made).await {
+        Ok(mailboxes) => mailboxes,
+        Err(err) => {
+            made.undo(&web, &session).await;
+            return Err(err);
+        }
+    };
     let new = NewMove {
         kind,
         domain: domain.clone(),
@@ -462,7 +513,13 @@ pub async fn create(
         sync_minutes,
         created_by: Some(session.account.id),
     };
-    let created = web.store().create_move(new, mailboxes).await?;
+    let created = match web.store().create_move(new, mailboxes).await {
+        Ok(created) => created,
+        Err(err) => {
+            made.undo(&web, &session).await;
+            return Err(err.into());
+        }
+    };
     let details = json!({
         "id": created.id,
         "kind": created.kind,
@@ -504,9 +561,20 @@ pub async fn add_mailboxes(
     if !problems.is_empty() {
         return Err(blocked(problems));
     }
-    let mailboxes = make_mailboxes(&web, &session, &body.rows, &people).await?;
+    web.store().check_move_start(existing_accounts(&web, &body.rows).await?, false).await?;
+    let mut made = Made::default();
+    let mailboxes = match make_mailboxes(&web, &session, &body.rows, &people, &mut made).await {
+        Ok(mailboxes) => mailboxes,
+        Err(err) => {
+            made.undo(&web, &session).await;
+            return Err(err);
+        }
+    };
     let count = mailboxes.len();
-    web.store().add_move_mailboxes(id, mailboxes).await?;
+    if let Err(err) = web.store().add_move_mailboxes(id, mailboxes).await {
+        made.undo(&web, &session).await;
+        return Err(err.into());
+    }
     audit(&web, &session, "move.addMailboxes", &found.domain, json!({ "id": id, "mailboxes": count })).await;
     Ok(Json(detail_json(&web, id).await?))
 }

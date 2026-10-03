@@ -596,6 +596,9 @@
       "moveNotActive": "Dieser Umzug läuft gerade nicht.",
       "moveNotPaused": "Dieser Umzug ist nicht pausiert.",
       "movesLimit": "Höchstens 20 Umzüge können gleichzeitig offen sein. Schließ erst einen ab oder lösch ihn.",
+      "movePersonalBusy": "Die Person zieht gerade selbst Mails in dieses Postfach um (Mein Postfach → Umzug). Warte, bis das fertig ist, oder bitte sie, ihn zu pausieren.",
+      "moveAdminBusy": "Ein Admin zieht gerade Mails in dieses Postfach um. Versuch es noch mal, wenn dieser Umzug abgeschlossen ist.",
+      "movePasswordNeeded": "Das Passwort für das alte Postfach wurde gelöscht. Gib es ein, um weiterzumachen.",
       "hostInvalid": "Der Servername ist nicht verwendbar. Nur Server im Internet gehen.",
       "urlInvalid": "Die Adresse ist keine verwendbare https-Adresse.",
       "domainMaskedOnly": "Diese Domain nimmt nur maskierte Adressen.",
@@ -4698,6 +4701,7 @@
       "notPublic": "Der alte Server ist nicht im Internet, soweit dieser Server das sehen kann. Server im lokalen Netz gehen hier nicht; nimm dafür den Import auf der Kommandozeile.",
       "noMailbox": "Dieses Konto hat kein Postfach, in das Mails umziehen könnten.",
       "stopped": "Von Hand pausiert. Mach weiter, wann du willst.",
+      "accountDeleted": "Dieses Konto liegt im Papierkorb, daher wurde der Umzug gestoppt und das alte Passwort gelöscht. Stell das Konto wieder her, gib das Passwort erneut ein und versuch es noch mal.",
       "failed": "Etwas ist schiefgegangen. Versuch es noch mal."
     },
     "davErrors": {

@@ -339,3 +339,98 @@ async fn rows_that_clash_are_named() {
     let (status, refused) = call(&app, "POST", "/api/admin/moves", Some(body), &admin).await;
     assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("hostInvalid")));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_move_leaves_nothing_behind() {
+    use uwumail_store::{NewGroup, NewMigrationJob, NewMove, NewMoveMailbox, WhoMaySend};
+    let (app, store, _dir) = portal().await;
+    let admin = login(&app, "admin@example.org").await;
+    let rows = |alias: &str| {
+        json!([
+            { "oldAddress": "leni@umzug.example", "password": OLD_PASSWORD, "name": "Leni" },
+            { "oldAddress": "nyu@umzug.example", "password": OLD_PASSWORD, "aliases": [alias] },
+        ])
+    };
+
+    // An alias that is a group's address fails only when it is added, after Leni's mailbox and
+    // the domain were made: both are taken back (security review 0.22 MOV-3).
+    let group = NewGroup {
+        address: "team@example.org".into(),
+        name: "Team".into(),
+        who_may_send: WhoMaySend::Anyone,
+        members_may_send_as: false,
+        members: vec!["mini@example.org".into()],
+    };
+    store.create_group(group).await.unwrap();
+    let (status, refused) =
+        call(&app, "POST", "/api/admin/moves", Some(domain_move(rows("team@example.org"))), &admin).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{refused}");
+    assert!(store.account("leni@umzug.example").await.unwrap().is_none(), "the mailbox made on the way is gone");
+    assert!(store.account("nyu@umzug.example").await.unwrap().is_none());
+    assert!(store.domain("umzug.example").await.unwrap().is_none(), "the domain made on the way is gone");
+    assert!(store.moves().await.unwrap().is_empty());
+
+    // A mailbox whose person moves mail in themselves is refused before anything is made.
+    let mini = store.account("mini@example.org").await.unwrap().unwrap();
+    let job = NewMigrationJob {
+        account_id: mini.id,
+        address: "mini@example.net".into(),
+        host: "imap.example.net".into(),
+        port: 993,
+        login: "mini@example.net".into(),
+        password: OLD_PASSWORD.into(),
+    };
+    store.create_migration_job(job).await.unwrap();
+    let single = json!({
+        "kind": "mailbox",
+        "domain": "example.org",
+        "imapHost": "imap.example.net",
+        "davMode": "auto",
+        "rows": [{ "oldAddress": "mini@example.net", "password": OLD_PASSWORD, "target": "mini@example.org" }],
+    });
+    let (_, refused) = call(&app, "POST", "/api/admin/moves", Some(single), &admin).await;
+    assert_eq!(refused["code"], "movePersonalBusy", "{refused}");
+
+    // At the limit of open moves, a new domain is not even made.
+    for i in 0..uwumail_store::MAX_OPEN_MOVES {
+        let new = NewAccount {
+            address: format!("p{i}@example.org"),
+            display_name: String::new(),
+            password: None,
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let id = store.create_account(new).await.unwrap().id;
+        let open = NewMove {
+            kind: uwumail_store::MoveKind::Mailbox,
+            domain: "example.org".into(),
+            imap_host: "imap.example.net".into(),
+            imap_port: 993,
+            dav_mode: uwumail_store::DavMode::Auto,
+            dav_host: String::new(),
+            dav_url: String::new(),
+            contacts: false,
+            calendars: false,
+            parallel: 1,
+            sync_minutes: 60,
+            created_by: None,
+        };
+        let mailbox = NewMoveMailbox {
+            account_id: id,
+            old_address: format!("p{i}@example.net"),
+            login: String::new(),
+            password: OLD_PASSWORD.into(),
+            imap_host: None,
+            imap_port: None,
+            dav_url: String::new(),
+            created_account: false,
+        };
+        store.create_move(open, vec![mailbox]).await.unwrap();
+    }
+    let (_, refused) =
+        call(&app, "POST", "/api/admin/moves", Some(domain_move(rows("info@umzug.example"))), &admin).await;
+    assert_eq!(refused["code"], "movesLimit", "{refused}");
+    assert!(store.domain("umzug.example").await.unwrap().is_none(), "nothing was made");
+    assert!(store.account("leni@umzug.example").await.unwrap().is_none());
+}

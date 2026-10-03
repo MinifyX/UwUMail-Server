@@ -550,6 +550,14 @@ fn insert_mailboxes(tx: &Connection, move_id: i64, domain: &str, mailboxes: Vec<
         if busy {
             return Err(rule("moveMailboxBusy", format!("{login} is being moved already")));
         }
+        // The person's own move into the same mailbox must not run at the same time (security
+        // review 0.22 MOV-4); `create_migration_job` checks the other way round.
+        if personal_move_running(tx, new.account_id)? {
+            return Err(rule(
+                "movePersonalBusy",
+                format!("{login} is moving mail from another provider itself; wait until that is done or pause it"),
+            ));
+        }
         let sealed = seal(tx, &new.password)?;
         tx.execute(
             "INSERT INTO move_mailboxes (move_id, account_id, old_address, login, password_sealed, imap_host,
@@ -571,6 +579,59 @@ fn insert_mailboxes(tx: &Connection, move_id: i64, domain: &str, mailboxes: Vec<
         added += 1;
     }
     Ok(added)
+}
+
+/// Whether the person moves mail into this account themselves right now (My mailbox → Move).
+fn personal_move_running(tx: &Connection, account_id: i64) -> Result<bool> {
+    Ok(tx.query_row(
+        "SELECT EXISTS (SELECT 1 FROM migration_jobs WHERE account_id = ?1 AND state IN ('queued', 'running'))",
+        [account_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// Whether an admin's move fills this account and is not done with it.
+pub(crate) fn admin_move_open(tx: &Connection, account_id: i64) -> Result<bool> {
+    Ok(tx.query_row(
+        "SELECT EXISTS (SELECT 1 FROM move_mailboxes WHERE account_id = ?1 AND state != 'done')",
+        [account_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// An account went to the trash: its open move entries stop and lose their sealed passwords, so
+/// none waits for a restore that may never come (security review 0.22 MOV-4). After a restore the
+/// admin retries them with the password.
+pub(crate) fn wipe_moves_of_account(tx: &Connection, account_id: i64) -> Result<()> {
+    tx.execute(
+        "UPDATE move_mailboxes SET password_sealed = NULL, state = 'paused', error = 'accountDeleted',
+             error_detail = ''
+         WHERE account_id = ?1 AND state != 'done'",
+        [account_id],
+    )?;
+    Ok(())
+}
+
+/// Before anything is made for a new move: the limit of open moves, and the mailboxes that
+/// exist already are free (security review 0.22 MOV-3). `create_move` checks all of it again.
+fn check_new_move(tx: &Connection, accounts: &[i64]) -> Result<()> {
+    let open: i64 = tx.query_row("SELECT count(*) FROM moves WHERE state != 'done'", [], |row| row.get(0))?;
+    if open as usize >= MAX_OPEN_MOVES {
+        return Err(rule("movesLimit", format!("at most {MAX_OPEN_MOVES} moves at once")));
+    }
+    check_accounts_free(tx, accounts)
+}
+
+fn check_accounts_free(tx: &Connection, accounts: &[i64]) -> Result<()> {
+    for &account_id in accounts {
+        if admin_move_open(tx, account_id)? {
+            return Err(rule("moveMailboxBusy", "this mailbox is being moved already"));
+        }
+        if personal_move_running(tx, account_id)? {
+            return Err(rule("movePersonalBusy", "this mailbox is moving mail from another provider itself"));
+        }
+    }
+    Ok(())
 }
 
 /// A finishing move whose mailboxes are all done is done.
@@ -642,6 +703,45 @@ impl Store {
             let id = tx.last_insert_rowid();
             insert_mailboxes(tx, id, &domain, mailboxes)?;
             load_move(tx, id)
+        })
+        .await
+    }
+
+    /// The checks [`Store::create_move`] (with `new_move`) or [`Store::add_move_mailboxes`] make
+    /// on the moves and accounts, for the accounts that exist already, run before the admin's
+    /// route makes a domain, accounts or aliases for the move (security review 0.22 MOV-3).
+    pub async fn check_move_start(&self, accounts: Vec<i64>, new_move: bool) -> Result<()> {
+        self.read(
+            move |conn| if new_move { check_new_move(conn, &accounts) } else { check_accounts_free(conn, &accounts) },
+        )
+        .await
+    }
+
+    /// For the accounts of one move: whether each has a password for the portal, and its aliases.
+    /// Only what the move's page needs, as it asks every few seconds while the move runs.
+    pub async fn move_people(&self, move_id: i64) -> Result<std::collections::HashMap<i64, (bool, Vec<String>)>> {
+        self.read(move |conn| {
+            let mut people: std::collections::HashMap<i64, (bool, Vec<String>)> = Default::default();
+            let mut stmt = conn.prepare(
+                "SELECT a.id, a.password_hash IS NOT NULL OR a.auth_source <> 'local' FROM accounts a
+                 WHERE a.id IN (SELECT account_id FROM move_mailboxes WHERE move_id = ?1)",
+            )?;
+            for row in stmt.query_map([move_id], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?)))? {
+                let (id, has_password) = row?;
+                people.insert(id, (has_password, Vec::new()));
+            }
+            let mut stmt = conn.prepare(
+                "SELECT a.account_id, a.local_part || '@' || d.name FROM addresses a JOIN domains d ON d.id = a.domain_id
+                 WHERE a.kind = 'alias' AND a.account_id IN (SELECT account_id FROM move_mailboxes WHERE move_id = ?1)
+                 ORDER BY 2",
+            )?;
+            for row in stmt.query_map([move_id], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))? {
+                let (id, alias) = row?;
+                if let Some((_, aliases)) = people.get_mut(&id) {
+                    aliases.push(alias);
+                }
+            }
+            Ok(people)
         })
         .await
     }
@@ -802,6 +902,20 @@ impl Store {
                 }
                 let sealed = seal(tx, &password)?;
                 tx.execute("UPDATE move_mailboxes SET password_sealed = ?2 WHERE id = ?1", params![id, sealed])?;
+            } else if !mailbox.has_password {
+                // Wiped when its account went to the trash: nothing to log in with.
+                return Err(rule("movePasswordNeeded", "enter the password of the old mailbox"));
+            }
+            if personal_move_running(tx, mailbox.account_id)? {
+                return Err(rule("movePersonalBusy", "this mailbox is moving mail from another provider itself"));
+            }
+            let deleted: bool = tx.query_row(
+                "SELECT deleted_at IS NOT NULL FROM accounts WHERE id = ?1",
+                [mailbox.account_id],
+                |row| row.get(0),
+            )?;
+            if deleted {
+                return Err(rule("noMailbox", format!("{} is in the trash", mailbox.address)));
             }
             tx.execute(
                 "UPDATE move_mailboxes SET state = 'queued', error = '', error_detail = '' WHERE id = ?1",
@@ -1310,5 +1424,112 @@ mod tests {
         ));
         // Nothing half-made was left behind by the refusals.
         assert!(store.moves().await.unwrap().is_empty());
+    }
+
+    fn personal(account_id: i64) -> crate::NewMigrationJob {
+        crate::NewMigrationJob {
+            account_id,
+            address: "mini@example.net".into(),
+            host: "imap.example.net".into(),
+            port: 993,
+            login: "mini@example.net".into(),
+            password: "altes-passwort".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_admin_move_and_a_personal_move_never_fill_one_mailbox_at_once() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        let nyu = person(&store, "nyu@example.org").await;
+
+        // Mini moves her own mail: the admin cannot add her mailbox meanwhile (security review
+        // 0.22 MOV-4), and the pre-check before anything is made says so too (MOV-3).
+        let job = store.create_migration_job(personal(mini)).await.unwrap();
+        let refused = store.create_move(new_move(MoveKind::Mailbox), vec![mailbox(mini, "mini@example.org")]).await;
+        assert_eq!(code(refused.unwrap_err()), "movePersonalBusy");
+        assert_eq!(code(store.check_move_start(vec![mini], true).await.unwrap_err()), "movePersonalBusy");
+        assert!(store.moves().await.unwrap().is_empty(), "nothing was written");
+
+        // Once hers is paused, the admin's goes; then hers cannot be resumed or started anew.
+        store.pause_migration_job(mini, job.id).await.unwrap();
+        let created =
+            store.create_move(new_move(MoveKind::Domain), vec![mailbox(mini, "mini@example.org")]).await.unwrap();
+        assert_eq!(code(store.sync_migration_job(mini, job.id, None).await.unwrap_err()), "moveAdminBusy");
+        let other = crate::NewMigrationJob { address: "mini@example.com".into(), ..personal(mini) };
+        assert_eq!(code(store.create_migration_job(other).await.unwrap_err()), "moveAdminBusy");
+        assert_eq!(code(store.check_move_start(vec![mini], false).await.unwrap_err()), "moveMailboxBusy");
+        // Nyu is free.
+        store.check_move_start(vec![nyu], false).await.unwrap();
+        store.create_migration_job(personal(nyu)).await.unwrap();
+        assert_eq!(
+            code(store.add_move_mailboxes(created.id, vec![mailbox(nyu, "nyu@example.org")]).await.unwrap_err()),
+            "movePersonalBusy"
+        );
+
+        // When the admin's move is done with her, she may go on with hers.
+        store.finish_move(created.id, true).await.unwrap();
+        store.sync_migration_job(mini, job.id, None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_limit_of_open_moves_is_checked_before_anything_is_made() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        for i in 0..MAX_OPEN_MOVES {
+            let id = person(&store, &format!("p{i}@example.org")).await;
+            store.create_move(new_move(MoveKind::Mailbox), vec![mailbox(id, "p@example.org")]).await.unwrap();
+        }
+        assert_eq!(code(store.check_move_start(Vec::new(), true).await.unwrap_err()), "movesLimit");
+    }
+
+    #[tokio::test]
+    async fn a_trashed_account_s_move_stops_and_forgets_the_password() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        let nyu = person(&store, "nyu@example.org").await;
+        let created = store
+            .create_move(
+                new_move(MoveKind::Domain),
+                vec![mailbox(mini, "mini@example.org"), mailbox(nyu, "nyu@example.org")],
+            )
+            .await
+            .unwrap();
+        store.trash_account("mini@example.org").await.unwrap();
+        let boxes = store.move_mailboxes(created.id).await.unwrap();
+        let (m, n) = (&boxes[0], &boxes[1]);
+        assert_eq!((m.state, m.error.as_str(), m.has_password), (MoveMailboxState::Paused, "accountDeleted", false));
+        assert_eq!(store.move_mailbox_password(m.id).await.unwrap(), None);
+        assert_eq!((n.state, n.has_password), (MoveMailboxState::Queued, true), "the others go on");
+
+        // Retrying needs the password again, and an account out of the trash.
+        assert_eq!(
+            code(store.retry_move_mailbox(created.id, m.id, None, None).await.unwrap_err()),
+            "movePasswordNeeded"
+        );
+        let again = store.retry_move_mailbox(created.id, m.id, None, Some("neu".into())).await;
+        assert_eq!(code(again.unwrap_err()), "noMailbox");
+        assert_eq!(store.move_mailbox_password(m.id).await.unwrap(), None, "nothing sealed for the trash");
+        store.restore_account("mini@example.org").await.unwrap();
+        let retried = store.retry_move_mailbox(created.id, m.id, None, Some("neu".into())).await.unwrap();
+        assert_eq!((retried.state, retried.has_password), (MoveMailboxState::Queued, true));
+    }
+
+    #[tokio::test]
+    async fn the_move_page_reads_only_its_own_people() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        let nyu = person(&store, "nyu@example.org").await;
+        store.add_alias("info@example.org", "mini@example.org").await.unwrap();
+        store.add_alias("nyu.alt@example.org", "nyu@example.org").await.unwrap();
+        let created =
+            store.create_move(new_move(MoveKind::Mailbox), vec![mailbox(mini, "mini@example.org")]).await.unwrap();
+        let people = store.move_people(created.id).await.unwrap();
+        assert_eq!(people.len(), 1);
+        assert_eq!(people[&mini], (false, vec!["info@example.org".to_owned()]));
+        assert!(!people.contains_key(&nyu));
     }
 }

@@ -607,6 +607,9 @@
       "moveNotActive": "Cette migration n'est pas en cours.",
       "moveNotPaused": "Cette migration n'est pas en pause.",
       "movesLimit": "Au plus 20 migrations peuvent être ouvertes à la fois. Terminez-en ou supprimez-en une d'abord.",
+      "movePersonalBusy": "Le titulaire de cette boîte y déménage lui-même du courrier en ce moment (Ma boîte → Déménagement). Attends que ce soit terminé ou demande-lui de le mettre en pause.",
+      "moveAdminBusy": "Un administrateur déménage du courrier dans cette boîte en ce moment. Réessaie une fois ce déménagement terminé.",
+      "movePasswordNeeded": "Le mot de passe de l'ancienne boîte a été supprimé. Saisis-le pour continuer.",
       "hostInvalid": "Le nom de serveur est inutilisable. Seuls les serveurs sur Internet sont acceptés.",
       "urlInvalid": "L'adresse n'est pas une adresse https utilisable.",
       "domainMaskedOnly": "Ce domaine n'accepte que des adresses masquées.",
@@ -4789,6 +4792,7 @@
       "notPublic": "L'ancien serveur n'est pas sur Internet, pour autant que ce serveur puisse le voir. Les serveurs du réseau local ne peuvent pas être utilisés ici ; utilisez l'import en ligne de commande.",
       "noMailbox": "Ce compte n'a pas de boîte où déplacer les messages.",
       "stopped": "Mis en pause à la main. Reprenez quand vous voulez.",
+      "accountDeleted": "Ce compte est dans la corbeille : le déménagement s'est arrêté et l'ancien mot de passe a été supprimé. Restaure le compte, saisis à nouveau le mot de passe et réessaie.",
       "failed": "Un problème est survenu. Réessayez."
     },
     "davErrors": {
