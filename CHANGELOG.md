@@ -134,6 +134,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   waiting entry with the same Message-ID when envelope sender and From match too, an arriving
   message only removes waiting entries by Message-ID from the same envelope sender, and retries
   keep an entry at most twice the waiting time from its first attempt.
+- **AI spam check reasons must really cite (SPAM-6).** A fact counts only when the reason's
+  `evidence` is just that fact's number and the reason is about the fact's topic; a fact number in
+  the reason text proves nothing, and reasons naming a phone number or address that is neither in
+  the mail nor in the facts are dropped.
 
 ## 0.21.2
 

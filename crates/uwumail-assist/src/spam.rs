@@ -12,6 +12,8 @@
 //! dropped before anybody reads them. The confidence comes from how clear the facts are, nudged by
 //! the model, never from the model alone.
 
+use std::collections::HashSet;
+
 use serde::Serialize;
 use serde_json::Value;
 use uwumail_smtp::phishing::Finding;
@@ -424,42 +426,172 @@ pub fn verify(
         mail.links.join("\n")
     ))
     .replace(['„', '“', '”'], "\"");
+    let known_text = normalized(&facts.iter().map(|fact| fact.text.as_str()).collect::<Vec<_>>().join("\n"));
+    let mail_digits: String = haystack.chars().filter(char::is_ascii_digit).collect();
     let mut kept: Vec<Reason> = Vec::new();
     let mut dropped = 0;
     for (text, evidence) in reasons {
         if kept.len() >= max {
             break;
         }
-        let cited = cited_fact(&evidence, facts).or_else(|| cited_fact(&text, facts));
+        // A fact counts only when the evidence field is nothing but its number and the reason is
+        // about what that fact says; a fact number written into the reason's own text proves
+        // nothing (security review 0.22 SPAM-6).
+        let cited = cited_fact(&evidence, facts).filter(|fact| relates(&text, fact));
         let quote = if cited.is_none() { quoted(&evidence, &haystack) } else { None };
-        let grounded = cited.is_some() || quote.is_some();
-        if !grounded || contradicts(&text, mail, shape, signals) || kept.iter().any(|known| known.text == text) {
+        let grounded = cited.map(|fact| fact.id.clone());
+        if (grounded.is_none() && quote.is_none())
+            || contradicts(&text, mail, shape, signals)
+            || brings_contacts(&text, &haystack, &known_text, &mail_digits)
+            || kept.iter().any(|known| known.text == text)
+        {
             dropped += 1;
             continue;
         }
-        kept.push(Reason { text, quote, fact: cited });
+        kept.push(Reason { text, quote, fact: grounded });
     }
     (kept, dropped)
 }
 
-/// The fact id a citation names (`F3`, `[F3]`, `Fakt F3`), when that fact exists.
-fn cited_fact(text: &str, facts: &[Fact]) -> Option<String> {
-    let upper = text.to_uppercase();
-    let bytes = upper.as_bytes();
-    let mut at = 0;
-    while let Some(found) = upper[at..].find('F') {
-        let start = at + found;
-        let digits: String = upper[start + 1..].chars().take_while(char::is_ascii_digit).collect();
-        let before_ok = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
-        if before_ok && !digits.is_empty() {
-            let id = format!("F{digits}");
-            if facts.iter().any(|fact| fact.id == id) {
-                return Some(id);
-            }
-        }
-        at = start + 1;
+/// The fact an evidence field names, when the field is only that: `F3`, `[F3]`, `Fakt F3`, `fact
+/// F3.` — and that fact exists.
+fn cited_fact<'a>(evidence: &str, facts: &'a [Fact]) -> Option<&'a Fact> {
+    let lower = evidence.trim().to_lowercase();
+    let lower = lower.trim_matches(|c: char| c.is_whitespace() || "[]().:;,\"'".contains(c));
+    let lower = ["fakt", "fact"].iter().find_map(|word| lower.strip_prefix(word)).unwrap_or(lower).trim_start();
+    let digits = lower.strip_prefix('f')?.trim_end_matches(|c: char| ".:;,)]".contains(c));
+    if digits.is_empty() || digits.len() > 3 || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
     }
-    None
+    let id = format!("F{digits}");
+    facts.iter().find(|fact| fact.id == id)
+}
+
+/// Word stems by topic, English and German: a reason and a fact that both touch one topic are
+/// about the same thing.
+const TOPICS: &[&[&str]] = &[
+    &[
+        "spf",
+        "dkim",
+        "dmarc",
+        "authent",
+        "verif",
+        "signed",
+        "signiert",
+        "signatur",
+        "genuine",
+        "echt",
+        "spoof",
+        "forged",
+        "fälsch",
+        "gefälscht",
+        "really comes",
+        "wirklich",
+        "domain",
+    ],
+    &["filter", "score", "punkte", "points", "bayes", "rule", "regel", "limit", "grenze"],
+    &[
+        "earlier",
+        "früher",
+        "bisher",
+        "before",
+        "zuvor",
+        "wrote",
+        "written",
+        "geschrieben",
+        "sent to",
+        "contact",
+        "kontakt",
+        "address book",
+        "adressbuch",
+        "known",
+        "bekannt",
+        "unknown",
+        "unbekannt",
+        "first",
+        "erste",
+        "erstmals",
+        "history",
+        "verlauf",
+    ],
+    &["junk", "spam folder", "spam-ordner", "spamordner"],
+    &[
+        "link",
+        "url",
+        "address",
+        "adresse",
+        "site",
+        "seite",
+        "domain",
+        "lookalike",
+        "imitat",
+        "ähnlich",
+        "looks like",
+        "brand",
+        "marke",
+        "display name",
+        "anzeigename",
+        "reply",
+        "antwort",
+    ],
+    &["attachment", "anhang", "anhänge", "file", "datei"],
+    &["payment", "zahlung", "bezahl", "geld", "money", "gift card", "gutschein", "urgent", "dringend", "sofort"],
+    &["login", "log in", "sign in", "anmeld", "password", "passwort", "konto", "account", "verify", "bestätig"],
+];
+
+/// Whether a reason is about what its cited fact says: a topic or a word they share.
+fn relates(reason: &str, fact: &Fact) -> bool {
+    let reason = reason.to_lowercase();
+    let fact_text = fact.text.to_lowercase();
+    if TOPICS.iter().any(|stems| {
+        stems.iter().any(|stem| reason.contains(stem)) && stems.iter().any(|stem| fact_text.contains(stem))
+    }) {
+        return true;
+    }
+    let words = |text: &str| -> HashSet<String> {
+        text.split(|c: char| !c.is_alphanumeric()).filter(|word| word.chars().count() >= 5).map(str::to_owned).collect()
+    };
+    !words(&reason).is_disjoint(&words(&fact_text))
+}
+
+/// Whether a reason brings a web address, mail address or phone number that neither the mail nor
+/// the facts contain: the model's own invention, or one a prompt injection put there — shown as a
+/// checked reason it would send the reader somewhere (security review 0.22 SPAM-6).
+fn brings_contacts(text: &str, mail: &str, facts: &str, mail_digits: &str) -> bool {
+    let address = text.split_whitespace().map(|word| normalized(word.trim_matches(['<', '>']))).any(|word| {
+        let looks = word.contains("://")
+            || word.starts_with("www.")
+            || (word.contains('@') && word.contains('.'))
+            || looks_like_host(&word);
+        looks && !mail.contains(&word) && !facts.contains(&word)
+    });
+    if address {
+        return true;
+    }
+    // Runs of digits with the usual phone separators, seven digits or more.
+    let mut run = String::new();
+    let mut numbers = Vec::new();
+    for c in text.chars().chain(std::iter::once('x')) {
+        if c.is_ascii_digit() {
+            run.push(c);
+        } else if !(c == ' ' || c == '+' || c == '-' || c == '/' || c == '(' || c == ')') {
+            if run.len() >= 7 {
+                numbers.push(std::mem::take(&mut run));
+            }
+            run.clear();
+        }
+    }
+    numbers.iter().any(|number| !mail_digits.contains(number.as_str()))
+}
+
+/// A word with a dot that reads like a host name (`hotline.example`), not like an abbreviation
+/// (`z.b.`) or a number (`12.00`).
+fn looks_like_host(word: &str) -> bool {
+    let labels: Vec<&str> = word.split('.').collect();
+    labels.len() >= 2
+        && labels.iter().all(|label| !label.is_empty() && label.chars().all(|c| c.is_alphanumeric() || c == '-'))
+        && labels.last().is_some_and(|end| end.chars().count() >= 2 && end.chars().all(char::is_alphabetic))
+        && labels.iter().map(|label| label.chars().count()).max().unwrap_or(0) >= 3
 }
 
 /// The quote when it stands in the mail: at least four characters, compared without case and
@@ -841,11 +973,56 @@ mod tests {
             vec![("Es hat keinen Anhang und keine Links.".to_owned(), "F1".to_owned())],
             &mail(),
             &shape,
-            &[Fact { id: "F1".into(), text: String::new() }],
+            &[Fact { id: "F1".into(), text: "Links: none; attachments: none".into() }],
             &signals,
             6,
         );
         assert_eq!(kept.len(), 1, "saying there is none is fine");
+    }
+
+    /// Security review 0.22 SPAM-6: a fact number in the reason's text, a citation of an unrelated
+    /// fact, or a phone number or address the mail does not contain is no grounding.
+    #[test]
+    fn citations_must_be_structured_and_about_the_fact() {
+        let signals = invoice();
+        let assessment = assess(&signals, &[], "");
+        let facts = facts(&signals, &assessment, |_| None);
+        let dmarc = facts.iter().find(|fact| fact.text.starts_with("DMARC passed")).unwrap().id.clone();
+        let filter = facts.iter().find(|fact| fact.text.starts_with("Spam filter")).unwrap().id.clone();
+        let reasons = vec![
+            // The id only in the text, with a free-form evidence: not a citation.
+            (format!("Verified sender ({dmarc}), safe to reply."), "trust me".to_owned()),
+            // The evidence is prose that happens to contain an id.
+            ("Verified sender.".to_owned(), format!("see {dmarc} and the hotline")),
+            // A citation of a fact about something else.
+            ("The invoice amount is correct.".to_owned(), filter.clone()),
+            // A related citation that brings a phone number and a site the mail never had.
+            (
+                "DMARC passed; call the hotline at +49 30 1234567 or visit hotline.example".to_owned(),
+                format!("[{dmarc}]"),
+            ),
+            // Fine: structured, related.
+            ("DMARC vouches for the sender's domain.".to_owned(), format!("Fakt {dmarc}.")),
+            ("The spam filter gave it few points.".to_owned(), filter.clone()),
+        ];
+        let (kept, dropped) = verify(reasons, &mail(), &MailShape::default(), &facts, &signals, 6);
+        let texts: Vec<&str> = kept.iter().map(|reason| reason.text.as_str()).collect();
+        assert_eq!(texts, ["DMARC vouches for the sender's domain.", "The spam filter gave it few points."]);
+        assert_eq!(dropped, 4);
+        assert_eq!(kept[0].fact.as_deref(), Some(dmarc.as_str()));
+
+        // A number or address that does stand in the mail may be named.
+        let mut with_number = mail();
+        with_number.text.push_str("\nRückfragen: 030 1234567");
+        let (kept, _) = verify(
+            vec![("It names the number 030 1234567 for questions.".to_owned(), "Rückfragen: 030 1234567".to_owned())],
+            &with_number,
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert_eq!(kept.len(), 1);
     }
 
     #[test]

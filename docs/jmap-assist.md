@@ -377,7 +377,12 @@ do not know as they are.
 
 The model sees the facts numbered, the allowed verdicts (its answer schema
 allows no others) and the mail as untrusted data. It gives its reasons, each
-with `evidence` (a quote or a fact number), before the verdict.
+with `evidence` (a quote or a fact number), before the verdict. A reason is
+kept only when its `evidence` is nothing but the number of an existing fact
+whose topic the reason is about (a fact number in the reason's own text counts
+for nothing), or a quote that stands in the mail. A reason that names a web
+address, mail address or phone number found neither in the mail nor in the
+facts is dropped. The reasons are still the model's wording.
 
 ## Assist/extractEvents
 
