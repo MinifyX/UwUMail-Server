@@ -648,28 +648,148 @@ const AUTH_SUCCESS_PHRASES: &[&str] = &[
     "vertrauenswürdig",
 ];
 
-/// Words that turn the phrase after them around: "not trustworthy", "kein verifizierter Absender".
+/// Words that turn the phrase after them around: "not trustworthy", "kein verifizierter Absender",
+/// "doesn't seem trustworthy". Contractions also without their apostrophe, as models write them.
 const NEGATIONS: &[&str] = &[
-    "not", "no", "never", "isn't", "isnt", "wasn't", "aren't", "cannot", "can't", "nor", "without", "hardly", "nicht",
-    "kein", "keine", "keinen", "keiner", "keinem", "nie", "niemals", "ohne", "weder", "kaum",
+    "not",
+    "no",
+    "never",
+    "nothing",
+    "nobody",
+    "neither",
+    "nor",
+    "without",
+    "hardly",
+    "barely",
+    "less",
+    "unlikely",
+    "cannot",
+    "can't",
+    "cant",
+    "isn't",
+    "isnt",
+    "aren't",
+    "arent",
+    "wasn't",
+    "wasnt",
+    "weren't",
+    "werent",
+    "doesn't",
+    "doesnt",
+    "don't",
+    "dont",
+    "didn't",
+    "didnt",
+    "won't",
+    "wont",
+    "wouldn't",
+    "wouldnt",
+    "shouldn't",
+    "shouldnt",
+    "couldn't",
+    "couldnt",
+    "mustn't",
+    "mustnt",
+    "hasn't",
+    "hasnt",
+    "haven't",
+    "havent",
+    "hadn't",
+    "hadnt",
+    "ain't",
+    "nicht",
+    "kein",
+    "keine",
+    "keinen",
+    "keiner",
+    "keinem",
+    "keines",
+    "nie",
+    "niemals",
+    "nichts",
+    "ohne",
+    "weder",
+    "kaum",
+    "unwahrscheinlich",
 ];
 
+/// Words that may stand between a negation and the phrase it turns around: "is not a verified
+/// sender", "isn't really trustworthy", "unlikely to be genuine", "ist kein wirklich echter".
+const BETWEEN: &[&str] = &[
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "seem",
+    "seems",
+    "look",
+    "looks",
+    "appear",
+    "appears",
+    "to",
+    "very",
+    "really",
+    "truly",
+    "fully",
+    "entirely",
+    "completely",
+    "particularly",
+    "so",
+    "ein",
+    "eine",
+    "einen",
+    "einem",
+    "einer",
+    "der",
+    "die",
+    "das",
+    "ist",
+    "sind",
+    "war",
+    "sein",
+    "scheint",
+    "wirkt",
+    "sehr",
+    "wirklich",
+    "ganz",
+    "völlig",
+    "besonders",
+];
+
+/// What ends a clause: a negation before it belongs to another statement ("No red flags: verified
+/// sender", "No doubt, a trustworthy sender").
+const CLAUSE_ENDS: &[char] = &['.', ',', ':', ';', '!', '?', '—', '–', '(', ')', '"', '\n'];
+
 /// Whether `lower` uses one of `phrases` as a claim: as a word of its own (not inside "unverified"
-/// or "untrustworthy") and with no negation among the three words before it, so a warning like
-/// "not trustworthy" or "kein verifizierter Absender" is no claim (security review 0.22 R3-L3).
+/// or "untrustworthy") and not turned around by a negation of its own clause (security review 0.22
+/// R3-L3, R4-L1). The negation has to come right before the phrase, with at most three of the
+/// [`BETWEEN`] words in between ("is not a verified sender"), so a negation of another statement
+/// never cancels praise: not across punctuation ("No red flags: verified sender"), not before
+/// another word ("not only trustworthy", "nicht nur ein verifizierter Absender", "no doubt
+/// trustworthy", "ohne Zweifel echter Absender", "never seen a more trustworthy mail").
 fn claims(lower: &str, phrases: &[&str]) -> bool {
+    let lower = lower.replace(['\u{2019}', '\u{2018}', '\u{02bc}', '`', '\u{00b4}'], "'");
     phrases.iter().any(|phrase| {
         lower.match_indices(phrase).any(|(at, _)| {
             let before = &lower[..at];
             if before.chars().next_back().is_some_and(char::is_alphanumeric) {
                 return false;
             }
-            let is_negated = before
-                .split(|c: char| !(c.is_alphanumeric() || c == '\''))
-                .filter(|word| !word.is_empty())
-                .rev()
-                .take(3)
-                .any(|word| NEGATIONS.contains(&word));
+            let clause = before.rsplit(CLAUSE_ENDS).next().unwrap_or_default();
+            // A dash between words ends a clause too, one inside a word ("e-mail") does not.
+            let clause = clause.rsplit(" - ").next().unwrap_or_default();
+            let mut words =
+                clause.split(|c: char| !(c.is_alphanumeric() || c == '\'')).filter(|word| !word.is_empty()).rev();
+            let is_negated = words
+                .by_ref()
+                .take(4)
+                .find(|word| !BETWEEN.contains(word))
+                .is_some_and(|word| NEGATIONS.contains(&word.trim_matches('\'')));
             !is_negated
         })
     })
@@ -1164,16 +1284,58 @@ mod tests {
                 verify(vec![(warning.to_owned(), dmarc.clone())], &mail(), &MailShape::default(), &facts, &signals, 6);
             assert_eq!(kept.len(), 1, "{warning}");
         }
-        // Praise after an unrelated negation is still praise.
+        // Contractions and curly apostrophes negate too (R4 I-1).
+        for warning in [
+            "The sender isn\u{2019}t trustworthy.",
+            "The sender doesn't seem trustworthy at all.",
+            "The sender doesn\u{2019}t really seem trustworthy.",
+            "This wouldn't be a genuine sender.",
+            "These aren't authenticated sender details.",
+            "The sender is unlikely to be trustworthy.",
+            "Der Absender ist kein wirklich echter Absender.",
+            "The sender is not a verified sender, the domain is new.",
+        ] {
+            assert!(!claims(&warning.to_lowercase(), AUTH_SUCCESS_PHRASES), "{warning}");
+            // Tied to the DMARC fact without saying it failed, so only the negation keeps it.
+            let reason = format!("DMARC: {warning}");
+            let (kept, _) =
+                verify(vec![(reason.clone(), dmarc.clone())], &mail(), &MailShape::default(), &facts, &signals, 6);
+            assert_eq!(kept.len(), 1, "{reason}");
+        }
+        // Praise after a negation of another clause or another word is still praise (R4-L1).
+        for praise in [
+            "No DMARC problem here, the sender is trustworthy.",
+            "No red flags: verified sender.",
+            "No red flags - verified sender.",
+            "No red flags \u{2014} verified sender.",
+            "No doubt, a trustworthy sender.",
+            "No doubt a trustworthy sender.",
+            "Without doubt genuine sender.",
+            "Nothing suspicious, without doubt genuine sender.",
+            "Never seen a more trustworthy mail.",
+            "Not only trustworthy but also polite.",
+            "Nicht nur ein verifizierter Absender, sondern auch freundlich.",
+            "Zweifellos vertrauenswürdig.",
+            "Ohne Zweifel ein echter Absender.",
+            "Nothing wrong. Trustworthy.",
+            "Is it a scam? No! A verified sender.",
+        ] {
+            assert!(claims(&praise.to_lowercase(), AUTH_SUCCESS_PHRASES), "{praise}");
+            let reason = format!("DMARC: {praise}");
+            let (kept, _) =
+                verify(vec![(reason.clone(), dmarc.clone())], &mail(), &MailShape::default(), &facts, &signals, 6);
+            assert!(kept.is_empty(), "{reason}: {kept:?}");
+        }
+        // The same reason without praise is kept, so the drops above are the claim's doing.
         let (kept, _) = verify(
-            vec![("No DMARC problem here, the sender is trustworthy.".to_owned(), dmarc.clone())],
+            vec![("DMARC: no red flags.".to_owned(), dmarc.clone())],
             &mail(),
             &MailShape::default(),
             &facts,
             &signals,
             6,
         );
-        assert!(kept.is_empty(), "{kept:?}");
+        assert_eq!(kept.len(), 1, "{kept:?}");
         // Saying it failed is fine.
         let (kept, _) = verify(
             vec![("DMARC failed: the sender is not authenticated.".to_owned(), dmarc.clone())],
