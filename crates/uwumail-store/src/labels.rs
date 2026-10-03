@@ -33,7 +33,8 @@ pub struct LabelSetup {
     pub labels: Vec<AssistLabel>,
 }
 
-/// Which set of base labels a person has had made; a later set with more labels raises it.
+/// Which set of base labels a person has had made. A later set raises it: with more labels (see
+/// `Base::since`) or new definitions, which replace the stored ones the server wrote.
 pub const BASE_LABELS_VERSION: i64 = 1;
 
 /// A correction of the person's, as the model is shown it.
@@ -89,8 +90,10 @@ pub(crate) fn make_base_label(tx: &Transaction<'_>, account_id: i64, base: Base,
         // of its own is kept unless it is the base label's anyway.
         let detector = detector.clone().filter(|detector| detector != base.detector().as_str());
         tx.execute(
-            "UPDATE assist_labels SET base = ?2, description = ?3, detector = ?4 WHERE id = ?1",
-            params![id, base.as_str(), text.description, detector],
+            "UPDATE assist_labels SET base = ?2, description = ?3, detector = ?4, base_written = ?3,
+                 base_language = ?5
+             WHERE id = ?1",
+            params![id, base.as_str(), text.description, detector, language],
         )?;
         return Ok(*id);
     }
@@ -110,7 +113,55 @@ pub(crate) fn make_base_label(tx: &Transaction<'_>, account_id: i64, base: Base,
         classifier: true,
         auto: true,
     };
-    insert_label(tx, account_id, &write, Some(base.as_str()))
+    let id = insert_label(tx, account_id, &write, Some(base.as_str()))?;
+    tx.execute(
+        "UPDATE assist_labels SET base_written = description, base_language = ?2 WHERE id = ?1",
+        params![id, language],
+    )?;
+    Ok(id)
+}
+
+/// Brings an account's base labels from set `seen` to `version`: makes those that came after
+/// `seen` (a deleted one stays deleted), and gives those whose definition is still the one the
+/// server wrote the current wording, in the language it was written in. Answers the changed
+/// labels, each with "created" or "updated".
+fn upgrade_base_labels(
+    tx: &Transaction<'_>,
+    account_id: i64,
+    seen: i64,
+    language: &str,
+) -> Result<Vec<(i64, &'static str)>> {
+    let mut changed = Vec::new();
+    for base in Base::ALL {
+        let found: Option<(i64, String, Option<String>, Option<String>)> = tx
+            .query_row(
+                "SELECT id, description, base_written, base_language FROM assist_labels
+                 WHERE account_id = ?1 AND base = ?2",
+                params![account_id, base.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        match found {
+            Some((id, description, written, written_in)) => {
+                if written.as_deref() != Some(description.as_str()) {
+                    continue;
+                }
+                let language = written_in.as_deref().unwrap_or(language);
+                let current = base.text(language).description;
+                if current != description {
+                    tx.execute(
+                        "UPDATE assist_labels SET description = ?2, base_written = ?2, base_language = ?3
+                         WHERE id = ?1",
+                        params![id, current, language],
+                    )?;
+                    changed.push((id, "updated"));
+                }
+            }
+            None if base.since() > seen => changed.push((make_base_label(tx, account_id, base, language)?, "created")),
+            None => {}
+        }
+    }
+    Ok(changed)
 }
 
 /// The first From address of an email, lower case.
@@ -473,12 +524,18 @@ impl Store {
     /// `fallback_language`. A base label deleted later stays deleted. Answers whether anything was
     /// made; cheap when the account has them already.
     pub async fn ensure_base_labels(&self, account_id: i64, fallback_language: &str) -> Result<bool> {
+        self.ensure_base_labels_at(account_id, fallback_language, BASE_LABELS_VERSION).await
+    }
+
+    /// [`Store::ensure_base_labels`] as if the current set were `version` (for tests of upgrades).
+    #[doc(hidden)]
+    pub async fn ensure_base_labels_at(&self, account_id: i64, fallback_language: &str, version: i64) -> Result<bool> {
         let done: bool = self
             .read(move |conn| {
                 Ok(conn
                     .query_row(
                         "SELECT base_labels >= ?2 FROM assist_prefs WHERE account_id = ?1",
-                        params![account_id, BASE_LABELS_VERSION],
+                        params![account_id, version],
                         |row| row.get(0),
                     )
                     .optional()?
@@ -504,29 +561,19 @@ impl Store {
                     })
                     .optional()?
                     .unwrap_or(0);
-                if seen >= BASE_LABELS_VERSION {
+                if seen >= version {
                     return Ok(None);
                 }
                 let language = base_language(tx, account_id, &fallback)?;
-                let mut changed = Vec::new();
-                for base in Base::ALL {
-                    let has: bool = tx.query_row(
-                        "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE account_id = ?1 AND base = ?2)",
-                        params![account_id, base.as_str()],
-                        |row| row.get(0),
-                    )?;
-                    if !has {
-                        changed.push(make_base_label(tx, account_id, base, &language)?);
-                    }
-                }
+                let changed = upgrade_base_labels(tx, account_id, seen, &language)?;
                 bump_prefs(tx, account_id)?;
                 tx.execute(
                     "UPDATE assist_prefs SET base_labels = ?2 WHERE account_id = ?1",
-                    params![account_id, BASE_LABELS_VERSION],
+                    params![account_id, version],
                 )?;
                 let mut modseq = None;
-                for id in changed {
-                    modseq = Some(label_changed(tx, account_id, id, "created")?);
+                for (id, change) in changed {
+                    modseq = Some(label_changed(tx, account_id, id, change)?);
                 }
                 Ok(modseq)
             })
@@ -1025,5 +1072,50 @@ mod tests {
             .unwrap();
         assert!(!plan.iter().any(|step| step.contains("email_keywords_keyword")), "{plan:#?}");
         assert!(plan.iter().any(|step| step.contains("SCAN m") || step.contains("SEARCH m")), "{plan:#?}");
+    }
+
+    /// A later set of base labels gives the definitions the server wrote the new wording, keeps one
+    /// that was changed, and makes no deleted base label again.
+    #[tokio::test]
+    async fn a_later_set_updates_unedited_definitions_only() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "leni@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let leni = store.create_account(account).await.unwrap().id;
+        assert!(store.ensure_base_labels(leni, "de").await.unwrap());
+        let labels = store.assist_labels(leni).await.unwrap();
+        let id = |base: Base| labels.iter().find(|l| l.base.as_deref() == Some(base.as_str())).unwrap().id;
+        let (invoice, work, shipping) = (id(Base::Invoice), id(Base::Work), id(Base::Shipping));
+        // As if an older set had written other words; one was changed afterwards; one is deleted.
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "UPDATE assist_labels SET description = 'alt', base_written = 'alt' WHERE id = ?1",
+                    [invoice],
+                )?;
+                tx.execute(
+                    "UPDATE assist_labels SET description = 'eigene Worte', base_written = 'alt' WHERE id = ?1",
+                    [work],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        store.delete_assist_label(leni, shipping).await.unwrap();
+        assert!(!store.ensure_base_labels(leni, "de").await.unwrap(), "the same set changes nothing");
+
+        assert!(store.ensure_base_labels_at(leni, "en", BASE_LABELS_VERSION + 1).await.unwrap());
+        let labels = store.assist_labels(leni).await.unwrap();
+        let description = |id: i64| labels.iter().find(|l| l.id == id).unwrap().description.clone();
+        assert_eq!(description(invoice), Base::Invoice.text("de").description, "in the language it was written in");
+        assert_eq!(description(work), "eigene Worte");
+        assert!(!labels.iter().any(|l| l.base.as_deref() == Some("shipping")), "deleted stays deleted");
     }
 }

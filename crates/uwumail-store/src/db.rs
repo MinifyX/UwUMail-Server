@@ -74,6 +74,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0065_labels.sql"),
     include_str!("migrations/0066_label_limits.sql"),
     include_str!("migrations/0067_l_labels_base.sql"),
+    include_str!("migrations/0068_base_label_definitions.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

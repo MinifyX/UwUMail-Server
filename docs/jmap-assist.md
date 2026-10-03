@@ -49,6 +49,7 @@ account others share with them):
   "maxLabelConditions": 10,
   "maxInstructionChars": 2000,
   "maxTextChars": 20000,
+  "baseLabels": ["invoice", "shipping", "appointment", "newsletter", "account", "personal", "work", "advertising"],
   "foreignMail": false
 }
 ```
@@ -61,6 +62,7 @@ account others share with them):
 | `maxProviders` | how many providers of their own one person may have |
 | `maxLabels` | how many labels one person may have |
 | `maxLabelConditions` | how many conditions the `rules` of one label may have |
+| `baseLabels` | the [base labels](#labels) this server knows, in their order (0.22); a client offers to make the deleted ones again, also when all were deleted |
 | `foreignMail` | the admin lets this person use the assistant for mail of **other** accounts (Exchange, Gmail, IMAP in the UwUMail app): the calls of [Foreign mail](#foreign-mail) accept mail content the client sends. `false` by default |
 | `maxInstructionChars` | longest `instruction` of `Assist/compose` |
 | `maxTextChars` | longest `text` of `Assist/compose`; mail content is cut to about this much too |

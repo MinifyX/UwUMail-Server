@@ -48,6 +48,11 @@ English otherwise. The language is the person's (`preferences.language`), else t
   changed, the name and color can. A deleted base label stays deleted until it is made again
   (`AssistLabel/set` create `{ "base": "invoice" }`). Base labels do not count toward the 30 own
   labels.
+- **New wording in a later version.** The server remembers each base label's definition as it
+  wrote it, and in which language. When a later UwUMail improves the definitions, a stored
+  definition still equal to what the server wrote gets the new wording (in the same language); one
+  that differs is kept. Base labels a later version adds are made then; a deleted one is not made
+  again.
 - The person's own labels stay as they are, next to the base labels.
 
 ## How a label is chosen

@@ -55,6 +55,9 @@ pub struct Capability {
     pub max_label_conditions: usize,
     pub max_instruction_chars: usize,
     pub max_text_chars: usize,
+    /// The base labels this server knows (`invoice`, …): a client offers to make deleted ones
+    /// again, even when the person deleted them all.
+    pub base_labels: Vec<&'static str>,
     /// The assistant may be used for mail of the person's other accounts (docs/jmap-assist.md,
     /// "Foreign mail").
     pub foreign_mail: bool,
@@ -729,6 +732,7 @@ impl Assist {
             max_label_conditions: uwumail_labels::MAX_CONDITIONS,
             max_instruction_chars: MAX_INSTRUCTION_CHARS,
             max_text_chars: MAX_TEXT_CHARS,
+            base_labels: uwumail_labels::Base::ALL.iter().map(|base| base.as_str()).collect(),
             foreign_mail,
         })
     }

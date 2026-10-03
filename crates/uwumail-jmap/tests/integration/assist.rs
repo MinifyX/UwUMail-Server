@@ -499,6 +499,7 @@ async fn labels_work_without_a_provider_and_carry_their_counts() {
         (capability["maxLabelConditions"].clone(), capability["foreignMail"].clone()),
         (json!(10), json!(false))
     );
+    assert_eq!(capability["baseLabels"].as_array().map(Vec::len), Some(8));
 
     let rules = json!({ "match": "any", "conditions": [{ "field": "from", "value": "@stadtwerke.example" }] });
     let responses = server

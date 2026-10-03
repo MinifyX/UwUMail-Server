@@ -120,6 +120,12 @@ impl Base {
         Base::Advertising,
     ];
 
+    /// The version of the set of base labels that brought it (the store's `BASE_LABELS_VERSION`):
+    /// a person who had an earlier set gets it made, one who deleted it keeps it deleted.
+    pub fn since(self) -> i64 {
+        1
+    }
+
     /// How it is spelled in the store, JMAP and the corpus.
     pub fn as_str(self) -> &'static str {
         match self {
