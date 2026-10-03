@@ -12,7 +12,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   score; the score sets which verdicts are possible, and the model may only choose among them.
   Every reason must quote the mail or cite one of the facts; reasons it makes up are dropped and
   counted. The confidence now comes mostly from the facts. `Assist/spamCheck` returns the weighing
-  (`facts`), `reasonDetails` and `droppedReasons`; webmail 0.22.0 shows them.
+  (`facts`), `reasonDetails` and `droppedReasons`; webmail 0.22.0 shows them. Against a small local
+  model (gemma-3-4b) on half the corpus, phishing called phishing rose from 54 % to 71 % and spam
+  from 50 % to 70 %, with no wanted mail called spam (before: 2 phishing mails called
+  legitimate); on real wanted mail of strangers, 1 of 40 was called spam instead of 3.
 - **Phishing checks without the network.** Look-alike, homoglyph and punycode domains of about 50
   brands (and, in the AI spam check, of your contacts' domains), a display name showing another
   address or domain, a brand's name in the display name or subject of mail from elsewhere, link

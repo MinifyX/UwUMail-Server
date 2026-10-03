@@ -206,6 +206,22 @@ Spam that only a real network reveals (blocklists, reputation) and partner
 fraud from a look-alike of a contact are left to the blocklists and the AI
 spam check.
 
+The AI spam check ([jmap-assist](jmap-assist.md#assistspamcheck)) builds on
+these checks. An ignored test, `spam_eval` in `uwumail-assist`, runs the 0.21
+and 0.22 ways against a model of your choice (`UWUMAIL_EVAL_LLM`); against
+gemma-3-4b on half the corpus:
+
+| Called right | 0.21 | 0.22 |
+| --- | --- | --- |
+| Wanted mail called legitimate | 50 of 54 | 51 of 54 |
+| Wanted mail called spam or phishing | 0 | 0 |
+| Phishing called spam or phishing | 13 of 24 | 17 of 24 |
+| Phishing called legitimate | 2 | 0 |
+| Spam called spam or phishing | 10 of 20 | 14 of 20 |
+
+The rest is "suspicious". Reasons the mail did not back were dropped in 41
+of 717.
+
 ### Unanswered questions and reputation
 
 A question that could not be answered is worth nothing in either direction:
