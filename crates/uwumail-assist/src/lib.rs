@@ -53,6 +53,9 @@ const MAX_CONCURRENT: usize = 16;
 const MAX_CONCURRENT_PER_ACCOUNT: usize = 3;
 /// `Assist/estimate`s running at once for one person: they read mail, but ask no one.
 const MAX_ESTIMATES_PER_ACCOUNT: usize = 4;
+/// `AssistLabel/apply` calls running at once for one person: each labels up to 20 mails, reading
+/// them and comparing them with thousands of examples (security review 0.22 LABELS22-L4).
+const MAX_LABEL_APPLIES_PER_ACCOUNT: usize = 1;
 
 /// How the text in pictures is asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +150,8 @@ struct Inner {
     running: Mutex<HashMap<i64, usize>>,
     /// `Assist/estimate`s running, per person.
     estimating: Mutex<HashMap<i64, usize>>,
+    /// `AssistLabel/apply` calls running, per person.
+    applying: Mutex<HashMap<i64, usize>>,
     /// The text in a mail's pictures, for `Assist/extractEvents` with `includeImages`.
     image_text: Option<ImageText>,
     /// What models cost, once loaded from the database.
@@ -168,6 +173,7 @@ impl Assist {
                 permits: Semaphore::new(MAX_CONCURRENT),
                 running: Mutex::new(HashMap::new()),
                 estimating: Mutex::new(HashMap::new()),
+                applying: Mutex::new(HashMap::new()),
                 image_text: None,
                 prices: std::sync::RwLock::new(None),
                 price_sources: prices::PriceSources::default(),
@@ -215,30 +221,42 @@ impl Assist {
     }
 
     /// One more estimate for `account`, if not too many run already.
-    fn begin_estimate(&self, account_id: i64) -> Result<Estimating<'_>> {
-        let mut estimating = self.inner.estimating.lock().unwrap_or_else(|e| e.into_inner());
-        let count = estimating.entry(account_id).or_default();
-        if *count >= MAX_ESTIMATES_PER_ACCOUNT {
-            return Err(AssistError::Busy);
-        }
-        *count += 1;
-        Ok(Estimating { assist: self, account_id })
+    fn begin_estimate(&self, account_id: i64) -> Result<Slot<'_>> {
+        Slot::take(&self.inner.estimating, account_id, MAX_ESTIMATES_PER_ACCOUNT)
+    }
+
+    /// One more `AssistLabel/apply` for `account`, if none runs for them already; hold the answer
+    /// while it runs. [`AssistError::Busy`] otherwise.
+    pub fn begin_label_apply(&self, account_id: i64) -> Result<Slot<'_>> {
+        Slot::take(&self.inner.applying, account_id, MAX_LABEL_APPLIES_PER_ACCOUNT)
     }
 }
 
-/// An estimate that is running; counted down again when it ends.
-struct Estimating<'a> {
-    assist: &'a Assist,
+/// Something running for one person, among at most so many; counted down again when it ends.
+pub struct Slot<'a> {
+    counts: &'a Mutex<HashMap<i64, usize>>,
     account_id: i64,
 }
 
-impl Drop for Estimating<'_> {
+impl<'a> Slot<'a> {
+    fn take(counts: &'a Mutex<HashMap<i64, usize>>, account_id: i64, max: usize) -> Result<Slot<'a>> {
+        let mut map = counts.lock().unwrap_or_else(|e| e.into_inner());
+        let count = map.entry(account_id).or_default();
+        if *count >= max {
+            return Err(AssistError::Busy);
+        }
+        *count += 1;
+        Ok(Slot { counts, account_id })
+    }
+}
+
+impl Drop for Slot<'_> {
     fn drop(&mut self) {
-        let mut estimating = self.assist.inner.estimating.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(count) = estimating.get_mut(&self.account_id) {
+        let mut map = self.counts.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = map.get_mut(&self.account_id) {
             *count = count.saturating_sub(1);
             if *count == 0 {
-                estimating.remove(&self.account_id);
+                map.remove(&self.account_id);
             }
         }
     }

@@ -82,12 +82,20 @@ pub fn cosine(a: &[u8], b: &[u8]) -> Option<f64> {
 
 /// The Jaccard similarity of two token lists (each token counted once).
 pub fn jaccard(a: &[i64], b: &[i64]) -> f64 {
-    let mut a: Vec<i64> = a.to_vec();
-    let mut b: Vec<i64> = b.to_vec();
-    a.sort_unstable();
-    a.dedup();
-    b.sort_unstable();
-    b.dedup();
+    jaccard_of_sets(&token_set(a), &token_set(b))
+}
+
+/// Tokens sorted and without repeats, as [`jaccard_of_sets`] takes them: a mail compared with many
+/// examples is made a set once.
+pub fn token_set(tokens: &[i64]) -> Vec<i64> {
+    let mut set = tokens.to_vec();
+    set.sort_unstable();
+    set.dedup();
+    set
+}
+
+/// [`jaccard`] of two [`token_set`]s.
+pub fn jaccard_of_sets(a: &[i64], b: &[i64]) -> f64 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
     }
@@ -143,6 +151,17 @@ pub fn vote(mut neighbours: Vec<Neighbour>, thresholds: Thresholds) -> HashMap<i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mail_made_a_set_once_compares_the_same() {
+        let mail = [5, 3, 3, 9, 1];
+        let example = [9, 9, 2, 3];
+        let mine = token_set(&mail);
+        assert_eq!(mine, [1, 3, 5, 9]);
+        assert_eq!(jaccard_of_sets(&mine, &token_set(&example)), jaccard(&mail, &example));
+        assert_eq!(jaccard(&mail, &example), 2.0 / 5.0);
+        assert_eq!(jaccard_of_sets(&[], &mine), 0.0);
+    }
 
     #[test]
     fn vectors_round_trip() {

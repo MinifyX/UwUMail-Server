@@ -651,7 +651,10 @@ arrived before auto-labels were on or while it was off. It needs the
 `autoLabels` feature, not the setting, and decides as the label worker does
 (the cheap ways first, the model only in doubt, at most two labels); it logs
 each label with its source. Response `{ accountId, labeled: {
-emailId: [labelId] }, notFound: [ids] }`.
+emailId: [labelId] }, notFound: [ids] }`. One call runs at a time per person;
+another one meanwhile fails like a busy provider. With the person's setting
+off, similar mails are compared by their words (no embeddings) and no
+correction examples are sent.
 
 ### AssistLabel/suggest
 

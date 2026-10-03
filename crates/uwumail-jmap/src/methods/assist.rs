@@ -1142,6 +1142,9 @@ pub async fn label_apply(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
     let (emails, mut not_found) =
         email_ids(ctx, args, MAX_APPLY)?.ok_or_else(|| MethodError::invalid_arguments("emailIds is required"))?;
+    // One call at a time per person: each reads up to MAX_APPLY mails and compares them with all
+    // their examples (security review 0.22 LABELS22-L4).
+    let _slot = assist.begin_label_apply(ctx.account.id).map_err(method_error)?;
     let mut labeled = Map::new();
     for email in emails {
         match assist.label_email(&ctx.account, email).await {

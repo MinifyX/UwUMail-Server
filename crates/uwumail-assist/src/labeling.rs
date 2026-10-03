@@ -266,15 +266,23 @@ impl Assist {
                 Err(err) => tracing::info!(account = account.id, %err, "no embeddings, comparing tokens instead"),
             }
         }
-        let neighbours = self
-            .store()
-            .label_token_sets(account.id)
-            .await?
-            .into_iter()
-            .filter(|example| example.email_id != email_id)
-            .map(|example| Neighbour { similarity: similar::jaccard(tokens, &example.tokens), labels: example.labels })
-            .collect();
-        Ok(similar::vote(neighbours, similar::TOKENS))
+        let examples = self.store().label_token_sets(account.id).await?;
+        let mine = similar::token_set(tokens);
+        // Thousands of examples of hundreds of tokens each: plain computing, off the async runtime
+        // (security review 0.22 LABELS22-L4).
+        tokio::task::spawn_blocking(move || {
+            let neighbours = examples
+                .into_iter()
+                .filter(|example| example.email_id != email_id)
+                .map(|example| Neighbour {
+                    similarity: similar::jaccard_of_sets(&mine, &similar::token_set(&example.tokens)),
+                    labels: example.labels,
+                })
+                .collect();
+            similar::vote(neighbours, similar::TOKENS)
+        })
+        .await
+        .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))
     }
 
     /// Embeds the mail, and along with it up to [`BACKFILL_PER_MAIL`] labeled mails that have no
@@ -310,16 +318,19 @@ impl Assist {
             store.set_label_vector(account.id, *id, model.clone(), stored).await?;
         }
         let Some(this) = this else { return Ok(HashMap::new()) };
-        let neighbours = store
-            .label_vectors(account.id, model)
-            .await?
-            .into_iter()
-            .filter(|example| example.email_id != email_id)
-            .filter_map(|example| {
-                Some(Neighbour { similarity: similar::cosine(&this, &example.vector)?, labels: example.labels })
-            })
-            .collect();
-        Ok(similar::vote(neighbours, similar::EMBEDDINGS))
+        let examples = store.label_vectors(account.id, model).await?;
+        tokio::task::spawn_blocking(move || {
+            let neighbours = examples
+                .into_iter()
+                .filter(|example| example.email_id != email_id)
+                .filter_map(|example| {
+                    Some(Neighbour { similarity: similar::cosine(&this, &example.vector)?, labels: example.labels })
+                })
+                .collect();
+            similar::vote(neighbours, similar::EMBEDDINGS)
+        })
+        .await
+        .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))
     }
 
     /// Puts the chosen labels on and logs where each came from.

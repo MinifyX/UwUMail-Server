@@ -420,6 +420,17 @@ Dein Einmalcode lautet 482 913. Oder klick https://login.bank.example/reset?t=ab
     assert!(rig.store.label_shots(rig.mia.id).await.unwrap().is_empty(), "gone with AI labels");
 }
 
+/// Security review 0.22 LABELS22-L4: one `AssistLabel/apply` at a time per person.
+#[tokio::test]
+async fn one_label_apply_at_a_time_per_person() {
+    let (rig, _, _) = labelled_rig().await;
+    let slot = rig.assist.begin_label_apply(rig.mia.id).unwrap();
+    assert!(matches!(rig.assist.begin_label_apply(rig.mia.id), Err(uwumail_assist::AssistError::Busy)));
+    assert!(rig.assist.begin_label_apply(rig.mia.id + 1).is_ok(), "somebody else is not held up");
+    drop(slot);
+    assert!(rig.assist.begin_label_apply(rig.mia.id).is_ok(), "free again once it ended");
+}
+
 #[tokio::test]
 async fn a_label_taken_off_a_senders_mail_is_not_asked_about_again() {
     let (rig, _, _) = labelled_rig().await;
