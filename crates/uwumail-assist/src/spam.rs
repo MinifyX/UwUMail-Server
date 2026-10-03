@@ -204,6 +204,9 @@ pub fn authentic(auth: &AuthenticationSignals) -> bool {
     }
 }
 
+/// The most the reader's history with an address can weigh while nothing authenticates it.
+const MAX_UNVERIFIED_HISTORY: f64 = 1.5;
+
 /// Adds up what the server knows. `phishing` are the findings of `uwumail_smtp::phishing` for this
 /// mail, `text` the mail's subject and text for the content cues.
 pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assessment {
@@ -244,26 +247,42 @@ pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assess
         add(&mut evidence, "NO_AUTHENTICATION", 0.5, None, false);
     }
 
-    // The reader's history with the address. A From address can be forged, so history only counts
-    // in full when authentication backs the address.
+    // The reader's history with the address. A From address can be forged, so history counts in
+    // full only when authentication backs the address, not at all when authentication speaks
+    // against it (DMARC failed, or results that leave the From unaligned), and at half weight, at
+    // most [`MAX_UNVERIFIED_HISTORY`] in all, when the mail carries no results at all (client
+    // review, CEO fraud: a forged colleague must not come out clean).
     if let Some(sender) = &signals.sender {
-        let trust = if authentic { 1.0 } else { 0.5 };
+        let unchecked = auth.dmarc.is_none() && auth.spf.is_none() && auth.dkim.is_none();
+        let trust = if authentic {
+            1.0
+        } else if unchecked {
+            0.5
+        } else {
+            0.0
+        };
+        let mut history: Vec<(&str, f64, Option<String>)> = Vec::new();
         if sender.written_to >= 1 {
-            add(&mut evidence, "WRITTEN_TO", -2.5 * trust, Some(sender.written_to.to_string()), false);
+            history.push(("WRITTEN_TO", -2.5, Some(sender.written_to.to_string())));
         }
         if sender.in_contacts {
-            add(&mut evidence, "IN_CONTACTS", -2.0 * trust, None, false);
+            history.push(("IN_CONTACTS", -2.0, None));
         }
         if sender.earlier_messages >= 1 {
             let junk_share = sender.earlier_in_junk as f64 / sender.earlier_messages as f64;
             if junk_share >= 0.5 {
                 add(&mut evidence, "EARLIER_IN_JUNK", 2.0, Some(sender.earlier_in_junk.to_string()), false);
             } else if sender.earlier_in_junk == 0 {
-                let weight = (sender.earlier_messages as f64 * 0.5).min(1.5) * trust;
-                add(&mut evidence, "KNOWN_SENDER", -weight, Some(sender.earlier_messages.to_string()), false);
+                let weight = (sender.earlier_messages as f64 * 0.5).min(1.5);
+                history.push(("KNOWN_SENDER", -weight, Some(sender.earlier_messages.to_string())));
             }
         } else if sender.written_to == 0 && !sender.in_contacts {
             add(&mut evidence, "FIRST_MAIL", 0.5, None, false);
+        }
+        let total: f64 = history.iter().map(|(_, weight, _)| weight * trust).sum();
+        let scale = if !authentic && total < -MAX_UNVERIFIED_HISTORY { MAX_UNVERIFIED_HISTORY / -total } else { 1.0 };
+        for (code, weight, detail) in history {
+            add(&mut evidence, code, weight * trust * scale, detail, false);
         }
     }
     if signals.in_junk {
@@ -286,8 +305,9 @@ pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assess
         }
     }
 
-    // Content cues, only for mail from somebody the reader does not know.
-    let known = signals.sender.as_ref().is_some_and(|sender| sender.written_to >= 1 || sender.in_contacts);
+    // Content cues, only for mail from somebody the reader knows for sure: a forged colleague asking
+    // for a gift card or an urgent transfer keeps them.
+    let known = authentic && signals.sender.as_ref().is_some_and(|sender| sender.written_to >= 1 || sender.in_contacts);
     let lower = text.to_lowercase();
     let lower = lower.split_whitespace().collect::<Vec<_>>().join(" ");
     if !known {
@@ -1041,6 +1061,83 @@ mod tests {
                 ..SenderSignals::default()
             }),
         }
+    }
+
+    /// Final client review (CEO fraud): a forged colleague's address carries no history, and the
+    /// content cues stay on, while the real colleague stays clean.
+    #[test]
+    fn a_forged_colleague_gets_no_good_word_from_the_history() {
+        let colleague = SenderSignals {
+            address: Some("chef@firma.example".into()),
+            earlier_messages: 40,
+            written_to: 25,
+            in_contacts: true,
+            ..SenderSignals::default()
+        };
+        let text = "Bitte kauf mir eine Gutscheinkarte (gift card) und überweise dringend 2000 €.";
+        let forged = SpamSignals {
+            authentication: AuthenticationSignals {
+                spf: Some("fail".into()),
+                dkim: Some("none".into()),
+                dmarc: Some("fail".into()),
+                from_domain: Some("firma.example".into()),
+                ..AuthenticationSignals::default()
+            },
+            spam_score: Some(1.0),
+            spam_threshold: Some(5.0),
+            tests: Vec::new(),
+            in_junk: false,
+            sender: Some(colleague.clone()),
+        };
+        let codes = |assessment: &Assessment| assessment.evidence.iter().map(|e| e.code.clone()).collect::<Vec<_>>();
+        let assessment = assess(&forged, &[], text);
+        let found = codes(&assessment);
+        for absent in ["WRITTEN_TO", "IN_CONTACTS", "KNOWN_SENDER"] {
+            assert!(!found.iter().any(|code| code == absent), "{found:?}");
+        }
+        assert!(found.iter().any(|code| code == "PAYMENT_REQUEST") && found.iter().any(|code| code == "URGENCY"));
+        assert!(assessment.allowed.contains(&"spam") && assessment.allowed.contains(&"phishing"), "{assessment:?}");
+        assert!(!assessment.allowed.contains(&"legitimate"), "{assessment:?}");
+
+        // Results that leave the From unaligned count like a failure: no history.
+        let mut unaligned = forged.clone();
+        unaligned.authentication.dmarc = None;
+        unaligned.authentication.spf = Some("pass".into());
+        unaligned.authentication.spf_pass_domain = Some("attacker.example".into());
+        let assessment = assess(&unaligned, &[], text);
+        assert!(!codes(&assessment).iter().any(|code| code == "WRITTEN_TO"), "{assessment:?}");
+        assert!(assessment.allowed.contains(&"phishing"), "{assessment:?}");
+
+        // No results at all: half weight, at most 1.5 in all, and the cues still count.
+        let mut unchecked = forged.clone();
+        unchecked.authentication =
+            AuthenticationSignals { from_domain: Some("firma.example".into()), ..AuthenticationSignals::default() };
+        let assessment = assess(&unchecked, &[], text);
+        let history: f64 = assessment
+            .evidence
+            .iter()
+            .filter(|e| ["WRITTEN_TO", "IN_CONTACTS", "KNOWN_SENDER"].contains(&e.code.as_str()))
+            .map(|e| e.weight)
+            .sum();
+        assert!((-1.6..0.0).contains(&history), "{assessment:?}");
+        assert!(codes(&assessment).iter().any(|code| code == "PAYMENT_REQUEST"));
+        assert!(assessment.allowed.contains(&"suspicious") && assessment.band != Band::Clean, "{assessment:?}");
+
+        // The real colleague, authenticated, stays clean and asks for nothing suspicious.
+        let real = SpamSignals {
+            authentication: AuthenticationSignals {
+                spf: Some("pass".into()),
+                dkim: Some("pass".into()),
+                dmarc: Some("pass".into()),
+                from_domain: Some("firma.example".into()),
+                ..AuthenticationSignals::default()
+            },
+            spam_score: Some(-1.0),
+            ..forged
+        };
+        let assessment = assess(&real, &[], "Kannst du bitte dringend die Rechnung überweisen?");
+        assert_eq!(assessment.band, Band::Clean, "{assessment:?}");
+        assert!(!codes(&assessment).iter().any(|code| code == "URGENCY"));
     }
 
     /// Client review C-1 on the server: another account's mail gets no good word from a filter
