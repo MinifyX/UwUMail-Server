@@ -140,8 +140,10 @@ pub(crate) async fn run_turn(store: &Store, env: &Env, mailbox: &MoveMailbox) ->
     };
     let password = match store.move_mailbox_password(mailbox.id).await {
         Ok(Some(password)) => password,
-        // Wiped meanwhile: the move was finished without a last round.
-        Ok(None) => return MoveTurn::Continue,
+        // Wiped meanwhile: the move was finished without a last round (then the mailbox is done
+        // and the pause changes nothing), or its account went to the trash. Never queued again
+        // without a password, which would only spin.
+        Ok(None) => return turn_of(paused("accountDeleted", "the password of the old mailbox was wiped")),
         Err(err) => return turn_of(paused("failed", err)),
     };
     let host = if mailbox.imap_host.is_empty() { found.imap_host.clone() } else { mailbox.imap_host.clone() };
@@ -169,7 +171,7 @@ pub(crate) async fn run_turn(store: &Store, env: &Env, mailbox: &MoveMailbox) ->
         let store = store.clone();
         let names = env.names.clone();
         let (account_id, contacts, calendars) = (mailbox.account_id, found.contacts, found.calendars);
-        Box::new(move |kind: DavKind, folder: String, texts: Vec<String>| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        Box::new(move |kind: DavKind, folder: String, texts: Vec<String>| -> Pin<Box<dyn Future<Output = bool> + Send>> {
             let store = store.clone();
             let names = names.clone();
             Box::pin(async move {
@@ -177,8 +179,9 @@ pub(crate) async fn run_turn(store: &Store, env: &Env, mailbox: &MoveMailbox) ->
                     DavKind::Addressbook => contacts,
                     DavKind::Calendar => calendars,
                 };
+                // Not asked for (the copy only offers kinds asked for): the messages stay mail.
                 if !wanted {
-                    return;
+                    return false;
                 }
                 let name = uwumail_imap::mutf7::decode(&folder).unwrap_or(folder);
                 let name = name.rsplit(['/', '.']).next().unwrap_or_default().to_owned();
@@ -187,13 +190,23 @@ pub(crate) async fn run_turn(store: &Store, env: &Env, mailbox: &MoveMailbox) ->
                     Ok(count) => {
                         let (contacts, events) = if kind == DavKind::Addressbook { (count, 0) } else { (0, count) };
                         let _ = store.count_move_objects(id, contacts, events).await;
+                        true
                     }
-                    Err(err) => tracing::warn!(%err, "contacts or calendars from an IMAP folder could not be stored"),
+                    // Copied as mail instead, so nothing is lost (security review 0.22 MOV-1).
+                    Err(err) => {
+                        tracing::warn!(%err, "contacts or calendars from an IMAP folder could not be stored, kept as mail");
+                        false
+                    }
                 }
             })
         }) as Box<Objects>
     });
-    let options = CopyOptions { skip_known: true, objects: wants_objects, ..CopyOptions::default() };
+    let options = CopyOptions {
+        skip_known: true,
+        contacts: found.contacts,
+        calendars: found.calendars,
+        ..CopyOptions::default()
+    };
     let source_name = mailbox.source_name(&host);
     let copy = copy_with(
         store,

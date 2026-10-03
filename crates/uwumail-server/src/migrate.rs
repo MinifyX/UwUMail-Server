@@ -193,7 +193,7 @@ pub(crate) type Note = dyn Fn(Store, MigrationProgress) -> Pin<Box<dyn Future<Ou
 
 /// One turn of copying: what is new since the last one, for up to `limit`, counted on top of
 /// `base` (the turns of this round before). `Done` when everything there was is here. Contacts
-/// and calendars found in IMAP folders (with [`CopyOptions::objects`]) go to `objects`.
+/// and calendars found in IMAP folders (with [`CopyOptions::contacts`]/`calendars`) go to `objects`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn copy(
     store: &Store,
@@ -208,9 +208,10 @@ pub(crate) async fn copy(
     copy_with(store, connection, account_id, source_name, base, options, limit, Box::new(note), None).await
 }
 
-/// What a turn does with contacts and calendar entries found in IMAP folders.
+/// What a turn does with contacts and calendar entries found in IMAP folders: `true` when they
+/// were stored, else the messages they came in are copied as mail.
 pub(crate) type Objects =
-    dyn Fn(DavKind, String, Vec<String>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync;
+    dyn Fn(DavKind, String, Vec<String>) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn copy_with(
@@ -250,11 +251,9 @@ pub(crate) async fn copy_with(
                 }
                 CopyEvent::Folder { .. } => return Box::pin(std::future::ready(true)),
                 CopyEvent::Objects { folder, kind, texts } => {
-                    let Some(objects) = objects.clone() else { return Box::pin(std::future::ready(true)) };
-                    return Box::pin(async move {
-                        objects(kind, folder, texts).await;
-                        true
-                    });
+                    // Nobody to take them: they stay mail.
+                    let Some(objects) = objects.clone() else { return Box::pin(std::future::ready(false)) };
+                    return Box::pin(async move { objects(kind, folder, texts).await });
                 }
             }
             let noted: MigrationProgress = *now;

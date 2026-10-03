@@ -556,8 +556,12 @@ pub enum CopyEvent {
     /// How far the copy got, after every portion and every folder.
     Progress(Copied),
     /// Contacts or calendar entries found in an IMAP folder that holds them as messages (Kolab
-    /// and others keep them so), only when [`CopyOptions::objects`] asked for them: the vCards or
-    /// iCalendar texts of one portion. The messages they came in are not copied as mail.
+    /// and others keep them so), only for the kinds [`CopyOptions::contacts`] and
+    /// [`CopyOptions::calendars`] asked for: the vCards or iCalendar texts of one portion, from
+    /// messages that are nothing but such an object (see [`pure_object_texts`]).
+    ///
+    /// For this event the answer means *stored*, not *go on*: when it is `false` (the import
+    /// failed, or nobody took them) the messages are copied as mail after all, so nothing is lost.
     Objects { folder: String, kind: DavKind, texts: Vec<String> },
 }
 
@@ -575,9 +579,20 @@ pub struct CopyOptions {
     pub skip_known: bool,
     /// Stop after the first portion that ends past this; the next copy goes on from there.
     pub deadline: Option<tokio::time::Instant>,
-    /// Look for contacts and calendars kept as messages in folders named so (see
-    /// [`CopyEvent::Objects`]).
-    pub objects: bool,
+    /// Look for contacts kept as messages in folders named so (see [`CopyEvent::Objects`]).
+    pub contacts: bool,
+    /// Look for calendar entries kept as messages in folders named so.
+    pub calendars: bool,
+}
+
+impl CopyOptions {
+    /// The kind of objects to take out of `folder`, when it is a folder of a kind asked for.
+    fn objects_in(&self, folder: &Folder) -> Option<DavKind> {
+        object_folder(folder).filter(|kind| match kind {
+            DavKind::Addressbook => self.contacts,
+            DavKind::Calendar => self.calendars,
+        })
+    }
 }
 
 /// Whether a folder is one where groupware servers keep contacts or calendar entries as messages
@@ -591,15 +606,25 @@ pub(crate) fn object_folder(folder: &Folder) -> Option<DavKind> {
     }
 }
 
-/// The vCards or iCalendar texts a message carries as parts of their own type.
-pub(crate) fn object_texts(raw: &[u8], kind: DavKind) -> Vec<String> {
+/// The longest plain text a message may carry besides its object and still count as an object
+/// (Kolab writes a short "This is a Kolab Groupware object" note).
+const OBJECT_STUB_CHARS: usize = 400;
+
+/// The vCards or iCalendar texts of a message that is nothing but a contact or calendar object,
+/// as groupware servers (Kolab and others) keep them in IMAP folders. Empty for everything else:
+/// an email with a text or HTML body, other attachments or a nested message is mail, even in a
+/// folder named "Kalender" (an invitation someone filed there), and is copied as mail (security
+/// review 0.22 MOV-1).
+pub(crate) fn pure_object_texts(raw: &[u8], kind: DavKind) -> Vec<String> {
     use mail_parser::{MimeHeaders, PartType};
     let Some(message) = uwumail_store::mime_limits::parse_message(raw) else { return Vec::new() };
+    let kolab = message.header("X-Kolab-Type").is_some();
     let mut texts = Vec::new();
     for part in &message.parts {
-        let Some(content_type) = part.content_type() else { continue };
-        let ctype = content_type.ctype().to_ascii_lowercase();
-        let subtype = content_type.subtype().unwrap_or_default().to_ascii_lowercase();
+        let (ctype, subtype) = part
+            .content_type()
+            .map(|ct| (ct.ctype().to_ascii_lowercase(), ct.subtype().unwrap_or_default().to_ascii_lowercase()))
+            .unwrap_or_else(|| ("text".into(), "plain".into()));
         let wanted = match kind {
             DavKind::Addressbook => {
                 matches!((ctype.as_str(), subtype.as_str()), ("text", "vcard" | "x-vcard" | "directory"))
@@ -608,16 +633,28 @@ pub(crate) fn object_texts(raw: &[u8], kind: DavKind) -> Vec<String> {
                 matches!((ctype.as_str(), subtype.as_str()), ("text", "calendar") | ("application", "ics"))
             }
         };
-        if !wanted {
+        if wanted {
+            let text = match &part.body {
+                PartType::Text(text) => text.to_string(),
+                PartType::Binary(bytes) | PartType::InlineBinary(bytes) => String::from_utf8_lossy(bytes).into_owned(),
+                _ => return Vec::new(),
+            };
+            if !text.trim().is_empty() {
+                texts.push(text);
+            }
             continue;
         }
-        let text = match &part.body {
-            PartType::Text(text) => text.to_string(),
-            PartType::Binary(bytes) | PartType::InlineBinary(bytes) => String::from_utf8_lossy(bytes).into_owned(),
-            _ => continue,
-        };
-        if !text.trim().is_empty() {
-            texts.push(text);
+        match &part.body {
+            PartType::Multipart(_) => {}
+            // Kolab's own formats travel next to the object.
+            _ if ctype == "application" && subtype.starts_with("x-vnd.kolab.") => {}
+            // The short note next to the object, not a letter.
+            PartType::Text(text)
+                if ctype == "text"
+                    && subtype == "plain"
+                    && !part.content_disposition().is_some_and(|d| d.is_attachment())
+                    && (kolab || text.trim().chars().count() <= OBJECT_STUB_CHARS) => {}
+            _ => return Vec::new(),
         }
     }
     texts
@@ -751,7 +788,7 @@ pub(crate) async fn copy_folders(
         }
         // Made when the first message goes in: a folder of contacts may hold none.
         let mut mailbox = None;
-        let objects = if options.objects { object_folder(&folder) } else { None };
+        let objects = options.objects_in(&folder);
         for batch in uids.chunks(BATCH) {
             if options.deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                 return Ok((copied, CopyEnd::OutOfTime));
@@ -762,65 +799,38 @@ pub(crate) async fn copy_folders(
             let mut by_uid: HashMap<u32, Fetched> =
                 responses.iter().filter_map(parse_fetch).map(|fetched| (fetched.uid, fetched)).collect();
             let mut found_objects = Vec::new();
+            // The messages the objects came in, copied as mail when the objects cannot be stored.
+            let mut object_messages = Vec::new();
             for uid in batch {
                 let Some(fetched) = by_uid.remove(uid) else { continue };
-                let Some(body) = fetched.body else { continue };
+                let Some(body) = fetched.body.as_deref() else { continue };
                 if fetched.flags.iter().any(|flag| flag.eq_ignore_ascii_case("\\Deleted")) {
                     continue;
                 }
                 if let Some(kind) = objects {
-                    let texts = object_texts(&body, kind);
+                    let texts = pure_object_texts(body, kind);
                     if !texts.is_empty() {
                         found_objects.extend(texts);
-                        copied.messages += 1;
-                        copied.bytes += body.len();
+                        object_messages.push(fetched);
                         continue;
                     }
                 }
-                let mailbox = match mailbox {
-                    Some(mailbox) => mailbox,
-                    None => *mailbox.insert(mailbox_for(store, account_id, &folder).await?),
-                };
-                if options.skip_known {
-                    let message_id = uwumail_smtp::header_value(&body, "Message-ID");
-                    if store.holds_message(account_id, message_id, BlobHash::of(&body)).await? {
-                        copied.skipped += 1;
-                        continue;
-                    }
-                }
-                let keywords =
-                    fetched.flags.iter().filter_map(|flag| uwumail_imap::parser::keyword_of_flag(flag)).collect();
-                let size = body.len();
-                let request = IngestRequest {
-                    account_id,
-                    raw: body,
-                    mailboxes: vec![MailboxTarget::Id(mailbox)],
-                    keywords,
-                    received_at: fetched.internal_date,
-                };
-                match store.ingest(request).await {
-                    Ok(_) => {}
-                    // Nested too deep or made of too many parts to be read safely
-                    // (uwumail_store::mime_limits): left out, and the move goes on with the rest.
-                    Err(StoreError::Rule { code: "invalidEmail", message }) => {
-                        tracing::warn!(uid, folder = %folder.raw, %message, "a message was left out");
-                        continue;
-                    }
-                    Err(err) => {
-                        return Err(
-                            anyhow::Error::from(err).context(format!("storing message {uid} of {}", folder.raw))
-                        );
-                    }
-                }
-                copied.messages += 1;
-                copied.bytes += size;
+                copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied).await?;
             }
             if let Some(kind) = objects
                 && !found_objects.is_empty()
             {
                 let event = CopyEvent::Objects { folder: folder.raw.clone(), kind, texts: found_objects };
-                if !report(event).await {
-                    return Ok((copied, CopyEnd::Stopped));
+                if report(event).await {
+                    for fetched in &object_messages {
+                        copied.messages += 1;
+                        copied.bytes += fetched.body.as_ref().map_or(0, Vec::len);
+                    }
+                } else {
+                    tracing::info!(folder = %folder.raw, "objects could not be stored, copying them as mail");
+                    for fetched in object_messages {
+                        copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied).await?;
+                    }
                 }
             }
             let last_uid = *batch.last().expect("chunks are never empty");
@@ -837,6 +847,55 @@ pub(crate) async fn copy_folders(
         }
     }
     Ok((copied, CopyEnd::Finished))
+}
+
+/// Stores one fetched message as mail in the folder's mailbox here (made on first use).
+async fn copy_message(
+    store: &Store,
+    account_id: i64,
+    folder: &Folder,
+    mailbox: &mut Option<i64>,
+    options: CopyOptions,
+    fetched: Fetched,
+    copied: &mut Copied,
+) -> anyhow::Result<()> {
+    let Fetched { uid, flags, internal_date, body } = fetched;
+    let Some(body) = body else { return Ok(()) };
+    let mailbox = match *mailbox {
+        Some(mailbox) => mailbox,
+        None => *mailbox.insert(mailbox_for(store, account_id, folder).await?),
+    };
+    if options.skip_known {
+        let message_id = uwumail_smtp::header_value(&body, "Message-ID");
+        if store.holds_message(account_id, message_id, BlobHash::of(&body)).await? {
+            copied.skipped += 1;
+            return Ok(());
+        }
+    }
+    let keywords = flags.iter().filter_map(|flag| uwumail_imap::parser::keyword_of_flag(flag)).collect();
+    let size = body.len();
+    let request = IngestRequest {
+        account_id,
+        raw: body,
+        mailboxes: vec![MailboxTarget::Id(mailbox)],
+        keywords,
+        received_at: internal_date,
+    };
+    match store.ingest(request).await {
+        Ok(_) => {}
+        // Nested too deep or made of too many parts to be read safely
+        // (uwumail_store::mime_limits): left out, and the move goes on with the rest.
+        Err(StoreError::Rule { code: "invalidEmail", message }) => {
+            tracing::warn!(uid, folder = %folder.raw, %message, "a message was left out");
+            return Ok(());
+        }
+        Err(err) => {
+            return Err(anyhow::Error::from(err).context(format!("storing message {uid} of {}", folder.raw)));
+        }
+    }
+    copied.messages += 1;
+    copied.bytes += size;
+    Ok(())
 }
 
 /// Copies the mail of `login` on the old server into `account` here.
@@ -1108,6 +1167,47 @@ mod tests {
         assert_eq!(again.await.unwrap().messages, 1, "only what arrived since");
         let inbox = new.mailboxes(new_id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
         assert_eq!(inbox.unwrap().total_emails, 2);
+    }
+
+    #[test]
+    fn only_messages_that_are_nothing_but_an_object_count_as_one() {
+        let mail =
+            |body: &str| format!("From: a@example.org\r\nSubject: x\r\nMIME-Version: 1.0\r\n{body}").into_bytes();
+        let card = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:1\r\nFN:Kim\r\nEND:VCARD\r\n";
+        let event = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:1\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        // A bare object, and Kolab's: a short note next to it.
+        let bare = mail(&format!("Content-Type: text/calendar\r\n\r\n{event}"));
+        assert_eq!(pure_object_texts(&bare, DavKind::Calendar).len(), 1);
+        assert!(pure_object_texts(&bare, DavKind::Addressbook).is_empty(), "only the kind asked for");
+        let kolab = mail(&format!(
+            "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nThis is a Kolab Groupware object.\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b\r\nContent-Type: application/x-vnd.kolab.contact\r\n\r\n<contact/>\r\n--b--\r\n"
+        ));
+        assert_eq!(pure_object_texts(&kolab, DavKind::Addressbook).len(), 1);
+        // Letters are mail, whatever they carry: an HTML body, a long text, another attachment.
+        for body in [
+            format!(
+                "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/html\r\n\r\n<p>Hi</p>\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b--\r\n"
+            ),
+            format!(
+                "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n{}\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b--\r\n",
+                "Lange Nachricht. ".repeat(40)
+            ),
+            format!(
+                "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b\r\nContent-Type: application/pdf\r\n\r\nJVBERi0x\r\n--b--\r\n"
+            ),
+            format!(
+                "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\nContent-Disposition: attachment; filename=a.txt\r\n\r\nx\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b--\r\n"
+            ),
+            "Content-Type: text/plain\r\n\r\nNur Text\r\n".to_owned(),
+        ] {
+            assert!(pure_object_texts(&mail(&body), DavKind::Addressbook).is_empty(), "{body}");
+        }
+        // With Kolab's header the note may be longer.
+        let long_note = format!(
+            "X-Kolab-Type: application/x-vnd.kolab.contact\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n{}\r\n--b\r\nContent-Type: text/vcard\r\n\r\n{card}--b--\r\n",
+            "Hinweis. ".repeat(80)
+        );
+        assert_eq!(pure_object_texts(&mail(&long_note), DavKind::Addressbook).len(), 1);
     }
 
     #[test]

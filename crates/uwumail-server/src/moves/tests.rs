@@ -385,3 +385,104 @@ fn dav_servers_follow_the_preset() {
     found.dav_mode = DavMode::Auto;
     assert_eq!(servers(&found, &mailbox(""), host, DavKind::Calendar), Some(None));
 }
+
+/// A message in a folder named like a calendar or address book, as a raw RFC 5322 text.
+fn object_mail(subject: &str, body: &str) -> Vec<u8> {
+    format!(
+        "From: mini@example.org\r\nTo: mini@example.org\r\nSubject: {subject}\r\nMessage-ID: <{subject}@example.org>\r\n\
+MIME-Version: 1.0\r\n{body}"
+    )
+    .into_bytes()
+}
+
+const PURE_EVENT: &str = "Content-Type: text/calendar; charset=utf-8\r\n\r\nBEGIN:VCALENDAR\r\nVERSION:2.0\r\n\
+PRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:kolab-ev@example.org\r\nDTSTAMP:20260101T000000Z\r\n\
+DTSTART:20261003T100000Z\r\nSUMMARY:Kolab\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+const PURE_CARD: &str = "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n\
+This is a Kolab Groupware object.\r\n--b\r\nContent-Type: text/vcard\r\n\r\nBEGIN:VCARD\r\nVERSION:3.0\r\n\
+UID:kolab-2\r\nFN:Kolab Kai\r\nEND:VCARD\r\n--b--\r\n";
+
+/// An invitation someone filed into "Kalender": a letter with an event attached.
+const INVITATION: &str = "Content-Type: multipart/mixed; boundary=m\r\n\r\n--m\r\n\
+Content-Type: multipart/alternative; boundary=a\r\n\r\n--a\r\nContent-Type: text/plain\r\n\r\nHallo Mini, \
+anbei die Einladung zum Fest.\r\n--a\r\nContent-Type: text/html\r\n\r\n<p>Hallo Mini</p>\r\n--a--\r\n--m\r\n\
+Content-Type: text/calendar; method=REQUEST\r\n\r\nBEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n\
+METHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:fest-2@example.net\r\nDTSTAMP:20260101T000000Z\r\n\
+DTSTART:20261003T100000Z\r\nSUMMARY:Fest\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n--m--\r\n";
+
+/// A letter with a business card attached, filed into "Contacts".
+const LETTER_WITH_CARD: &str = "Content-Type: multipart/mixed; boundary=m\r\n\r\n--m\r\nContent-Type: text/html\r\n\r\n\
+<p>Meine neue Adresse</p>\r\n--m\r\nContent-Type: text/vcard\r\nContent-Disposition: attachment; filename=nyu.vcf\r\n\r\n\
+BEGIN:VCARD\r\nVERSION:3.0\r\nUID:nyu-card\r\nFN:Nyu\r\nEND:VCARD\r\n--m--\r\n";
+
+fn emails_in(here: &[uwumail_store::Mailbox], name: &str) -> i64 {
+    here.iter().find(|mailbox| mailbox.name == name).map_or(0, |mailbox| mailbox.total_emails)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_pure_objects_of_kinds_asked_for_leave_the_mail() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = Store::open(&dir.path().join("old")).await.unwrap();
+    let old_mini = person(&old, "mini@example.org", Some(PASSWORD), 0).await;
+    let calendar = old.create_mailbox(old_mini, "Kalender", None, None, 0, true).await.unwrap();
+    for (subject, body) in [("event", PURE_EVENT), ("invitation", INVITATION)] {
+        deliver_raw(&old, old_mini, MailboxTarget::Id(calendar), object_mail(subject, body), &[]).await;
+    }
+    let contacts = old.create_mailbox(old_mini, "Contacts", None, None, 0, true).await.unwrap();
+    for (subject, body) in [("card", PURE_CARD), ("letter", LETTER_WITH_CARD)] {
+        deliver_raw(&old, old_mini, MailboxTarget::Id(contacts), object_mail(subject, body), &[]).await;
+    }
+    let (detour, _stop) = old_imap(&old).await;
+    let env = env(&old, detour);
+
+    let new = Store::open(&dir.path().join("new")).await.unwrap();
+    let mini = person(&new, "mini@example.org", None, 0).await;
+    // Contacts wanted, calendars not (security review 0.22 MOV-1).
+    let only_contacts = NewMove { calendars: false, ..new_move(MoveKind::Mailbox) };
+    new.create_move(only_contacts, vec![mailbox(mini, "mini@example.org", PASSWORD)]).await.unwrap();
+    let done = take_turn(&new, &env).await;
+    assert_eq!(done.state, MoveMailboxState::Synced, "{done:?}");
+    let here = new.mailboxes(mini).await.unwrap();
+    // Calendars were not asked for: both messages stay mail, the event too.
+    assert_eq!(emails_in(&here, "Kalender"), 2, "{here:?}");
+    // The letter with a card attached is mail; only the bare card became a contact.
+    assert_eq!(emails_in(&here, "Contacts"), 1, "{here:?}");
+    assert_eq!(done.contacts_done, 1, "{done:?}");
+    let events = new.dav_collections(mini, DavKind::Calendar, NewDavCollection::default_calendar("Kalender")).await;
+    let event_count: i64 = events.unwrap().iter().map(|c| c.resources).sum();
+    assert_eq!(event_count, 0, "no event without asking, and no invitation became one");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn objects_that_cannot_be_stored_are_copied_as_mail() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = Store::open(&dir.path().join("old")).await.unwrap();
+    let old_mini = person(&old, "mini@example.org", Some(PASSWORD), 0).await;
+    let contacts = old.create_mailbox(old_mini, "Contacts", None, None, 0, true).await.unwrap();
+    deliver_raw(&old, old_mini, MailboxTarget::Id(contacts), object_mail("card", PURE_CARD), &[]).await;
+    let (detour, _stop) = old_imap(&old).await;
+
+    let new = Store::open(&dir.path().join("new")).await.unwrap();
+    let mini = person(&new, "mini@example.org", None, 0).await;
+    let old_box = OldMailbox { account_id: mini, host: "imap.example.net", port: 993, login: "mini@example.org" };
+    let mut connection = connect(&new, &old_box, PASSWORD.into(), Some(detour), None).await.ok().unwrap();
+    // The import fails (as a broken address book would): the message must not be lost.
+    let failing: Box<Objects> = Box::new(|_, _, _| Box::pin(std::future::ready(false)));
+    let note: Box<crate::migrate::Note> = Box::new(|_, _| Box::pin(std::future::ready(true)));
+    let options = CopyOptions { skip_known: true, contacts: true, ..CopyOptions::default() };
+    let run = copy_with(
+        &new,
+        &mut connection,
+        mini,
+        "imap.example.net",
+        Default::default(),
+        options,
+        Duration::from_secs(60),
+        note,
+        Some(failing),
+    )
+    .await;
+    assert_eq!(run, MigrationRun::Done);
+    assert_eq!(emails_in(&new.mailboxes(mini).await.unwrap(), "Contacts"), 1, "kept as mail");
+}
