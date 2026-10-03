@@ -53,7 +53,15 @@ fn signals_for(raw: &[u8], auth_line: &str, sender: &str, now: i64) -> SpamSigna
     let known = sender == "known";
     let contact = sender == "contact";
     SpamSignals {
-        authentication: AuthenticationSignals { spf, dkim, dmarc, from_domain },
+        // The eval's passes are the From domain's own.
+        authentication: AuthenticationSignals {
+            dkim_pass_domains: from_domain.iter().filter(|_| dkim.as_deref() == Some("pass")).cloned().collect(),
+            spf_pass_domain: from_domain.clone().filter(|_| spf.as_deref() == Some("pass")),
+            spf,
+            dkim,
+            dmarc,
+            from_domain,
+        },
         spam_score: Some(f64::from(score.points) + if known || contact { -2.5 } else { 0.0 }),
         spam_threshold: Some(5.0),
         tests: score.hits.iter().map(|hit| hit.rule.to_owned()).collect(),

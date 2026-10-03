@@ -185,12 +185,19 @@ fn add(evidence: &mut Vec<Evidence>, code: &str, weight: f64, detail: Option<Str
     evidence.push(Evidence { code: code.to_owned(), tone, weight: (weight * 10.0).round() / 10.0, detail, phishing });
 }
 
-/// Whether authentication backs the From domain: DMARC passed, or SPF and DKIM passed for a domain
-/// without a DMARC policy.
+/// Whether authentication backs the From domain, as the SMTP checks decide it: DMARC passed, or —
+/// for a From domain without a DMARC policy — a DKIM signature or an SPF pass for the From domain,
+/// a parent or a subdomain of it. A pass for some other domain the sender owns vouches for nothing,
+/// and a DMARC failure is never outweighed (security review 0.22 R2-M1). The AI spam check and the
+/// AI labels both ask this.
 pub fn authentic(auth: &AuthenticationSignals) -> bool {
     match auth.dmarc.as_deref() {
         Some("pass") => true,
-        None | Some("none") => passed(&auth.dkim) && passed(&auth.spf),
+        None | Some("none") => auth.from_domain.as_deref().is_some_and(|from| {
+            let related = |domain: &str| uwumail_smtp::related_domains(from, domain);
+            (passed(&auth.dkim) && auth.dkim_pass_domains.iter().any(|domain| related(domain)))
+                || (passed(&auth.spf) && auth.spf_pass_domain.as_deref().is_some_and(related))
+        }),
         Some(_) => false,
     }
 }
@@ -810,6 +817,7 @@ mod tests {
                 dkim: Some("pass".into()),
                 dmarc: Some("pass".into()),
                 from_domain: Some("hoster.example".into()),
+                ..AuthenticationSignals::default()
             },
             spam_score: Some(-5.5),
             spam_threshold: Some(5.0),
@@ -843,6 +851,7 @@ mod tests {
                 dkim: Some("pass".into()),
                 dmarc: Some("pass".into()),
                 from_domain: Some("konto-hilfe.example".into()),
+                ..AuthenticationSignals::default()
             },
             spam_score: Some(3.0),
             spam_threshold: Some(5.0),

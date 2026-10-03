@@ -64,6 +64,7 @@ use mail_auth::MessageAuthenticator;
 use tokio::sync::Semaphore;
 use uwumail_store::Store;
 
+pub use checks::related_domains;
 pub use client::{Connector, connect_directly};
 pub use client_slots::{ClientSlot, ClientSlots};
 pub use config::{

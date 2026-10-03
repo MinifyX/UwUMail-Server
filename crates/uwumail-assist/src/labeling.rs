@@ -131,8 +131,9 @@ impl Assist {
             return Ok(Vec::new());
         }
         let auth = authentication(&mail_text.headers, Some(self.hostname()), &record.from);
-        let pass = |result: &Option<String>| result.as_deref() == Some("pass");
-        mail.from_trusted = pass(&auth.dmarc) || (pass(&auth.dkim) && pass(&auth.spf));
+        // Aligned with the From domain, as the SMTP checks and the spam check decide it (security
+        // review 0.22 R2-M1): a pass for the sender's own other domain, or a DMARC failure, is not.
+        mail.from_trusted = crate::spam::authentic(&auth);
         // Known only when authentication backs the From address (security review 0.22 LABELS22-L1).
         mail.known_sender =
             mail.from_trusted && !mail.from.is_empty() && store.knows_sender(account.id, mail.from.clone()).await?;
