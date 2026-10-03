@@ -126,6 +126,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   subject and text are capped inside the checks, host names longer than DNS allows are skipped,
   brand names are split into words once, at most 2,000 contact domains are compared, and the AI
   spam check parses the mail and runs the checks off the async runtime.
+- **Word statistics held back only for proven senders (SPAM-2).** The +3.5 limit for authenticated,
+  otherwise spotless mail now holds only for a sender with a good history or while the server's
+  Bayes is less than 99 % sure, and never for a sender whose mail mostly went to Junk; a throwaway
+  domain with its own DMARC no longer slips into the inbox on clean content.
 
 ## 0.21.2
 

@@ -284,7 +284,10 @@ at most 1 point otherwise, it adds at most +3.5: word statistics tell one
 newsletter from another well, but not a newsletter someone wants from one they
 do not, and at full strength they put authenticated, otherwise spotless
 receipts and newsletters into Junk on real mail. Such a message is greylisted
-at most. A person's own knowledge goes past that limit when it is 99 % sure,
+at most. Since DMARC costs a spammer nothing on a fresh domain, the limit only
+holds for a sender with a known good history (at most a tenth junk), or while
+the server's statistics are less than 99 % sure; it never holds for a sender
+whose mail mostly went to Junk. The reputation is read before the limit is set. A person's own knowledge goes past that limit when it is 99 % sure,
 so someone who keeps moving one newsletter to Junk gets it there. The sender reputation and the clear cases below
 look at a message's points without the learned rules (these two and the
 reputation rules), so what was learned never feeds on itself.
