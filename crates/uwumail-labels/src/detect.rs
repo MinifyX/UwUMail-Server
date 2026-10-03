@@ -59,7 +59,7 @@ pub struct Finding {
     pub confidence: f64,
 }
 
-const INVOICE_STEMS: &[&str] = &[
+pub(crate) const INVOICE_STEMS: &[&str] = &[
     "rechnung",
     "invoice",
     "faktura",
@@ -613,7 +613,7 @@ pub(crate) fn tracking(mail: &Mail, subject: &str, text: &str) -> Option<(&'stat
 }
 
 /// Words of an order on its way, in the subject: with them, shipping needs no carrier.
-const ORDER_SUBJECT_WORDS: &[&str] = &[
+pub(crate) const ORDER_SUBJECT_WORDS: &[&str] = &[
     "bestellbestätigung",
     "bestellung",
     "versandbestätigung",
@@ -797,7 +797,7 @@ fn personal(view: &View<'_>) -> Option<Finding> {
 fn work(view: &View<'_>) -> Option<Finding> {
     let facts = &view.facts;
     // Mail to oneself is no colleague's.
-    if view.mail.to.contains(&view.mail.from) {
+    if view.facts.to_self {
         return None;
     }
     if !facts.written_by_person() || facts.freemail || !facts.sales.is_empty() {

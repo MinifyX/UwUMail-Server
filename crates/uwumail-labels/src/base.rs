@@ -279,7 +279,7 @@ impl Base {
             },
             Base::Newsletter => BaseText {
                 name: "",
-                description: "Regelmäßige Ausgaben mit Inhalten, die du abonniert hast: Nachrichten, Wochenrückblick, Blog, Neuigkeiten eines Projekts oder Vereins, Job-Alerts. Nicht: Mails, die vor allem verkaufen wollen (Werbung), Mitteilungen zu deinem Konto oder deinen Bestellungen.",
+                description: "Regelmäßige Ausgaben mit Inhalten, die du abonniert hast: Nachrichten, Wochenrückblick, Blog, Neuigkeiten eines Projekts oder Vereins, Job-Alerts. Nicht: Mails, die vor allem verkaufen wollen (Werbung), Mitteilungen zu deinem Konto oder deinen Bestellungen, Benachrichtigungen von Apps und sozialen Netzwerken (neue Follower, Likes, Aktivität).",
                 examples: &[
                     "Self-Host Weekly – die Neuigkeiten dieser Woche",
                     "Vereinsnachrichten Oktober",
@@ -288,6 +288,7 @@ impl Base {
                 counter_examples: &[
                     "Sale: bis zu 50 % Rabatt (Werbung)",
                     "Wir ändern unsere AGB für dein Konto (Konto & Sicherheit)",
+                    "lea und 3 weitere Personen haben etwas Neues gepostet (kein Label)",
                 ],
             },
             Base::Account => BaseText {
@@ -375,7 +376,7 @@ impl Base {
             },
             Base::Newsletter => BaseText {
                 name: "",
-                description: "Regular issues with content you subscribed to: news, weekly digests, blog posts, updates of a project or club, job alerts. Not: mail mainly selling something (Promotions), messages about your account or your orders.",
+                description: "Regular issues with content you subscribed to: news, weekly digests, blog posts, updates of a project or club, job alerts. Not: mail mainly selling something (Promotions), messages about your account or your orders, notifications of apps and social networks (new followers, likes, activity).",
                 examples: &[
                     "Self-Host Weekly – this week's news",
                     "Club news for October",
@@ -384,6 +385,7 @@ impl Base {
                 counter_examples: &[
                     "Sale: up to 50% off (Promotions)",
                     "We're updating the terms of your account (Account & security)",
+                    "lea and 3 others posted something new (no label)",
                 ],
             },
             Base::Account => BaseText {

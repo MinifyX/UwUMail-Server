@@ -81,6 +81,12 @@ pub struct Facts {
     pub casual: bool,
     /// A greeting or farewell as business letters have them ("Sehr geehrte", "Kind regards").
     pub formal: bool,
+    /// An order word in the subject ("Bestellung", "your order", "Bestellt:").
+    pub order: bool,
+    /// An invoice word in the subject, or a PDF named like an invoice.
+    pub invoice_word: bool,
+    /// Sent to the sender's own address (a note to oneself, a test).
+    pub to_self: bool,
 }
 
 /// Local parts of addresses that read no answers.
@@ -623,6 +629,13 @@ impl Facts {
             account,
             casual: CASUAL.iter().any(|word| has_word(&edges, word)),
             formal: FORMAL.iter().any(|word| text.contains(word)),
+            order: crate::text::find_any(subject, crate::detect::ORDER_SUBJECT_WORDS).is_some(),
+            invoice_word: crate::text::find_any(subject, crate::detect::INVOICE_STEMS).is_some()
+                || mail.attachments.iter().any(|a| {
+                    let name = fold(&a.name);
+                    name.ends_with(".pdf") && crate::text::find_any(&name, crate::detect::INVOICE_STEMS).is_some()
+                }),
+            to_self: !mail.from.is_empty() && mail.to.contains(&mail.from),
         }
     }
 
@@ -664,6 +677,9 @@ impl Facts {
         lines.push(format!("sales words: {}", list(&self.sales)));
         lines.push(format!("account words in the subject: {}", list(&self.account)));
         lines.push(format!("casual greeting: {}; business greeting: {}", yes(self.casual), yes(self.formal)));
+        lines.push(format!("order word in the subject: {}", yes(self.order)));
+        lines.push(format!("invoice word in the subject or an invoice PDF: {}", yes(self.invoice_word)));
+        lines.push(format!("sent to the sender's own address: {}", yes(self.to_self)));
         lines.join("\n")
     }
 }

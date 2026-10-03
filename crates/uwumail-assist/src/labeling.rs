@@ -56,8 +56,7 @@ fn label_views<'a>(stored: &'a [AssistLabel], rules: &'a [Option<Rules>]) -> Vec
 fn prompt_label(label: &AssistLabel) -> PromptLabel {
     match label.base.as_deref().and_then(Base::parse) {
         Some(base) => {
-            // The definition was written in the person's language when the label was made.
-            let language = if label.description == base.text("de").description { "de" } else { "en" };
+            let language = base_label_language(base, label);
             let text = base.text(language);
             PromptLabel {
                 name: label.name.clone(),
@@ -67,6 +66,22 @@ fn prompt_label(label: &AssistLabel) -> PromptLabel {
             }
         }
         None => PromptLabel { name: label.name.clone(), description: label.description.clone(), ..Default::default() },
+    }
+}
+
+/// The language a base label was set up in: its definition was written in the person's language
+/// when it was made (and may be an older wording since), its name too.
+fn base_label_language(base: Base, label: &AssistLabel) -> &'static str {
+    let description = label.description.as_str();
+    if description == base.text("en").description || label.name.trim().eq_ignore_ascii_case(base.name("en")) {
+        "en"
+    } else if description == base.text("de").description
+        || label.name.trim().eq_ignore_ascii_case(base.name("de"))
+        || [" du ", " dein", " dich ", " und "].iter().any(|word| description.contains(word))
+    {
+        "de"
+    } else {
+        "en"
     }
 }
 

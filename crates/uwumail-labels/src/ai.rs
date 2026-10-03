@@ -89,9 +89,10 @@ pub fn ruled_out(base: Base, facts: &Facts) -> bool {
         return true;
     }
     match base {
-        Base::Personal => !facts.written_by_person() || facts.same_domain,
+        Base::Personal => !facts.written_by_person() || facts.same_domain || facts.to_self,
         Base::Work => {
-            facts.mass_mail()
+            facts.to_self
+                || facts.mass_mail()
                 || facts.automatic
                 || matches!(facts.sender, crate::SenderKind::NoReply | crate::SenderKind::Marketing)
                 || (facts.sender == crate::SenderKind::Role && !facts.known_sender)
@@ -102,7 +103,9 @@ pub fn ruled_out(base: Base, facts: &Facts) -> bool {
         Base::Account => facts.written_by_person() || (facts.account.is_empty() && facts.code.is_none()),
         // A neighbour writing about a parcel is no shipment.
         Base::Shipping => facts.written_by_person() && facts.freemail,
-        Base::Invoice | Base::Appointment => false,
+        // An order confirmation is no invoice unless it says it is one.
+        Base::Invoice => facts.order && !facts.invoice_word && facts.invoice_numbers.is_empty(),
+        Base::Appointment => false,
     }
 }
 
