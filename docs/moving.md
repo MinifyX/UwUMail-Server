@@ -59,6 +59,8 @@ hour for a portion of messages).
 Messages are fetched by size: the provider is first asked how large they are
 (`RFC822.SIZE`), small ones come in portions of about 16 MiB, large ones one at
 a time, and a fetch may take only a little more than the size the provider gave.
+A message larger than its given size (some providers only estimate it) is read
+past and fetched again on its own; if it still does not fit, it is skipped.
 A message larger than this server takes (`smtp.max_message_size`) is left out
 and counted with the skipped ones. All imports together (admin moves, personal
 moves, fetched mailboxes) hold at most 512 MiB of fetched mail at once; the
@@ -267,6 +269,9 @@ directory.
 - There is no limit on the number or the depth of the folders a move copies.
 - DAV import merges into a collection of the same name and can overwrite items with the same UID when it fills a mailbox that already has them.
 - Imported events keep their alarms (`VALARM`).
+- The 512 MiB import budget counts fetched message bodies only: the `RFC822.SIZE` answers and the copies made while storing a message are outside it.
+- "Skipped" counts messages that were here already and messages too large for this server together; the UIDs of the large ones are only in the server log.
+- A higher number of turns at once (`MAX_TURNS`, now 4) could make the shared budget slow imports down, as turns wait for room.
 - Contacts a move brings in count as known senders for the spam check and labels, like any other contact.
 - An old server name that does not exist is reported as "does not resolve to a public address", not as "not found".
 

@@ -685,6 +685,14 @@ These are left as they are on purpose, because their impact is low:
 - **Mail between two local people counts as unchecked (info).** It goes through submission, not
   SMTP delivery, so the assistant sees no authentication for it and may show a phishing hint
   where none is needed. This fails safe.
+- **Fetched mail counts as having no authentication results (0.22 L2).** A forged colleague that
+  arrives through a fetched mailbox can still get the reduced history weight for mail without
+  results, at most -1.5.
+- **Mail from a colleague on the same server counts as having no authentication results (0.22 L3).**
+  A real internal payment request can therefore be flagged as suspicious. This fails safe.
+- **The reason check and the facts in the prompt use the unweighted history (0.22 L4).** A "known
+  sender" reason can survive on a forged mail, but the verdict cannot become legitimate from it.
+- **`EARLIER_IN_JUNK` is not weighted by authentication (0.22 L6).**
 - **Domain signatures check `ifInState` before writing, not in the same transaction (0.22 webmail WF-3).** Two saves in the
   same instant can still overwrite each other. The signatures belong to the person, and only their own sessions write them.
 

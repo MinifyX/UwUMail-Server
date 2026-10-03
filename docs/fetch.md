@@ -406,6 +406,12 @@ own.
 | Message names remembered | 30 days |
 | Sign-ins on their way | 3 per person; Microsoft's code is good for 15 minutes, Google's way back for 10 |
 
+## Known limitations (security review)
+
+- Messages are fetched by `RFC822.SIZE` within the 512 MiB budget all imports share; the size answers and the copies made while storing a message are outside it.
+- A message larger than a fetch takes is left at the provider and stepped over; its UID is only in the server log.
+- Fetched mailboxes have no crash counter like moves do: a message that brings the server down would be fetched again after the restart.
+
 ## What is not there yet
 
 * **STARTTLS on port 143.** Fetching is over TLS from the first byte, which is
