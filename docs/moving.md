@@ -189,7 +189,12 @@ and *finished*.
   says why and offers an upload of `.vcf` and `.ics` files instead. Contact and
   calendar folders on the IMAP server (Kolab style: top-level folders named
   Contacts/Kontakte/Adressbuch or Calendar/Kalender holding vCards or
-  iCalendar parts) are imported into address books and calendars as well.
+  iCalendar parts) are imported into address books and calendars as well, for
+  the kinds the move takes (contacts, calendars) only. Only messages that are
+  nothing but such an object (the vCard or iCalendar part, at most a short note
+  or Kolab's own XML next to it) become contacts or events; an email filed
+  there (an invitation with a text, an HTML body or other attachments) is copied
+  as mail, and so is every object whose import fails, so no mail is lost.
 
 ### Finishing after the MX switch
 
@@ -223,7 +228,19 @@ directory.
   `uwumail-server import imap` instead. CalDAV/CardDAV addresses must be
   `https` without a user name in them.
 - At most 20 moves can be open at once, 2000 mailboxes per move; server lookups
-  are limited to 30 an hour per admin; uploads to 20 MiB.
+  are limited to 30 an hour per admin; uploads to 20 MiB. These limits and the
+  mailboxes that are busy are checked before the move makes a domain, mailbox
+  or alias; when the move is refused after all, what it made on the way is
+  taken back (audited with `"undone": true`).
+- A mailbox is filled by one move at a time: an admin's move refuses a mailbox
+  whose person moves mail in themselves (`movePersonalBusy`), and a person
+  cannot start or resume their own move while an admin's move fills their
+  mailbox (`moveAdminBusy`).
+- When an account goes to the trash, its open move entries stop
+  (`accountDeleted`) and their old passwords are wiped; after a restore, retry
+  with the password.
+- The links CSV neutralises cells a spreadsheet would read as a formula
+  (starting with `=`, `+`, `-`, `@`, tab or CR get a leading `'`).
 
 ### API
 

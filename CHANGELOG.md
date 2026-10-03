@@ -107,6 +107,16 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - **SignatureSettings/set writes each domain and identity once** (SIG-2): duplicate domain keys
   (`*`/` *`, `Example.ORG`/`example.org`) count once, the last wins; an account has at most 2000
   identities.
+- **Moves keep mail filed in "Kalender" or "Contacts" folders** (review MOV-1): only messages that
+  are nothing but a contact or calendar object, of a kind the move takes, become contacts or
+  events; everything else, and every object whose import fails, is copied as mail.
+- **Password links CSV without formulas** (MOV-2): cells starting with `=`, `+`, `-`, `@`, tab or
+  CR get a leading `'`.
+- **A refused move leaves nothing behind** (MOV-3): limits and busy mailboxes are checked before a
+  domain, mailbox or alias is made, and what was made is taken back when the move fails.
+- **One move per mailbox at a time** (MOV-4): an admin's move and the person's own move exclude
+  each other; a trashed account's move entries stop and lose their old passwords; the move page
+  reads only its own people and polls every 5 s instead of 3 s.
 - docs/signatures.md: the footer is best effort, not a compliance guarantee, the Sent copy has no
   footer, and clients must sanitise signature HTML (SIG-3, SIG-5).
 
