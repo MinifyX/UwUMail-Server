@@ -194,7 +194,8 @@ and *finished*.
   nothing but such an object (the vCard or iCalendar part, at most a short note
   or Kolab's own XML next to it) become contacts or events; an email filed
   there (an invitation, recognised by its iTIP `METHOD` even with a short note,
-  an HTML body or other attachments) is copied as mail, and so is every object whose import fails, so no mail is lost.
+  an HTML body or other attachments) is copied as mail, and so is every object
+  whose import fails, so no mail is lost.
 
 ### Finishing after the MX switch
 
