@@ -1,0 +1,24 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: personal mail from a friend or relative
+From: =?utf-8?q?Tom_Kr=C3=BCger?= <tom.krueger@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: WG: OK
+Date: Tue, 15 Sep 2026 08:57:00 +0000
+Message-ID: <124905138294.893@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+ok, passt für mich. Bis morgen!
+
+
+Tom
+
+Am 14.09.2026 um 18:02 schrieb Max Muster:
+> Hallo, wie geht's?
+> Max

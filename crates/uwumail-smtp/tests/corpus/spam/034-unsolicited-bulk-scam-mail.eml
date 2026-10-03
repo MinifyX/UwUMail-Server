@@ -1,0 +1,16 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Gewinnspiel-Team <contact21@a7x9k2.example>
+To: Max Muster <max@uwu.example>
+Subject: Potenzmittel diskret bestellen
+Date: Tue, 15 Sep 2026 17:44:00 +0000
+Message-ID: <992484054592.405@a7x9k2.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+UmV6ZXB0ZnJlaSB1bmQgZGlza3JldCBnZWxpZWZlcnQuIEpldHp0IGJlc3RlbGxlbjogaHR0cHM6
+Ly9rdXJ6LmV4YW1wbGUvMjQ1MjA=

@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand imitation (Microsoft 365) with credential request
+From: Microsoft 365 <admin@micros0ft-365.example>
+To: Max Muster <max@uwu.example>
+Subject: Your password expires today
+Date: Tue, 15 Sep 2026 17:50:00 +0000
+Message-ID: <890242968502.381@micros0ft-365.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Dear customer,</p><p>Your password will expire in 24 hours. Keep your current password by confirming your account below.</p><p><a href="https://micros0ft-365.example/keep">Confirm now</a></p>

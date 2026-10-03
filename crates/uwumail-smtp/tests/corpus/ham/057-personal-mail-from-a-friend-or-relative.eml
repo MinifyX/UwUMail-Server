@@ -1,0 +1,20 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail from a friend or relative
+From: Emma Wolf <emma.wolf@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Buch
+Date: Wed, 16 Sep 2026 00:55:00 +0000
+Message-ID: <717195759720.385@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Moin,
+
+kannst du mir das Buch nächste Woche zurückgeben? Ich brauche es für die Prüfung.
+
+Danke dir!
+Emma

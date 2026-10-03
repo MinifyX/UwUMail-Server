@@ -35,6 +35,32 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   a mandatory footer the server appends on sending, through JMAP and SMTP submission alike, before
   DKIM signing. Only the body text parts are rewritten; signed or encrypted mail (S/MIME, PGP) is
   left alone and a footer already there is not added twice.
+- **AI spam check: facts decide, the AI explains.** The server first weighs what it knows
+  (authentication, its spam filter, your history with the sender, the new phishing checks) into a
+  score; the score sets which verdicts are possible, and the model may only choose among them.
+  Every reason must quote the mail or cite one of the facts; reasons it makes up are dropped and
+  counted. The confidence now comes mostly from the facts. `Assist/spamCheck` returns the weighing
+  (`facts`), `reasonDetails` and `droppedReasons`; webmail 0.22.0 shows them. Against a small local
+  model (gemma-3-4b) on half the corpus, phishing called phishing rose from 54 % to 71 % and spam
+  from 50 % to 70 %, with no wanted mail called spam (before: 2 phishing mails called
+  legitimate); on real wanted mail of strangers, 1 of 40 was called spam instead of 3.
+- **Phishing checks without the network.** Look-alike, homoglyph and punycode domains of about 50
+  brands (and, in the AI spam check, of your contacts' domains), a display name showing another
+  address or domain, a brand's name in the display name or subject of mail from elsewhere, link
+  text naming a brand while the link leads elsewhere, a request for login data with links off the
+  sender's site, and a Reply-To to another site. New rules in docs/spam-filter.md.
+- **A spam corpus for CI.** 195 made-up German and English mails (wanted mail, spam, phishing, all
+  with reserved domains) and a test that fails when more than 1 % of the wanted mail would go to
+  Junk or less than 70 % of the phishing would.
+
+### Changed
+
+- **Fewer false positives.** On the corpus, phishing that goes to Junk by the rules alone rose
+  from 26 % to 77 % while wanted mail stays out of Junk and is no longer greylisted (7 before).
+  User names with dots in link texts are no longer taken for domains, which greylisted many
+  social-network notifications. The Bayes filter adds at most +3.5 to mail DMARC vouches for
+  that trips nothing else (it alone put authenticated receipts and newsletters into Junk), unless
+  your own marks make it 99 % sure.
 
 ### Fixed
 
@@ -46,7 +72,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   with AI" keeps a time range, is told to set all-day only when the mail gives no time, and its
   answer never replaces a found time with a whole day (or the other way round). The server turns
   an all-day answer with a time of day into a timed event and counts an all-day end as the last day.
-
+- **Wartende Nachrichten: retries of one message are one entry.** A greylisted sender that comes
+  back several times no longer fills the list with copies; the entry shows how often it tried and
+  when it last did. Once the message arrives, every waiting copy disappears, and a retry of a
+  message already delivered or discarded by hand no longer comes back onto the list.
 
 ## 0.21.2
 

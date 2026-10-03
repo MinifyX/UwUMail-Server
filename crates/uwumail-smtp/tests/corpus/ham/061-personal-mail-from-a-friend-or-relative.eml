@@ -1,0 +1,20 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: known
+X-Corpus-Note: personal mail from a friend or relative
+From: Jonas Brandt <jonas.brandt@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: WG: OK
+Date: Tue, 15 Sep 2026 16:19:00 +0000
+Message-ID: <737862410574.863@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+ok, passt für mich. Bis morgen!
+
+
+Jonas

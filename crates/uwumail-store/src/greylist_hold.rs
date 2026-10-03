@@ -91,6 +91,10 @@ pub struct GreylistHold {
     pub score: Option<f32>,
     pub size: i64,
     pub expires_at: i64,
+    /// How often the sender tried so far, the first attempt included.
+    pub attempts: i64,
+    /// When it last tried.
+    pub last_at: i64,
 }
 
 /// A kept message, read back to be delivered or learned from.
@@ -119,9 +123,17 @@ impl Store {
     /// Keeps a greylisted message for one recipient. The message goes into the blob store, the row
     /// holds the reference, and both go away together when it expires.
     ///
+    /// A retry of a message that is already here is not kept a second time. Senders come back
+    /// several times before the greylist window opens, and every attempt used to become a row of
+    /// its own: the same mail three times on the list. Now the row it repeats counts the attempt.
+    /// See [`Store::repeated_greylist_hold`] for what counts as the same message.
+    ///
     /// Answers `None` when this person already has [`MAX_HELD_PER_ACCOUNT`] waiting, which leaves
     /// the message greylisted the old way instead of keeping a copy nobody would see.
     pub async fn hold_greylisted(&self, hold: NewGreylistHold) -> Result<Option<i64>> {
+        if let Some(id) = self.repeated_greylist_hold(&hold).await? {
+            return Ok(Some(id));
+        }
         if self.greylist_hold_count(hold.account_id).await? >= MAX_HELD_PER_ACCOUNT {
             return Ok(None);
         }
@@ -129,12 +141,20 @@ impl Store {
         let size = hold.message.len() as i64;
         let expires_at = now() + hold.keep_secs.max(0);
         self.write(move |tx| {
+            // Two attempts of the same message may race each other here; the second one to get
+            // the write lock counts as a retry of the first. Its blob, if it put one, has no
+            // reference then and goes with the next garbage collection.
+            if let Some(id) = repeat_of(tx, &RepeatKey::of(&hold), expires_at)? {
+                return Ok(Some(id));
+            }
+            let at = now();
             tx.execute(
                 "INSERT INTO greylist_hold (at, account_id, address, envelope_from, header_from, subject, message_id,
-                                            smtp_id, client_ip, score, size, blob_hash, raw_hash, expires_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                                            smtp_id, client_ip, score, size, blob_hash, raw_hash, expires_at,
+                                            attempts, last_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 1, ?1)",
                 params![
-                    now(),
+                    at,
                     hold.account_id,
                     hold.address,
                     hold.envelope_from,
@@ -155,11 +175,30 @@ impl Store {
         .await
     }
 
+    /// Whether `hold` is another attempt of a message this person already has a row for, and if so
+    /// counts it there. Answers that row.
+    ///
+    /// The same bytes are the same message, whether it is still waiting or was already decided
+    /// about: a retry of a message someone discarded must not show up on their list again, and
+    /// one they delivered by hand is in their mailbox already.
+    ///
+    /// For a row that is still waiting, the same Message-ID from the same envelope sender is the
+    /// same message too. Large senders retry from another of their machines, which writes another
+    /// Received line, so the bytes are not always the same twice. The worst a forged match can do
+    /// is keep a message off the list that is greylisted anyway — it never decides whether mail is
+    /// delivered, which stays a question of bytes only (see [`Store::returning_greylist_hold`]).
+    async fn repeated_greylist_hold(&self, hold: &NewGreylistHold) -> Result<Option<i64>> {
+        let key = RepeatKey::of(hold);
+        let expires_at = now() + hold.keep_secs.max(0);
+        self.write(move |tx| repeat_of(tx, &key, expires_at)).await
+    }
+
     /// What one person is still waiting on, newest first.
     pub async fn greylist_holds(&self, account_id: i64) -> Result<Vec<GreylistHold>> {
         self.read(move |conn| {
             let mut statement = conn.prepare(
-                "SELECT id, at, address, envelope_from, header_from, subject, client_ip, score, size, expires_at
+                "SELECT id, at, address, envelope_from, header_from, subject, client_ip, score, size, expires_at,
+                        attempts, coalesce(last_at, at)
                  FROM greylist_hold
                  WHERE account_id = ?1 AND settled IS NULL
                  ORDER BY id DESC
@@ -178,6 +217,8 @@ impl Store {
                         score: row.get(7)?,
                         size: row.get(8)?,
                         expires_at: row.get(9)?,
+                        attempts: row.get(10)?,
+                        last_at: row.get(11)?,
                     })
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -250,6 +291,9 @@ impl Store {
                     params![id, account_id, how.as_str(), now()],
                 )?
             };
+            if changed > 0 {
+                settle_waiting_copies(tx, account_id, id, how)?;
+            }
             Ok(changed > 0)
         })
         .await
@@ -294,27 +338,34 @@ impl Store {
             // a settled row would be a two-day trap for every later message carrying that same
             // line — and plenty of senders number theirs in a way that can be guessed. Dropped
             // mail leaves nobody a trace, so this side errs towards delivering twice.
-            let found: Option<(i64, Option<String>)> = tx
+            //
+            // Every waiting row of it goes, not just one: a message that arrives normally is off
+            // the list, however many attempts it took to get here.
+            let waiting = tx.execute(
+                "DELETE FROM greylist_hold
+                 WHERE account_id = ?1 AND settled IS NULL
+                   AND (raw_hash = ?2 OR (?3 IS NOT NULL AND message_id = ?3))",
+                params![account_id, raw_hash, message_id],
+            )?;
+            if waiting > 0 {
+                // It is coming back by itself, so nothing needs to be held any longer.
+                return Ok(Returning::Fresh);
+            }
+            let settled: Option<String> = tx
                 .query_row(
-                    "SELECT id, settled FROM greylist_hold
-                     WHERE account_id = ?1
-                       AND (raw_hash = ?2 OR (?3 IS NOT NULL AND message_id = ?3 AND settled IS NULL))
-                     ORDER BY settled IS NULL DESC, id DESC
+                    "SELECT settled FROM greylist_hold
+                     WHERE account_id = ?1 AND raw_hash = ?2 AND settled IS NOT NULL
+                     ORDER BY id DESC
                      LIMIT 1",
-                    params![account_id, raw_hash, message_id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    params![account_id, raw_hash],
+                    |row| row.get(0),
                 )
                 .optional()?;
-            let Some((id, settled)) = found else { return Ok(Returning::Fresh) };
-            match settled.as_deref().and_then(Settled::parse) {
-                // It is coming back by itself, so nothing needs to be held any longer.
-                None => {
-                    tx.execute("DELETE FROM greylist_hold WHERE id = ?1", params![id])?;
-                    Ok(Returning::Fresh)
-                }
-                Some(Settled::Delivered) => Ok(Returning::Delivered),
-                Some(Settled::Discarded) => Ok(Returning::Discarded),
-            }
+            Ok(match settled.as_deref().and_then(Settled::parse) {
+                None => Returning::Fresh,
+                Some(Settled::Delivered) => Returning::Delivered,
+                Some(Settled::Discarded) => Returning::Discarded,
+            })
         })
         .await
     }
@@ -328,6 +379,70 @@ impl Store {
     pub async fn clear_greylist_holds(&self) -> Result<usize> {
         self.write(move |tx| Ok(tx.execute("DELETE FROM greylist_hold", [])?)).await
     }
+}
+
+/// What tells one attempt of a message from another, without the message itself.
+struct RepeatKey {
+    account_id: i64,
+    raw_hash: String,
+    message_id: Option<String>,
+    envelope_from: String,
+}
+
+impl RepeatKey {
+    fn of(hold: &NewGreylistHold) -> RepeatKey {
+        RepeatKey {
+            account_id: hold.account_id,
+            raw_hash: hold.raw_hash.clone(),
+            message_id: hold.message_id.clone().filter(|id| !id.trim().is_empty()),
+            envelope_from: hold.envelope_from.clone(),
+        }
+    }
+}
+
+/// Finds the row `key` repeats and counts the attempt there. See
+/// [`Store::repeated_greylist_hold`] for what counts.
+fn repeat_of(tx: &rusqlite::Transaction<'_>, key: &RepeatKey, expires_at: i64) -> Result<Option<i64>> {
+    let found: Option<(i64, Option<String>)> = tx
+        .query_row(
+            "SELECT id, settled FROM greylist_hold
+             WHERE account_id = ?1
+               AND (raw_hash = ?2
+                    OR (settled IS NULL AND ?3 IS NOT NULL AND message_id = ?3 AND envelope_from = ?4 COLLATE NOCASE))
+             ORDER BY settled IS NULL DESC, id
+             LIMIT 1",
+            params![key.account_id, key.raw_hash, key.message_id, key.envelope_from],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((id, settled)) = found else { return Ok(None) };
+    if settled.is_none() {
+        // Kept as long as the latest attempt is worth keeping, which is when the sender's greylist
+        // entry is forgotten too.
+        tx.execute(
+            "UPDATE greylist_hold SET attempts = attempts + 1, last_at = ?2, expires_at = max(expires_at, ?3)
+             WHERE id = ?1",
+            params![id, now(), expires_at],
+        )?;
+    }
+    Ok(Some(id))
+}
+
+/// Settles the other waiting rows of the message row `id` was made from, the same way. Rows from
+/// before retries were counted on one row may hold the same mail more than once; deciding about
+/// one of them decides about all.
+fn settle_waiting_copies(tx: &rusqlite::Transaction<'_>, account_id: i64, id: i64, how: Settled) -> Result<()> {
+    tx.execute(
+        "UPDATE greylist_hold SET settled = ?3, settled_at = ?4, blob_hash = NULL
+         WHERE account_id = ?2 AND settled IS NULL AND id != ?1
+           AND id IN (SELECT copy.id FROM greylist_hold AS copy, greylist_hold AS decided
+                      WHERE decided.id = ?1 AND copy.account_id = decided.account_id
+                        AND (copy.raw_hash = decided.raw_hash
+                             OR (decided.message_id IS NOT NULL AND copy.message_id = decided.message_id
+                                 AND copy.envelope_from = decided.envelope_from COLLATE NOCASE)))",
+        params![id, account_id, how.as_str(), now()],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -431,9 +546,11 @@ mod tests {
         assert_eq!(store.returning_greylist_hold(account, &raw_hash, None).await.unwrap(), Returning::Delivered);
 
         // Discarded: the retry must not bring it back.
-        let id3 = store.hold_greylisted(hold(account, "Weg", &raw)).await.unwrap().unwrap();
+        let gone = b"Subject: Weg\r\n\r\nHallo".to_vec();
+        let id3 = store.hold_greylisted(hold(account, "Weg", &gone)).await.unwrap().unwrap();
         store.settle_greylist_hold(account, id3, Settled::Discarded, false).await.unwrap();
-        assert_eq!(store.returning_greylist_hold(account, &raw_hash, None).await.unwrap(), Returning::Discarded);
+        let gone_hash = BlobHash::of(&gone).as_str().to_owned();
+        assert_eq!(store.returning_greylist_hold(account, &gone_hash, None).await.unwrap(), Returning::Discarded);
 
         // Something nobody was greylisted on is none of its business.
         let other = BlobHash::of(b"etwas ganz anderes").as_str().to_owned();
@@ -485,7 +602,8 @@ mod tests {
         let account = new_account(&store, "nyu").await;
         for n in 0..MAX_HELD_PER_ACCOUNT {
             let body = format!("Subject: Welle {n}\r\n\r\nHallo");
-            assert!(store.hold_greylisted(hold(account, "Welle", body.as_bytes())).await.unwrap().is_some());
+            let subject = format!("Welle {n}");
+            assert!(store.hold_greylisted(hold(account, &subject, body.as_bytes())).await.unwrap().is_some());
         }
         // From here on it is greylisted the way it always was, and nothing more is kept.
         let over = store.hold_greylisted(hold(account, "Zuviel", b"Subject: Zuviel\r\n\r\nHallo")).await.unwrap();
@@ -560,14 +678,120 @@ mod tests {
         store.settle_greylist_hold(account, id, Settled::Discarded, false).await.unwrap();
         assert!(!store.blob_hashes().await.unwrap().iter().any(|(each, _)| each == &hash), "and let go when discarded");
 
-        // Keeping it for the spam filter holds on until the row itself expires.
-        let mut learned = hold(account, "Muell", &raw);
+        // Keeping it for the spam filter holds on until the row itself expires. (Somebody else's
+        // copy: for this account the same bytes are a retry of what it already discarded.)
+        let other = new_account(&store, "lorin").await;
+        let mut learned = hold(other, "Muell", &raw);
         learned.keep_secs = -1;
         store.hold_greylisted(learned).await.unwrap();
-        let id2 = store.greylist_holds(account).await.unwrap()[0].id;
-        store.settle_greylist_hold(account, id2, Settled::Discarded, true).await.unwrap();
+        let id2 = store.greylist_holds(other).await.unwrap()[0].id;
+        store.settle_greylist_hold(other, id2, Settled::Discarded, true).await.unwrap();
         assert!(store.blob_hashes().await.unwrap().iter().any(|(each, _)| each == &hash), "still there to learn from");
         store.prune_greylist_holds().await.unwrap();
         assert!(!store.blob_hashes().await.unwrap().iter().any(|(each, _)| each == &hash), "and gone with the row");
+    }
+
+    #[tokio::test]
+    async fn retries_of_one_message_are_one_waiting_entry() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        let raw = b"Subject: Termin\r\n\r\nHallo".to_vec();
+        let first = store.hold_greylisted(hold(account, "Termin", &raw)).await.unwrap().unwrap();
+
+        // The same bytes again, a few minutes later.
+        assert_eq!(store.hold_greylisted(hold(account, "Termin", &raw)).await.unwrap(), Some(first));
+        // From another machine of the same sender: another Received line, the same Message-ID.
+        let mut elsewhere = hold(account, "Termin", b"Received: from mx2\r\nSubject: Termin\r\n\r\nHallo");
+        elsewhere.envelope_from = "FREMDER@example.org".into();
+        assert_eq!(store.hold_greylisted(elsewhere).await.unwrap(), Some(first));
+
+        let waiting = store.greylist_holds(account).await.unwrap();
+        assert_eq!(waiting.len(), 1, "one message, however often its sender tried");
+        assert_eq!(waiting[0].attempts, 3);
+        assert!(waiting[0].last_at >= waiting[0].at);
+        assert_eq!(store.greylist_hold_count(account).await.unwrap(), 1);
+
+        // The same Message-ID from somebody else is somebody else's message.
+        let mut other = hold(account, "Termin", b"Subject: Termin\r\n\r\nGanz anders");
+        other.envelope_from = "jemand@example.net".into();
+        assert_ne!(store.hold_greylisted(other).await.unwrap(), Some(first));
+        // And another message from the same sender is another entry.
+        store.hold_greylisted(hold(account, "Rechnung", b"Subject: Rechnung\r\n\r\nHallo")).await.unwrap();
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 3);
+
+        // Retries count for the person they were meant for only.
+        let theirs = new_account(&store, "lorin").await;
+        assert_ne!(store.hold_greylisted(hold(theirs, "Termin", &raw)).await.unwrap(), Some(first));
+        assert_eq!(store.greylist_holds(theirs).await.unwrap()[0].attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn a_retry_of_a_decided_message_does_not_come_back_on_the_list() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        let raw = b"Subject: Werbung\r\n\r\nKaufen".to_vec();
+        let id = store.hold_greylisted(hold(account, "Werbung", &raw)).await.unwrap().unwrap();
+        store.settle_greylist_hold(account, id, Settled::Discarded, false).await.unwrap();
+
+        store.hold_greylisted(hold(account, "Werbung", &raw)).await.unwrap();
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0, "discarded stays discarded");
+
+        // Other bytes behind the same Message-ID are not what was decided about: they would be
+        // delivered once greylisting lets them through, so the list shows them.
+        store.hold_greylisted(hold(account, "Werbung", b"Subject: Werbung\r\n\r\nAnders")).await.unwrap();
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_arriving_message_takes_every_waiting_copy_off_the_list() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        let raw = b"Subject: Paket\r\n\r\nHallo".to_vec();
+        store.hold_greylisted(hold(account, "Paket", &raw)).await.unwrap();
+        // Copies from before retries were counted on one row.
+        for copy in 0..2 {
+            let mut legacy = hold(account, "Paket", format!("Subject: Paket\r\nX-Try: {copy}\r\n\r\nHallo").as_bytes());
+            legacy.envelope_from = format!("bounce-{copy}@example.org");
+            store.hold_greylisted(legacy).await.unwrap();
+        }
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 3);
+
+        let arriving = BlobHash::of(b"Subject: Paket\r\nReceived: anders\r\n\r\nHallo").as_str().to_owned();
+        assert_eq!(
+            store.returning_greylist_hold(account, &arriving, Some("<Paket@example.org>")).await.unwrap(),
+            Returning::Fresh
+        );
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0, "all of it, not just one");
+    }
+
+    #[tokio::test]
+    async fn deciding_about_one_copy_decides_about_all() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        let raw = b"Subject: Brief\r\n\r\nHallo".to_vec();
+        let id = store.hold_greylisted(hold(account, "Brief", &raw)).await.unwrap().unwrap();
+        // A copy as rows from before 0.22 could hold it, written past the retry check.
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "INSERT INTO greylist_hold (at, account_id, address, envelope_from, header_from, subject, message_id,
+                                                smtp_id, client_ip, size, raw_hash, expires_at)
+                     SELECT at, account_id, address, envelope_from, header_from, subject, message_id, smtp_id,
+                            client_ip, size, 'anders', expires_at FROM greylist_hold WHERE id = ?1",
+                    params![id],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let other = BlobHash::of(b"Subject: Unrelated\r\n\r\nHallo");
+        store.hold_greylisted(hold(account, "Unrelated", b"Subject: Unrelated\r\n\r\nHallo")).await.unwrap();
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 3);
+
+        store.settle_greylist_hold(account, id, Settled::Delivered, true).await.unwrap();
+        let left = store.greylist_holds(account).await.unwrap();
+        assert_eq!(left.len(), 1, "both copies are delivered, the other message still waits");
+        assert_eq!(left[0].subject.as_deref(), Some("Unrelated"));
+        let _ = other;
     }
 }

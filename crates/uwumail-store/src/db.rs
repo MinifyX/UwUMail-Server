@@ -75,6 +75,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0066_label_limits.sql"),
     include_str!("migrations/0067_m_moves.sql"),
     include_str!("migrations/0068_signatures_domains.sql"),
+    include_str!("migrations/0069_spam_greylist_retries.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

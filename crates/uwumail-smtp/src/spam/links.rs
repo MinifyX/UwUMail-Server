@@ -206,8 +206,142 @@ pub(crate) fn named_in_text(text: &str) -> Option<String> {
         name.split('.').all(|label| !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
             && ending.len() >= 2
             && ending.chars().all(|c| c.is_ascii_alphabetic())
-            && !FILE_ENDINGS.contains(&ending);
+            && !FILE_ENDINGS.contains(&ending)
+            && known_ending(ending);
     looks_like_domain.then_some(name)
+}
+
+/// Country endings (ISO 3166 two-letter codes that are delegated).
+const COUNTRY_ENDINGS: &str = "ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bm bn bo br bs \
+bt bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg er es et eu fi fj fk fm \
+fo fr ga gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in io iq ir is it je jm jo jp \
+ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mg mh mk ml mm mn mo mp mq mr ms mt mu mv \
+mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc \
+sd se sg sh si sk sl sm sn so sr ss st su sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug uk us uy uz \
+va vc ve vg vi vn vu wf ws ye yt za zm zw";
+
+/// Other endings common enough in mail to be written as a bare name, and the reserved ones.
+const OTHER_ENDINGS: &[&str] = &[
+    "com",
+    "net",
+    "org",
+    "info",
+    "biz",
+    "edu",
+    "gov",
+    "mil",
+    "int",
+    "app",
+    "dev",
+    "shop",
+    "store",
+    "online",
+    "site",
+    "website",
+    "xyz",
+    "top",
+    "club",
+    "blog",
+    "cloud",
+    "page",
+    "link",
+    "live",
+    "news",
+    "email",
+    "digital",
+    "tech",
+    "media",
+    "agency",
+    "studio",
+    "design",
+    "art",
+    "berlin",
+    "hamburg",
+    "koeln",
+    "bayern",
+    "nrw",
+    "wien",
+    "swiss",
+    "gmbh",
+    "bio",
+    "eco",
+    "one",
+    "pro",
+    "work",
+    "tools",
+    "systems",
+    "network",
+    "solutions",
+    "services",
+    "support",
+    "center",
+    "team",
+    "world",
+    "today",
+    "group",
+    "company",
+    "global",
+    "ltd",
+    "inc",
+    "llc",
+    "ai",
+    "travel",
+    "money",
+    "bank",
+    "finance",
+    "health",
+    "care",
+    "school",
+    "academy",
+    "events",
+    "social",
+    "chat",
+    "game",
+    "games",
+    "fun",
+    "life",
+    "love",
+    "photo",
+    "photos",
+    "video",
+    "music",
+    "red",
+    "blue",
+    "pink",
+    "black",
+    "green",
+    "gold",
+    "plus",
+    "zone",
+    "space",
+    "host",
+    "web",
+    "wiki",
+    "icu",
+    "vip",
+    "cyou",
+    "rest",
+    "buzz",
+    "bond",
+    "sbs",
+    "cfd",
+    "lol",
+    "quest",
+    "click",
+    "help",
+    "mobi",
+    "asia",
+    "example",
+    "test",
+    "invalid",
+    "localhost",
+];
+
+/// Whether a bare name's ending is one a domain can have. Usernames with dots
+/// (`lena.berlin` is a domain, `lia.lunare` is somebody on a social network) are not addresses.
+fn known_ending(ending: &str) -> bool {
+    (ending.len() == 2 && COUNTRY_ENDINGS.split_whitespace().any(|code| code == ending))
+        || OTHER_ENDINGS.contains(&ending)
 }
 
 /// The part of a host name that stands for one site: the last two labels, or three where the last
@@ -223,7 +357,8 @@ pub(crate) fn site(host: &str) -> String {
     labels[labels.len().saturating_sub(take)..].join(".")
 }
 
-pub(crate) fn same_site(a: &str, b: &str) -> bool {
+#[cfg(test)]
+fn same_site(a: &str, b: &str) -> bool {
     site(a) == site(b)
 }
 
@@ -321,6 +456,15 @@ mod tests {
             Target::Domain(domain) => Some(domain),
             Target::Ip(_) => None,
         }
+    }
+
+    #[test]
+    fn usernames_with_dots_are_no_addresses() {
+        assert_eq!(named_in_text("lia.lunare"), None);
+        assert_eq!(named_in_text("angel.xoxo"), None);
+        assert_eq!(named_in_text("bank.example").as_deref(), Some("bank.example"));
+        assert_eq!(named_in_text("laden.berlin").as_deref(), Some("laden.berlin"));
+        assert_eq!(named_in_text("shop.de/angebote").as_deref(), Some("shop.de"));
     }
 
     #[test]

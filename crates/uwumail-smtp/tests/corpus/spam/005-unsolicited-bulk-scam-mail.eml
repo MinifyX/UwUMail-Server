@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Mr. Edward Brown <info59@promo-mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Double your bitcoin in 7 days
+Date: Tue, 15 Sep 2026 02:54:00 +0000
+Message-ID: <809913595066.869@promo-mail.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<a href="https://kurz.example/15036"><img src="http://promo-mail.example/banner.png" width="600" height="400"></a>

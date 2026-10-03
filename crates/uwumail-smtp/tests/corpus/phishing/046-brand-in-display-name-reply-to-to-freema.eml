@@ -1,0 +1,16 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand in display name, Reply-To to freemail, asks for data
+From: DHL Kundenservice <noreply@shipping-notice.example>
+To: Max Muster <max@uwu.example>
+Subject: Zustellung fehlgeschlagen
+Date: Tue, 15 Sep 2026 07:31:00 +0000
+Message-ID: <888787251666.940@shipping-notice.example>
+MIME-Version: 1.0
+Reply-To: zustellung575@mail.example
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Ihre Zustellung ist fehlgeschlagen. Bitte antworten Sie mit Ihrer Adresse und Ihren Zahlungsinformationen.

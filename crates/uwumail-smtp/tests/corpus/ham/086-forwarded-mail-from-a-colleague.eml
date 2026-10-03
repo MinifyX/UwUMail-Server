@@ -1,0 +1,26 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: contact
+X-Corpus-Note: forwarded mail from a colleague
+From: Felix Hoffmann <felix@firma.example>
+To: Max Muster <max@uwu.example>
+Subject: WG: Angebot Druckerei
+Date: Wed, 16 Sep 2026 07:04:00 +0000
+Message-ID: <974912981796.225@firma.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+zur Info, siehe unten.
+
+Felix
+
+-------- Weitergeleitete Nachricht --------
+Betreff: Angebot Druckerei
+Von: Druckerei Punkt <angebot@druckerei.example>
+
+Sehr geehrte Damen und Herren,
+anbei unser Angebot über 500 Flyer.

@@ -3040,6 +3040,8 @@
       "emptyHint": "Vertraagde berichten wachten hier tot ze vanzelf aankomen of tot jij erover beslist.",
       "noSubject": "Geen onderwerp",
       "sentTo": "Aan {{address}}",
+      "attempts_one": "{{count}} bezorgpoging, laatste op {{last}}",
+      "attempts_other": "{{count}} bezorgpogingen, laatste op {{last}}",
       "decide": {
         "deliver": "Afleveren",
         "discard": "Weggooien",

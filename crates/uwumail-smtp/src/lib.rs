@@ -80,6 +80,7 @@ pub use headers::values as header_values;
 pub use inbound::{ListenerKind, Taken, deliver_fetched, serve, serve_stream};
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
+pub use spam::{Authentication, Score, phishing, score_offline};
 pub use spam::{FEEDS, Feed, feed, run_learning, run_list_updates};
 pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};

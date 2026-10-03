@@ -1,0 +1,23 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail in English
+From: Grace Reed <grace@post.example>
+To: Max Muster <max@uwu.example>
+Subject: Book club Tuesday
+Date: Mon, 14 Sep 2026 14:55:00 +0000
+Message-ID: <492345078528.438@post.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi all,
+
+reminder: the book club meets on Tuesday at 7pm. We're discussing chapters 4 to 6.
+
+See you
+Grace
+
+On Mon, 14 Sep 2026 at 09:12, Max Muster wrote:
+> Sounds good!

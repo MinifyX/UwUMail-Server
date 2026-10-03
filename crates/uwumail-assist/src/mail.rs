@@ -47,6 +47,36 @@ impl MailText {
         }
     }
 
+    /// Reads a message that is not stored, from its bytes alone: for evaluation tools that judge
+    /// mail outside a mailbox.
+    pub fn parse(raw: &[u8], max_chars: usize) -> MailText {
+        let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
+        let parsed = MessageParser::default().parse(raw);
+        let list = |address: Option<&mail_parser::Address<'_>>| -> Vec<EmailAddress> {
+            address
+                .into_iter()
+                .flat_map(|address| address.iter())
+                .take(50)
+                .map(|one| EmailAddress {
+                    name: one.name.as_deref().map(str::to_owned),
+                    email: one.address.as_deref().unwrap_or_default().to_owned(),
+                })
+                .collect()
+        };
+        let (subject, from, to, cc, date) = match &parsed {
+            Some(message) => (
+                message.subject().unwrap_or_default().to_owned(),
+                list(message.from()),
+                list(message.to()),
+                list(message.cc()),
+                message.date().map_or(0, |date| date.to_timestamp()),
+            ),
+            None => Default::default(),
+        };
+        let (text, links, headers) = body(raw);
+        MailText { subject, from, to, cc, date, text: cap(&without_quotes(&text), max_chars), links, headers }
+    }
+
     /// The mail for a prompt: the headers that say who and when, then the text.
     pub fn for_prompt(&self, with_links: bool) -> String {
         let mut out = String::new();

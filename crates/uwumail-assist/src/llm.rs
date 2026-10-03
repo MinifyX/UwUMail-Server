@@ -451,6 +451,25 @@ fn write_ordered(value: &Value, out: &mut String) {
     }
 }
 
+/// The body of a plain chat completions request for `prompt`, its schema's keys in the order
+/// meant: for evaluation tools that ask a model directly, the way the server would.
+pub fn chat_request(model: &str, prompt: &Prompt) -> String {
+    let mut body = json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": prompt.system },
+            { "role": "user", "content": prompt.user }
+        ],
+        "stream": false,
+        "max_tokens": prompt.max_tokens,
+    });
+    if let Some((name, schema)) = &prompt.schema {
+        body["response_format"] =
+            json!({ "type": "json_schema", "json_schema": { "name": name, "strict": true, "schema": schema } });
+    }
+    ordered_json(&body)
+}
+
 fn request_body(target: &Target, prompt: &Prompt, stream: bool, with_schema: bool) -> (String, Value) {
     let base = target.base_url.trim_end_matches('/');
     let schema = prompt.schema.as_ref().filter(|_| with_schema);

@@ -286,9 +286,13 @@ reader, dates, amounts).
 
 ## Assist/spamCheck
 
-A second opinion on a mail the person is unsure about. The server's own
-findings come along, so the client shows both, and the person decides with the
-usual "Spam" / "Not spam" actions.
+A second opinion on a mail the person is unsure about. Facts decide, the model
+explains: the server first weighs what it knows (authentication, its spam
+filter, the person's history with the sender and its own phishing checks) into
+a score, the score sets which verdicts are possible, and the model may only
+pick one of those and must back each reason with a quote from the mail or one
+of the facts. The server's findings come along, so the client shows both, and
+the person decides with the usual "Spam" / "Not spam" actions.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -302,16 +306,32 @@ usual "Spam" / "Not spam" actions.
   "emailId": "e42",
   "verdict": "phishing",
   "confidence": 0.9,
-  "reasons": ["Asks to confirm a password through a link", "The link leads to a different domain than the sender's"],
+  "reasons": ["Asks to confirm a password through a link", "The sender's domain imitates PayPal"],
+  "reasonDetails": [
+    { "text": "Asks to confirm a password through a link", "quote": "confirm your password", "fact": null },
+    { "text": "The sender's domain imitates PayPal", "quote": null, "fact": "F2" }
+  ],
+  "droppedReasons": 1,
   "modelVerdict": null,
+  "facts": {
+    "score": 9.5,
+    "band": "spam",
+    "evidence": [
+      { "code": "DMARC_FAIL", "tone": "bad", "weight": 2.0, "detail": "paypa1.example", "phishing": false },
+      { "code": "LOOKALIKE_BRAND_FROM", "tone": "bad", "weight": 4.0, "detail": "paypa1.example looks like PayPal", "phishing": true },
+      { "code": "FIRST_MAIL", "tone": "bad", "weight": 0.5, "detail": null, "phishing": false }
+    ],
+    "allowed": ["spam", "phishing"],
+    "defaultVerdict": "phishing"
+  },
   "signals": {
-    "authentication": { "spf": "fail", "dkim": "none", "dmarc": "fail", "fromDomain": "bank.example" },
+    "authentication": { "spf": "fail", "dkim": "none", "dmarc": "fail", "fromDomain": "paypa1.example" },
     "spamScore": 4.2,
     "spamThreshold": 5.0,
-    "tests": ["DMARC_FAIL", "LINK_MISMATCH"],
+    "tests": ["DMARC_FAIL", "LOOKALIKE_BRAND_FROM"],
     "inJunk": false,
     "sender": {
-      "address": "service@bank.example",
+      "address": "service@paypa1.example",
       "earlierMessages": 0,
       "earlierInJunk": 0,
       "writtenTo": 0,
@@ -326,18 +346,36 @@ usual "Spam" / "Not spam" actions.
 
 | Field | |
 | --- | --- |
-| `verdict` | `legitimate`, `suspicious`, `spam` or `phishing` |
-| `confidence` | 0 to 1, the model's own estimate |
-| `reasons` | at most six short sentences |
-| `modelVerdict` | `null`, or the model's own verdict (`spam` or `phishing`) when the server's facts clearly speak for the mail and `verdict` was lowered to `suspicious` (and `confidence` to at most 0.5): the sender wrote before with none of it in Junk, is in the address book or was written to; DMARC passed (without a DMARC result: DKIM and SPF); the spam filter gave 0 points or less; not in Junk. Never for mail of another account |
+| `verdict` | `legitimate`, `suspicious`, `spam` or `phishing`, always one of `facts.allowed` |
+| `confidence` | 0.3 to 0.97: 70 % how well the facts support the verdict, 30 % the model's own estimate; at most 0.6 when the verdict was moved |
+| `reasons` | at most six short sentences, only those the mail backs |
+| `reasonDetails` | the same reasons with what each rests on: `quote` (words that stand in the mail) or `fact` (`F1`, `F2`, … of the facts the model was given) |
+| `droppedReasons` | how many reasons the server left out: they cited nothing, quoted words that are not in the mail, or claimed what the facts contradict (a link in a mail without links, a failed check that passed, a stranger who wrote before) |
+| `modelVerdict` | `null`, or the model's own verdict when it was outside `facts.allowed` and `verdict` was moved to the nearest allowed one |
+| `facts.score` | the sum of the evidence weights; positive is towards spam |
+| `facts.band` | `clean` (score ≤ −2: only `legitimate`), `leaningClean` (< 1.5: `legitimate`, `suspicious`), `unclear` (< 4: any), `leaningSpam` (< 7: `suspicious`, `spam`, `phishing`), `spam` (≥ 7: `spam`, `phishing`). `phishing` is allowed only with a phishing finding of weight 1.5 or more; a clean mail with a phishing finding may still be `suspicious` |
+| `facts.evidence` | each fact: a stable `code` to translate (see below), `tone` (`good` or `bad`), `weight`, a technical `detail` (a domain, a count, a cue) and whether it is a phishing finding |
+| `facts.allowed`, `facts.defaultVerdict` | the verdicts the model could choose from, and the one the facts would give alone |
 | `signals.authentication` | SPF, DKIM and DMARC as this server's `Authentication-Results` recorded them (`pass`, `fail`, `softfail`, `neutral`, `none`, …), `null` each when the mail did not come from another server |
 | `signals.spamScore`, `spamThreshold`, `tests` | the server's spam filter: its points, the limit for Junk and the rules that counted (`X-Spam-Status`); `null` and `[]` when it did not look |
 | `signals.inJunk` | the mail is in Junk now |
 | `signals.sender` | the From address and this account's history with it: mails from it before this one, how many of them are in Junk, mails the person sent to it, whether it is in the address book, and when the first mail came (`UTCDate`) |
 
-The model sees the same signals as facts next to the mail, with what the
-spam filter's points and rules mean, and the mail itself as untrusted data. It
-gives its reasons before the verdict.
+Evidence codes: `FILTER_WANTED`, `FILTER_SOME_POINTS`, `FILTER_OVER_LIMIT`
+(the spam filter's points), `DMARC_PASS`, `DMARC_FAIL`, `SPF_DKIM_PASS`,
+`SPF_DKIM_FAIL`, `NO_AUTHENTICATION`, `WRITTEN_TO`, `IN_CONTACTS`,
+`KNOWN_SENDER`, `EARLIER_IN_JUNK`, `FIRST_MAIL`, `IN_JUNK`, `PAYMENT_REQUEST`
+and `URGENCY` (only for senders the person does not know), the phishing checks
+of the [spam filter](spam-filter.md#phishing-checks) (`LOOKALIKE_BRAND_FROM`,
+`LOOKALIKE_CONTACT_FROM`, `BRAND_LINK_TEXT`, …, against the brand list and the
+domains of the person's contacts) and the spam filter's phishing rules it
+already counted (`LINK_TO_IP`, `HTML_ATTACHMENT`, `MALWARE_LINK`, …). Trust from
+history counts half when the mail is not authenticated. Clients show codes they
+do not know as they are.
+
+The model sees the facts numbered, the allowed verdicts (its answer schema
+allows no others) and the mail as untrusted data. It gives its reasons, each
+with `evidence` (a quote or a fact number), before the verdict.
 
 ## Assist/extractEvents
 

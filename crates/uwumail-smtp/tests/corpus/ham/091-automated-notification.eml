@@ -1,0 +1,16 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: automated notification
+From: Calendar <reminder@calendar.example>
+To: Max Muster <max@uwu.example>
+Subject: Reminder: Dentist tomorrow 09:00
+Date: Wed, 16 Sep 2026 06:14:00 +0000
+Message-ID: <527949481220.990@calendar.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This is a reminder for your event "Dentist" tomorrow at 09:00.
+

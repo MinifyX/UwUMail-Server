@@ -1,0 +1,25 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: authenticated marketing mail the reader wanted, with urgency words
+From: Outdoor Nord <angebote@outdoor-nord.example>
+To: Max Muster <max@uwu.example>
+Subject: Last chance: free shipping ends tonight!
+Date: Wed, 16 Sep 2026 08:25:00 +0000
+Message-ID: <156500486628.213@outdoor-nord.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://outdoor-nord.example/u/22543>
+Content-Type: multipart/alternative; boundary="alt-2905457334"
+
+--alt-2905457334
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Free shipping ends tonight. Don't miss it!
+--alt-2905457334
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<h1>Last chance!</h1><p><a href="https://outdoor-nord.example/sale">Shop the sale</a></p>
+--alt-2905457334--

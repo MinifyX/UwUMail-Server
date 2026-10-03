@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <promo56@best-deals.test>
+To: Max Muster <max@uwu.example>
+Subject: CHEAP MEDS ONLINE
+Message-ID: <438320817752.357@best-deals.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+R2V0IHlvdXIgbWVkcyB3aXRob3V0IHByZXNjcmlwdGlvbi4gQmVzdCBwcmljZXMgZ3VhcmFudGVl
+ZC4gT3JkZXIgbm93OiBodHRwOi8vMjAzLjAuMTEzLjEzNC9vZmZlcg==

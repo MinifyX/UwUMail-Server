@@ -1,0 +1,18 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (reset) with links to the service's own domain
+From: Notely <security@notely.example>
+To: Max Muster <max@uwu.example>
+Subject: Reset your password
+Date: Sun, 13 Sep 2026 21:57:00 +0000
+Message-ID: <570654293793.755@notely.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+someone asked to reset your password. Reset it here: https://notely.example/reset/0125886710448460
+If this wasn't you, you can ignore this email.

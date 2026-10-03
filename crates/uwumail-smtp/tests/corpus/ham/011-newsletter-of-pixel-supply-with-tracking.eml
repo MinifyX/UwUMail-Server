@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: newsletter of Pixel Supply with tracking links showing its own address
+From: Pixel Supply <news@pixelsupply.example>
+To: Max Muster <max@uwu.example>
+Subject: Last chance: 20% off everything
+Date: Tue, 15 Sep 2026 15:29:00 +0000
+Message-ID: <994524342474.178@pixelsupply.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://pixelsupply.example/abmelden?u=835858>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: multipart/alternative; boundary="alt-2274096941"
+
+--alt-2274096941
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+our new products are here. All offers: https://pixelsupply.example/offers
+
+Cheers,
+Pixel Supply
+
+Unsubscribe: https://pixelsupply.example/unsubscribe
+--alt-2274096941
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<div style="display:none">This week's best offers – take a look.</div><p>Hi Max,</p><p>our new products are here.</p><p><a href="https://click.mailer.example/t/7004870387">www.pixelsupply.example/offers</a></p><p><a href="https://click.mailer.example/t/7004870387x">Shop now</a></p><p style="font-size:11px"><a href="https://pixelsupply.example/unsubscribe">Unsubscribe</a></p>
+--alt-2274096941--

@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (code) with links to the service's own domain
+From: Codeforge <noreply@codeforge.example>
+To: Max Muster <max@uwu.example>
+Subject: Your sign-in code is 736140
+Date: Tue, 15 Sep 2026 04:50:00 +0000
+Message-ID: <707898019978.796@codeforge.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+your code is 344664. It expires in 10 minutes. Never share it.

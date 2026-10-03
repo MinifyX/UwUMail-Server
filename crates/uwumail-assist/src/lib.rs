@@ -16,6 +16,7 @@ pub mod llm;
 pub mod mail;
 pub mod prices;
 pub mod prompts;
+pub mod spam;
 mod worker;
 
 use std::collections::HashMap;
@@ -32,8 +33,8 @@ pub use access::{
 pub use features::{
     AuthenticationSignals, Calibration, ComposeArgs, ComposeResult, Estimate, EstimateArgs, EstimateCall, EstimateCost,
     EstimatePlan, EventsArgs, EventsResult, ExtractedEvent, LabelPick, LabelVerdict, MIN_CALIBRATION_SAMPLES, NewLabel,
-    Participant, SenderSignals, SpamArgs, SpamResult, SpamSignals, StreamEvent, SuggestArgs, SuggestResult,
-    SummarizeArgs, SummaryResult, Usage, plan_estimate, thinks,
+    Participant, SenderSignals, SpamAnswer, SpamArgs, SpamResult, SpamSignals, StreamEvent, SuggestArgs, SuggestResult,
+    SummarizeArgs, SummaryResult, Usage, parse_spam, plan_estimate, rule_meaning, thinks,
 };
 pub use foreign::{ForeignLabel, ForeignMail, foreign_labels, foreign_mails};
 pub use kinds::{KINDS, KindInfo};

@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <news27@offers4u.test>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Crypto_presale_=E2=80=93_1000x_guaranteed?=
+Date: Mon, 21 Sep 2026 10:00:00 +0000
+Message-ID: <852349240821.378@offers4u.test>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<a href="http://203.0.113.26/offer"><img src="http://offers4u.test/banner.png" width="600" height="400"></a>

@@ -1,0 +1,16 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Contacts: kanzlei-weber.example
+X-Corpus-Note: CEO/partner fraud without links
+From: Thomas Brandt <buero@kanzlei-webber.example>
+To: Max Muster <max@uwu.example>
+Subject: Neue Bankverbindung
+Date: Sun, 13 Sep 2026 21:50:00 +0000
+Message-ID: <301305789400.284@kanzlei-webber.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sehr geehrter Herr Muster, bitte beachten Sie unsere neue Bankverbindung für die offene Rechnung. Überweisen Sie den Betrag umgehend auf das neue Konto.

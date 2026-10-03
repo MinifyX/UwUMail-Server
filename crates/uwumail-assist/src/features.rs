@@ -33,6 +33,8 @@ const MAX_REASON_CHARS: usize = 300;
 const LABEL_MAIL_CHARS: usize = 4000;
 /// Address book entries looked at to match people.
 const MAX_CONTACTS: usize = 5000;
+/// Contact domains the phishing checks compare a sender with, at most.
+const MAX_CONTACT_DOMAINS: usize = 2000;
 /// Texts of pictures that go along with a mail, and how long each may be.
 const MAX_PICTURE_TEXTS: usize = 20;
 const MAX_PICTURE_CHARS: usize = 4000;
@@ -186,10 +188,16 @@ pub struct SpamSignals {
 pub struct SpamResult {
     pub verdict: String,
     pub confidence: f64,
+    /// The reasons that cite something real, as text.
     pub reasons: Vec<String>,
-    /// The model's own verdict, only when the server's facts contradicted it and [`held_to_facts`]
-    /// lowered it.
+    /// The same reasons with what each one cites.
+    pub reason_details: Vec<crate::spam::Reason>,
+    /// Reasons of the model that cited nothing real or contradicted the facts, and were dropped.
+    pub dropped_reasons: usize,
+    /// The model's own verdict, only when it was outside what the facts allow and was moved.
     pub model_verdict: Option<String>,
+    /// What the facts say: score, band and evidence.
+    pub assessment: crate::spam::Assessment,
     pub signals: SpamSignals,
     pub effective: Effective,
     pub usage: Usage,
@@ -843,7 +851,13 @@ impl Assist {
     }
 
     /// What the server knows about a mail by itself.
-    async fn spam_signals(&self, account: &Account, record: &EmailRecord, mail: &MailText) -> Result<SpamSignals> {
+    async fn spam_signals(
+        &self,
+        account: &Account,
+        record: &EmailRecord,
+        mail: &MailText,
+        contacts: &[(String, String)],
+    ) -> Result<SpamSignals> {
         let authentication = authentication(&mail.headers, Some(self.hostname()), &record.from);
         let (spam_score, spam_threshold, tests) = spam_status(&mail.headers);
         let mailboxes = self.store().mailboxes(account.id).await?;
@@ -859,12 +873,7 @@ impl Assist {
             sender.earlier_in_junk = earlier_in_junk;
             sender.written_to = written_to;
             sender.first_seen = first_seen.map(utc_date);
-            sender.in_contacts = self
-                .store()
-                .contact_addresses(account.id, MAX_CONTACTS)
-                .await?
-                .iter()
-                .any(|(_, email)| *email == address);
+            sender.in_contacts = contacts.iter().any(|(_, email)| email.trim().eq_ignore_ascii_case(&address));
         }
         Ok(SpamSignals { authentication, spam_score, spam_threshold, tests, in_junk, sender: Some(sender) })
     }
@@ -876,33 +885,50 @@ impl Assist {
         SpamSignals { authentication, spam_score, spam_threshold, tests, in_junk: mail.in_junk, sender: None }
     }
 
-    /// `Assist/spamCheck`.
+    /// `Assist/spamCheck`: the facts decide the range of verdicts, the model chooses within it and
+    /// explains, and reasons that cite nothing real are dropped (see [`crate::spam`]).
     pub async fn spam_check(&self, account: &Account, args: SpamArgs) -> Result<SpamResult> {
-        let (ticket, (prompt, signals)) = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
+        let (ticket, check) = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
             let ticket = self.prepare_for(account, "spamCheck", true).await?.expecting(TYPICAL_SPAM_TOKENS);
-            (ticket, foreign_spam_prompt(foreign, args.language.as_deref()))
+            (ticket, self.foreign_spam_prompt(account, foreign, args.language.as_deref()).await?)
         } else {
             let record = self.record(account, args.email_id).await?;
             let ticket = self.prepare(account, "spamCheck").await?.expecting(TYPICAL_SPAM_TOKENS);
             (ticket, self.spam_prompt(account, &record, args.language.as_deref()).await?)
         };
-        let (completion, effective) = self.send(ticket, &prompt, None).await?;
+        let (completion, effective) = self.send(ticket, &check.prompt, None).await?;
         let (verdict, confidence, reasons) =
             parse_spam(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
                 description: "the model's answer was not a verdict".into(),
                 retry_after: None,
                 transient: false,
             })?;
-        let (verdict, confidence, model_verdict) = held_to_facts(verdict, confidence, &signals);
+        let (verdict, confidence, model_verdict) = crate::spam::settle(&check.assessment, &verdict, confidence);
+        let (reason_details, dropped_reasons) =
+            crate::spam::verify(reasons, &check.mail, &check.shape, &check.facts, &check.signals, MAX_REASONS);
         Ok(SpamResult {
             verdict,
             confidence,
-            reasons,
+            reasons: reason_details.iter().map(|reason| reason.text.clone()).collect(),
+            reason_details,
+            dropped_reasons,
             model_verdict,
-            signals,
+            assessment: check.assessment,
+            signals: check.signals,
             effective,
             usage: Usage::of(&completion),
         })
+    }
+
+    /// The domains of the person's contacts, for lookalikes of a partner's domain.
+    async fn contact_domains(&self, account: &Account) -> Result<(Vec<String>, Vec<(String, String)>)> {
+        let contacts = self.store().contact_addresses(account.id, MAX_CONTACTS).await?;
+        let mut domains: Vec<String> =
+            contacts.iter().filter_map(|(_, email)| uwumail_smtp::phishing::domain_of(email)).collect();
+        domains.sort();
+        domains.dedup();
+        domains.truncate(MAX_CONTACT_DOMAINS);
+        Ok((domains, contacts))
     }
 
     /// The prompt of `Assist/spamCheck`, with the facts it gives the model.
@@ -911,11 +937,26 @@ impl Assist {
         account: &Account,
         record: &EmailRecord,
         language: Option<&str>,
-    ) -> Result<(Prompt, SpamSignals)> {
-        let mail = self.text(record, MAX_MAIL_CHARS).await?;
-        let signals = self.spam_signals(account, record, &mail).await?;
-        let prompt = prompts::spam_check(&mail, &findings(&signals), language);
-        Ok((prompt, signals))
+    ) -> Result<SpamCheckPrompt> {
+        let raw = self.store().blob(&record.blob).await?;
+        let mail = MailText::read(record, &raw, MAX_MAIL_CHARS);
+        let (domains, contacts) = self.contact_domains(account).await?;
+        let signals = self.spam_signals(account, record, &mail, &contacts).await?;
+        let phishing = uwumail_smtp::phishing::check_message(&raw, &domains);
+        let shape =
+            crate::spam::MailShape { has_links: !mail.links.is_empty(), attachments: Some(record_attachments(&raw)) };
+        Ok(spam_check_prompt(mail, signals, &phishing, shape, language))
+    }
+
+    /// The prompt of `Assist/spamCheck` for a mail of another account, with its provider's findings.
+    async fn foreign_spam_prompt(
+        &self,
+        account: &Account,
+        foreign: &ForeignMail,
+        language: Option<&str>,
+    ) -> Result<SpamCheckPrompt> {
+        let (domains, _) = self.contact_domains(account).await?;
+        Ok(foreign_spam_check_prompt(foreign, &domains, language))
     }
 
     /// The text of a mail's pictures for a prompt. With [`PictureRead::KnownOnly`], a picture that
@@ -1013,10 +1054,10 @@ impl Assist {
             }
             EstimateArgs::SpamCheck(args) => {
                 let prompt = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
-                    foreign_spam_prompt(foreign, args.language.as_deref()).0
+                    self.foreign_spam_prompt(account, foreign, args.language.as_deref()).await?.prompt
                 } else {
                     let record = self.record(account, args.email_id).await?;
-                    self.spam_prompt(account, &record, args.language.as_deref()).await?.0
+                    self.spam_prompt(account, &record, args.language.as_deref()).await?.prompt
                 };
                 (prompt, TYPICAL_SPAM_TOKENS, Vec::new())
             }
@@ -1288,11 +1329,62 @@ fn one_foreign(mails: &[ForeignMail]) -> Result<Option<&ForeignMail>> {
     }
 }
 
-/// The prompt of `Assist/spamCheck` for a mail of another account, with its provider's findings.
-fn foreign_spam_prompt(mail: &ForeignMail, language: Option<&str>) -> (Prompt, SpamSignals) {
-    let signals = Assist::foreign_spam_signals(mail);
-    let prompt = prompts::spam_check(&mail.mail_text(MAX_MAIL_CHARS), &findings(&signals), language);
-    (prompt, signals)
+/// Everything a spam check needs between asking the model and reading its answer.
+struct SpamCheckPrompt {
+    prompt: Prompt,
+    signals: SpamSignals,
+    assessment: crate::spam::Assessment,
+    facts: Vec<crate::spam::Fact>,
+    mail: MailText,
+    shape: crate::spam::MailShape,
+}
+
+fn spam_check_prompt(
+    mail: MailText,
+    signals: SpamSignals,
+    phishing: &[uwumail_smtp::phishing::Finding],
+    shape: crate::spam::MailShape,
+    language: Option<&str>,
+) -> SpamCheckPrompt {
+    let assessment = crate::spam::assess(&signals, phishing, &format!("{}\n{}", mail.subject, mail.text));
+    let facts = crate::spam::facts(&signals, &assessment, rule_meaning);
+    let prompt = prompts::spam_check(&mail, &facts, &assessment.allowed, language);
+    SpamCheckPrompt { prompt, signals, assessment, facts, mail, shape }
+}
+
+/// The spam check of a mail of another account: its provider's findings, the phishing checks on
+/// what the app sent along (no HTML, so links only as written out in the text).
+fn foreign_spam_check_prompt(
+    foreign: &ForeignMail,
+    contact_domains: &[String],
+    language: Option<&str>,
+) -> SpamCheckPrompt {
+    let signals = Assist::foreign_spam_signals(foreign);
+    let mail = foreign.mail_text(MAX_MAIL_CHARS);
+    let header = |name: &str| {
+        foreign.headers.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).map(|(_, value)| value.as_str())
+    };
+    let reply_to = header("Reply-To")
+        .and_then(|value| value.split(['<', '>', ',', ' ']).find(|part| part.contains('@')).map(str::to_owned));
+    let from = foreign.from.first();
+    let input = uwumail_smtp::phishing::Input {
+        from_name: from.and_then(|from| from.name.as_deref()),
+        from_address: from.map(|from| from.email.as_str()),
+        reply_to: reply_to.as_deref(),
+        subject: &foreign.subject,
+        text: &mail.text,
+        links: uwumail_smtp::phishing::links_in_text(&mail.text),
+        contact_domains,
+        mailing_list: header("List-Id").is_some(),
+    };
+    let phishing = uwumail_smtp::phishing::check(&input);
+    let shape = crate::spam::MailShape { has_links: mail.text.contains("http"), attachments: None };
+    spam_check_prompt(mail, signals, &phishing, shape, language)
+}
+
+/// How many attachments a stored message has.
+fn record_attachments(raw: &[u8]) -> usize {
+    mail_parser::MessageParser::default().parse(raw).map_or(0, |message| message.attachments().count())
 }
 
 /// A label `AssistLabel/suggest` asks about: one of the person's, or of another account.
@@ -1532,6 +1624,15 @@ const RULE_MEANINGS: &[(&str, &str)] = &[
     ("LINK_TO_IP", "a link leads to a bare IP address"),
     ("LOOKALIKE_LINK", "a link leads to a domain that imitates a known one"),
     ("FROM_NAME_SPOOFS_ADDRESS", "the sender's name shows an address other than the real one"),
+    ("LOOKALIKE_BRAND_FROM", "the sender's domain is spelled to look like a known brand's"),
+    ("BRAND_IN_FROM_DOMAIN", "the sender's domain carries a known brand's name but is not the brand's"),
+    ("LOOKALIKE_CONTACT_FROM", "the sender's domain looks like the domain of one of the reader's contacts"),
+    ("BRAND_IN_FROM_NAME", "the sender's name claims a known brand, the address is not the brand's"),
+    ("REPLY_TO_OTHER_SITE", "answers go to another domain than the sender's"),
+    ("LOOKALIKE_BRAND_LINK", "a link leads to a domain spelled to look like a known brand's"),
+    ("BRAND_LINK_TEXT", "a link shows a known brand's or contact's address and leads somewhere else"),
+    ("BRAND_IN_SUBJECT", "the subject names a known brand and asks to log in or confirm data, from another domain"),
+    ("CREDENTIAL_REQUEST", "the mail asks to log in or confirm data, with links to another domain than the sender's"),
     ("HIDDEN_TEXT", "the mail hides text from the reader"),
     ("HTML_ONLY", "the mail has no plain text part"),
     ("BASE64_TEXT", "the text is encoded in an unusual way"),
@@ -1555,109 +1656,23 @@ const RULE_MEANINGS: &[(&str, &str)] = &[
     ("FETCHED_NO_AUTH", "nothing vouches for the sender of this fetched mail"),
 ];
 
-/// The signals as facts for the prompt.
-fn findings(signals: &SpamSignals) -> String {
-    let auth = &signals.authentication;
-    let or_none = |value: &Option<String>| value.clone().unwrap_or_else(|| "not checked".into());
-    let mut out = String::new();
-    if signals.sender.is_none() {
-        out.push_str(
-            "- The mail is from another account of the reader: these checks are what that account's mail \
-provider wrote into the mail, not checks of this server.\n",
-        );
-    }
-    out.push_str(&format!(
-        "- SPF: {}\n- DKIM: {}\n- DMARC: {}\n- Domain of the From address: {}\n",
-        or_none(&auth.spf),
-        or_none(&auth.dkim),
-        or_none(&auth.dmarc),
-        auth.from_domain.clone().unwrap_or_else(|| "none".into())
-    ));
-    if auth.dmarc.as_deref() == Some("pass") {
-        let domain = auth.from_domain.as_deref().unwrap_or("the From address");
-        out.push_str(&format!(
-            "- DMARC passed for {domain}: the mail really comes from the domain in its From address.\n"
-        ));
-    }
-    let meaning = "fewer points mean more likely wanted mail; 0 or less means the filter rates it as wanted mail";
-    match (signals.spam_score, signals.spam_threshold) {
-        (Some(score), Some(threshold)) => out.push_str(&format!(
-            "- Spam filter: {score:.1} points, Junk from {threshold:.1} ({meaning}); {}\n",
-            if score >= threshold { "this mail is over the limit" } else { "this mail is under the limit" }
-        )),
-        (Some(score), None) => out.push_str(&format!("- Spam filter: {score:.1} points ({meaning})\n")),
-        _ => out.push_str("- Spam filter: did not look at this mail\n"),
-    }
-    if !signals.tests.is_empty() {
-        out.push_str("- Spam filter rules that counted:\n");
-        for test in &signals.tests {
-            match RULE_MEANINGS.iter().find(|(rule, _)| rule == test) {
-                Some((_, meaning)) => out.push_str(&format!("  - {test}: {meaning}\n")),
-                None => out.push_str(&format!("  - {test}\n")),
-            }
-        }
-    }
-    out.push_str(&format!("- In the Junk folder now: {}\n", if signals.in_junk { "yes" } else { "no" }));
-    match &signals.sender {
-        Some(sender) => out.push_str(&format!(
-            "- Earlier mails from this address: {} ({} of them in Junk); mails the reader sent to it: {}; in the \
-reader's address book: {}",
-            sender.earlier_messages,
-            sender.earlier_in_junk,
-            sender.written_to,
-            if sender.in_contacts { "yes" } else { "no" }
-        )),
-        None => out.push_str("- Earlier mails from this address: not known"),
-    }
-    out
+/// What a rule of this server's spam filter or phishing checks means, for the model.
+pub fn rule_meaning(rule: &str) -> Option<&'static str> {
+    RULE_MEANINGS.iter().find(|(known, _)| *known == rule).map(|(_, meaning)| *meaning)
 }
 
-/// Whether the server's own facts clearly speak for a mail: the reader knows the sender (earlier
-/// mail of it, none in Junk; or in the address book; or written to), the From domain is authentic
-/// (DMARC passed, or without a DMARC result both DKIM and SPF passed), the spam filter rates it as
-/// wanted (0 points or less) and it is not in Junk. Without the sender's history (mail of another
-/// account) they never do.
-pub fn clearly_good(signals: &SpamSignals) -> bool {
-    let Some(sender) = &signals.sender else { return false };
-    let auth = &signals.authentication;
-    let passed = |result: &Option<String>| result.as_deref() == Some("pass");
-    let authentic = match auth.dmarc.as_deref() {
-        Some("pass") => true,
-        None | Some("none") => passed(&auth.dkim) && passed(&auth.spf),
-        Some(_) => false,
-    };
-    let known =
-        (sender.earlier_messages >= 1 && sender.earlier_in_junk == 0) || sender.in_contacts || sender.written_to >= 1;
-    authentic && known && !signals.in_junk && signals.spam_score.is_some_and(|score| score <= 0.0)
-}
+/// A spam check answer: verdict, confidence, and each reason with what it cites.
+pub type SpamAnswer = (String, f64, Vec<(String, String)>);
 
-/// The model's verdict, held to the server's facts: "spam" or "phishing" for a mail they clearly
-/// speak for becomes "suspicious", at most half sure, since small models sometimes see a scam in an
-/// ordinary invoice. The third value is the model's own verdict when it was lowered.
-pub fn held_to_facts(verdict: String, confidence: f64, signals: &SpamSignals) -> (String, f64, Option<String>) {
-    if matches!(verdict.as_str(), "spam" | "phishing") && clearly_good(signals) {
-        ("suspicious".into(), confidence.min(0.5), Some(verdict))
-    } else {
-        (verdict, confidence, None)
-    }
-}
-
-/// Verdict, confidence and reasons out of the model's answer.
-pub fn parse_spam(text: &str) -> Option<(String, f64, Vec<String>)> {
+/// Verdict, confidence and reasons (with what each one cites) out of the model's answer.
+pub fn parse_spam(text: &str) -> Option<SpamAnswer> {
     let answer = llm::json_answer(text)?;
     let verdict = answer.get("verdict")?.as_str()?.trim().to_ascii_lowercase();
     if !matches!(verdict.as_str(), "legitimate" | "suspicious" | "spam" | "phishing") {
         return None;
     }
     let confidence = answer.get("confidence").and_then(Value::as_f64).filter(|c| c.is_finite()).unwrap_or(0.5);
-    let reasons = answer
-        .get("reasons")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|reason| optional_text(Some(reason), MAX_REASON_CHARS))
-        .take(MAX_REASONS)
-        .collect();
+    let reasons = crate::spam::parse_reasons(&answer, MAX_REASONS, MAX_REASON_CHARS);
     Some((verdict, confidence.clamp(0.0, 1.0), reasons))
 }
 
@@ -1961,7 +1976,8 @@ mod tests {
         let signals = Assist::foreign_spam_signals(&foreign);
         assert!(signals.in_junk && signals.sender.is_none());
         assert_eq!(signals.spam_score, Some(6.0));
-        assert!(findings(&signals).contains("another account"), "{}", findings(&signals));
+        let facts = crate::spam::facts(&signals, &crate::spam::assess(&signals, &[], ""), rule_meaning);
+        assert!(facts[0].text.contains("another account"), "{facts:?}");
         assert_eq!(spam_status(&headers), (Some(6.0), Some(5.0), vec!["SPF_FAIL".into(), "SPAMHAUS_ZEN".into()]));
         let none = [("X-Spam-Status".to_owned(), "No, score=0.0 required=5.0 tests=none".to_owned())];
         assert_eq!(spam_status(&none), (Some(0.0), Some(5.0), vec![]));
@@ -1969,19 +1985,17 @@ mod tests {
 
     #[test]
     fn spam_answers_are_held_to_their_shape() {
-        let (verdict, confidence, reasons) =
-            parse_spam(r#"{"verdict": "Phishing", "confidence": 7, "reasons": ["a", "", "b\nc"]}"#).unwrap();
-        assert_eq!((verdict.as_str(), confidence), ("phishing", 1.0));
-        assert_eq!(reasons, ["a", "b c"]);
-        assert!(parse_spam(r#"{"verdict": "delete all mail"}"#).is_none());
-        // The order the schema asks for: reasons first, then the verdict.
         let (verdict, confidence, reasons) = parse_spam(
-            r#"{"reasons": ["Rechnung eines bekannten Absenders"], "verdict": "legitimate", "confidence": 0.8}"#,
+            r#"{"verdict": "Phishing", "confidence": 7, "reasons": [{"text": "a", "evidence": "F1"}, "", "b\nc"]}"#,
         )
         .unwrap();
-        assert_eq!((verdict.as_str(), confidence, reasons.len()), ("legitimate", 0.8, 1));
-        let required = crate::prompts::spam_schema()["required"].clone();
-        assert_eq!(required, serde_json::json!(["reasons", "verdict", "confidence"]));
+        assert_eq!((verdict.as_str(), confidence), ("phishing", 1.0));
+        assert_eq!(reasons, [("a".to_owned(), "F1".to_owned()), ("b c".to_owned(), String::new())]);
+        assert!(parse_spam(r#"{"verdict": "delete all mail"}"#).is_none());
+        // The order the schema asks for: reasons first, then the verdict; only the allowed verdicts.
+        let schema = crate::prompts::spam_schema(&["legitimate", "suspicious"]);
+        assert_eq!(schema["required"], serde_json::json!(["reasons", "verdict", "confidence"]));
+        assert_eq!(schema["properties"]["verdict"]["enum"], serde_json::json!(["legitimate", "suspicious"]));
     }
 
     /// The invoice of the user report: authentic, wanted by the filter, from a sender who wrote before.
@@ -2006,54 +2020,51 @@ mod tests {
     }
 
     #[test]
-    fn verdicts_the_facts_contradict_are_lowered() {
-        let good = invoice_signals();
-        assert_eq!(held_to_facts("spam".into(), 0.9, &good), ("suspicious".into(), 0.5, Some("spam".into())));
-        assert_eq!(held_to_facts("phishing".into(), 0.3, &good), ("suspicious".into(), 0.3, Some("phishing".into())));
-        for verdict in ["legitimate", "suspicious"] {
-            assert_eq!(held_to_facts(verdict.into(), 0.9, &good), (verdict.into(), 0.9, None));
-        }
-        // Without a DMARC result, DKIM and SPF together vouch for the domain.
-        let mut no_dmarc = good.clone();
-        no_dmarc.authentication.dmarc = None;
-        assert!(clearly_good(&no_dmarc));
-        no_dmarc.authentication.spf = Some("softfail".into());
-        assert!(!clearly_good(&no_dmarc));
-        // A known sender in the address book or written to counts without earlier mail.
-        let mut contact = good.clone();
-        contact.sender.as_mut().unwrap().earlier_messages = 0;
-        assert!(!clearly_good(&contact));
-        contact.sender.as_mut().unwrap().in_contacts = true;
-        assert!(clearly_good(&contact));
-        contact.sender.as_mut().unwrap().in_contacts = false;
-        contact.sender.as_mut().unwrap().written_to = 1;
-        assert!(clearly_good(&contact));
-        // Any one fact against the mail leaves the model's verdict alone.
-        let spoiled: [fn(&mut SpamSignals); 7] = [
-            |s| s.authentication.dmarc = Some("fail".into()),
-            |s| s.spam_score = Some(0.5),
-            |s| s.spam_score = None,
-            |s| s.in_junk = true,
-            |s| s.sender = None,
-            |s| s.sender.as_mut().unwrap().earlier_in_junk = 1,
-            |s| s.authentication = AuthenticationSignals::default(),
-        ];
-        for spoil in spoiled {
-            let mut signals = good.clone();
-            spoil(&mut signals);
-            assert_eq!(held_to_facts("spam".into(), 0.9, &signals), ("spam".into(), 0.9, None), "{signals:?}");
-        }
+    fn the_invoice_of_the_user_report_cannot_be_called_spam() {
+        let mail = MailText {
+            subject: "Rechnung".into(),
+            text: "Ihre Zahlung haben wir dankend erhalten.".into(),
+            ..MailText::default()
+        };
+        let check = spam_check_prompt(mail, invoice_signals(), &[], crate::spam::MailShape::default(), Some("de"));
+        assert_eq!(check.assessment.allowed, ["legitimate"]);
+        assert_eq!(
+            check.prompt.schema.as_ref().unwrap().1["properties"]["verdict"]["enum"],
+            serde_json::json!(["legitimate"])
+        );
+        let (verdict, confidence, moved) = crate::spam::settle(&check.assessment, "spam", 0.9);
+        assert_eq!((verdict.as_str(), moved.as_deref()), ("legitimate", Some("spam")));
+        assert!(confidence <= 0.6);
     }
 
     #[test]
-    fn findings_explain_themselves() {
-        let text = findings(&invoice_signals());
+    fn facts_explain_themselves() {
+        let signals = invoice_signals();
+        let facts = crate::spam::facts(&signals, &crate::spam::assess(&signals, &[], ""), rule_meaning);
+        let text = facts.iter().map(|fact| format!("{}: {}", fact.id, fact.text)).collect::<Vec<_>>().join("\n");
         assert!(text.contains("DMARC passed for billing.example"), "{text}");
-        assert!(text.contains("-5.5 points, Junk from 5.0 (fewer points mean"), "{text}");
-        assert!(text.contains("under the limit"), "{text}");
-        assert!(text.contains("  - BAYES_HAM: the filter learned"), "{text}");
-        assert!(text.contains("  - KNOWN_GOOD_SENDER: this sender's"), "{text}");
-        assert!(text.contains("  - SOME_OTHER_RULE\n"), "{text}");
+        assert!(text.contains("-5.5 points, Junk from 5.0; this mail is under the limit"), "{text}");
+        assert!(text.contains("Spam filter rule BAYES_HAM: the filter learned"), "{text}");
+        assert!(text.contains("Spam filter rule KNOWN_GOOD_SENDER: this sender's"), "{text}");
+        assert!(text.contains("Spam filter rule SOME_OTHER_RULE\n"), "{text}");
+        assert!(text.starts_with("F1: SPF: pass"), "{text}");
+    }
+
+    #[test]
+    fn a_foreign_mail_gets_the_phishing_checks_on_its_text() {
+        let foreign = ForeignMail {
+            from: vec![uwumail_store::EmailAddress {
+                name: Some("PayPal Service".into()),
+                email: "a@konto-hilfe.example".into(),
+            }],
+            subject: "Ihr Konto wurde gesperrt".into(),
+            text: "Bitte bestätigen Sie Ihre Daten: https://konto-check.example/login".into(),
+            ..ForeignMail::default()
+        };
+        let check = foreign_spam_check_prompt(&foreign, &[], None);
+        let codes: Vec<&str> = check.assessment.evidence.iter().map(|evidence| evidence.code.as_str()).collect();
+        assert!(codes.contains(&"BRAND_IN_FROM_NAME") && codes.contains(&"CREDENTIAL_REQUEST"), "{codes:?}");
+        assert!(!check.assessment.allowed.contains(&"legitimate"), "{:?}", check.assessment);
     }
 
     fn label(id: i64, name: &str) -> AssistLabel {

@@ -1,0 +1,29 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: shipping notice with tracking link to the carrier's own site
+From: ParcelGo <tracking@parcelgo.example>
+To: Max Muster <max@uwu.example>
+Subject: Delivery rescheduled
+Date: Mon, 14 Sep 2026 22:56:00 +0000
+Message-ID: <473473659253.303@parcelgo.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-6710295186"
+
+--alt-6710295186
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+your parcel JJD44668144579239 is on its way and should arrive tomorrow.
+Track it: https://parcelgo.example/track/JJD44668144579239
+
+ParcelGo
+--alt-6710295186
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Hi Max,</p><p>your parcel <b>JJD44668144579239</b> is on its way.</p><p><a href="https://parcelgo.example/track/JJD44668144579239">Track your parcel</a></p>
+--alt-6710295186--

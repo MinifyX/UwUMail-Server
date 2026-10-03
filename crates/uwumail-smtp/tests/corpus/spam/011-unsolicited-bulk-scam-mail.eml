@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=fail dkim=none dmarc=fail
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <contact87@a7x9k2.example>
+To: Max Muster <max@uwu.example>
+Subject: Hot singles in your area
+Date: Sun, 13 Sep 2026 23:32:00 +0000
+Message-ID: <094637976335.972@a7x9k2.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<a href="http://a7x9k2.example/go/788862"><img src="http://a7x9k2.example/banner.png" width="600" height="400"></a>

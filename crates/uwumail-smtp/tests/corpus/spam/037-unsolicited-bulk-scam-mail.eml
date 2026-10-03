@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Mr. Edward Brown <info36@offers4u.test>
+To: Max Muster <max@uwu.example>
+Subject: Investieren wie die Profis
+Date: Mon, 14 Sep 2026 05:09:00 +0000
+Message-ID: <729880006107.551@offers4u.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Verdienen Sie täglich 800 Euro mit unserer KI-Trading-Software. Jetzt kostenlos testen: https://kurz.example/77861
