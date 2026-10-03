@@ -3,7 +3,12 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## 0.22.0 (unreleased)
+## 0.22.0
+
+**Webmail 0.22.0** (bundled): base labels with an overlap warning and an earlier description you can
+forget, the facts and reasons behind the AI spam check, time ranges kept in found dates, and domain
+signatures with a domain picker, "Gilt für" including all domains, placeholders and a note on the
+company footer.
 
 ### Added
 
