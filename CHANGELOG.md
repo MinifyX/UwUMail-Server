@@ -122,6 +122,15 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   reads only its own people and polls every 5 s instead of 3 s.
 - docs/signatures.md: the footer is best effort, not a compliance guarantee, the Sent copy has no
   footer, and clients must sanitise signature HTML (SIG-3, SIG-5).
+- **Imports cannot fill the memory** (review M-1): moves, personal moves and fetched mailboxes ask
+  for `RFC822.SIZE` first and fetch small messages in portions of about 16 MiB and large ones
+  alone; a fetch may take only a little more than the sizes given; all imports share a 512 MiB
+  budget of fetched mail; message bodies are moved out of the answer instead of copied. A message
+  larger than `smtp.max_message_size` is skipped and counted with the skipped ones. A move the
+  server went down during at three starts in a row is paused as `interrupted` instead of crashing
+  it again (migration 0075).
+- **Submission removes `X-UwUMail-Label`** a sender wrote, as inbound delivery already did.
+- docs/moving.md and docs/signatures.md list the known limitations the review left as they are.
 
 ### Fixed
 
@@ -244,6 +253,14 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   the model's reasons and their quotes come without Unicode bidi controls.
 - **An adopted label's earlier description can be forgotten (webmail review WF-1).**
   `AssistLabel/set` takes `previousDescription: null`; the model gets no hint from it from then on.
+- **A forged colleague is no known sender (final client review).** The AI spam check counts the
+  reader's history with an address in full only when authentication backs the From, not at all when
+  DMARC failed or the results leave the From unaligned, and at half weight, at most 1.5 in all, when
+  the mail carries no results. Gift-card and urgent-transfer cues stay on unless the sender is both
+  known and authenticated, so CEO fraud from a forged address can come out as spam or phishing.
+- **Amounts found in one pass (final client review X-1).** Thousands of rejected copies of an amount
+  before the real one no longer make label facts take seconds; facts are made once per mail and off
+  the async runtime.
 - **Known limitations documented.** Three low-impact remainders are written up in `docs/spam-filter.md`, "Known
   limitations (security review)": sender-balanced comment echoes, client addresses written only in comments, and the
   non-atomic `ifInState` check on domain signatures.
