@@ -663,3 +663,19 @@ Where to get such an address: an old one that only receives spam now does, and
 so does a fresh one that is published nowhere. An address that was once real
 and is still written to by people is a bad trap — it teaches the filter that
 their mail is spam.
+
+## Known limitations (security review)
+
+These are left as they are on purpose, because their impact is low:
+
+- **A provider that echoes a sender's parentheses into a comment, balanced again by the sender (0.22 R5 L-1, remainder).** An
+  unbalanced `Authentication-Results` from another provider is now ignored, a method named twice keeps its worse result and
+  a client address named twice counts as none. A sender who balances the parentheses themselves can still add a result
+  that is not already present. This only matters if the provider writes unescaped sender text into a comment, and the
+  sender can only add results that the provider's own results don't contradict.
+- **A provider's client address written only in a comment is not read (0.22 R5 I-3).** The server then runs no SPF check of
+  its own for that fetched mail and relies on the provider's results. This makes detection slightly weaker, but the
+  server never trusts more because of it.
+- **Domain signatures check `ifInState` before writing, not in the same transaction (0.22 webmail WF-3).** Two saves in the
+  same instant can still overwrite each other. The signatures belong to the person, and only their own sessions write them.
+

@@ -229,6 +229,21 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   only at ASCII whitespace, fetched mail reads the provider's results with the same parser, and
   `Assist/spamCheck` takes `Authentication-Results`, `Received` and `X-Spam-Status` values up to
   16,000 characters (apps leave out longer ones, never cut them).
+- **Another server's results believed only when well formed (R5 L-1, client C6-2, C6-3).** For
+  fetched mail and the AI spam check of another account, an `Authentication-Results` with an
+  unclosed comment or quote or a stray `)` counts as no result: a provider that echoes a sender's
+  parenthesis into a comment could otherwise let the sender add `dmarc=pass` or a `client-ip`. A
+  method named twice keeps its worse result, a failed DKIM result that names no signer outweighs a
+  pass, and a client address named twice counts as none. Only ASCII whitespace is trimmed from
+  domains and at header folds, and a domain with a Unicode space in it is none. The AI spam check
+  also reads "Phishing? No… verified sender" and "no less trustworthy" as praise.
+- **No direction tricks on the spam card (webmail review WF-2).** Phishing details, the facts' details,
+  the model's reasons and their quotes come without Unicode bidi controls.
+- **An adopted label's earlier description can be forgotten (webmail review WF-1).**
+  `AssistLabel/set` takes `previousDescription: null`; the model gets no hint from it from then on.
+- **Known limitations documented.** Three low-impact remainders are written up in `docs/spam-filter.md`, "Known
+  limitations (security review)": sender-balanced comment echoes, client addresses written only in comments, and the
+  non-atomic `ifInState` check on domain signatures.
 - **No startup rewrite of every mail (R3 I-2).** Migration 0074 now adds `smtp_delivered` with a
   default instead of updating every row. Correction examples mask digits of any script.
 
