@@ -78,6 +78,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0069_spam_greylist_retries.sql"),
     include_str!("migrations/0070_l_labels_base.sql"),
     include_str!("migrations/0071_base_label_definitions.sql"),
+    include_str!("migrations/0072_l_contact_emails.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -98,6 +99,7 @@ impl Database {
         )?;
         migrate(&mut writer)?;
         crate::contact_photos::backfill(&mut writer)?;
+        crate::contact_photos::backfill_emails(&mut writer)?;
         Ok(Database { path: path.to_path_buf(), writer: Mutex::new(writer), readers: Mutex::new(Vec::new()) })
     }
 
@@ -444,6 +446,18 @@ mod tests {
             .unwrap();
         assert_eq!(indexed, vec![("ami@example.org".to_owned(), 1)]);
         assert!(get_setting(&conn, "contact_photos.backfill").unwrap().is_none(), "only once");
+        // Every card's addresses, for knowing a sender (0072), photo or not.
+        crate::contact_photos::backfill_emails(&mut conn).unwrap();
+        let mut emails: Vec<String> = conn
+            .prepare("SELECT email FROM contact_emails WHERE account_id = 1")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        emails.sort();
+        assert_eq!(emails, ["ami@example.org", "nyu@example.org"]);
+        assert!(get_setting(&conn, "contact_emails.backfill").unwrap().is_none(), "only once");
     }
 
     #[test]

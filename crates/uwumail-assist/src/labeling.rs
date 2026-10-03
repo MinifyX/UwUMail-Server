@@ -124,7 +124,9 @@ impl Assist {
         let auth = authentication(&mail_text.headers, Some(self.hostname()), &record.from);
         let pass = |result: &Option<String>| result.as_deref() == Some("pass");
         mail.from_trusted = pass(&auth.dmarc) || (pass(&auth.dkim) && pass(&auth.spf));
-        mail.known_sender = !mail.from.is_empty() && store.knows_sender(account.id, mail.from.clone()).await?;
+        // Known only when authentication backs the From address (security review 0.22 LABELS22-L1).
+        mail.known_sender =
+            mail.from_trusted && !mail.from.is_empty() && store.knows_sender(account.id, mail.from.clone()).await?;
         let facts = Facts::of(&mail);
 
         let rules: Vec<Option<Rules>> =

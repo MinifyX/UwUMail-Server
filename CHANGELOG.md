@@ -148,6 +148,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   while AI labels are on on the server and for the person, the person may use the assistant, and
   their chosen labels model is one of the server's (not a personal or local one). Mail in Junk or
   Trash is never embedded and no similar mail.
+- **Known senders by an index, exactly, and only when authenticated (LABELS22-M2, -L1).** Delivery no
+  longer reads every vCard of the recipient's address books for every message: a new index of card
+  addresses (migration 0072, filled once at start) is kept with every card write. A sender counts
+  as known only by exactly a card's address (not a prefix of one) and only when authentication
+  backs the From address.
 
 ## 0.21.2
 

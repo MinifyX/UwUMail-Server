@@ -1,5 +1,6 @@
 //! Which cards with a photo name which address (migration 0055), so a sender's picture comes from
-//! the reader's own address books without reading every vCard they have for every message in a list.
+//! the reader's own address books without reading every vCard they have for every message in a list;
+//! and which card names which address at all (migration 0072), so knowing a sender is one lookup.
 //! Kept in the same transaction as every write of a card, over CardDAV and JMAP alike; a card that
 //! goes takes its rows with it (foreign key).
 
@@ -15,6 +16,7 @@ const MAX_EMAILS_PER_CARD: usize = 64;
 /// The longest `https:` photo address that is kept, as for remote pictures.
 const MAX_PHOTO_URL: usize = 4096;
 const BACKFILL_MARKER: &str = "contact_photos.backfill";
+const EMAILS_BACKFILL_MARKER: &str = "contact_emails.backfill";
 
 /// The photo of a card.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,20 +62,18 @@ pub fn contact_photo(content: &str) -> Option<ContactPhoto> {
         .find_map(|entry| entry.values.iter().find_map(photo_of))
 }
 
-/// The addresses of a card that has a photo, lowercase; empty for a card without one.
-fn photo_emails(content: &str) -> Vec<String> {
-    if !mentions(content, "PHOTO") {
-        return Vec::new();
+/// The addresses of a card, lowercase, and whether it has a photo.
+fn card_emails(content: &str) -> (Vec<String>, bool) {
+    if !mentions(content, "EMAIL") {
+        return (Vec::new(), false);
     }
-    let Ok(card) = VCard::parse(content) else { return Vec::new() };
-    let has_photo = card
-        .entries
-        .iter()
-        .filter(|entry| entry.name == VCardProperty::Photo)
-        .any(|entry| entry.values.iter().any(|value| photo_of(value).is_some()));
-    if !has_photo {
-        return Vec::new();
-    }
+    let Ok(card) = VCard::parse(content) else { return (Vec::new(), false) };
+    let has_photo = mentions(content, "PHOTO")
+        && card
+            .entries
+            .iter()
+            .filter(|entry| entry.name == VCardProperty::Photo)
+            .any(|entry| entry.values.iter().any(|value| photo_of(value).is_some()));
     let mut emails: Vec<String> = card
         .entries
         .iter()
@@ -92,16 +92,45 @@ fn photo_emails(content: &str) -> Vec<String> {
         .collect();
     emails.sort_unstable();
     emails.dedup();
-    emails
+    (emails, has_photo)
 }
 
-fn insert(conn: &Connection, resource_id: i64, collection_id: i64, account_id: i64, content: &str) -> Result<()> {
-    for email in photo_emails(content) {
-        conn.execute(
-            "INSERT OR IGNORE INTO contact_photos (resource_id, collection_id, account_id, email)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![resource_id, collection_id, account_id, email],
-        )?;
+/// The addresses of a card that has a photo, lowercase; empty for a card without one.
+#[cfg(test)]
+fn photo_emails(content: &str) -> Vec<String> {
+    match card_emails(content) {
+        (emails, true) => emails,
+        _ => Vec::new(),
+    }
+}
+
+/// Indexes a card's addresses: all of them in `contact_emails`, and in `contact_photos` when it
+/// has a photo. `photos` and `emails` say which of the two tables to fill.
+fn insert(
+    conn: &Connection,
+    resource_id: i64,
+    collection_id: i64,
+    account_id: i64,
+    content: &str,
+    photos: bool,
+    emails: bool,
+) -> Result<()> {
+    let (found, has_photo) = card_emails(content);
+    for email in &found {
+        if emails {
+            conn.execute(
+                "INSERT OR IGNORE INTO contact_emails (resource_id, collection_id, account_id, email)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![resource_id, collection_id, account_id, email],
+            )?;
+        }
+        if photos && has_photo {
+            conn.execute(
+                "INSERT OR IGNORE INTO contact_photos (resource_id, collection_id, account_id, email)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![resource_id, collection_id, account_id, email],
+            )?;
+        }
     }
     Ok(())
 }
@@ -113,11 +142,13 @@ pub(crate) fn index_card(
     collection: &DavCollection,
     content: &str,
 ) -> Result<()> {
+    // A card moved out of an address book is no contact any more.
+    tx.execute("DELETE FROM contact_photos WHERE resource_id = ?1", [resource_id])?;
+    tx.execute("DELETE FROM contact_emails WHERE resource_id = ?1", [resource_id])?;
     if collection.kind != DavKind::Addressbook {
         return Ok(());
     }
-    tx.execute("DELETE FROM contact_photos WHERE resource_id = ?1", [resource_id])?;
-    insert(tx, resource_id, collection.id, collection.account_id, content)
+    insert(tx, resource_id, collection.id, collection.account_id, content, true, true)
 }
 
 /// Fills the table for the cards that were there before it existed, once after migration 0055.
@@ -136,7 +167,7 @@ pub(crate) fn backfill(conn: &mut Connection) -> Result<()> {
         let mut rows = cards.query([])?;
         while let Some(row) = rows.next()? {
             let content: String = row.get(3)?;
-            insert(&tx, row.get(0)?, row.get(1)?, row.get(2)?, &content)?;
+            insert(&tx, row.get(0)?, row.get(1)?, row.get(2)?, &content, true, false)?;
             indexed += 1;
         }
     }
@@ -144,6 +175,35 @@ pub(crate) fn backfill(conn: &mut Connection) -> Result<()> {
     tx.commit()?;
     if indexed > 0 {
         tracing::info!(cards = indexed, "indexed the photos of existing contacts");
+    }
+    Ok(())
+}
+
+/// Fills `contact_emails` for the cards that were there before it existed, once after migration
+/// 0072.
+pub(crate) fn backfill_emails(conn: &mut Connection) -> Result<()> {
+    if crate::db::get_setting(conn, EMAILS_BACKFILL_MARKER)?.is_none() {
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    let mut indexed = 0usize;
+    {
+        let mut cards = tx.prepare(
+            "SELECT r.id, r.collection_id, c.account_id, r.content FROM dav_resources r
+             JOIN dav_collections c ON c.id = r.collection_id
+             WHERE c.kind = 'addressbook' AND r.component = 'VCARD'",
+        )?;
+        let mut rows = cards.query([])?;
+        while let Some(row) = rows.next()? {
+            let content: String = row.get(3)?;
+            insert(&tx, row.get(0)?, row.get(1)?, row.get(2)?, &content, false, true)?;
+            indexed += 1;
+        }
+    }
+    crate::db::delete_setting(&tx, EMAILS_BACKFILL_MARKER)?;
+    tx.commit()?;
+    if indexed > 0 {
+        tracing::info!(cards = indexed, "indexed the addresses of existing contacts");
     }
     Ok(())
 }

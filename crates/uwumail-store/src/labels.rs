@@ -630,8 +630,10 @@ impl Store {
         Ok(label)
     }
 
-    /// Whether the person knows `address` (lower case): it is in one of their address books, or
-    /// they wrote to it (among their 2,000 newest sent mails). Cheap enough for delivery.
+    /// Whether the person knows `address` (lower case): it is exactly an address of a card in one of
+    /// their address books, or they wrote to it (among their 2,000 newest sent mails). One index
+    /// lookup for the cards (migration 0072), so cheap enough for every delivery (security review
+    /// 0.22 LABELS22-M2, -L1).
     pub async fn knows_sender(&self, account_id: i64, address: String) -> Result<bool> {
         let address = address.trim().to_lowercase().replace('"', "");
         if address.is_empty() || address.chars().count() > MAX_SENDER_CHARS {
@@ -639,16 +641,14 @@ impl Store {
         }
         self.read(move |conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS (SELECT 1 FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
-                                WHERE c.account_id = ?1 AND c.kind = 'addressbook' AND r.component = 'VCARD'
-                                  AND instr(lower(r.content), ?2) > 0)
+                "SELECT EXISTS (SELECT 1 FROM contact_emails WHERE account_id = ?1 AND email = ?2)
                      OR EXISTS (SELECT 1 FROM (SELECT e.to_addr, e.cc_addr FROM mailboxes m
                                                JOIN email_mailboxes em ON em.mailbox_id = m.id
                                                JOIN emails e ON e.id = em.email_id
                                                WHERE m.account_id = ?1 AND m.role = 'sent'
                                                ORDER BY e.id DESC LIMIT 2000)
                                 WHERE instr(lower(to_addr || cc_addr), ?3) > 0)",
-                params![account_id, format!(":{address}"), format!("\"{address}\"")],
+                params![account_id, address, format!("\"{address}\"")],
                 |row| row.get(0),
             )?)
         })
@@ -1080,6 +1080,59 @@ mod tests {
             .unwrap();
         assert!(!plan.iter().any(|step| step.contains("email_keywords_keyword")), "{plan:#?}");
         assert!(plan.iter().any(|step| step.contains("SCAN m") || step.contains("SEARCH m")), "{plan:#?}");
+    }
+
+    /// Security review 0.22 LABELS22-M2/-L1: a sender is known by exactly a card's address, from the
+    /// index kept with every write of a card, not by a prefix of one; a deleted card is forgotten.
+    #[tokio::test]
+    async fn a_sender_is_known_by_exactly_a_cards_address() {
+        use crate::dav::{DavKind, DavPrecondition, DavWrite, NewDavCollection};
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "mini@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let mini = store.create_account(account).await.unwrap().id;
+        let book = NewDavCollection { slug: "contacts".into(), display_name: "Kontakte".into(), ..Default::default() };
+        let book = store.dav_collections(mini, DavKind::Addressbook, book).await.unwrap()[0].clone();
+        let card = "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:anna\r\nFN:Anna\r\nEMAIL:Anna@Example.com\r\n\
+                    PHOTO:data:image/png;base64,iVBORw0KGgo=\r\nEND:VCARD\r\n";
+        let write = DavWrite {
+            name: "anna.vcf".into(),
+            content: card.into(),
+            uid: "anna".into(),
+            component: "VCARD".into(),
+            starts_at: None,
+            ends_at: None,
+        };
+        store.dav_put(mini, book.id, write, DavPrecondition::default()).await.unwrap();
+
+        assert!(store.knows_sender(mini, "anna@example.com".into()).await.unwrap());
+        assert!(store.knows_sender(mini, " ANNA@example.com ".into()).await.unwrap());
+        assert!(!store.knows_sender(mini, "anna@example.co".into()).await.unwrap(), "a prefix is somebody else");
+        assert!(!store.knows_sender(mini, "nna@example.com".into()).await.unwrap());
+        assert!(!store.knows_sender(mini, "lisa@example.com".into()).await.unwrap());
+
+        // The query is one index lookup, not a scan of every card.
+        let plan: Vec<String> = store
+            .read(|conn| {
+                let mut stmt = conn.prepare(
+                    "EXPLAIN QUERY PLAN SELECT 1 FROM contact_emails WHERE account_id = 1 AND email = 'a@example.com'",
+                )?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(3))?;
+                Ok(rows.collect::<Result<_, _>>()?)
+            })
+            .await
+            .unwrap();
+        assert!(plan.iter().any(|step| step.contains("contact_emails_account")), "{plan:#?}");
+
+        store.dav_delete(mini, book.id, "anna.vcf", None).await.unwrap();
+        assert!(!store.knows_sender(mini, "anna@example.com".into()).await.unwrap(), "gone with the card");
     }
 
     /// A later set of base labels gives the definitions the server wrote the new wording, keeps one

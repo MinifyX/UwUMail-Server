@@ -107,7 +107,7 @@ the cheap ways find is only a hint for the model (at most 0.79), never a label b
 | `calendar` | a `text/calendar` or `application/ics` part, or an attachment whose name ends in `.ics` |
 | `headers` | the names and values (at most 1,000 characters) of `List-Unsubscribe`, `List-Unsubscribe-Post`, `List-Id`, `List-Post`, `Precedence`, `Auto-Submitted` and `X-Auto-Response-Suppress` |
 | `from_trusted` | whether the `From` address says who sent the mail (see [Learned senders](#learned-senders)) |
-| `known_sender` | the address is in one of the person's address books, or they wrote to it (among their 2,000 newest sent mails) |
+| `known_sender` | the address is exactly an address of a card in one of the person's address books (an index kept with every card write), or they wrote to it (among their 2,000 newest sent mails) — and only when SPF/DKIM/DMARC back the From address |
 
 **Folding** makes text comparable: lower case (Unicode), and every run of white space one space.
 

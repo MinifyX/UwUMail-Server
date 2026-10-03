@@ -357,6 +357,48 @@ async fn a_personal_model_for_labels_keeps_mail_from_the_embeddings() {
     assert!(rig.fake.seen().iter().all(|seen| !seen.path.ends_with("/embeddings")), "{:?}", rig.fake.seen().len());
 }
 
+/// Security review 0.22 LABELS22-L1: a contact's address in From makes a known sender only when
+/// this server's authentication backs it.
+#[tokio::test]
+async fn a_contact_is_only_known_when_authentication_backs_the_address() {
+    use uwumail_store::{DavKind, DavPrecondition, DavWrite, NewDavCollection};
+    let (rig, _, _) = labelled_rig().await;
+    let book = NewDavCollection { slug: "contacts".into(), display_name: "Kontakte".into(), ..Default::default() };
+    let book = rig.store.dav_collections(rig.mia.id, DavKind::Addressbook, book).await.unwrap()[0].clone();
+    let card = "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:anna\r\nFN:Anna\r\nEMAIL:anna@example.com\r\nEND:VCARD\r\n";
+    let write = DavWrite {
+        name: "anna.vcf".into(),
+        content: card.into(),
+        uid: "anna".into(),
+        component: "VCARD".into(),
+        starts_at: None,
+        ends_at: None,
+    };
+    rig.store.dav_put(rig.mia.id, book.id, write, DavPrecondition::default()).await.unwrap();
+    let mail = |headers: &str, n: u32| {
+        format!(
+            "{headers}From: Anna <anna@example.com>\nTo: Mia <mia@example.org>\nSubject: Hi {n}\n\
+Date: Mon, 28 Sep 2026 10:00:00 +0000\nMessage-ID: <anna-{n}@example.com>\n\nHey Mia, wie geht's?\n"
+        )
+    };
+    let known_line = |rig: &Rig, at: usize| {
+        let user = rig.fake.seen()[at].body["messages"][1]["content"].as_str().unwrap().to_owned();
+        user.lines().find(|line| line.contains("sender known to the reader")).map(str::to_owned).unwrap_or_default()
+    };
+
+    let forged = rig.deliver(&rig.mia, &mail("", 1)).await;
+    rig.fake.push(picks(json!({ "labels": [] })));
+    let _ = rig.assist.label_email(&rig.mia, forged).await;
+    assert!(known_line(&rig, 0).ends_with("no"), "{}", known_line(&rig, 0));
+
+    let ours = "Received: from mail.example.com\n\tby mx.example.org (UwUMail) with ESMTPS id 1\n\
+Authentication-Results: mx.example.org; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com\n";
+    let real = rig.deliver(&rig.mia, &mail(ours, 2)).await;
+    rig.fake.push(picks(json!({ "labels": [] })));
+    let _ = rig.assist.label_email(&rig.mia, real).await;
+    assert!(known_line(&rig, 1).ends_with("yes"), "{}", known_line(&rig, 1));
+}
+
 #[tokio::test]
 async fn a_label_taken_off_a_senders_mail_is_not_asked_about_again() {
     let (rig, _, _) = labelled_rig().await;
