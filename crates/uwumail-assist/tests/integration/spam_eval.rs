@@ -5,6 +5,7 @@
 //! ```text
 //! UWUMAIL_EVAL_LLM=http://192.0.2.10:8080/v1 UWUMAIL_EVAL_KEY=… [UWUMAIL_EVAL_MODEL=…] \
 //! [UWUMAIL_EVAL_EVERY=2] [UWUMAIL_REAL_CORPUS=<dir>] [UWUMAIL_EVAL_REAL=40] \
+//! [UWUMAIL_EVAL_CLASSES=spam,phishing] [UWUMAIL_EVAL_SKIP_OLD=1] \
 //! cargo test -p uwumail-assist --test integration spam_eval -- --ignored --nocapture
 //! ```
 //!
@@ -371,6 +372,12 @@ async fn spam_eval() {
         cases.extend(real(Path::new(&root), limit));
     }
 
+    // For quicker runs while tuning: only some classes, and without the 0.21 way.
+    if let Ok(classes) = std::env::var("UWUMAIL_EVAL_CLASSES") {
+        cases.retain(|case| classes.split(',').any(|class| class == case.class));
+    }
+    let skip_old = std::env::var("UWUMAIL_EVAL_SKIP_OLD").is_ok();
+
     let mut old: BTreeMap<(bool, String), Score> = BTreeMap::new();
     let mut new: BTreeMap<(bool, String), Score> = BTreeMap::new();
     let (mut old_reasons, mut new_reasons, mut dropped, mut moved) = (0, 0, 0, 0);
@@ -380,7 +387,7 @@ async fn spam_eval() {
 
         // 0.21
         let legacy = legacy_prompt(&mail, &findings(&case.signals));
-        let answer = ask(&base, &key, &model, &legacy).await;
+        let answer = if skip_old { None } else { ask(&base, &key, &model, &legacy).await };
         let parsed = answer.as_deref().and_then(json_answer).and_then(|value| {
             let verdict = value.get("verdict")?.as_str()?.to_lowercase();
             let confidence = value.get("confidence").and_then(Value::as_f64).unwrap_or(0.5).clamp(0.0, 1.0);

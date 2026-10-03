@@ -216,7 +216,9 @@ pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assess
         add(&mut evidence, "SPF_DKIM_PASS", -1.0, auth.from_domain.clone(), false);
     } else if failed(&auth.spf) && failed(&auth.dkim) {
         add(&mut evidence, "SPF_DKIM_FAIL", 1.5, auth.from_domain.clone(), false);
-    } else if auth.spf.is_none() && auth.dkim.is_none() && auth.dmarc.is_none() && signals.sender.is_some() {
+    } else if !passed(&auth.spf) && !passed(&auth.dkim) && (auth.spf.is_some() || auth.dkim.is_some()) {
+        // Checked, and nothing vouches for the sender. No results at all means the mail did not
+        // come from another server (or was fetched from elsewhere): not known, so not held against it.
         add(&mut evidence, "NO_AUTHENTICATION", 0.5, None, false);
     }
 
@@ -637,6 +639,17 @@ address book: {}",
             None => facts.push(format!("Phishing check {}: {meaning}", evidence.code)),
         }
     }
+    let towards = if assessment.has_phishing_evidence() { "spam or phishing" } else { "spam" };
+    let lean = match assessment.band {
+        Band::Clean => "they clearly speak for the mail".to_owned(),
+        Band::LeaningClean => "they lean towards a normal mail".to_owned(),
+        Band::Unclear => "they are mixed, so the mail itself decides".to_owned(),
+        Band::LeaningSpam => format!(
+            "they point towards {towards}; \"suspicious\" fits only when the mail itself clearly speaks against them"
+        ),
+        Band::Spam => format!("they clearly speak against the mail: {towards}"),
+    };
+    facts.push(format!("The server's weighing of all this: {:+.1} points, {lean}", assessment.score));
     facts.into_iter().enumerate().map(|(index, text)| Fact { id: format!("F{}", index + 1), text }).collect()
 }
 
@@ -744,6 +757,25 @@ mod tests {
         let assessment = assess(&signals, &[], "Hallo, kurze Frage zu deinem Angebot.");
         assert_eq!(assessment.band, Band::LeaningClean, "{assessment:?}");
         assert_eq!(assessment.allowed, ["legitimate", "suspicious"]);
+    }
+
+    #[test]
+    fn missing_authentication_results_are_unknown_not_bad() {
+        // Fetched or imported mail of a stranger: no results, a few filter points.
+        let fetched = SpamSignals {
+            spam_score: Some(1.5),
+            spam_threshold: Some(5.0),
+            sender: Some(SenderSignals::default()),
+            ..SpamSignals::default()
+        };
+        let assessment = assess(&fetched, &[], "");
+        assert!(!assessment.evidence.iter().any(|e| e.code == "NO_AUTHENTICATION"), "{assessment:?}");
+        assert_eq!(assessment.band, Band::LeaningClean, "{assessment:?}");
+        // Checked, with nothing passing, it counts.
+        let mut unchecked = fetched;
+        unchecked.authentication.spf = Some("none".into());
+        unchecked.authentication.dkim = Some("none".into());
+        assert!(assess(&unchecked, &[], "").evidence.iter().any(|e| e.code == "NO_AUTHENTICATION"));
     }
 
     fn mail() -> MailText {

@@ -598,6 +598,15 @@ fn bayes_ceiling(dmarc_passed: bool, score: &Score) -> Option<f32> {
     (dmarc_passed && score.points_on_its_own() <= 1.0).then_some(BAYES_ALONE_MAX)
 }
 
+/// How sure a person's own Bayes knowledge must be to go past [`BAYES_ALONE_MAX`]: what the server
+/// learned from everyone stays held back, but someone who keeps moving one newsletter to Junk
+/// should not get it greylisted forever.
+const OWN_BAYES_SURE: f64 = 0.99;
+
+fn personal_ceiling(ceiling: Option<f32>, own: f64) -> f32 {
+    if own >= OWN_BAYES_SURE { f32::MAX } else { ceiling.unwrap_or(f32::MAX) }
+}
+
 /// The chance of spam by what the whole server's Bayes filter learned, when it learned enough.
 async fn server_chance(ctx: &Context, tokens: &[i64]) -> Option<f64> {
     let totals = ctx.store.bayes_totals(None).await.ok()?;
@@ -621,7 +630,7 @@ pub(crate) async fn personal_bayes_points(ctx: &Context, config: &SpamConfig, sc
     let Ok(counts) = ctx.store.bayes_counts(Some(account_id), score.tokens.clone()).await else { return 0.0 };
     let Some(own) = bayes::spam_chance(&score.tokens, &counts, totals) else { return 0.0 };
     let blended = bayes::blended(score.server_chance, Some((own, totals))).unwrap_or(own);
-    let ceiling = score.bayes_ceiling.unwrap_or(f32::MAX);
+    let ceiling = personal_ceiling(score.bayes_ceiling, own);
     let server: f32 = score.hits.iter().filter(|hit| hit.rule.starts_with("BAYES_")).map(|hit| hit.points).sum();
     bayes::points(blended).min(ceiling) - server
 }
@@ -847,6 +856,10 @@ mod tests {
         score.add("PHISHING_LINK_TEXT", 3.0, None);
         assert_eq!(bayes_ceiling(true, &score), None, "nor with anything else against it");
         assert!(BAYES_ALONE_MAX < SpamConfig::default().junk_score);
+        // What the person taught themselves, when it is sure, goes all the way.
+        assert_eq!(personal_ceiling(Some(BAYES_ALONE_MAX), 0.995), f32::MAX);
+        assert_eq!(personal_ceiling(Some(BAYES_ALONE_MAX), 0.9), BAYES_ALONE_MAX);
+        assert_eq!(personal_ceiling(None, 0.5), f32::MAX);
     }
 
     #[test]
