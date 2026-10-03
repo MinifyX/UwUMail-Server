@@ -381,3 +381,17 @@ compares 0.21 (every label asked, every yes believed) with 0.22 (model in doubt;
 when an embeddings endpoint is given), see the test's docs for its variables. A local corpus of
 real mails (never in the repository) can be added with `UWUMAIL_REAL_CORPUS`.
 
+Measured for 0.22 on the synthetic corpus (precision / recall over all base labels; the model
+gemma-3-4b-it, embeddings nomic-embed-text-v1.5):
+
+| | precision | recall |
+| --- | --- | --- |
+| 0.21 detectors, no model | 74.4 % | 33.2 % |
+| 0.22, no model | 97.8 % | 66.8 % |
+| 0.21, the model alone (every label asked, every yes believed) | 57.3 % | 83.7 % |
+| 0.22, the model only in doubt | 95.3 % | 79.7 % |
+
+Most of what is left are phishing and spam mails, which go to Junk and get no labels in practice.
+On real mail, one person correcting each sender's wrong label once is what lifts the model's part
+the most (a single sender's notifications made most of its mistakes).
+

@@ -366,6 +366,7 @@ async fn measure(eval: &Eval, name: &str, cases: &[Case]) {
     if eval.embed.is_some() {
         let (half, likeness) = similar_half(eval, cases).await;
         score(&format!("{name} (odd half): 0.21, model only"), &before(eval, &half).await);
+        score(&format!("{name} (odd half): 0.22, no model"), &after(eval, &half, &[], &[], false).await);
         score(&format!("{name} (odd half): 0.22, model in doubt"), &after(eval, &half, &[], &[], true).await);
         score(
             &format!("{name} (odd half): 0.22, similar mails, no model"),

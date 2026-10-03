@@ -22,8 +22,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   learned senders, similar mails and the classifier first and asks the model only about the labels
   they leave open, with the facts, hints and the person's corrections; it answers yes, no or
   unsure. A lone yes is never a second label, a mass mail is never personal, and a model saying
-  yes to everything is not believed. On a corpus of invented mails, labels without a model went
-  from 74 % to 98 % precision (recall 33 % → 67 %).
+  yes to everything is not believed. On a corpus of 234 invented mails, labels without a model
+  went from 74 % to 98 % precision (recall 33 % → 67 %), and with gemma-3-4b from 57 % to 95 %
+  (recall 84 % → 80 %). A label taken off a sender's mail by hand is not put on that sender's
+  mail by itself again, by the model neither.
 - **Similar mails** decide labels: with the new admin provider kinds *OpenAI embeddings*, *Ollama
   embeddings* and *OpenAI-compatible embeddings* by vectors of the person's labeled mails (one byte
   per dimension, deleted with the mail), without one by their words.
