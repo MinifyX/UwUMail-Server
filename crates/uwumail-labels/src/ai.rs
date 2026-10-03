@@ -83,7 +83,7 @@ pub fn ask_about(labels: &[Label<'_>], present: &[String], candidates: &[Decisio
 
 /// Whether the facts rule out that a mail is what `base` stands for, whatever the model says: a
 /// mass mail is never personal, an automatic notice never work, a mail sent to one person never a
-/// newsletter (the mistakes the 0.21 models made most).
+/// newsletter, a device's notice never account mail (the mistakes small models make most).
 pub fn ruled_out(base: Base, facts: &Facts) -> bool {
     if facts.bounce {
         return true;
@@ -94,10 +94,15 @@ pub fn ruled_out(base: Base, facts: &Facts) -> bool {
             facts.mass_mail()
                 || facts.automatic
                 || matches!(facts.sender, crate::SenderKind::NoReply | crate::SenderKind::Marketing)
+                || (facts.sender == crate::SenderKind::Role && !facts.known_sender)
         }
-        Base::Newsletter | Base::Advertising => !facts.mass_mail(),
-        Base::Account => facts.written_by_person(),
-        Base::Invoice | Base::Shipping | Base::Appointment => false,
+        Base::Newsletter | Base::Advertising => !facts.mass_mail() || facts.discussion_list,
+        // Notices of apps and devices (monitoring, smart home, reminders) are no account mail: it
+        // names the account in the subject or brings a code.
+        Base::Account => facts.written_by_person() || (facts.account.is_empty() && facts.code.is_none()),
+        // A neighbour writing about a parcel is no shipment.
+        Base::Shipping => facts.written_by_person() && facts.freemail,
+        Base::Invoice | Base::Appointment => false,
     }
 }
 
@@ -230,6 +235,10 @@ mod tests {
         facts.list_unsubscribe = true;
         assert!(ruled_out(Base::Personal, &facts));
         assert!(!ruled_out(Base::Newsletter, &facts));
+        // A device's notice is no account mail; a sign-in code is.
+        assert!(ruled_out(Base::Account, &facts));
+        let code = Mail::new("noreply@shop.example", "Dein Code", "Dein Code: 482913", vec![], false, vec![]);
+        assert!(!ruled_out(Base::Account, &Facts::of(&code)));
         let found = ai_candidates(&labels, &facts, &[1, 2, 3, 4], &[yes(3)], &[]);
         assert!(found.is_empty(), "{found:?}");
         let found = ai_candidates(&labels, &facts, &[1, 2, 3, 4], &[yes(2)], &[sure(2, 0.6)]);

@@ -304,9 +304,12 @@ data, never orders). The model gives a reason first and then `"fits": "yes"`, `"
 
 A yes counts **0.85** (`AI_YES`): enough for a main label, not for a second one. With a hint of at
 least 0.5 from another way it counts **0.92** (`AI_SUPPORTED`). Then the facts may still rule it out
-(`ruled_out`): `personal` needs a mail written by a person and not from the person's domain,
-`work` no mass mail, nothing automatic and no no-reply or marketing sender, `newsletter` and
-`advertising` a mass mail, `account` no mail written by a person, and a bounce gets nothing. A
+(`ruled_out`): `personal` needs a mail written by a person and not from the person's domain;
+`work` no mass mail, nothing automatic, no no-reply or marketing sender and no role address
+(`info@` …) the person does not know; `newsletter` and `advertising` a mass mail that is not to a
+discussion list; `account` no mail written by a person, and an account word in the subject or a
+one-time code (notices of apps and devices are no account mail); `shipping` no mail a person wrote
+from a freemail address; a bounce gets nothing. A
 model that says yes to more than two labels, or to two that exclude each other, is not believed
 at all. The model's candidates and the others are then [chosen](#how-a-label-is-chosen) together.
 
