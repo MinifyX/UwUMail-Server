@@ -835,8 +835,12 @@ fn boolean(value: &Value, property: &str) -> Result<bool, SetError> {
 }
 
 /// A label as written, from `patch` on top of `before` (with its `counts`, which may be sent back
-/// unchanged).
-fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> Result<AssistLabelWrite, SetError> {
+/// unchanged), and whether its earlier description is to be forgotten (`previousDescription: null`).
+fn label_fields(
+    patch: &Value,
+    before: Option<(&AssistLabel, LabelCounts)>,
+) -> Result<(AssistLabelWrite, bool), SetError> {
+    let mut forget_previous = false;
     let object = patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "a label is an object"))?;
     let mut name = before.map(|(b, _)| b.name.clone());
     let mut write = match before {
@@ -900,6 +904,8 @@ advertising or null",
             "base" if before.is_some_and(|(b, _)| value.as_str() == b.base.as_deref()) => {}
             "previousDescription"
                 if before.is_some_and(|(b, _)| value.as_str() == b.previous_description.as_deref()) => {}
+            // It can only be forgotten, so it no longer goes to the model as a hint (WF-1).
+            "previousDescription" if before.is_some() && value.is_null() => forget_previous = true,
             "id" if before.is_some() => {}
             "keyword" if before.is_some_and(|(b, _)| value.as_str() == Some(b.keyword.as_str())) => {}
             "totalEmails" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.total)) => {}
@@ -911,7 +917,7 @@ advertising or null",
         }
     }
     write.name = name.ok_or_else(|| SetError::invalid_properties(&["name"], "a label needs a name"))?;
-    Ok(write)
+    Ok((write, forget_previous))
 }
 
 /// A base label made again after it was deleted: `{"base": "invoice"}`, perhaps with `auto`. When
@@ -1005,7 +1011,9 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let result = match object.get("base") {
                 Some(base) => create_base_label(ctx, base, object).await,
                 None => match label_fields(object, None) {
-                    Ok(write) => store.create_assist_label_with(account.id, write).await.map_err(label_store_error),
+                    Ok((write, _)) => {
+                        store.create_assist_label_with(account.id, write).await.map_err(label_store_error)
+                    }
                     Err(err) => Err(err),
                 },
             };
@@ -1031,10 +1039,15 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 Some(before) => {
                     let count = counts.get(&before.id).copied().unwrap_or_default();
                     match label_fields(patch, Some((before, count))) {
-                        Ok(write) => store
-                            .update_assist_label_with(account.id, before.id, write)
-                            .await
-                            .map_err(label_store_error),
+                        Ok((write, forget_previous)) => {
+                            match store.update_assist_label_with(account.id, before.id, write).await {
+                                Ok(_) if forget_previous => store
+                                    .forget_label_previous_description(account.id, before.id)
+                                    .await
+                                    .map_err(label_store_error),
+                                other => other.map_err(label_store_error),
+                            }
+                        }
                         Err(err) => Err(err),
                     }
                 }

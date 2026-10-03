@@ -477,7 +477,7 @@ stay `AssistLabel/*`, as since 0.18.
 | `rules` | `Rules\|null` | conditions that put the label on new mail; `null` for none (default) |
 | `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter`, `shipping`, `account`, `personal`, `work` or `advertising`; `null` for none (default). A base label uses its own detector without one |
 | `base` | `String\|null` | server-set: which base label it is (`invoice`, `shipping`, `appointment`, `newsletter`, `account`, `personal`, `work`, `advertising`), `null` for the person's own |
-| `previousDescription` | `String\|null` | server-set: for a label of the person's that became a base label because of its name, the description they had written before (given to the model as a hint); `null` otherwise |
+| `previousDescription` | `String\|null` | server-set: for a label of the person's that became a base label because of its name, the description they had written before (given to the model as a hint); `null` otherwise. It can not be changed, only forgotten: `AssistLabel/set` takes `null` for it, and the model gets no hint from then on |
 | `auto` | `Boolean` | the label may be put on by itself (rules, detectors, learned senders, similar mails, classifier, the model); `false` keeps it for the person's hands (default `true`) |
 | `learnSenders` | `Boolean` | a sender whose mail the person gave this label by hand twice gets it on new mail (default `true`) |
 | `classifier` | `Boolean` | the label's classifier may put it on new mail once it has learned enough (default `true`) |

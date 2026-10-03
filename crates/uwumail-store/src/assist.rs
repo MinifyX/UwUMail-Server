@@ -1001,6 +1001,26 @@ impl Store {
         Ok(label)
     }
 
+    /// Forgets the description a base label had before it was adopted, so it no longer goes to the
+    /// model as a hint (security review 0.22 webmail WF-1).
+    pub async fn forget_label_previous_description(&self, account_id: i64, id: i64) -> Result<AssistLabel> {
+        let (label, modseq) = self
+            .write(move |tx| {
+                let changed = tx.execute(
+                    "UPDATE assist_labels SET previous_description = NULL WHERE id = ?1 AND account_id = ?2",
+                    params![id, account_id],
+                )?;
+                if changed == 0 {
+                    return Err(StoreError::NotFound(format!("label {id}")));
+                }
+                let modseq = label_changed(tx, account_id, id, "updated")?;
+                Ok((load_label(tx, id)?, modseq))
+            })
+            .await?;
+        self.notify_change(account_id, modseq);
+        Ok(label)
+    }
+
     /// Removes a label and answers its keyword and the emails that carry it, for the caller to take
     /// it off them.
     pub async fn delete_assist_label(&self, account_id: i64, id: i64) -> Result<(String, Vec<i64>)> {

@@ -481,6 +481,57 @@ async fn base_labels_are_switched_one_by_one_and_overlaps_are_told() {
     assert_eq!(again["auto"], false);
 }
 
+/// Security review 0.22 webmail WF-1: the earlier description of an adopted label can be forgotten,
+/// and only forgotten.
+#[tokio::test]
+async fn an_adopted_labels_earlier_description_can_be_forgotten() {
+    let (server, _) = assisted().await;
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    let id = server.store.account(login).await.unwrap().unwrap().id;
+    let own = "Alles vom Steuerberater";
+    server.store.create_assist_label(id, "Rechnung".into(), own.into(), None).await.unwrap();
+    server.store.ensure_base_labels(id, "de").await.unwrap();
+    let responses = server.api_using(login, &USING, json!([["AssistLabel/get", { "accountId": account }, "g"]])).await;
+    let list = args(&responses, 0, "AssistLabel/get")["list"].as_array().unwrap().clone();
+    let invoice = list.iter().find(|label| label["base"] == "invoice").unwrap().clone();
+    assert_eq!(invoice["previousDescription"], own, "{invoice}");
+    let invoice_id = invoice["id"].as_str().unwrap().to_owned();
+
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    (invoice_id.clone()): { "previousDescription": "Etwas anderes" },
+                } }, "other"],
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    (invoice_id.clone()): { "previousDescription": own },
+                } }, "same"],
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    (invoice_id.clone()): { "previousDescription": null },
+                } }, "forget"],
+                ["AssistLabel/get", { "accountId": account, "ids": [invoice_id.clone()] }, "g"],
+                ["AssistLabel/set", { "accountId": account, "create": {
+                    "new": { "name": "Reisen", "previousDescription": null },
+                } }, "create"],
+            ]),
+        )
+        .await;
+    let other = args(&responses, 0, "AssistLabel/set");
+    assert_eq!(other["notUpdated"][&invoice_id]["properties"], json!(["previousDescription"]), "{other}");
+    assert!(args(&responses, 1, "AssistLabel/set")["updated"].get(&invoice_id).is_some());
+    let forget = args(&responses, 2, "AssistLabel/set");
+    assert!(forget["updated"].get(&invoice_id).is_some(), "{forget}");
+    assert_ne!(forget["oldState"], forget["newState"]);
+    let label = &args(&responses, 3, "AssistLabel/get")["list"][0];
+    assert_eq!(label["previousDescription"], Value::Null, "{label}");
+    assert_eq!(label["base"], "invoice");
+    let created = args(&responses, 4, "AssistLabel/set");
+    assert_eq!(created["notCreated"]["new"]["properties"], json!(["previousDescription"]), "{created}");
+}
+
 /// Labels need no model: they are kept, counted and pushed without any provider; only what asks a
 /// model is unavailable (docs/jmap-assist.md, "Labels").
 #[tokio::test]
