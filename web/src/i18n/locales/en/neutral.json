@@ -599,6 +599,7 @@
       "movePersonalBusy": "The owner of this mailbox is moving mail into it themselves right now (My mailbox → Move). Wait until that is done, or ask them to pause it.",
       "moveAdminBusy": "An admin is moving mail into this mailbox right now. Try again once that move is finished.",
       "movePasswordNeeded": "The password for the old mailbox was deleted. Enter it to go on.",
+      "moveChanged": "Something in the list changed meanwhile, perhaps through another request. Check the list and start again.",
       "hostInvalid": "The server name is not usable. Only servers on the internet can be used.",
       "urlInvalid": "The address is not a usable https address.",
       "domainMaskedOnly": "This domain takes masked addresses only.",

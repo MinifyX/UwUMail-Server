@@ -425,6 +425,8 @@ async fn make_mailboxes(
             imap_port: row.imap_port,
             dav_url: row.dav_url.clone(),
             created_account: created,
+            expected_login: Some(row.target.clone()),
+            aliases: row.aliases.clone(),
         });
     }
     Ok(mailboxes)

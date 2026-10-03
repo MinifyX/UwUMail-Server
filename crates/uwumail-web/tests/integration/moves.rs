@@ -425,6 +425,8 @@ async fn a_refused_move_leaves_nothing_behind() {
             imap_port: None,
             dav_url: String::new(),
             created_account: false,
+            expected_login: None,
+            aliases: Vec::new(),
         };
         store.create_move(open, vec![mailbox]).await.unwrap();
     }

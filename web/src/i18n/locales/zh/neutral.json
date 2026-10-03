@@ -587,6 +587,7 @@
       "movePersonalBusy": "该邮箱的所有者正在自行迁移邮件（我的邮箱 → 迁移）。请等待完成，或请其暂停。",
       "moveAdminBusy": "管理员正在向此邮箱迁移邮件。请在该迁移完成后重试。",
       "movePasswordNeeded": "旧邮箱的密码已被删除。请输入密码以继续。",
+      "moveChanged": "列表在此期间发生了变化，可能是另一个请求所致。请检查列表后重新开始。",
       "hostInvalid": "服务器名称不可用。只能使用互联网上的服务器。",
       "urlInvalid": "该地址不是可用的 https 地址。",
       "domainMaskedOnly": "该域名仅用于隐藏地址。",

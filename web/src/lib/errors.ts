@@ -182,6 +182,7 @@ const KNOWN = [
   "movePersonalBusy",
   "moveAdminBusy",
   "movePasswordNeeded",
+  "moveChanged",
   "hostInvalid",
   "urlInvalid",
   "domainMaskedOnly",

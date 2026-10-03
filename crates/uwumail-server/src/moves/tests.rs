@@ -133,6 +133,8 @@ fn mailbox(account_id: i64, address: &str, password: &str) -> NewMoveMailbox {
         imap_port: None,
         dav_url: String::new(),
         created_account: true,
+        expected_login: None,
+        aliases: Vec::new(),
     }
 }
 

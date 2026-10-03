@@ -599,6 +599,7 @@
       "movePersonalBusy": "De eigenaar verhuist zelf net mail naar deze mailbox (Mijn mailbox → Verhuizen). Wacht tot dat klaar is, of vraag om het te pauzeren.",
       "moveAdminBusy": "Een beheerder verhuist net mail naar deze mailbox. Probeer het opnieuw als die verhuizing klaar is.",
       "movePasswordNeeded": "Het wachtwoord van de oude mailbox is verwijderd. Vul het in om verder te gaan.",
+      "moveChanged": "Er is intussen iets in de lijst veranderd, misschien door een ander verzoek. Controleer de lijst en begin opnieuw.",
       "hostInvalid": "De servernaam is niet bruikbaar. Alleen servers op internet kunnen.",
       "urlInvalid": "Het adres is geen bruikbaar https-adres.",
       "domainMaskedOnly": "Dit domein neemt alleen gemaskeerde adressen.",

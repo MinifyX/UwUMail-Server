@@ -599,6 +599,7 @@
       "movePersonalBusy": "Die Person zieht gerade selbst Mails in dieses Postfach um (Mein Postfach → Umzug). Warte, bis das fertig ist, oder bitte sie, ihn zu pausieren.",
       "moveAdminBusy": "Ein Admin zieht gerade Mails in dieses Postfach um. Versuch es noch mal, wenn dieser Umzug abgeschlossen ist.",
       "movePasswordNeeded": "Das Passwort für das alte Postfach wurde gelöscht. Gib es ein, um weiterzumachen.",
+      "moveChanged": "An der Liste hat sich inzwischen etwas geändert, vielleicht durch eine andere Anfrage. Prüf die Liste und starte noch mal.",
       "hostInvalid": "Der Servername ist nicht verwendbar. Nur Server im Internet gehen.",
       "urlInvalid": "Die Adresse ist keine verwendbare https-Adresse.",
       "domainMaskedOnly": "Diese Domain nimmt nur maskierte Adressen.",

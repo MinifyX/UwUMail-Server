@@ -282,6 +282,10 @@ pub struct NewMoveMailbox {
     pub imap_port: Option<u16>,
     pub dav_url: String,
     pub created_account: bool,
+    /// The login the admin's request meant `account_id` to be; checked in the write that inserts
+    /// it, as is that every one of `aliases` still belongs to it (security review 0.22 R3-INFO-2).
+    pub expected_login: Option<String>,
+    pub aliases: Vec<String>,
 }
 
 impl std::fmt::Debug for NewMoveMailbox {
@@ -541,6 +545,25 @@ fn insert_mailboxes(tx: &Connection, move_id: i64, domain: &str, mailboxes: Vec<
         }
         if !login.ends_with(&format!("@{domain}")) {
             return Err(rule("moveOtherDomain", format!("{login} is not on {domain}")));
+        }
+        // What the request saw is still so: the account it meant, with the aliases it asked for
+        // (a concurrent request's undo may have taken one away meanwhile).
+        if new.expected_login.as_ref().is_some_and(|expected| !expected.eq_ignore_ascii_case(&login)) {
+            return Err(rule("moveChanged", format!("{login} is not the mailbox the list meant")));
+        }
+        for alias in &new.aliases {
+            let (local, alias_domain) = normalize_address(alias)?;
+            let owner: Option<i64> = tx
+                .query_row(
+                    "SELECT a.account_id FROM addresses a JOIN domains d ON d.id = a.domain_id
+                     WHERE a.local_part = ?1 AND d.name = ?2",
+                    params![local, alias_domain],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if owner != Some(new.account_id) {
+                return Err(rule("moveChanged", format!("{alias} is no longer an address of {login}")));
+            }
         }
         let busy: bool = tx.query_row(
             "SELECT EXISTS (SELECT 1 FROM move_mailboxes WHERE account_id = ?1 AND state != 'done')",
@@ -1343,6 +1366,8 @@ mod tests {
             imap_port: None,
             dav_url: String::new(),
             created_account: true,
+            expected_login: None,
+            aliases: Vec::new(),
         }
     }
 
@@ -1674,5 +1699,29 @@ mod tests {
         store.trash_account("leni@example.org").await.unwrap();
         let done = store.move_by_id(created.id).await.unwrap().unwrap();
         assert_eq!(done.state, MoveState::Done, "{done:?}");
+    }
+
+    #[tokio::test]
+    async fn the_move_goes_into_the_mailbox_and_aliases_the_list_meant() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        store.add_alias("info@example.org", "mini@example.org").await.unwrap();
+        let meant = |login: &str, aliases: &[&str]| NewMoveMailbox {
+            expected_login: Some(login.into()),
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+            ..mailbox(mini, "mini@example.net")
+        };
+        // Another account behind the id, or an alias gone meanwhile (security review 0.22 R3-INFO-2).
+        let other = store.create_move(new_move(MoveKind::Mailbox), vec![meant("nyu@example.org", &[])]).await;
+        assert_eq!(code(other.unwrap_err()), "moveChanged");
+        let gone =
+            store.create_move(new_move(MoveKind::Mailbox), vec![meant("mini@example.org", &["alt@example.org"])]);
+        assert_eq!(code(gone.await.unwrap_err()), "moveChanged");
+        assert!(store.moves().await.unwrap().is_empty());
+        store
+            .create_move(new_move(MoveKind::Mailbox), vec![meant("mini@example.org", &["info@example.org"])])
+            .await
+            .unwrap();
     }
 }

@@ -610,6 +610,7 @@
       "movePersonalBusy": "Le titulaire de cette boîte y déménage lui-même du courrier en ce moment (Ma boîte → Déménagement). Attends que ce soit terminé ou demande-lui de le mettre en pause.",
       "moveAdminBusy": "Un administrateur déménage du courrier dans cette boîte en ce moment. Réessaie une fois ce déménagement terminé.",
       "movePasswordNeeded": "Le mot de passe de l'ancienne boîte a été supprimé. Saisis-le pour continuer.",
+      "moveChanged": "Quelque chose a changé dans la liste entre-temps, peut-être par une autre requête. Vérifie la liste et recommence.",
       "hostInvalid": "Le nom de serveur est inutilisable. Seuls les serveurs sur Internet sont acceptés.",
       "urlInvalid": "L'adresse n'est pas une adresse https utilisable.",
       "domainMaskedOnly": "Ce domaine n'accepte que des adresses masquées.",
