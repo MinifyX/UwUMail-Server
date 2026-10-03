@@ -224,8 +224,24 @@ impl Assist {
         Ok((parse_labels(&answer, &owned), effective))
     }
 
+    /// The server's embeddings provider, when mail may go to it for labels: AI labels are on on the
+    /// server and for the person, the person may use the assistant for them, and the model they
+    /// chose for labels is one of the server's. Someone who picked a personal or local model, or
+    /// switched AI labels off, keeps their mail to themselves (security review 0.22 LABELS22-M1).
+    pub(crate) async fn label_embedder(&self, account: &Account) -> Result<Option<Embedder>> {
+        if !self.store().assist_prefs(account.id).await?.auto_labels {
+            return Ok(None);
+        }
+        match self.resolve_for(account, "autoLabels", false).await {
+            Ok((provider, _, _)) if provider.server => self.embedder(account).await,
+            Ok(_) | Err(AssistError::Unavailable(_)) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
     /// How like the person's labeled mails this one is: by embeddings when the server has an
-    /// embeddings provider, by tokens otherwise or when it fails.
+    /// embeddings provider the mail may go to ([`Assist::label_embedder`]), by tokens otherwise or
+    /// when it fails.
     async fn similar(
         &self,
         account: &Account,
@@ -233,7 +249,7 @@ impl Assist {
         mail: &MailText,
         tokens: &[i64],
     ) -> Result<HashMap<i64, Likeness>> {
-        if let Some(embedder) = self.embedder(account).await? {
+        if let Some(embedder) = self.label_embedder(account).await? {
             match self.similar_by_embeddings(account, &embedder, email_id, mail).await {
                 Ok(found) => return Ok(found),
                 Err(err) => tracing::info!(account = account.id, %err, "no embeddings, comparing tokens instead"),

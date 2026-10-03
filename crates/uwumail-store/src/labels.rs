@@ -64,6 +64,13 @@ pub struct LabelTokens {
     pub tokens: Vec<i64>,
 }
 
+/// An example whose mail is not in Junk or Trash: what is there is no example of anything the
+/// person wants labeled, and it is not sent to an embeddings provider either (security review 0.22
+/// LABELS22-M1). For a query over `label_examples x`.
+const NOT_IN_JUNK_OR_TRASH: &str =
+    "NOT EXISTS (SELECT 1 FROM email_mailboxes em JOIN mailboxes m ON m.id = em.mailbox_id
+                 WHERE em.email_id = x.email_id AND m.role IN ('junk', 'trash'))";
+
 /// The language base labels are named in: the person's own choice, or `fallback`.
 fn base_language(conn: &Connection, account_id: i64, fallback: &str) -> Result<String> {
     let preferences: Option<String> =
@@ -672,12 +679,12 @@ impl Store {
     /// The account's examples with an embedding by `model`, with their labels.
     pub async fn label_vectors(&self, account_id: i64, model: String) -> Result<Vec<LabelVector>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare_cached(
+            let mut stmt = conn.prepare_cached(&format!(
                 "SELECT x.id, x.email_id, v.vector,
                         (SELECT json_group_array(l.label_id) FROM label_example_labels l WHERE l.example_id = x.id)
                  FROM label_vectors v JOIN label_examples x ON x.id = v.example_id
-                 WHERE v.account_id = ?1 AND v.model = ?2",
-            )?;
+                 WHERE v.account_id = ?1 AND v.model = ?2 AND {NOT_IN_JUNK_OR_TRASH}"
+            ))?;
             let rows = stmt.query_map(params![account_id, model], |row| {
                 let labels: String = row.get(3)?;
                 Ok(LabelVector {
@@ -694,11 +701,11 @@ impl Store {
     /// The account's examples with their tokens and labels.
     pub async fn label_token_sets(&self, account_id: i64) -> Result<Vec<LabelTokens>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare_cached(
+            let mut stmt = conn.prepare_cached(&format!(
                 "SELECT x.email_id, x.tokens,
                         (SELECT json_group_array(l.label_id) FROM label_example_labels l WHERE l.example_id = x.id)
-                 FROM label_examples x WHERE x.account_id = ?1",
-            )?;
+                 FROM label_examples x WHERE x.account_id = ?1 AND {NOT_IN_JUNK_OR_TRASH}"
+            ))?;
             let rows = stmt.query_map([account_id], |row| {
                 let tokens: String = row.get(1)?;
                 let labels: String = row.get(2)?;
@@ -748,13 +755,14 @@ impl Store {
         limit: usize,
     ) -> Result<Vec<i64>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare_cached(
+            let mut stmt = conn.prepare_cached(&format!(
                 "SELECT x.email_id FROM label_examples x
                  WHERE x.account_id = ?1
                    AND EXISTS (SELECT 1 FROM emails e WHERE e.id = x.email_id AND e.account_id = ?1)
                    AND NOT EXISTS (SELECT 1 FROM label_vectors v WHERE v.example_id = x.id AND v.model = ?2)
-                 ORDER BY x.id DESC LIMIT ?3",
-            )?;
+                   AND {NOT_IN_JUNK_OR_TRASH}
+                 ORDER BY x.id DESC LIMIT ?3"
+            ))?;
             let rows = stmt.query_map(params![account_id, model, limit as i64], |row| row.get(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
         })

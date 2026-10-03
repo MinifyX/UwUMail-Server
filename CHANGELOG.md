@@ -144,6 +144,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   spam check and the label facts read only the block this server wrote on top (its own `Received`
   up to the next one); for another account's mail only what stands above the first `Received`,
   without counting a good filter score, and "suspicious" is always allowed there.
+- **Embeddings only with consent (LABELS22-M1).** Mail goes to the admin's embeddings provider only
+  while AI labels are on on the server and for the person, the person may use the assistant, and
+  their chosen labels model is one of the server's (not a personal or local one). Mail in Junk or
+  Trash is never embedded and no similar mail.
 
 ## 0.21.2
 

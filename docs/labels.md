@@ -236,6 +236,8 @@ new mail, and the labels of the most alike vote (k nearest neighbours, `similar.
   dimensions take 772 bytes, at most 4,096 dimensions, one per labeled mail and model. They go
   with the mail (destroyed) and the account. Similarity is the cosine; neighbours below **0.55**
   are left out, a label is sure only with a neighbour at least **0.78** alike.
+  Only while AI labels may use a server model for the person (see
+  [llm.md](llm.md#embeddings)); mail in Junk or Trash is no neighbour and is never embedded.
 - **Without one**, or when it fails, the mails' token sets ([Classifier](#classifier)) are compared
   by Jaccard similarity: below **0.12** left out, sure from **0.35**.
 
