@@ -335,15 +335,19 @@ impl Made {
     /// Takes back what was made, newest first: a refused move leaves no orphaned domain, accounts
     /// or aliases behind (security review 0.22 MOV-3).
     async fn undo(self, web: &Web, session: &crate::session::Session) {
+        // Only what no other move took meanwhile (a second request for the same new mailbox, say)
+        // goes; the store checks that in the same write (security review 0.22 R2-MOV-1).
         for alias in self.aliases.iter().rev() {
-            match web.store().remove_alias(alias).await {
-                Ok(()) => audit(web, session, "alias.remove", alias, json!({ "move": true, "undone": true })).await,
+            match web.store().undo_move_alias(alias).await {
+                Ok(true) => audit(web, session, "alias.remove", alias, json!({ "move": true, "undone": true })).await,
+                Ok(false) => tracing::info!(alias, "an alias of a refused move stays, another move uses its mailbox"),
                 Err(err) => tracing::warn!(%err, alias, "taking back an alias of a refused move failed"),
             }
         }
         for login in self.accounts.iter().rev() {
-            match web.store().delete_account(login).await {
-                Ok(()) => audit(web, session, "account.delete", login, json!({ "move": true, "undone": true })).await,
+            match web.store().undo_move_account(login).await {
+                Ok(true) => audit(web, session, "account.delete", login, json!({ "move": true, "undone": true })).await,
+                Ok(false) => tracing::info!(login, "a mailbox of a refused move stays, another move or mail uses it"),
                 Err(err) => tracing::warn!(%err, login, "taking back a mailbox of a refused move failed"),
             }
         }

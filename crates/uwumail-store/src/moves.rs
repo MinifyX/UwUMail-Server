@@ -603,12 +603,23 @@ pub(crate) fn admin_move_open(tx: &Connection, account_id: i64) -> Result<bool> 
 /// none waits for a restore that may never come (security review 0.22 MOV-4). After a restore the
 /// admin retries them with the password.
 pub(crate) fn wipe_moves_of_account(tx: &Connection, account_id: i64) -> Result<()> {
+    let moves: Vec<i64> = tx
+        .prepare("SELECT DISTINCT move_id FROM move_mailboxes WHERE account_id = ?1 AND state != 'done'")?
+        .query_map([account_id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    // In a move that is finishing, the entry cannot get its last round any more: it is done
+    // (with the reason kept), so the move can finish.
     tx.execute(
-        "UPDATE move_mailboxes SET password_sealed = NULL, state = 'paused', error = 'accountDeleted',
-             error_detail = ''
+        "UPDATE move_mailboxes SET password_sealed = NULL, error = 'accountDeleted', error_detail = '',
+             state = CASE WHEN (SELECT state FROM moves WHERE id = move_id) = 'finishing' THEN 'done' ELSE 'paused' END,
+             finished_at = CASE WHEN (SELECT state FROM moves WHERE id = move_id) = 'finishing' THEN ?2 END,
+             next_sync_at = NULL
          WHERE account_id = ?1 AND state != 'done'",
-        [account_id],
+        params![account_id, now()],
     )?;
+    for move_id in moves {
+        settle(tx, move_id)?;
+    }
     Ok(())
 }
 
@@ -744,6 +755,75 @@ impl Store {
             Ok(people)
         })
         .await
+    }
+
+    /// Takes back a mailbox an admin's move request made, when the move was refused: only while no
+    /// move uses it and it holds no mail, checked in the same write as the delete, so a concurrent
+    /// request that took the same new mailbox for its own move keeps it (security review 0.22
+    /// R2-MOV-1). `false` when it stays.
+    pub async fn undo_move_account(&self, login: &str) -> Result<bool> {
+        let login = crate::directory::login_key(login)?;
+        self.write(move |tx| {
+            let Some(id): Option<i64> =
+                tx.query_row("SELECT id FROM accounts WHERE login = ?1", [&login], |row| row.get(0)).optional()?
+            else {
+                return Ok(false);
+            };
+            let used: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM move_mailboxes WHERE account_id = ?1)
+                     OR EXISTS (SELECT 1 FROM emails WHERE account_id = ?1)
+                     OR EXISTS (SELECT 1 FROM migration_jobs WHERE account_id = ?1)",
+                [id],
+                |row| row.get(0),
+            )?;
+            if used {
+                return Ok(false);
+            }
+            tx.execute("DELETE FROM accounts WHERE id = ?1", [id])?;
+            // What the spam filter learned has no foreign key to cascade (as in `delete_account`).
+            for table in ["bayes_tokens", "bayes_totals", "bayes_learned", "bayes_queue"] {
+                tx.execute(&format!("DELETE FROM {table} WHERE account_id = ?1"), [id])?;
+            }
+            Ok(true)
+        })
+        .await
+    }
+
+    /// Takes back an alias an admin's move request added, unless its mailbox is in a move now.
+    pub async fn undo_move_alias(&self, alias: &str) -> Result<bool> {
+        let (local, domain) = normalize_address(alias)?;
+        let result = self
+            .write(move |tx| {
+                let owner: Option<i64> = tx
+                    .query_row(
+                        "SELECT a.account_id FROM addresses a JOIN domains d ON d.id = a.domain_id
+                         WHERE a.local_part = ?1 AND d.name = ?2 AND a.kind = 'alias'",
+                        params![local, domain],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let Some(account_id) = owner else { return Ok(None) };
+                if admin_move_open(tx, account_id)? {
+                    return Ok(None);
+                }
+                tx.execute(
+                    "DELETE FROM addresses WHERE local_part = ?1 AND kind = 'alias'
+                       AND domain_id = (SELECT id FROM domains WHERE name = ?2)",
+                    params![local, domain],
+                )?;
+                let mut granted = crate::identity_grants::Granted::default();
+                let address = format!("{local}@{domain}");
+                crate::shared_mailboxes::address_changed(tx, account_id, &address, false, &mut granted)?;
+                Ok(Some(granted))
+            })
+            .await?;
+        Ok(match result {
+            Some(granted) => {
+                self.notify_granted(granted);
+                true
+            }
+            None => false,
+        })
     }
 
     /// More mailboxes for a move that is not finishing or done.
@@ -984,6 +1064,13 @@ impl Store {
                     params![id, at],
                 )?;
             } else {
+                // Entries without a password (their account went to the trash) cannot have a last
+                // round: they are done as they are, keeping the reason, so the move can finish.
+                tx.execute(
+                    "UPDATE move_mailboxes SET state = 'done', final_round = 1, finished_at = ?2, next_sync_at = NULL
+                     WHERE move_id = ?1 AND state != 'done' AND password_sealed IS NULL",
+                    params![id, at],
+                )?;
                 tx.execute("UPDATE move_mailboxes SET final_round = 1 WHERE move_id = ?1 AND state != 'done'", [id])?;
                 tx.execute(
                     "UPDATE move_mailboxes SET state = 'queued', error = '', error_detail = ''
@@ -1531,5 +1618,61 @@ mod tests {
         assert_eq!(people.len(), 1);
         assert_eq!(people[&mini], (false, vec!["info@example.org".to_owned()]));
         assert!(!people.contains_key(&nyu));
+    }
+
+    #[tokio::test]
+    async fn undoing_a_refused_move_never_takes_what_another_move_uses() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        // Two requests made the same new mailbox; the other one's move got it first.
+        let taken = person(&store, "neu@example.org").await;
+        store.add_alias("neu.alias@example.org", "neu@example.org").await.unwrap();
+        store.create_move(new_move(MoveKind::Mailbox), vec![mailbox(taken, "neu@example.org")]).await.unwrap();
+        assert!(!store.undo_move_alias("neu.alias@example.org").await.unwrap());
+        assert!(!store.undo_move_account("neu@example.org").await.unwrap(), "security review 0.22 R2-MOV-1");
+        assert!(store.account("neu@example.org").await.unwrap().is_some());
+        assert_eq!(store.move_mailboxes(1).await.unwrap().len(), 1, "the other move keeps its mailbox");
+        // What only the refused request made goes.
+        person(&store, "frei@example.org").await;
+        store.add_alias("frei.alias@example.org", "frei@example.org").await.unwrap();
+        assert!(store.undo_move_alias("frei.alias@example.org").await.unwrap());
+        assert!(store.undo_move_account("frei@example.org").await.unwrap());
+        assert!(store.account("frei@example.org").await.unwrap().is_none());
+        assert!(!store.undo_move_account("frei@example.org").await.unwrap(), "gone already");
+    }
+
+    #[tokio::test]
+    async fn a_trashed_account_does_not_hold_up_finishing() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        let nyu = person(&store, "nyu@example.org").await;
+        let leni = person(&store, "leni@example.org").await;
+        let created = store
+            .create_move(
+                new_move(MoveKind::Domain),
+                vec![
+                    mailbox(mini, "mini@example.org"),
+                    mailbox(nyu, "nyu@example.org"),
+                    mailbox(leni, "leni@example.org"),
+                ],
+            )
+            .await
+            .unwrap();
+        // Trashed before finishing: finishing makes it done as it is, with the reason kept.
+        store.trash_account("mini@example.org").await.unwrap();
+        let finishing = store.finish_move(created.id, false).await.unwrap();
+        assert_eq!(finishing.state, MoveState::Finishing);
+        let boxes = store.move_mailboxes(created.id).await.unwrap();
+        let of = |id: i64| boxes.iter().find(|b| b.account_id == id).unwrap();
+        assert_eq!((of(mini).state, of(mini).error.as_str()), (MoveMailboxState::Done, "accountDeleted"));
+        assert_eq!(of(nyu).state, MoveMailboxState::Queued, "the others get their last round");
+        // Nyu's last round runs; Leni is trashed while it waits for hers.
+        let turn = store.take_move_mailbox().await.unwrap().unwrap();
+        assert_eq!(turn.account_id, nyu);
+        store.finish_move_turn(turn.id, MoveTurn::RoundDone, true).await.unwrap();
+        store.trash_account("leni@example.org").await.unwrap();
+        let done = store.move_by_id(created.id).await.unwrap().unwrap();
+        assert_eq!(done.state, MoveState::Done, "{done:?}");
     }
 }
