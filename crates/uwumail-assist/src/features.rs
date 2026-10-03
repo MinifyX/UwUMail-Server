@@ -1525,17 +1525,19 @@ pub fn authentication(
         .map(|(_, domain)| domain.trim().to_ascii_lowercase())
         .filter(|domain| !domain.is_empty());
     let mut signals = AuthenticationSignals { from_domain, ..AuthenticationSignals::default() };
-    let ours = trusted_headers(headers, hostname).iter().map(|(name, value)| (name, auth_results_parts(value))).find(
-        |(name, parts)| {
-            name.eq_ignore_ascii_case("Authentication-Results")
-                && hostname.is_none_or(|hostname| {
-                    parts.first().and_then(|id| id.first()).is_some_and(|id| id.eq_ignore_ascii_case(hostname))
-                })
-        },
-    );
-    let Some((_, parts)) = ours else { return signals };
-    let mut dkim: Vec<String> = Vec::new();
-    for part in parts.iter().skip(1) {
+    // The authserv-id is read exactly as the strip of forged results reads it (security review
+    // 0.22 R3-L2).
+    let ours = trusted_headers(headers, hostname).iter().find(|(name, value)| {
+        name.eq_ignore_ascii_case("Authentication-Results")
+            && hostname.is_none_or(|hostname| {
+                uwumail_smtp::authserv_id(value).is_some_and(|id| id.eq_ignore_ascii_case(hostname))
+            })
+    });
+    let Some((_, value)) = ours else { return signals };
+    // Every part is read, however many DKIM results stand before SPF and DMARC; only what is kept
+    // of the DKIM ones is capped (security review 0.22 R3-L1).
+    let (mut first_dkim, mut dkim_passed) = (None, false);
+    for part in uwumail_smtp::auth_results_parts(value).skip(1) {
         let Some((method, result)) = part.first().and_then(|first| first.split_once('=')) else { continue };
         let result: String =
             result.chars().filter(|c| c.is_ascii_alphanumeric()).take(20).collect::<String>().to_ascii_lowercase();
@@ -1557,81 +1559,33 @@ pub fn authentication(
             }
             "dmarc" if signals.dmarc.is_none() => signals.dmarc = Some(result),
             "dkim" => {
-                if result == "pass"
-                    && let Some(domain) = property("header.d").or_else(|| property("header.i")).and_then(domain_part)
-                {
-                    signals.dkim_pass_domains.push(domain);
+                if result == "pass" {
+                    dkim_passed = true;
+                    if signals.dkim_pass_domains.len() < MAX_DKIM_PASS_DOMAINS
+                        && let Some(domain) =
+                            property("header.d").or_else(|| property("header.i")).and_then(domain_part)
+                        && !signals.dkim_pass_domains.contains(&domain)
+                    {
+                        signals.dkim_pass_domains.push(domain);
+                    }
                 }
-                dkim.push(result);
+                first_dkim.get_or_insert(result);
             }
             _ => {}
         }
     }
-    signals.dkim = if dkim.iter().any(|r| r == "pass") { Some("pass".into()) } else { dkim.into_iter().next() };
+    signals.dkim = if dkim_passed { Some("pass".into()) } else { first_dkim };
     signals
 }
+
+/// The most DKIM signers kept from one `Authentication-Results`.
+const MAX_DKIM_PASS_DOMAINS: usize = 16;
 
 /// The domain of an `Authentication-Results` value: `header.d=signer.example`, the part after the
 /// last `@` of `smtp.mailfrom=user@envelope.example` or `header.i=@signer.example`.
 fn domain_part(value: &str) -> Option<String> {
     let domain = value.rsplit('@').next().unwrap_or(value).trim().trim_end_matches('.').to_ascii_lowercase();
     (!domain.is_empty() && domain.len() <= 253 && domain.contains('.')).then_some(domain)
-}
-
-/// An `Authentication-Results` value split into its `;` parts, each into its words, the way
-/// RFC 8601 reads it: comments in parentheses are left out, and a quoted string is one word
-/// without its quotes. A quoted envelope sender (`"a;dmarc=pass"@attacker.example`) can neither
-/// end a part nor start a result of its own (security review 0.22 R2-M1).
-pub(crate) fn auth_results_parts(value: &str) -> Vec<Vec<String>> {
-    let mut parts: Vec<Vec<String>> = vec![Vec::new()];
-    let mut word = String::new();
-    let mut quoted = false;
-    let mut depth = 0usize;
-    let mut chars = value.chars();
-    let end_word = |parts: &mut Vec<Vec<String>>, word: &mut String| {
-        if !word.is_empty()
-            && let Some(part) = parts.last_mut()
-        {
-            part.push(std::mem::take(word));
-        }
-    };
-    while let Some(c) = chars.next() {
-        if quoted {
-            match c {
-                '\\' => word.extend(chars.next()),
-                '"' => quoted = false,
-                c => word.push(c),
-            }
-        } else if depth > 0 {
-            match c {
-                '\\' => {
-                    chars.next();
-                }
-                '(' => depth += 1,
-                ')' => depth -= 1,
-                _ => {}
-            }
-        } else {
-            match c {
-                '"' => quoted = true,
-                '(' => {
-                    end_word(&mut parts, &mut word);
-                    depth = 1;
-                }
-                ';' => {
-                    end_word(&mut parts, &mut word);
-                    parts.push(Vec::new());
-                }
-                c if c.is_whitespace() => end_word(&mut parts, &mut word),
-                c => word.push(c),
-            }
-        }
-        if parts.len() > 64 || word.len() > 1024 {
-            break;
-        }
-    }
-    end_word(&mut parts, &mut word);
-    parts
 }
 
 /// The headers of an own mail in which this server's verdicts may stand: all of them when its SMTP
@@ -2136,6 +2090,27 @@ mod tests {
         let commented = "spf=pass (dmarc=pass; smtp.mailfrom=x@smallbank.example) smtp.mailfrom=x@attacker.example";
         let parsed = auth_for("service@smallbank.example", commented);
         assert_eq!((parsed.dmarc, parsed.spf_pass_domain.as_deref()), (None, Some("attacker.example")));
+    }
+
+    /// Security review 0.22 R3-L1: junk DKIM signatures before SPF and DMARC do not hide them.
+    #[test]
+    fn many_dkim_results_hide_neither_spf_nor_dmarc() {
+        let mut results = String::from("mx.example.org");
+        for _ in 0..70 {
+            results.push_str(";\r\n\tdkim=permerror (no key) header.d=junk.example");
+        }
+        results.push_str(&format!("; dkim=pass header.i=\"{}@attacker.example\"", "x".repeat(2000)));
+        results.push_str("; spf=fail smtp.mailfrom=x@attacker.example; dmarc=fail header.from=smallbank.example");
+        let headers = vec![
+            ("Received".to_owned(), "from a.example by mx.example.org (UwUMail) with ESMTPS id 1".to_owned()),
+            ("Authentication-Results".to_owned(), results),
+        ];
+        let from = [uwumail_store::EmailAddress { name: None, email: "service@smallbank.example".into() }];
+        let auth = authentication(&headers, Some("mx.example.org"), &from);
+        assert_eq!((auth.spf.as_deref(), auth.dmarc.as_deref()), (Some("fail"), Some("fail")));
+        assert_eq!(auth.dkim.as_deref(), Some("pass"));
+        assert!(auth.dkim_pass_domains.is_empty(), "the over-long signer is skipped");
+        assert!(!crate::spam::authentic(&auth));
     }
 
     /// Client review C-1, checked on the server: verdicts a sender wrote below this server's block,

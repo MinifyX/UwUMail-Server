@@ -130,18 +130,127 @@ pub fn strip_virus_verdicts(raw: &[u8]) -> Vec<u8> {
 }
 
 fn claims_to_be(value: &str, hostname: &str) -> bool {
-    // The authserv-id may carry a leading comment, surrounding quotes (RFC 8601 §2.2) or a trailing
-    // dot; a conformant reader ignores those, so a forgery that hides behind them must still be
-    // recognised as ours and stripped (security-audit-0.5.2 S-18).
-    let id = value.split(';').next().unwrap_or_default().trim_start();
-    let id = match id.strip_prefix('(') {
-        Some(rest) => rest.split_once(')').map_or(rest, |(_, after)| after),
-        None => id,
-    };
-    id.split_whitespace()
-        .next()
-        .map(|authserv| authserv.trim_matches('"').trim_end_matches('.'))
-        .is_some_and(|authserv| authserv.eq_ignore_ascii_case(hostname))
+    // The authserv-id may carry comments, quotes (RFC 8601 §2.2) or a trailing dot; a conformant
+    // reader ignores those, so a forgery that hides behind them must still be recognised as ours
+    // and stripped (security-audit-0.5.2 S-18). The assistant reads it with the same function, so
+    // what survives the strip is never read as ours (security review 0.22 R3-L2).
+    authserv_id(value).is_some_and(|authserv| authserv.eq_ignore_ascii_case(hostname))
+}
+
+/// The longest word of an `Authentication-Results` value that is kept; a longer one is skipped
+/// and reading goes on behind it.
+const MAX_AUTH_WORD: usize = 1024;
+/// The most words of one `;` part; a part with more is left out as a whole.
+const MAX_AUTH_PART_WORDS: usize = 32;
+
+/// The authserv-id of an `Authentication-Results` value: the first word of its first part, read
+/// as [`auth_results_parts`] reads it, without a trailing dot.
+pub fn authserv_id(value: &str) -> Option<String> {
+    let first = auth_results_parts(value).next()?;
+    let id = first.into_iter().next()?;
+    let id = id.trim_end_matches('.');
+    (!id.is_empty()).then(|| id.to_owned())
+}
+
+/// An `Authentication-Results` value as its `;` parts, each as its words, read the way RFC 8601
+/// reads it: comments in parentheses (nested too) are left out, and a quoted string is part of a
+/// word without its quotes, so a quoted envelope sender (`"a;dmarc=pass"@attacker.example`) can
+/// neither end a part nor start a result of its own.
+///
+/// One pass, part by part, so a value of any length costs time in its length and memory in one
+/// part, and every part is read (security review 0.22 R3-L1). What a limit cuts is never kept in
+/// part: a word longer than [`MAX_AUTH_WORD`] is left out whole, and a part of more than
+/// [`MAX_AUTH_PART_WORDS`] words comes out empty — a cut `header.d=victim.example` of
+/// `victim.example.attacker.example` would otherwise read as the victim's (client review C4-1).
+/// Callers hand in the whole value, never a cut one. The assistant reads our own results with it,
+/// and the strip of forged ones its authserv-id ([`authserv_id`]).
+pub fn auth_results_parts(value: &str) -> AuthResultsParts<'_> {
+    AuthResultsParts { chars: value.chars(), done: false }
+}
+
+/// See [`auth_results_parts`].
+pub struct AuthResultsParts<'a> {
+    chars: std::str::Chars<'a>,
+    done: bool,
+}
+
+impl Iterator for AuthResultsParts<'_> {
+    type Item = Vec<String>;
+
+    fn next(&mut self) -> Option<Vec<String>> {
+        if self.done {
+            return None;
+        }
+        let mut part: Vec<String> = Vec::new();
+        let mut overflow = false;
+        let mut word = String::new();
+        let mut too_long = false;
+        let mut quoted = false;
+        let mut depth = 0usize;
+        let end_word = |part: &mut Vec<String>, overflow: &mut bool, word: &mut String, too_long: &mut bool| {
+            if !word.is_empty() && !*too_long {
+                if part.len() < MAX_AUTH_PART_WORDS {
+                    part.push(std::mem::take(word));
+                } else {
+                    *overflow = true;
+                }
+            }
+            word.clear();
+            *too_long = false;
+        };
+        let push = |word: &mut String, too_long: &mut bool, c: char| {
+            if *too_long {
+                return;
+            }
+            if word.len() + c.len_utf8() > MAX_AUTH_WORD {
+                *too_long = true;
+                word.clear();
+            } else {
+                word.push(c);
+            }
+        };
+        loop {
+            let Some(c) = self.chars.next() else {
+                self.done = true;
+                end_word(&mut part, &mut overflow, &mut word, &mut too_long);
+                return Some(if overflow { Vec::new() } else { part });
+            };
+            if quoted {
+                match c {
+                    '\\' => {
+                        if let Some(next) = self.chars.next() {
+                            push(&mut word, &mut too_long, next);
+                        }
+                    }
+                    '"' => quoted = false,
+                    c => push(&mut word, &mut too_long, c),
+                }
+            } else if depth > 0 {
+                match c {
+                    '\\' => {
+                        self.chars.next();
+                    }
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
+                    _ => {}
+                }
+            } else {
+                match c {
+                    '"' => quoted = true,
+                    '(' => {
+                        end_word(&mut part, &mut overflow, &mut word, &mut too_long);
+                        depth = 1;
+                    }
+                    ';' => {
+                        end_word(&mut part, &mut overflow, &mut word, &mut too_long);
+                        return Some(if overflow { Vec::new() } else { part });
+                    }
+                    c if c.is_whitespace() => end_word(&mut part, &mut overflow, &mut word, &mut too_long),
+                    c => push(&mut word, &mut too_long, c),
+                }
+            }
+        }
+    }
 }
 
 /// Turns every CR or LF on its own into CRLF, the only line ending RFC 5322 allows.
@@ -237,6 +346,55 @@ mod tests {
             let stripped = String::from_utf8(strip_forged_auth_results(message.as_bytes(), "mx.example.org")).unwrap();
             assert!(!stripped.contains("dkim=pass"), "forgery behind {id} is removed: {stripped}");
         }
+    }
+
+    /// Security review 0.22 R3-L2: what the strip keeps is never read as ours, because both read the
+    /// authserv-id with one function.
+    #[test]
+    fn the_strip_reads_the_authserv_id_as_the_assistant_does() {
+        for id in [
+            "mx.example.org(x)",
+            "((nested) comment) mx.example.org",
+            "mx.\"example\".org",
+            "\"mx.example.org\" 1",
+            "(a)\tmx.example.org.",
+        ] {
+            let value = format!("{id}; dmarc=pass");
+            assert_eq!(authserv_id(&value).as_deref().map(str::to_ascii_lowercase).as_deref(), Some("mx.example.org"));
+            let message = format!("Authentication-Results: {value}\r\nSubject: Hi\r\n\r\nbody\r\n");
+            let stripped = String::from_utf8(strip_forged_auth_results(message.as_bytes(), "mx.example.org")).unwrap();
+            assert!(!stripped.contains("dmarc=pass"), "forgery behind {id} is removed: {stripped}");
+        }
+        assert_eq!(authserv_id("; dmarc=pass"), None);
+        assert_eq!(authserv_id("(unterminated mx.example.org; dmarc=pass"), None);
+    }
+
+    /// Security review 0.22 R3-L1: many parts or a very long word before SPF and DMARC hide neither.
+    #[test]
+    fn every_part_is_read_however_long_the_value() {
+        let mut value = String::from("mx.example.org");
+        for _ in 0..70 {
+            value.push_str(";\r\n\tdkim=permerror (bad signature) header.d=junk.example");
+        }
+        value.push_str(&format!("; dkim=pass header.i=\"{}@long.example\"", "x".repeat(5000)));
+        value.push_str(&format!("; spf=fail smtp.mailfrom=a@b.example {}", "w ".repeat(100)));
+        value.push_str("; dmarc=fail header.from=bank.example");
+        let parts: Vec<Vec<String>> = auth_results_parts(&value).collect();
+        assert_eq!(parts.len(), 74);
+        assert_eq!(parts[71], ["dkim=pass"], "the over-long word is left out whole, the result kept");
+        assert!(parts[72].is_empty(), "a part over the word limit is left out whole: {:?}", parts[72]);
+        assert_eq!(parts[73][0], "dmarc=fail");
+        // Client review C4-1: a word a limit would cut is never kept cut, so a signer
+        // `victim.example.<padding>` never reads as `victim.example`.
+        let padded = format!("mx.example.org; dkim=pass header.d=victim.example.{}.example", "a".repeat(2000));
+        let parts: Vec<Vec<String>> = auth_results_parts(&padded).collect();
+        assert_eq!(parts[1], ["dkim=pass"], "{parts:?}");
+        assert!(!parts.iter().flatten().any(|word| word.contains("victim")));
+        // Linear: a large value costs its length.
+        let huge = format!("mx.example.org; {}dmarc=fail", "dkim=none; ".repeat(100_000));
+        let started = std::time::Instant::now();
+        assert_eq!(auth_results_parts(&huge).last().unwrap(), ["dmarc=fail"]);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
     }
 
     #[test]

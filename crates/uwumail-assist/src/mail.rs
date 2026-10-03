@@ -50,8 +50,7 @@ impl MailText {
     /// Reads a message that is not stored, from its bytes alone: for evaluation tools that judge
     /// mail outside a mailbox.
     pub fn parse(raw: &[u8], max_chars: usize) -> MailText {
-        let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
-        let parsed = MessageParser::default().parse(raw);
+        let parsed = MessageParser::default().parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
         let list = |address: Option<&mail_parser::Address<'_>>| -> Vec<EmailAddress> {
             address
                 .into_iter()
@@ -73,6 +72,7 @@ impl MailText {
             ),
             None => Default::default(),
         };
+        // The whole message: `body` cuts it itself, and knows then whether a header was cut.
         let (text, links, headers) = body(raw);
         MailText { subject, from, to, cc, date, text: cap(&without_quotes(&text), max_chars), links, headers }
     }
@@ -107,6 +107,9 @@ impl MailText {
 
 /// The text, links and headers of a stored message.
 fn body(raw: &[u8]) -> (String, Vec<String>, Vec<(String, String)>) {
+    // Cut inside the header block, the last header read may be cut mid-word: it is left out, never
+    // read as if whole (client review C4-1, checked on the server).
+    let headers_cut = raw.len() > MAX_PARSE_BYTES && !header_block_ends(&raw[..MAX_PARSE_BYTES]);
     let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
     let parsed = MessageParser::default().parse(raw);
     match &parsed {
@@ -135,8 +138,11 @@ fn body(raw: &[u8]) -> (String, Vec<String>, Vec<(String, String)>) {
             }
             let text = safelinks::unwrap_in_text(&text).into_owned();
             collect_links(&text, &mut links);
-            let headers =
+            let mut headers: Vec<(String, String)> =
                 message.headers_raw().take(200).map(|(name, value)| (name.to_owned(), unfold(value))).collect();
+            if headers_cut && headers.len() < 200 {
+                headers.pop();
+            }
             (text, links, headers)
         }
         None => (String::from_utf8_lossy(raw).into_owned(), Vec::new(), Vec::new()),
@@ -170,6 +176,11 @@ fn one_line(text: &str) -> String {
 /// that part early and speak as the instructions after it.
 pub fn escape_tags(text: &str) -> String {
     text.replace("</", "< /")
+}
+
+/// Whether the header block ends within `raw`: an empty line.
+fn header_block_ends(raw: &[u8]) -> bool {
+    raw.windows(4).any(|w| w == b"\r\n\r\n") || raw.windows(2).any(|w| w == b"\n\n")
 }
 
 fn unfold(value: &str) -> String {
@@ -324,6 +335,38 @@ mod tests {
         let (text, links, _) = body(plain);
         assert_eq!(text.trim(), "Siehe https://example.org/ bitte");
         assert_eq!(links, ["https://example.org/"]);
+    }
+
+    /// Client review C4-1, checked on the server: a stored message cut for parsing inside its
+    /// header block never hands on the cut header, so a signer `victim.example.<own>` cut after
+    /// `victim.example` (and the `dmarc=fail` behind it) cannot make the From look aligned.
+    #[test]
+    fn a_header_cut_by_the_parse_limit_is_left_out() {
+        let head = "Received: from a.example\r\n\tby mx.example.org (UwUMail) with ESMTPS id 1\r\n\
+Authentication-Results: mx.example.org;";
+        let aligned = " dkim=pass header.d=victim.example";
+        let mut raw = String::from(head);
+        while raw.len() + 18 + aligned.len() <= MAX_PARSE_BYTES {
+            raw.push_str("\r\n\tdkim=permerror;");
+        }
+        raw.push_str(&" ".repeat(MAX_PARSE_BYTES - aligned.len() - raw.len()));
+        raw.push_str(aligned);
+        assert_eq!(raw.len(), MAX_PARSE_BYTES, "the cut lands right after the victim's domain");
+        raw.push_str(".attacker.example; dmarc=fail\r\nFrom: <service@victim.example>\r\nSubject: Hi\r\n\r\nText\r\n");
+        let mail = MailText::parse(raw.as_bytes(), 1000);
+        assert!(
+            !mail.headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("Authentication-Results")),
+            "the cut header is left out: {:?}",
+            mail.headers.iter().map(|(name, value)| (name, value.len())).collect::<Vec<_>>()
+        );
+        let from = [EmailAddress { name: None, email: "service@victim.example".into() }];
+        let auth = crate::features::authentication(&mail.headers, Some("mx.example.org"), &from);
+        assert!(auth.dkim_pass_domains.is_empty() && !crate::spam::authentic(&auth), "{auth:?}");
+        // A whole header block within the limit is read as it is.
+        let small = format!("{head} dkim=pass header.d=victim.example; dmarc=none\r\nSubject: Hi\r\n\r\nText\r\n");
+        let mail = MailText::parse(small.as_bytes(), 1000);
+        let auth = crate::features::authentication(&mail.headers, Some("mx.example.org"), &from);
+        assert!(crate::spam::authentic(&auth), "{auth:?}");
     }
 
     #[test]
