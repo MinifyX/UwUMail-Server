@@ -61,6 +61,8 @@ pub enum SubmitError {
     TooManyRecipients,
     #[error("the message is larger than this server accepts")]
     TooLarge,
+    #[error("the message has a malformed header block")]
+    MalformedHeaders,
     #[error("the message contains {0}")]
     Virus(String),
     #[error("the message could not be queued: {0}")]
@@ -76,6 +78,12 @@ pub enum SubmitError {
 fn claimed_addresses(raw: &[u8]) -> Result<(Vec<String>, Vec<String>), SubmitError> {
     if headers::count(raw, "From") > 1 {
         return Err(SubmitError::NoFrom);
+    }
+    // A header block cut short by a line that is no field: what follows it (a `Bcc`, say) is a
+    // header to mail programs but not to `strip_bcc`, so it would go out to every recipient.
+    // Refused like inbound mail (security review 0.22 SIG-6).
+    if headers::header_block_fault(raw).is_some() {
+        return Err(SubmitError::MalformedHeaders);
     }
     if headers::count(raw, "Sender") > 1 {
         return Err(SubmitError::AmbiguousSender);
@@ -191,6 +199,12 @@ impl Smtp {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             }
         }
+        // The size limit holds for the message as it goes out, with the company footer in it
+        // (security review 0.22 SIG-4), so a held message is refused now and not when it is due.
+        let with_footer = self.with_company_footer(account, &from[0], raw, None).await;
+        if with_footer.len() > live.smtp.max_message_size {
+            return Err(SubmitError::TooLarge);
+        }
         Ok(())
     }
 
@@ -210,7 +224,10 @@ impl Smtp {
         let id = random_id();
         let raw = headers::strip_faces(&raw);
         // The company footer goes in before anything is signed (docs/signatures.md).
-        let raw = self.with_company_footer(&account, &from[0], raw, &id).await;
+        let raw = self.with_company_footer(&account, &from[0], raw, Some(&id)).await;
+        if raw.len() > ctx.live().smtp.max_message_size {
+            return Err(SubmitError::TooLarge);
+        }
 
         let mut added = String::new().into_bytes();
         // The person's picture, when they asked for it and send from their own address; signed
@@ -393,14 +410,15 @@ impl Smtp {
     }
 
     /// The message with the mandatory footer of the sender's domain, when its admin set one.
-    /// Placeholders are filled for the sender: the name in `From`, else the account's.
-    async fn with_company_footer(&self, account: &Account, from: &str, raw: Vec<u8>, id: &str) -> Vec<u8> {
+    /// Placeholders are filled for the sender: the name in `From`, else the account's. Without an
+    /// `id` (only checking the size) nothing is logged.
+    async fn with_company_footer(&self, account: &Account, from: &str, raw: Vec<u8>, id: Option<&str>) -> Vec<u8> {
         let domain = from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
         let footer = match self.inner.store.company_footer(domain).await {
             Ok(Some(footer)) => footer,
             Ok(None) => return raw,
             Err(err) => {
-                tracing::warn!(%id, %err, "reading the company footer failed");
+                tracing::warn!(id = id.unwrap_or_default(), %err, "reading the company footer failed");
                 return raw;
             }
         };
@@ -418,7 +436,9 @@ impl Smtp {
             footer::Footer::Added(with_footer) => with_footer,
             footer::Footer::AlreadyThere => raw,
             footer::Footer::Skipped(reason) => {
-                tracing::info!(%id, %domain, reason, "sent without the company footer");
+                if let Some(id) = id {
+                    tracing::info!(%id, %domain, reason, "sent without the company footer");
+                }
                 raw
             }
         }
@@ -512,6 +532,15 @@ mod tests {
         .unwrap();
         assert_eq!(from, ["mini@a.test"]);
         assert!(claimed.contains(&"rf@a.test".to_string()) && claimed.contains(&"rs@a.test".to_string()));
+    }
+
+    #[test]
+    fn a_header_block_cut_short_is_refused() {
+        // What follows the malformed line would escape strip_bcc (security review 0.22 SIG-6).
+        let raw = b"From: mini@a.test\r\nbroken line\r\nBcc: secret@a.test\r\n\r\nhi\r\n";
+        assert!(matches!(err(raw), Some(SubmitError::MalformedHeaders)));
+        assert!(err(b"From: mini@a.test\r\nSubject: hi,\r\n folded\r\n\r\nhi\r\n").is_none());
+        assert!(err(b"From: mini@a.test\r\nSubject: only headers\r\n").is_none());
     }
 
     #[test]

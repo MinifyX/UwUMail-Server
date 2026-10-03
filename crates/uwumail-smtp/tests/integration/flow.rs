@@ -265,6 +265,64 @@ async fn the_company_footer_is_added_before_signing_for_smtp_clients_too() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_bcc_after_a_malformed_header_line_is_never_sent() {
+    use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
+    let a = start("a.test", &["mini", "ami", "leni"], &[]).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let submit = |raw: &str| Submission {
+        account: account.clone(),
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test"), SubmissionRecipient::new("leni@a.test")],
+        raw: raw.as_bytes().to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    // A broken mail program writes a line that is no header field; the Bcc below it would stay in
+    // the message every recipient gets (security review 0.22 SIG-6).
+    let broken = "From: mini@a.test\r\nTo: ami@a.test\r\nnot a header line\r\nBcc: leni@a.test\r\nSubject: Heimlich\r\n\r\nHi\r\n";
+    assert!(matches!(a.smtp.check_submission(&submit(broken)).await, Err(SubmitError::MalformedHeaders)));
+    assert!(matches!(a.smtp.submit(submit(broken)).await, Err(SubmitError::MalformedHeaders)));
+    // The same with a sane header block goes out, and the Bcc is gone for everyone.
+    let sane = broken.replace("not a header line\r\n", "");
+    a.smtp.submit(submit(&sane)).await.unwrap();
+    for login in ["ami@a.test", "leni@a.test"] {
+        let inbox = a.wait_for_inbox(login, 1).await;
+        assert_eq!(inbox.len(), 1, "only the sane message arrived");
+        let raw = a.raw(&inbox[0]).await;
+        assert!(!raw.contains("Bcc:"), "{raw}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_size_limit_holds_with_the_company_footer_in() {
+    use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
+    use uwumail_store::{CompanySignature, CompanySignatureMode};
+    let config = SmtpConfig { max_message_size: 4096, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "ami"], &[], config).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let submit = || Submission {
+        account: account.clone(),
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test")],
+        raw: format!("From: mini@a.test\r\nTo: ami@a.test\r\nSubject: Fast voll\r\n\r\n{}\r\n", "x".repeat(3000))
+            .into_bytes(),
+        env_id: None,
+        trace: None,
+    };
+    let footer = CompanySignature { mode: CompanySignatureMode::Footer, text: "F".repeat(2000), html: String::new() };
+    a.smtp.store().set_domain_signature("a.test", footer).await.unwrap();
+    // Small enough alone, too large with the footer (security review 0.22 SIG-4): refused at once.
+    assert!(matches!(a.smtp.check_submission(&submit()).await, Err(SubmitError::TooLarge)));
+    assert!(matches!(a.smtp.submit(submit()).await, Err(SubmitError::TooLarge)));
+    let small =
+        CompanySignature { mode: CompanySignatureMode::Footer, text: "A-Test GmbH".into(), html: String::new() };
+    a.smtp.store().set_domain_signature("a.test", small).await.unwrap();
+    a.smtp.submit(submit()).await.unwrap();
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
+    assert!(a.raw(&inbox[0]).await.contains("A-Test GmbH"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn implicit_tls_submission_works() {
     let a = start("a.test", &["mini", "ami"], &[]).await;
     a.mailer("mini@a.test", PASSWORD, true).send(mail("mini@a.test", &["ami@a.test"], "Über 465")).await.unwrap();

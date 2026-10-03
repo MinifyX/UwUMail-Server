@@ -179,6 +179,7 @@ fn submit_error(err: SubmitError, mail_from: &str) -> SetError {
         SubmitError::AccountLocked => SetError::new("forbiddenToSend", "this account is disabled or in the trash"),
         SubmitError::TooManyRecipients => SetError::new("tooManyRecipients", "too many recipients"),
         SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),
+        SubmitError::MalformedHeaders => SetError::new("invalidEmail", "the email has a malformed header block"),
         SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),
         SubmitError::Queue(err) => SetError::from(err),
     }

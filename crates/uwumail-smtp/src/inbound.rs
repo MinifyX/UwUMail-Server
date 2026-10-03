@@ -2330,6 +2330,7 @@ impl Session {
             Err(SubmitError::AccountLocked) => "550 5.7.1 This account is disabled or in the trash\r\n".into(),
             Err(SubmitError::TooManyRecipients) => "452 4.5.3 Too many recipients\r\n".into(),
             Err(SubmitError::TooLarge) => "552 5.3.4 The message is too large\r\n".into(),
+            Err(SubmitError::MalformedHeaders) => "550 5.6.0 The message has a malformed header block\r\n".into(),
             Err(SubmitError::Virus(name)) => format!("554 5.7.0 This message contains {name}\r\n"),
             Err(SubmitError::Queue(err)) => {
                 tracing::error!(%err, "queueing a message failed");
