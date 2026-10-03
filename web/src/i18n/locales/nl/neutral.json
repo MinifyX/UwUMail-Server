@@ -1290,7 +1290,7 @@
       "html": "HTML",
       "htmlHint": "Optioneel, voor opgemaakte mail. Zonder HTML wordt de tekst gebruikt.",
       "placeholders": "Plaatshouders: {{placeholders}}",
-      "footerNote": "Ondertekende of versleutelde mail (S/MIME, PGP) krijgt geen voettekst, anders klopt de handtekening niet meer.",
+      "footerNote": "Ondertekende of versleutelde mail (S/MIME, PGP) krijgt geen voettekst, anders klopt de handtekening niet meer. Ontvangers krijgen de voettekst, de kopie in Verzonden van de afzender toont hem niet. Dit is een hulpmiddel, geen garantie: sommige berichten (bijv. met een al geciteerde voettekst) gaan zonder weg.",
       "footerEmpty": "Een verplichte voettekst heeft tekst nodig.",
       "save": "Opslaan",
       "saved": "Bedrijfshandtekening opgeslagen"

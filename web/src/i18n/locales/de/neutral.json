@@ -1290,7 +1290,7 @@
       "html": "HTML",
       "htmlHint": "Optional, für formatierte Mails. Ohne HTML wird der Text verwendet.",
       "placeholders": "Platzhalter: {{placeholders}}",
-      "footerNote": "Signierte oder verschlüsselte Mails (S/MIME, PGP) bekommen keine Fußzeile, sonst wäre die Signatur kaputt.",
+      "footerNote": "Signierte oder verschlüsselte Mails (S/MIME, PGP) bekommen keine Fußzeile, sonst wäre die Signatur kaputt. Empfänger bekommen die Fußzeile, die Kopie im Ordner Gesendet des Absenders zeigt sie nicht. Das ist eine Hilfe, keine Garantie: manche Mails (z. B. mit bereits zitierter Fußzeile) gehen ohne sie raus.",
       "footerEmpty": "Eine Pflicht-Fußzeile braucht einen Text.",
       "save": "Speichern",
       "saved": "Firmen-Signatur gespeichert"

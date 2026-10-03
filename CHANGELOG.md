@@ -95,6 +95,21 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   that trips nothing else (it alone put authenticated receipts and newsletters into Junk), unless
   your own marks make it 99 % sure.
 
+### Security
+
+- **Company footer: no text can become a MIME boundary** (review SIG-1). A rewritten part whose
+  text has a line starting with `--` is written as base64, and a message that would not keep its
+  MIME structure goes out without the footer, so no part appears after the virus scan.
+- **The size limit counts the footer** (SIG-4): a message that only fits without the company
+  footer is refused at submission (`tooLarge`), also for undo send and send later.
+- **Submission refuses a malformed header block** (SIG-6), as inbound mail already did: a `Bcc`
+  below a line that is no header field went out to every recipient.
+- **SignatureSettings/set writes each domain and identity once** (SIG-2): duplicate domain keys
+  (`*`/` *`, `Example.ORG`/`example.org`) count once, the last wins; an account has at most 2000
+  identities.
+- docs/signatures.md: the footer is best effort, not a compliance guarantee, the Sent copy has no
+  footer, and clients must sanitise signature HTML (SIG-3, SIG-5).
+
 ### Fixed
 
 - **Appointments keep their times.** "Samstag 03.10.26, zwischen 10:00 und 12:00" becomes

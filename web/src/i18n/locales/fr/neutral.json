@@ -1315,7 +1315,7 @@
       "html": "HTML",
       "htmlHint": "Facultatif, pour les messages mis en forme. Sans HTML, le texte est utilisé.",
       "placeholders": "Variables : {{placeholders}}",
-      "footerNote": "Les messages signés ou chiffrés (S/MIME, PGP) ne reçoivent pas de pied de page, sinon la signature serait invalide.",
+      "footerNote": "Les messages signés ou chiffrés (S/MIME, PGP) ne reçoivent pas de pied de page, sinon la signature serait invalide. Les destinataires reçoivent le pied de page, la copie dans les Envoyés de l'expéditeur ne l'affiche pas. C'est une aide, pas une garantie : certains messages (p. ex. avec le pied de page déjà cité) partent sans.",
       "footerEmpty": "Un pied de page obligatoire nécessite un texte.",
       "save": "Enregistrer",
       "saved": "Signature d'entreprise enregistrée"

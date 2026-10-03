@@ -1290,7 +1290,7 @@
       "html": "HTML",
       "htmlHint": "Optional, for formatted mail. Without HTML the text is used.",
       "placeholders": "Placeholders: {{placeholders}}",
-      "footerNote": "Signed or encrypted mail (S/MIME, PGP) gets no footer, as it would break the signature.",
+      "footerNote": "Signed or encrypted mail (S/MIME, PGP) gets no footer, as it would break the signature. Recipients get the footer, the sender's copy in Sent does not show it. Best effort, not a compliance guarantee: some messages (e.g. with the footer already quoted) go out without it.",
       "footerEmpty": "A mandatory footer needs a text.",
       "save": "Save",
       "saved": "Company signature saved"

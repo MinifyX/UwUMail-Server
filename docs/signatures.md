@@ -39,7 +39,9 @@ domain. Unknown braces stay as they are. In HTML the values are escaped, so a na
 
 Each signature may take 256 KiB as text and as HTML (room for a small picture as a `data:` URL).
 A change carries at most 500 signatures and is applied all or nothing; only the person's own
-domains (the domains of their sending addresses) and own identities are accepted.
+domains (the domains of their sending addresses) and own identities are accepted. Entries that
+name the same domain (`*` and ` *`, `Example.ORG` and `example.org`) or the same identity count
+once, the last one wins. An account has at most 2000 sending identities.
 
 ## Company signature (admin)
 
@@ -69,8 +71,14 @@ Changes are recorded in the audit log as `domain.signature`
   a text footer the HTML is turned into text.
 - A changed part is written anew as UTF-8: `7bit` when it is plain ASCII with short lines, else
   quoted-printable, whatever it was before (8bit, quoted-printable, base64, ISO-8859-x, Windows
-  code pages). A part in a charset the server cannot read back is left alone. Every other byte of
-  the message stays as it was.
+  code pages). When a line of the new text starts with `--` the part is written as base64, so no
+  text (nor a footer or a name with line breaks) can ever turn into a MIME boundary of the
+  message; a message that would not parse into the same structure after the change is sent
+  without the footer. A part in a charset the server cannot read back is left alone. Every other
+  byte of the message stays as it was.
+- The server's message size limit (`smtp.max_message_size`) holds for the message **with** the
+  footer: a message that only fits without it is refused (`tooLarge` / `552 5.3.4`), for mail held
+  back for undo send or send later already when it is submitted.
 - **Signed or encrypted mail is left alone** (S/MIME `multipart/signed`, `application/pkcs7-mime`,
   PGP/MIME, inline PGP): a footer would break the signature or sit outside the encryption. The
   server logs `sent without the company footer` with the reason.
@@ -78,6 +86,30 @@ Changes are recorded in the audit log as `domain.signature`
   Retries of the queue send the signed message as it is; mail held back for undo send or send
   later gets the footer once, when it goes.
 
-Known limits: the sender's own copy in Sent is the one the mail program saved, without the footer
-(JMAP clients and IMAP clients store their own copy). A message without any text part (e.g. only an
-attachment) gets no footer.
+Known limits:
+
+- **The sender's copy in Sent has no footer.** The copy in Sent is the one the mail program saved
+  (JMAP clients create the Email before they submit it, IMAP clients `APPEND` theirs); the server
+  does not rewrite it, because a JMAP Email is immutable and replacing it would change its id
+  under the client. Recipients get the footer, the sender's Sent folder shows the message as it was
+  written. The portal's domain card says so too.
+- A message without any text part (e.g. only an attachment) gets no footer.
+
+### Best effort, not a compliance guarantee
+
+The footer is a convenience for honest senders, not a control a sender cannot get around. A
+message goes out without it when it is (or claims to be) signed or encrypted, when its body is an
+attachment, when a text part uses a charset the server cannot write back, or when the text already
+contains the footer anywhere, also hidden (e.g. in an HTML comment) or in a quoted earlier message.
+Each skip is logged as `sent without the company footer` with the reason. Where a legal notice
+must be on every message, do not rely on the footer alone.
+
+## Signature HTML is not sanitised by the server
+
+The server stores and hands out signature HTML (the person's, per address and the company
+template) as it was written: `Identity/get` `htmlSignature`, `SignatureSettings/get` and
+`GET /api/account/signatures` return it verbatim, and any client or a direct JMAP call can store
+arbitrary HTML. **Every client that renders it or puts it into a rich editor must sanitise it
+first**, as the webmail does (`cleanSignatureHtml`) and the portal does by showing it only as text.
+The company footer the server appends is the admin's HTML and goes into the outgoing message as it
+is.
