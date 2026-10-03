@@ -219,9 +219,16 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   `authserv_id`), reads every part however many DKIM results come first, and never keeps a word or
   part a limit cut: a signer `victim.example.<own domain>` can no longer read as the victim's. A
   stored message cut for parsing inside its header block leaves the cut header out.
-- **Warnings stay warnings (R3-L3).** "Unverified", "not trustworthy", "kein verifizierter
-  Absender" and other negated praise no longer count as calling the sender verified, so the AI spam
-  check keeps such reasons.
+- **Warnings stay warnings, praise stays praise (R3-L3, R4-L1).** "Unverified", "not trustworthy",
+  "isn’t trustworthy", "doesn't seem genuine", "kein verifizierter Absender" and other negated
+  praise no longer count as calling the sender verified, so the AI spam check keeps such reasons. A
+  negation counts only right before the praise in its own clause: "No red flags: verified sender",
+  "no doubt trustworthy" or "nicht nur ein verifizierter Absender" are still praise and dropped when
+  the From is not authenticated.
+- **Trace headers read strictly everywhere (R4 I-2, I-4, I-6).** `Authentication-Results` words end
+  only at ASCII whitespace, fetched mail reads the provider's results with the same parser, and
+  `Assist/spamCheck` takes `Authentication-Results`, `Received` and `X-Spam-Status` values up to
+  16,000 characters (apps leave out longer ones, never cut them).
 - **No startup rewrite of every mail (R3 I-2).** Migration 0074 now adds `smtp_delivered` with a
   default instead of updating every row. Correction examples mask digits of any script.
 
