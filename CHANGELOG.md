@@ -163,6 +163,27 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   examples (words or vectors) runs on a blocking thread, the mail's words are made a set once, and
   `AssistLabel/apply` runs one call at a time per person.
 
+### Security (review round 2, spam and labels)
+
+- **Authenticated means aligned, in the AI paths too (R2-M1).** The AI spam check and the AI labels
+  call a From authenticated only when DMARC passed, or — without a DMARC policy — a DKIM signature
+  or SPF pass belongs to the From domain, a parent or a subdomain of it, as the SMTP checks decide
+  it. A pass for the sender's other domain, or a DMARC failure, no longer makes a contact "known"
+  or a lookalike link a tracking link. `Authentication-Results` is read with comments and quoted
+  strings handled, so a quoted envelope sender cannot inject a result.
+- **Regional bank prefixes hide nothing (R2-L1).** A `sparkasse-…`/`volksbank-…` domain under
+  `.de`/`.at` counts as the bank's own only when the From is authenticated, and never vouches for a
+  request for a login or data: `CREDENTIAL_REQUEST` fires even for a freshly registered domain with
+  its own DMARC.
+- **Verdicts only in mail delivered here (R2-L2).** Mail stored by IMAP APPEND or JMAP import can
+  carry a forged copy of this server's header block; the AI spam check and the AI labels now read
+  that block only in mail this server's SMTP delivery stored (migration 0074 `smtp_delivered`;
+  copies keep the mark, mail stored before the update counts as delivered).
+- **Reasons and examples, tightened (R2 info).** A number an AI spam reason names must stand within
+  one number of the mail, and a reason calling the sender verified needs authentication behind it.
+  Correction examples also mask codes of letters and digits (`AB7-K2X`), and a mail with a one-time
+  code keeps no example.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with
