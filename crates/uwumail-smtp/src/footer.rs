@@ -5,10 +5,11 @@
 //! Only the message's own text is touched: the plain text and the HTML part of the body, both
 //! parts of a `multipart/alternative`, the first part of a `multipart/mixed` or `related` (the
 //! body before the attachments). A changed part is written anew as UTF-8, `7bit` when it is plain
-//! ASCII with short lines, else quoted-printable, and base64 when a line starts with `--` (so no
-//! text can ever end up as a boundary of an enclosing multipart); every other byte of the message
-//! stays as it was. The result must parse into the same MIME structure, else the message is sent
-//! without the footer.
+//! ASCII with short lines and no line starts with `--`, else quoted-printable, which writes a
+//! `-` at the start of any encoded line as `=2D` (so no text can ever end up as a boundary of an
+//! enclosing multipart); every other byte of the message stays as it was. The result must parse
+//! into the same MIME structure with every other part's content unchanged, else the message is
+//! sent without the footer.
 //! Signed or encrypted mail (S/MIME, PGP/MIME, inline PGP) is left alone: a footer would break the
 //! signature or end up outside the encryption. A part that already carries the footer gets it no
 //! second time.
@@ -183,10 +184,15 @@ fn quoted_printable(text: &str) -> String {
         for (i, &byte) in bytes.iter().enumerate() {
             let last = i + 1 == bytes.len();
             let plain = (byte == b' ' || byte == b'\t') && !last || (33..=126).contains(&byte) && byte != b'=';
-            let piece = if plain { (byte as char).to_string() } else { format!("={byte:02X}") };
+            let mut piece = if plain { (byte as char).to_string() } else { format!("={byte:02X}") };
             if width + piece.len() > 75 {
                 out.push_str("=\r\n");
                 width = 0;
+            }
+            // No encoded line, after a hard or a soft line break, starts with `-`: so none can be
+            // read as a boundary of an enclosing multipart (security review 0.22 R2-SIG-1).
+            if width == 0 && byte == b'-' {
+                piece = "=2D".to_owned();
             }
             out.push_str(&piece);
             width += piece.len();
@@ -209,19 +215,28 @@ fn base64_lines(text: &str) -> String {
     out
 }
 
-/// The MIME structure of a message as far as it matters here: every part's type, whether it is an
-/// attachment and how many children it has.
-fn shape(message: &Message<'_>) -> Vec<(String, String, bool, usize)> {
+/// One part as far as it matters here: its type, whether it is an attachment, how many children
+/// it has, and for every part the footer does not go into, a hash of its decoded content.
+type Shape = (String, String, bool, usize, Option<[u8; 32]>);
+
+/// The MIME structure of a message and the content of every part but `targets`: anything the
+/// rewrite changed outside the parts it meant to change shows here (security review 0.22
+/// R2-SIG-1).
+fn shape(message: &Message<'_>, targets: &[usize]) -> Vec<Shape> {
+    use sha2::{Digest, Sha256};
     (0..message.parts.len())
         .map(|part| {
             let (ctype, subtype) = content_type(message, part);
             let mime = &message.parts[part];
             let attachment = mime.content_disposition().is_some_and(|d| d.is_attachment());
-            let children = match &mime.body {
-                PartType::Multipart(children) => children.len(),
-                _ => 0,
+            let (children, content): (usize, Option<&[u8]>) = match &mime.body {
+                PartType::Multipart(children) => (children.len(), None),
+                PartType::Text(text) | PartType::Html(text) => (0, Some(text.as_bytes())),
+                PartType::Binary(bytes) | PartType::InlineBinary(bytes) => (0, Some(bytes.as_ref())),
+                PartType::Message(nested) => (0, Some(nested.raw_message.as_ref())),
             };
-            (ctype, subtype, attachment, children)
+            let hash = content.filter(|_| !targets.contains(&part)).map(|content| Sha256::digest(content).into());
+            (ctype, subtype, attachment, children, hash)
         })
         .collect()
 }
@@ -281,6 +296,7 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
     };
 
     let mut replacements: Vec<(usize, usize, Vec<u8>)> = Vec::new();
+    let mut changed_parts = Vec::new();
     let mut already = 0;
     for target in &targets {
         let Some(text) = decode(&message, target.part, raw) else {
@@ -301,16 +317,21 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
             Kind::Plain => plain_with_footer(&text, &text_footer),
             Kind::Html => html_with_footer(&text, &html_footer),
         };
-        // A line starting with `--` could close or open a part of an enclosing multipart once
-        // written as 7bit or quoted-printable (security review 0.22 SIG-1): base64 cannot.
+        // A raw line starting with `--` could close or open a part of an enclosing multipart
+        // (security review 0.22 SIG-1, R2-SIG-1), so such text is not written as 7bit.
+        // Quoted-printable writes a leading `-` as `=2D`, after soft line breaks too; should a line
+        // of the encoded text start with `--` all the same, base64 cannot hold one.
         let boundary_like = body.split("\r\n").any(|line| line.starts_with("--"));
         let short_ascii = body.is_ascii() && body.split("\r\n").all(|line| line.len() <= 998);
-        let (encoding, mut encoded) = if boundary_like {
-            ("base64", base64_lines(&body))
-        } else if short_ascii {
+        let (encoding, mut encoded) = if short_ascii && !boundary_like {
             ("7bit", body)
         } else {
-            ("quoted-printable", quoted_printable(&body))
+            let encoded = quoted_printable(&body);
+            if encoded.split("\r\n").any(|line| line.starts_with("--")) {
+                ("base64", base64_lines(&body))
+            } else {
+                ("quoted-printable", encoded)
+            }
         };
         let mime = &message.parts[target.part];
         let (start, body_start, end) =
@@ -332,6 +353,7 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
         let mut part = part_headers(&raw[start..body_start], target.kind, format, encoding, target.part == 0);
         part.extend_from_slice(encoded.as_bytes());
         replacements.push((start, end, part));
+        changed_parts.push(target.part);
     }
     if replacements.is_empty() {
         return if already > 0 { Footer::AlreadyThere } else { Footer::Skipped("no text to add it to") };
@@ -344,7 +366,7 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
     // Whatever the text held, the message the recipients get has the structure every check before
     // saw (security review 0.22 SIG-1).
     match MessageParser::new().parse(&out) {
-        Some(changed) if shape(&changed) == shape(&message) => Footer::Added(out),
+        Some(changed) if shape(&changed, &changed_parts) == shape(&message, &changed_parts) => Footer::Added(out),
         _ => Footer::Skipped("the footer would change the message structure"),
     }
 }
@@ -557,8 +579,11 @@ mod tests {
         assert_eq!(after.len(), before.len(), "{}", String::from_utf8_lossy(&out));
         assert_eq!(MessageParser::new().parse(&out).unwrap().attachment_count(), 1);
         let text = String::from_utf8(out.clone()).unwrap();
-        assert!(text.contains("Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64"));
-        assert!(!text.contains("evil.exe"), "the hidden part stays inside the encoded text");
+        assert!(
+            text.contains("Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable")
+        );
+        assert!(text.contains("\r\n=2D-m\r\n"), "the hidden boundary is escaped: {text}");
+        assert_eq!(text.split("\r\n").filter(|line| line.starts_with("--")).count(), 3, "only the real boundaries");
         assert!(after[1].1.starts_with("Hallo\r\n--m\r\n") && after[1].1.contains("Mustermann GmbH"));
 
         // A hostile footer (a `{name}` with line breaks, say) cannot add parts either, in text or HTML.
@@ -577,6 +602,60 @@ mod tests {
         // Every line of the new message that looks like the boundary is one of the original three.
         let text = String::from_utf8(out).unwrap();
         assert_eq!(text.split("\r\n").filter(|line| line.starts_with("--a")).count(), 3);
+    }
+
+    #[test]
+    fn a_boundary_behind_a_soft_line_break_never_becomes_a_real_part() {
+        use base64::Engine;
+        // Non-ASCII makes it quoted-printable; the wrap at 75 characters falls right before `--m`,
+        // and the hidden part has the same type as the real attachment, so the structure alone
+        // would look the same (security review 0.22 R2-SIG-1).
+        let hidden = format!(
+            "Grüße\r\n{}--m\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment\r\n\r\nSElEREVO\r\n{}--m--\r\n",
+            "x".repeat(75),
+            "y".repeat(75)
+        );
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&hidden);
+        let raw = format!(
+            "From: mini@example.org\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=\"m\"\n\n--m\nContent-Type: text/plain; charset=utf-8\nContent-Transfer-Encoding: base64\n\n{encoded}\n--m\nContent-Type: application/pdf\nContent-Disposition: attachment\nContent-Transfer-Encoding: base64\n\nJVBERi0xLjQK\n--m--\n"
+        )
+        .replace('\n', "\r\n");
+        let Footer::Added(out) = append(raw.as_bytes(), &footer()) else { panic!("expected the footer") };
+        let text = String::from_utf8(out.clone()).unwrap();
+        assert!(text.contains("Content-Transfer-Encoding: quoted-printable"), "{text}");
+        assert_eq!(text.split("\r\n").filter(|line| line.starts_with("--")).count(), 3, "{text}");
+        assert!(text.contains("=\r\n=2D-m\r\n"), "{text}");
+        let message = MessageParser::new().parse(&out).unwrap();
+        assert_eq!(message.attachment_count(), 1);
+        assert_eq!(message.attachment(0).unwrap().contents(), b"%PDF-1.4\n", "the real attachment goes out");
+        let body = message.body_text(0).unwrap();
+        assert!(body.contains(&format!("{}--m\r\n", "x".repeat(75))) && body.contains("Mustermann GmbH"));
+    }
+
+    #[test]
+    fn a_dash_dash_signature_stays_quoted_printable() {
+        let out = added("From: mini@example.org\n\nHallo\n-- \nMini\n");
+        assert!(out.contains("Content-Transfer-Encoding: quoted-printable"), "{out}");
+        assert!(out.contains("\r\n=2D- \r\nMini") || out.contains("\r\n=2D-=20\r\nMini"), "{out}");
+        let (text, _) = texts(&out);
+        assert!(text.unwrap().starts_with("Hallo\r\n-- \r\nMini\r\n\r\nMustermann GmbH"));
+        let encoded = quoted_printable(&format!("{}--x\r\n-a", "ä".repeat(30)));
+        assert!(encoded.split("\r\n").all(|line| !line.starts_with('-')), "{encoded}");
+    }
+
+    #[test]
+    fn the_shape_sees_changed_content_outside_the_targets() {
+        let message = |pdf: &str| {
+            format!(
+                "From: mini@example.org\r\nContent-Type: multipart/mixed; boundary=\"m\"\r\n\r\n--m\r\nContent-Type: text/plain\r\n\r\nHi\r\n--m\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment\r\nContent-Transfer-Encoding: base64\r\n\r\n{pdf}\r\n--m--\r\n"
+            )
+        };
+        let (a, b) = (message("JVBERi0x"), message("SElEREVO"));
+        let (a, b) =
+            (MessageParser::new().parse(a.as_bytes()).unwrap(), MessageParser::new().parse(b.as_bytes()).unwrap());
+        assert_ne!(shape(&a, &[1]), shape(&b, &[1]));
+        assert_eq!(shape(&a, &[2]).len(), shape(&b, &[2]).len());
+        assert_eq!(shape(&a, &[2]), shape(&b, &[2]), "the target's content may change");
     }
 
     #[test]

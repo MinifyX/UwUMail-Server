@@ -323,6 +323,33 @@ async fn the_size_limit_holds_with_the_company_footer_in() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_second_from_address_brings_its_domain_s_footer() {
+    use uwumail_smtp::{Submission, SubmissionRecipient};
+    use uwumail_store::{CompanySignature, CompanySignatureMode};
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    a.smtp.store().create_domain("b.test").await.unwrap();
+    a.smtp.store().add_alias("mini@b.test", "mini@a.test").await.unwrap();
+    let footer =
+        CompanySignature { mode: CompanySignatureMode::Footer, text: "A-Test GmbH".into(), html: String::new() };
+    a.smtp.store().set_domain_signature("a.test", footer).await.unwrap();
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    // The first address is on a domain without a footer (security review 0.22 R2-INFO-1).
+    let submission = Submission {
+        account,
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test")],
+        raw:
+            b"From: mini@b.test, mini@a.test\r\nSender: mini@a.test\r\nTo: ami@a.test\r\nSubject: Zwei\r\n\r\nHallo\r\n"
+                .to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    a.smtp.submit(submission).await.unwrap();
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
+    assert!(a.raw(&inbox[0]).await.contains("A-Test GmbH"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn implicit_tls_submission_works() {
     let a = start("a.test", &["mini", "ami"], &[]).await;
     a.mailer("mini@a.test", PASSWORD, true).send(mail("mini@a.test", &["ami@a.test"], "Über 465")).await.unwrap();

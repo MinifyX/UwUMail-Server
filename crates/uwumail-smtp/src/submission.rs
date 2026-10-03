@@ -201,7 +201,7 @@ impl Smtp {
         }
         // The size limit holds for the message as it goes out, with the company footer in it
         // (security review 0.22 SIG-4), so a held message is refused now and not when it is due.
-        let with_footer = self.with_company_footer(account, &from[0], raw, None).await;
+        let with_footer = self.with_company_footer(account, &from, raw, None).await;
         if with_footer.len() > live.smtp.max_message_size {
             return Err(SubmitError::TooLarge);
         }
@@ -224,7 +224,7 @@ impl Smtp {
         let id = random_id();
         let raw = headers::strip_faces(&raw);
         // The company footer goes in before anything is signed (docs/signatures.md).
-        let raw = self.with_company_footer(&account, &from[0], raw, Some(&id)).await;
+        let raw = self.with_company_footer(&account, &from, raw, Some(&id)).await;
         if raw.len() > ctx.live().smtp.max_message_size {
             return Err(SubmitError::TooLarge);
         }
@@ -412,16 +412,31 @@ impl Smtp {
     /// The message with the mandatory footer of the sender's domain, when its admin set one.
     /// Placeholders are filled for the sender: the name in `From`, else the account's. Without an
     /// `id` (only checking the size) nothing is logged.
-    async fn with_company_footer(&self, account: &Account, from: &str, raw: Vec<u8>, id: Option<&str>) -> Vec<u8> {
-        let domain = from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
-        let footer = match self.inner.store.company_footer(domain).await {
-            Ok(Some(footer)) => footer,
-            Ok(None) => return raw,
-            Err(err) => {
-                tracing::warn!(id = id.unwrap_or_default(), %err, "reading the company footer failed");
-                return raw;
+    /// With several `From` addresses, the first one whose domain has a footer counts, so a first
+    /// address on a domain without one does not leave it out (security review 0.22 R2-INFO-1).
+    async fn with_company_footer(
+        &self,
+        account: &Account,
+        from_all: &[String],
+        raw: Vec<u8>,
+        id: Option<&str>,
+    ) -> Vec<u8> {
+        let mut found = None;
+        for address in from_all {
+            let domain = address.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+            match self.inner.store.company_footer(domain).await {
+                Ok(Some(footer)) => {
+                    found = Some((footer, address.as_str(), domain));
+                    break;
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(id = id.unwrap_or_default(), %err, "reading the company footer failed");
+                    return raw;
+                }
             }
-        };
+        }
+        let Some((footer, from, domain)) = found else { return raw };
         let name = MessageParser::new()
             .parse_headers(&raw)
             .and_then(|message| {

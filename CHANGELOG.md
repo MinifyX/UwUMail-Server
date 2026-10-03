@@ -98,8 +98,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 ### Security
 
 - **Company footer: no text can become a MIME boundary** (review SIG-1). A rewritten part whose
-  text has a line starting with `--` is written as base64, and a message that would not keep its
-  MIME structure goes out without the footer, so no part appears after the virus scan.
+  text has a line starting with `--` is written as quoted-printable with every leading `-` of an
+  encoded line (soft line breaks too) as `=2D` (R2-SIG-1), and a message that would not keep its
+  MIME structure and the content of every other part goes out without the footer, so no part
+  appears after the virus scan. With several `From` addresses, the first footer of their domains
+  applies.
 - **The size limit counts the footer** (SIG-4): a message that only fits without the company
   footer is refused at submission (`tooLarge`), also for undo send and send later.
 - **Submission refuses a malformed header block** (SIG-6), as inbound mail already did: a `Bcc`

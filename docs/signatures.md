@@ -64,6 +64,8 @@ Changes are recorded in the audit log as `domain.signature`
   it too.
 - Placeholders are filled for the sender: `{name}` is the display name in `From`, else the
   account's name.
+- With several addresses in `From`, the footer of the first one whose domain has a footer is
+  used (a first address on a domain without one does not leave it out).
 - Only the message's own text changes: a `text/plain` body gets the text footer below it, a
   `text/html` body gets the HTML footer before `</body>` (inside `<div class="uwumail-footer">`),
   a `multipart/alternative` gets both, and in `multipart/mixed`/`related` only the first part (the
@@ -71,10 +73,11 @@ Changes are recorded in the audit log as `domain.signature`
   a text footer the HTML is turned into text.
 - A changed part is written anew as UTF-8: `7bit` when it is plain ASCII with short lines, else
   quoted-printable, whatever it was before (8bit, quoted-printable, base64, ISO-8859-x, Windows
-  code pages). When a line of the new text starts with `--` the part is written as base64, so no
-  text (nor a footer or a name with line breaks) can ever turn into a MIME boundary of the
-  message; a message that would not parse into the same structure after the change is sent
-  without the footer. A part in a charset the server cannot read back is left alone. Every other
+  code pages). Text with a line starting with `--` (a `-- ` signature, say) is always written
+  as quoted-printable, which writes a `-` at the start of any encoded line (also after a soft
+  line break) as `=2D`, so no text (nor a footer or a name with line breaks) can ever turn into a
+  MIME boundary of the message. After the change the message must parse into the same structure
+  with the content of every other part unchanged, else it is sent without the footer. A part in a charset the server cannot read back is left alone. Every other
   byte of the message stays as it was.
 - The server's message size limit (`smtp.max_message_size`) holds for the message **with** the
   footer: a message that only fits without it is refused (`tooLarge` / `552 5.3.4`), for mail held
