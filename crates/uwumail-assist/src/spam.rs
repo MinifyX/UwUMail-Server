@@ -623,6 +623,58 @@ fn quoted(evidence: &str, haystack: &str) -> Option<String> {
     (wanted.chars().count() >= 4 && haystack.contains(&wanted)).then(|| evidence.trim().to_owned())
 }
 
+/// Calling a sender verified or genuine (security review 0.22 R2 I-2).
+const AUTH_SUCCESS_PHRASES: &[&str] = &[
+    "verified sender",
+    "sender is verified",
+    "verifizierter absender",
+    "verifizierten absender",
+    "absender ist verifiziert",
+    "authenticated sender",
+    "is authenticated",
+    "authentifizierter absender",
+    "ist authentifiziert",
+    "passed authentication",
+    "authentication passed",
+    "spf pass",
+    "dkim pass",
+    "dmarc pass",
+    "genuine sender",
+    "echter absender",
+    "really comes from",
+    "kommt wirklich von",
+    "can trust",
+    "trustworthy",
+    "vertrauenswürdig",
+];
+
+/// Words that turn the phrase after them around: "not trustworthy", "kein verifizierter Absender".
+const NEGATIONS: &[&str] = &[
+    "not", "no", "never", "isn't", "isnt", "wasn't", "aren't", "cannot", "can't", "nor", "without", "hardly", "nicht",
+    "kein", "keine", "keinen", "keiner", "keinem", "nie", "niemals", "ohne", "weder", "kaum",
+];
+
+/// Whether `lower` uses one of `phrases` as a claim: as a word of its own (not inside "unverified"
+/// or "untrustworthy") and with no negation among the three words before it, so a warning like
+/// "not trustworthy" or "kein verifizierter Absender" is no claim (security review 0.22 R3-L3).
+fn claims(lower: &str, phrases: &[&str]) -> bool {
+    phrases.iter().any(|phrase| {
+        lower.match_indices(phrase).any(|(at, _)| {
+            let before = &lower[..at];
+            if before.chars().next_back().is_some_and(char::is_alphanumeric) {
+                return false;
+            }
+            let is_negated = before
+                .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+                .filter(|word| !word.is_empty())
+                .rev()
+                .take(3)
+                .any(|word| NEGATIONS.contains(&word));
+            !is_negated
+        })
+    })
+}
+
 /// Claims a reason may make only when the facts back them.
 fn contradicts(text: &str, mail: &MailText, shape: &MailShape, signals: &SpamSignals) -> bool {
     let lower = text.to_lowercase();
@@ -673,28 +725,7 @@ fn contradicts(text: &str, mail: &MailText, shape: &MailShape, signals: &SpamSig
     // Calling a sender verified or genuine needs authentication that backs its From domain: the
     // topic match alone would let "verified sender, you can trust it" lean on a failed DMARC fact
     // (security review 0.22 R2, I-2).
-    let claims_auth_success = says(&[
-        "verified sender",
-        "sender is verified",
-        "verifizierter absender",
-        "absender ist verifiziert",
-        "authenticated sender",
-        "is authenticated",
-        "authentifizierter absender",
-        "ist authentifiziert",
-        "passed authentication",
-        "authentication passed",
-        "spf pass",
-        "dkim pass",
-        "dmarc pass",
-        "genuine sender",
-        "echter absender",
-        "really comes from",
-        "kommt wirklich von",
-        "can trust",
-        "trustworthy",
-        "vertrauenswürdig",
-    ]);
+    let claims_auth_success = claims(&lower, AUTH_SUCCESS_PHRASES);
     if claims_auth_success && !claims_auth_failure && !authentic(auth) {
         return true;
     }
@@ -1117,6 +1148,32 @@ mod tests {
                 verify(vec![(claim.to_owned(), dmarc.clone())], &mail(), &MailShape::default(), &facts, &signals, 6);
             assert!(kept.is_empty(), "{claim}");
         }
+        // Warnings that negate the praise stay (security review 0.22 R3-L3).
+        for warning in [
+            "The sender is unverified and not trustworthy.",
+            "Unverified sender: the domain is new.",
+            "DMARC failed, so this sender is untrustworthy.",
+            "The sender is not verified.",
+            "DMARC failed: you cannot trust this sender.",
+            "Kein verifizierter Absender, die Domain ist neu.",
+            "DMARC fehlgeschlagen: der Absender ist nicht vertrauenswürdig.",
+            "Absender unbestätigt und unverifiziert.",
+            "DMARC fehlgeschlagen, der Absender ist niemals vertrauenswürdig.",
+        ] {
+            let (kept, _) =
+                verify(vec![(warning.to_owned(), dmarc.clone())], &mail(), &MailShape::default(), &facts, &signals, 6);
+            assert_eq!(kept.len(), 1, "{warning}");
+        }
+        // Praise after an unrelated negation is still praise.
+        let (kept, _) = verify(
+            vec![("No DMARC problem here, the sender is trustworthy.".to_owned(), dmarc.clone())],
+            &mail(),
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert!(kept.is_empty(), "{kept:?}");
         // Saying it failed is fine.
         let (kept, _) = verify(
             vec![("DMARC failed: the sender is not authenticated.".to_owned(), dmarc.clone())],
