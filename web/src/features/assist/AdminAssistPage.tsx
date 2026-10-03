@@ -9,14 +9,16 @@ import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useDomains, usePeople } from "@/features/people/queries";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatNumber } from "@/lib/format";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
 import {
   ADMIN_ASSIST,
   FEATURES,
   FOREIGN_MAIL,
+  adminKinds,
   listedFeatures,
+  smallModelHint,
   byDay,
   byFeature,
   byPerson,
@@ -155,7 +157,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
     },
     onError: (failure) => toast(errorText(failure), "error"),
   });
-  const kinds = view.kinds.filter((kind) => !kind.personalOnly);
+  const kinds = adminKinds(view.kinds);
   const dialogProps = {
     mode: "admin" as const,
     kinds,
@@ -182,6 +184,8 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
           <ul className="flex flex-col">
             {view.providers.map((provider) => {
               const kind = view.kinds.find((candidate) => candidate.kind === provider.kind);
+              const embeddings = kind?.embeddings === true;
+              const small = smallModelHint(provider);
               return (
                 <li
                   key={provider.id}
@@ -191,6 +195,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                     <span className="flex flex-wrap items-center gap-1.5">
                       <span className="truncate text-sm font-semibold">{provider.name}</span>
                       {!provider.enabled && <Tag tone="muted">{t("assist.admin.off")}</Tag>}
+                      {embeddings && <Tag tone="pink">{t("assist.admin.embeddings")}</Tag>}
                       {provider.showCostToUsers && <Tag>{t("assist.admin.costShown")}</Tag>}
                     </span>
                     <span className="block text-[12px] text-muted">
@@ -208,7 +213,9 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                       <span className="block truncate font-mono text-[12px] text-muted">{provider.baseUrl}</span>
                     )}
                     <span className="block text-[12px] text-muted">
-                      {accessText(provider, t)} · {featuresText(provider, t)}
+                      {embeddings
+                        ? `${accessText(provider, t)} · ${t("assist.admin.embeddingsUse")}`
+                        : `${accessText(provider, t)} · ${featuresText(provider, t)}`}
                     </span>
                     <span className="block text-[12px] text-muted">
                       <QuotaText
@@ -241,6 +248,18 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                       }}
                     />
                   </div>
+                  {small && !embeddings && (
+                    <div className="w-full">
+                      <Notice>
+                        {t("assist.admin.smallModel", {
+                          size: formatNumber(small.billions, i18n.language),
+                          recommended: new Intl.ListFormat(i18n.language, { type: "disjunction" }).format(
+                            small.recommended,
+                          ),
+                        })}
+                      </Notice>
+                    </div>
+                  )}
                 </li>
               );
             })}

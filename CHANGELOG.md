@@ -7,6 +7,39 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ### Added
 
+- **Eight base labels for everyone**: Rechnung, Versand, Termin, Newsletter, Konto & Sicherheit,
+  Persönlich, Arbeit/Geschäftlich and Werbung (Invoice, Shipping, Appointment, Newsletter,
+  Account & security, Personal, Work & business, Promotions in English), each with a fixed,
+  non-overlapping definition and examples, switched on or off one by one (`auto`). A label of the
+  same meaning someone had already (`Rechnungen`, `Termine` …) becomes the base label; own labels
+  stay.
+- **At most a main label and a second one, and none when in doubt.** Every way that puts labels on
+  now says how sure it is; a main label needs 0.8, a second one 0.88, and base labels that exclude
+  each other (personal and newsletter, say) never go on together. Four new detectors (account,
+  personal, work, advertising) and stricter old ones; facts read from every mail (sender type,
+  List-Unsubscribe, amounts, invoice and tracking numbers, codes, greetings …) decide with them.
+- **The model only in doubt, held to the facts.** The label worker decides with rules, detectors,
+  learned senders, similar mails and the classifier first and asks the model only about the labels
+  they leave open, with the facts, hints and the person's corrections; it answers yes, no or
+  unsure. A lone yes is never a second label, a mass mail is never personal, and a model saying
+  yes to everything is not believed. On a corpus of 234 invented mails, labels without a model
+  went from 74 % to 98 % precision (recall 33 % → 67 %), and with gemma-3-4b from 57 % to 95 %
+  (recall 84 % → 81 %); on 508 real mails from 24 % to 96 % (recall 89 % → 64 %).
+  Notifications of apps and social networks (followers, recaps, mentions) are never newsletters or
+  promotions, a test mail gets no label, an invoice needs an invoice word, number, amount or PDF and
+  a shipment a tracking number, carrier or shipping word. A label taken off a sender's mail by hand is not put on that sender's
+  mail by itself again, by the model neither.
+- **Similar mails** decide labels: with the new admin provider kinds *OpenAI embeddings*, *Ollama
+  embeddings* and *OpenAI-compatible embeddings* by vectors of the person's labeled mails (one byte
+  per dimension, deleted with the mail), without one by their words.
+- **Corrections teach more**: taking a label off a sender's mail by hand keeps it off that sender's
+  mail, and hand-labelings are shown to the model as examples (sender domain, subject, start of
+  the text; the newest few per label).
+- **Overlap warning**: `AssistLabel/checkOverlap` tells which labels a new or changed label would
+  overlap with (same name, the meaning of a base label, largely the same words); the webmail warns
+  while a label is written.
+- **Small-model hint**: the portal warns for chat models below 7 billion parameters and recommends
+  Qwen3-8B, Qwen3-14B or gemma-3-12b-it; docs/llm.md has a llama.cpp setup for chat and embeddings.
 - **Moving a whole domain, by the admin** (Admin → People → Moves): a wizard makes the domain
   (with DKIM) and the mailboxes if they are missing, takes the people as a table or a CSV list
   (`;` or `,`, with or without header, errors by line) with old login, password, name, address
@@ -76,6 +109,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   back several times no longer fills the list with copies; the entry shows how often it tried and
   when it last did. Once the message arrives, every waiting copy disappears, and a retry of a
   message already delivered or discarded by hand no longer comes back onto the list.
+- **Push no longer reports a change with an older state.** A change notification handled late
+  read changes written meanwhile and sent them with the older state (JMAP push and web push); it now
+  reads only up to its own state.
 
 ## 0.21.2
 

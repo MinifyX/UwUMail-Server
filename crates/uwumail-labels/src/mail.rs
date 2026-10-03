@@ -12,7 +12,18 @@ pub const MAX_FIELD_CHARS: usize = 1_000;
 pub const MAX_ATTACHMENTS: usize = 100;
 
 /// The headers the detectors read; others are not kept.
-pub const HEADERS: [&str; 5] = ["list-unsubscribe", "list-unsubscribe-post", "list-id", "list-post", "precedence"];
+pub const HEADERS: [&str; 7] = [
+    "list-unsubscribe",
+    "list-unsubscribe-post",
+    "list-id",
+    "list-post",
+    "precedence",
+    "auto-submitted",
+    "x-auto-response-suppress",
+];
+
+/// Recipient addresses (To and Cc) that are kept, at most.
+pub const MAX_RECIPIENTS: usize = 50;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attachment {
@@ -26,6 +37,13 @@ pub struct Attachment {
 pub struct Mail {
     /// The first From address, lower case.
     pub from: String,
+    /// The display name of the first From address, at most [`MAX_FIELD_CHARS`].
+    pub from_name: String,
+    /// The To and Cc addresses, lower case, at most [`MAX_RECIPIENTS`].
+    pub to: Vec<String>,
+    /// The person has the sender in their address book or wrote to them before. Only the caller
+    /// knows; [`Mail::new`] and [`Mail::parse`] leave it `false`.
+    pub known_sender: bool,
     /// Whether the From address says who really sent the mail; only then do learned senders give
     /// it a label. [`Mail::new`] assumes so; a caller that knows better (the server checks SPF,
     /// DKIM and DMARC at delivery) sets it to `false` when nothing vouches for the address.
@@ -83,6 +101,9 @@ impl Mail {
             .collect();
         Mail {
             from: cut(from.trim(), MAX_FIELD_CHARS).to_lowercase(),
+            from_name: String::new(),
+            to: Vec::new(),
+            known_sender: false,
             from_trusted: true,
             subject: cut(subject, MAX_FIELD_CHARS),
             text,
@@ -114,8 +135,30 @@ impl Mail {
             .and_then(|address| address.address.as_deref())
             .unwrap_or_default()
             .to_owned();
+        let from_name = message
+            .from()
+            .and_then(|from| from.first())
+            .and_then(|address| address.name.as_deref())
+            .unwrap_or_default()
+            .to_owned();
+        let to: Vec<String> = message
+            .to()
+            .into_iter()
+            .chain(message.cc())
+            .flat_map(|list| list.iter())
+            .filter_map(|address| address.address.as_deref())
+            .take(MAX_RECIPIENTS)
+            .map(|address| cut(address.trim(), MAX_FIELD_CHARS).to_lowercase())
+            .collect();
         let subject = message.subject().unwrap_or_default().to_owned();
         let text = message.body_text(0).map(|text| text.into_owned()).unwrap_or_default();
+        // Some senders put their HTML into the text part.
+        let head: String = text.chars().take(500).collect::<String>().to_ascii_lowercase();
+        let text = if head.contains("<html") || head.contains("<!doctype html") {
+            mail_parser::decoders::html::html_to_text(&text)
+        } else {
+            text
+        };
         let content_type = |part: &mail_parser::MessagePart<'_>| {
             part.content_type()
                 .map(|ct| format!("{}/{}", ct.ctype(), ct.subtype().unwrap_or_default()).to_ascii_lowercase())
@@ -137,6 +180,14 @@ impl Mail {
             .take(20)
             .map(|(name, value)| (name.to_owned(), value.split_whitespace().collect::<Vec<_>>().join(" ")))
             .collect();
-        Mail::new(&from, &subject, &text, attachments, calendar, headers)
+        let mut mail = Mail::new(&from, &subject, &text, attachments, calendar, headers);
+        mail.from_name = cut(from_name.trim(), MAX_FIELD_CHARS);
+        mail.to = to;
+        mail
+    }
+
+    /// The local part of `from`.
+    pub fn from_local(&self) -> &str {
+        self.from.rsplit_once('@').map_or("", |(local, _)| local)
     }
 }

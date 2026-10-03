@@ -52,6 +52,7 @@ impl Fake {
         let app = Router::new()
             .route("/v1/chat/completions", post(answer))
             .route("/v1/messages", post(answer))
+            .route("/v1/embeddings", post(answer))
             .route("/v1/models", get(answer))
             .with_state(state.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

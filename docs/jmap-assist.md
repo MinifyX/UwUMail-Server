@@ -49,6 +49,7 @@ account others share with them):
   "maxLabelConditions": 10,
   "maxInstructionChars": 2000,
   "maxTextChars": 20000,
+  "baseLabels": ["invoice", "shipping", "appointment", "newsletter", "account", "personal", "work", "advertising"],
   "foreignMail": false
 }
 ```
@@ -61,6 +62,7 @@ account others share with them):
 | `maxProviders` | how many providers of their own one person may have |
 | `maxLabels` | how many labels one person may have |
 | `maxLabelConditions` | how many conditions the `rules` of one label may have |
+| `baseLabels` | the [base labels](#labels) this server knows, in their order (0.22); a client offers to make the deleted ones again, also when all were deleted |
 | `foreignMail` | the admin lets this person use the assistant for mail of **other** accounts (Exchange, Gmail, IMAP in the UwUMail app): the calls of [Foreign mail](#foreign-mail) accept mail content the client sends. `false` by default |
 | `maxInstructionChars` | longest `instruction` of `Assist/compose` |
 | `maxTextChars` | longest `text` of `Assist/compose`; mail content is cut to about this much too |
@@ -437,8 +439,11 @@ only decides whether the webmail calls it by itself when a mail opens. A
 
 ## Labels
 
-Labels are the person's own words for kinds of mail ("Rechnungen: invoices,
-receipts, payment confirmations"). A label is a JMAP keyword on the email, so
+Labels are kinds of mail: the eight **base labels** everyone has (Rechnung,
+Versand, Termin, Newsletter, Konto & Sicherheit, Persönlich,
+Arbeit/Geschäftlich, Werbung, in the person's language, each with a fixed
+definition; see [labels.md](labels.md#base-labels)) and the person's own, in
+their own words ("Reisen: flights, trains, hotels"). A label is a JMAP keyword on the email, so
 every client sees it: IMAP apps show it as a tag or keyword. Labels never
 move, delete or answer mail.
 
@@ -452,7 +457,7 @@ stay `AssistLabel/*`, as since 0.18.
 
 | Method | Needs |
 | --- | --- |
-| `AssistLabel/get`, `/set`, `/log`, `/undo` | the capability (own account) |
+| `AssistLabel/get`, `/set`, `/log`, `/undo`, `/checkOverlap` | the capability (own account) |
 | `AssistLabel/suggest`, `/apply` | the `autoLabels` feature (a provider), like any call to a model |
 
 ### AssistLabel
@@ -461,11 +466,13 @@ stay `AssistLabel/*`, as since 0.18.
 | --- | --- | --- |
 | `id` | `Id` | server-set, like `g3` |
 | `name` | `String` | 1 to 40 characters, unique per person (ignoring case) |
-| `description` | `String` | what belongs there, at most 300 characters; this is what the model reads |
+| `description` | `String` | what belongs there, at most 300 characters; this is what the model reads. A base label's is its definition, set by the server, may be longer and can't be changed |
 | `keyword` | `String` | server-set when created and never changed: the keyword on the emails, a lower-case ASCII form of the first name (`rechnungen`, `bestellungen-versand`), `label-<form>` when that form is a mark other programs act on (`junk`, `nonjunk`, `notjunk`, `phishing`, `seen`, `answered`, `flagged`, `deleted`, `draft`, `recent`, `forwarded`, `mdnsent`, `submitpending`, `submitted`), or `label-<n>` |
 | `color` | `String\|null` | `#rrggbb` or `null` |
 | `rules` | `Rules\|null` | conditions that put the label on new mail; `null` for none (default) |
-| `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter` or `shipping`; `null` for none (default) |
+| `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter`, `shipping`, `account`, `personal`, `work` or `advertising`; `null` for none (default). A base label uses its own detector without one |
+| `base` | `String\|null` | server-set: which base label it is (`invoice`, `shipping`, `appointment`, `newsletter`, `account`, `personal`, `work`, `advertising`), `null` for the person's own |
+| `auto` | `Boolean` | the label may be put on by itself (rules, detectors, learned senders, similar mails, classifier, the model); `false` keeps it for the person's hands (default `true`) |
 | `learnSenders` | `Boolean` | a sender whose mail the person gave this label by hand twice gets it on new mail (default `true`) |
 | `classifier` | `Boolean` | the label's classifier may put it on new mail once it has learned enough (default `true`) |
 | `totalEmails` | `Number` | server-set: emails of the account with the keyword, in any folder but those only in Junk or the Trash (the same as `Email/query` with `hasKeyword` and `inMailboxOtherThan` Junk and Trash) |
@@ -495,9 +502,14 @@ conditions; `value` is 1 to 200 characters after trimming, without control
 characters; `hasAttachment` takes only `"true"` or `"false"`. Rules with no
 conditions are stored as `null`.
 
-`AssistLabel/get` and `AssistLabel/set` are standard (`maxLabels` at most).
-`rules`, `detector`, `learnSenders` and `classifier` may be set on create and
-update; `totalEmails`, `unreadEmails` and `examples` are ignored in a patch when
+`AssistLabel/get` and `AssistLabel/set` are standard (`maxLabels` own labels
+at most; the base labels do not count). `AssistLabel/get` makes the base labels
+the first time, adopting a label of the same meaning (`Rechnungen`,
+`Invoices`, `Termine` …) instead of adding a second. `rules`, `detector`,
+`learnSenders`, `classifier` and `auto` may be set on create and update; a base
+label's `description` and `base` only sent back unchanged. A deleted base label
+is made again with `create: { "x": { "base": "invoice" } }` (only `auto` may
+come with it; when it is there, it is answered); `totalEmails`, `unreadEmails` and `examples` are ignored in a patch when
 they are unchanged and refused otherwise, like `id` and `keyword`. `SetError`
 `invalidProperties` names the property (`rules`, `detector`, …) and says why.
 Renaming a label keeps its keyword. Destroying one takes its keyword off every
@@ -513,33 +525,33 @@ client that shows counts fetches `AssistLabel/get` again then.
 ### Auto-labels
 
 Every mail delivered to the person (after the spam filter, not into Junk, not
-mail they sent themselves) gets labels in two steps:
+mail they sent themselves) gets **at most a main label and a second one**, and
+none when nothing is sure enough; labels with `auto` off are never put on by
+themselves. How each way decides, the confidences and thresholds are in
+[labels.md](labels.md#how-a-label-is-chosen).
 
 1. **Without a model**, during delivery and **before the person's Sieve
-   rules run** (with `nonAiLabels` on, the default): for each label, the
-   first of these that matches puts it on:
-   1. its `rules`,
-   2. its `detector`,
-   3. a learned sender (`learnSenders`): the From address got this label by
-      hand at least twice, and never had it taken off by hand since,
-   4. its classifier (`classifier`): a naive Bayes model of this person's
-      mail, once it has at least 15 examples with and 15 without the label and
-      is at least 99 % sure.
-
-   How each of these decides is in [labels.md](labels.md); it is cheap, and
-   delivery never waits long for it or fails because of it (after a second, or
-   on any error, the mail is simply stored without these labels).
-   The keywords go onto the stored mail directly. Sieve sees them: see
-   [sieve.md](sieve.md#labels).
+   rules run** (with `nonAiLabels` on, the default): the label's `rules`, its
+   detector (or its base label's), a learned sender (`learnSenders`: the From
+   address got this label by hand at least twice and never had it taken off by
+   hand since) and its classifier (`classifier`: a naive Bayes model of this
+   person's mail, once it has at least 15 examples with and 15 without the
+   label and is at least 99 % sure). It is cheap, and delivery never waits long
+   for it or fails because of it (after a second, or on any error, the mail is
+   simply stored without these labels). The keywords go onto the stored mail
+   directly. Sieve sees them: see [sieve.md](sieve.md#labels).
 2. **With the model** (with `AssistSettings.autoLabels` on and the `autoLabels`
-   feature): afterwards, in the background, the model judges only the labels
-   **not yet** on the mail (set by step 1 or by Sieve), each in turn (a
-   sentence why, then `fits` true or false, so the reason comes before the
-   decision), and adds the keywords of those that fit. The model never takes a
-   label off. Delivery never waits for it and never fails because of it: when
-   the provider is away or the quota is used up, the mail simply keeps what it
-   has (a job is tried three times over a few minutes, then dropped). Mail
-   older than a day in the queue is dropped as well.
+   feature): afterwards, in the background, the same ways again plus
+   **similar mails** (by an embeddings provider, else by words), and the model
+   only for the labels they leave in doubt. It gets the facts read from the
+   mail, hints and the person's corrections, gives a reason and then `fits`
+   `"yes"`, `"no"` or `"unsure"`; a lone yes is enough for a main label, never
+   for a second, the facts overrule it (a mass mail is never personal), and a
+   model saying yes to more than two labels is not believed. The model never
+   takes a label off. Delivery never waits for it and never fails because of
+   it: when the provider is away or the quota is used up, the mail simply keeps
+   what it has (a job is tried three times over a few minutes, then dropped).
+   Mail older than a day in the queue is dropped as well.
 
 Every label put on this way is logged ([`AssistLabel/log`](#assistlabellog)).
 
@@ -549,13 +561,36 @@ email or takes it off by hand — `Email/set`, IMAP `STORE`, or
 itself, and keywords set by Sieve at delivery, teach nothing):
 
 - putting it on counts the From address for the label; taking it off by hand
-  forgets that address for the label entirely;
+  marks that address so the label is not put on its mail by itself any more
+  (only the label's rules still do);
 - the mail becomes an example for the label's classifier (with the label when
   put on, without it when taken off). For each mail given a label by hand, one
   recent unlabeled mail from the inbox is learned as an example without any
   label, so the classifier knows what ordinary mail looks like.
 
+- with AI labels on, the change is kept as a correction the model sees next
+  time (the sender's domain, the subject and the start of the text, the
+  newest few per label).
+
 Learning happens in the background, a moment later; `examples` counts up then.
+
+### AssistLabel/checkOverlap
+
+`{ accountId, name, description?, id? }` tells which of the person's labels a
+label called `name` with `description` would overlap with, before it is
+created or changed (`id`, the label being changed, is left out). `name` at
+most 100 characters, `description` at most 2,000. It changes nothing and needs
+no provider. Response `{ accountId, overlaps: [{ id, name, base, kind, words
+}] }`:
+
+| `kind` | |
+| --- | --- |
+| `name` | the same name, or another name of the same base label |
+| `meaning` | words of the name or description are what a base label is about (`Handyrechnungen` → Rechnung) |
+| `words` | largely the same words as another label (`words` lists them, as stems) |
+
+Overlapping labels are what puts two labels on one thing or the wrong one of
+two; the webmail warns while a label is written, and saving stays possible.
 
 ### AssistLabel/log
 
@@ -571,22 +606,27 @@ first.
 
 | Field | |
 | --- | --- |
-| `source` | who put the label on: `ai`, `rule`, `sender`, `detector` or `classifier` (entries from before 0.21 are `ai`) |
+| `source` | who put the label on: `ai`, `rule`, `sender`, `detector`, `similar` or `classifier` (entries from before 0.21 are `ai`) |
 | `reason` | one sentence why: the model's own words for `ai`; for the others an English sentence made from `code` and `params` (like `Looks like an invoice: PDF attachment "Rechnung_4711.pdf"`) |
 | `code` | what the reason says, for a client to put in its own words: see below |
-| `params` | `Object`, the details `code` names |
+| `params` | `Object`, the details `code` names; entries of the label worker (0.22) add `confidence` (0 to 1) |
 | `providerName`, `model` | who chose the label for `ai` (`null` when unknown); `null` for the others |
 | `undone` | `true` once the person took the label off with `AssistLabel/undo` (or by removing the keyword) |
 
 | `code` | `source` | `params` |
 | --- | --- | --- |
-| `ai` | `ai` | `{}` |
+| `ai` | `ai` | `{}`, or `{ "supported": true\|false }`: whether another way hinted at the label too |
 | `rule` | `rule` | `{ "match": "all"\|"any", "conditions": [{ "field", "value" }] }`: the conditions that matched |
 | `sender` | `sender` | `{ "address": "leni@example.org", "count": 3 }`: how often the person gave this label to that sender's mail by hand |
-| `invoice` | `detector` | `{ "attachment": "Rechnung_4711.pdf" }` or `{ "word": "Rechnung", "amount": "49,90 €" }` (`amount` may be `null`) |
+| `invoice` | `detector` | `{ "attachment": "Rechnung_4711.pdf" }` or `{ "word": "Rechnung", "amount": "49,90 €" }` (`amount` may be `null`) or `{ "number": "RE-4711", "amount": "49,90 €" }` |
 | `appointment` | `detector` | `{ "calendar": true }` (an invitation or `.ics` in the mail) or `{ "word": "Terminbestätigung", "date": "06.10.2026", "time": "09:30" }` |
-| `newsletter` | `detector` | `{ "header": "List-Id" }` or `{ "header": "Precedence" }` or `{ "header": "List-Unsubscribe-Post" }`: what gave it away besides `List-Unsubscribe` |
-| `shipping` | `detector` | `{ "carrier": "DHL"\|"DPD"\|"Hermes"\|"UPS"\|"GLS"\|"Amazon"\|null, "tracking": "00340434161234567890"\|null }` |
+| `newsletter` | `detector` | `{ "header": "List-Id"\|"Precedence"\|"List-Unsubscribe-Post"\|"marketing sender", "word": "newsletter"\|null }`: what gave it away besides `List-Unsubscribe` |
+| `shipping` | `detector` | `{ "carrier": "DHL"\|"DPD"\|"Hermes"\|"UPS"\|"GLS"\|"Amazon"\|null, "tracking": "00340434161234567890"\|null }`, perhaps with `"word"` (an order word of the subject) |
+| `account` | `detector` | `{ "word": "passwort"\|null, "code": true\|false }` |
+| `personal` | `detector` | `{ "known": true\|false, "freemail": true }` |
+| `work` | `detector` | `{ "colleague": true\|false, "known": true\|false }` |
+| `advertising` | `detector` | `{ "words": ["rabatt", "gutschein"] }` |
+| `similar` | `similar` | `{ "neighbours": 5, "similarity": 0.912 }`: how many of the most alike labeled mails have the label, and how alike the best is |
 | `classifier` | `classifier` | `{ "probability": 0.994, "examples": 23 }` |
 
 New codes may come; a client that does not know one shows `reason`.
@@ -602,8 +642,9 @@ and the classifier learns the mail as one without it.
 
 `{ accountId, emailIds: [Id] }` (at most 20) asks the model now, for mail that
 arrived before auto-labels were on or while it was off. It needs the
-`autoLabels` feature, not the setting, judges only the labels not on the mail
-yet, and logs what it puts on as `ai`. Response `{ accountId, labeled: {
+`autoLabels` feature, not the setting, and decides as the label worker does
+(the cheap ways first, the model only in doubt, at most two labels); it logs
+each label with its source. Response `{ accountId, labeled: {
 emailId: [labelId] }, notFound: [ids] }`.
 
 ### AssistLabel/suggest

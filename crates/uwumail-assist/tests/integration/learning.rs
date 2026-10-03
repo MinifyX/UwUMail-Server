@@ -78,9 +78,10 @@ async fn labels_learn_from_the_hand_and_never_from_the_server() {
     assert!(rig.store.label_training().await.unwrap().is_empty());
     assert_eq!(knowledge(&rig).await.senders.get(&bills), Some(&2));
 
-    // Taken off by hand, the sender is forgotten and the mail becomes an example without it.
+    // Taken off by hand, the sender no longer gets the label by itself (-1) and the mail becomes an
+    // example without it; put on by hand again, the sender starts over at one.
     rig.store.update_emails(rig.mia.id, vec![keyword(second, "rechnungen", false)]).await.unwrap();
-    assert_eq!(knowledge(&rig).await.senders.get(&bills), None);
+    assert_eq!(knowledge(&rig).await.senders.get(&bills), Some(&-1));
     assert!(rig.assist.learn_labels().await);
     assert_eq!(rig.store.label_counts(rig.mia.id).await.unwrap()[&bills].examples, 1);
 
@@ -99,24 +100,34 @@ async fn the_model_judges_only_labels_not_set_and_undo_counts_as_the_hand() {
     let email = rig.deliver(&rig.mia, INVOICE).await;
     rig.store.update_emails_by_server(rig.mia.id, vec![keyword(email, "rechnungen", true)]).await.unwrap();
 
-    rig.fake.push(Reply::Json(
-        200,
-        chat(&json!({ "labels": [{ "name": "Reisen", "reason": "Eine Abholung.", "fits": true }] }).to_string()),
-        vec![],
-    ));
-    let picks = rig.assist.label_email(&rig.mia, email).await.unwrap();
-    assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [travel]);
+    let reisen = || {
+        Reply::Json(
+            200,
+            chat(&json!({ "labels": [{ "name": "Reisen", "reason": "Eine Abholung.", "fits": "yes" }] }).to_string()),
+            vec![],
+        )
+    };
+    rig.fake.push(reisen());
+    // A lone yes of the model is enough for a main label, not for a second one.
+    assert!(rig.assist.label_email(&rig.mia, email).await.unwrap().is_empty());
     let body = &rig.fake.seen()[0].body;
     let user = body["messages"][1]["content"].as_str().unwrap();
     assert!(user.contains("Reisen") && !user.contains("Zahlungserinnerungen"), "{user}");
-    assert_eq!(keywords(&rig, email).await, ["rechnungen", "reisen"]);
+    assert!(user.contains("<facts>") && user.contains("sender type:"), "{user}");
+
+    rig.store.update_emails_by_server(rig.mia.id, vec![keyword(email, "rechnungen", false)]).await.unwrap();
+    rig.fake.push(reisen());
+    let picks = rig.assist.label_email(&rig.mia, email).await.unwrap();
+    assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [travel]);
+    assert_eq!(keywords(&rig, email).await, ["reisen"]);
     assert!(rig.store.label_training().await.unwrap().is_empty(), "the model teaches nothing");
     let log = rig.store.label_log(rig.mia.id, Some(vec![email]), 10).await.unwrap();
     assert_eq!((log[0].source.as_str(), log[0].code.as_str()), ("ai", "ai"));
 
-    // Every label on the mail: nothing to ask.
+    // Two labels on the mail: nothing to ask.
+    rig.store.update_emails_by_server(rig.mia.id, vec![keyword(email, "rechnungen", true)]).await.unwrap();
     assert!(rig.assist.label_email(&rig.mia, email).await.unwrap().is_empty());
-    assert_eq!(rig.fake.seen().len(), 1);
+    assert_eq!(rig.fake.seen().len(), 2);
 
     // Undo is the person taking the label off.
     assert!(rig.assist.undo_label(&rig.mia, log[0].id).await.unwrap());

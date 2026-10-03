@@ -220,7 +220,8 @@ pub async fn account_view(State(web): State<Web>, session: Session) -> ApiResult
         "providers": providers,
         "settings": settings,
         "today": today,
-        "kinds": KINDS,
+        // Embeddings providers are the admin's only.
+        "kinds": KINDS.iter().filter(|kind| !kind.embeddings).collect::<Vec<_>>(),
         "labels": labels.len(),
         "labelList": label_list,
     })))

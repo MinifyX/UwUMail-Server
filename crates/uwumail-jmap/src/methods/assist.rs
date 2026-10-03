@@ -11,7 +11,7 @@ use uwumail_assist::{
     ProviderInput, ProviderView, SettingsPatch, SettingsView, SpamArgs, StreamEvent, SuggestArgs, SummarizeArgs,
     TodayUsage, Usage,
 };
-use uwumail_labels::{Detector, Rules};
+use uwumail_labels::{Base, Detector, OverlapLabel, Rules, overlaps};
 use uwumail_store::{Account, AssistLabel, AssistLabelWrite, LabelCounts, StoreError};
 
 use super::{Ctx, SetResponse, get_ids, if_in_state};
@@ -224,6 +224,8 @@ fn label_json(label: &AssistLabel, counts: LabelCounts) -> Value {
         "detector": label.detector,
         "learnSenders": label.learn_senders,
         "classifier": label.classifier,
+        "base": label.base,
+        "auto": label.auto,
         "totalEmails": counts.total,
         "unreadEmails": counts.unread,
         "examples": counts.examples,
@@ -816,6 +818,7 @@ async fn label_state(ctx: &Ctx<'_>) -> MethodResult<String> {
 
 pub async fn label_get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     assist(ctx)?;
+    ctx.jmap.store.ensure_base_labels(ctx.account.id, ctx.jmap.smtp.tone().language.code()).await?;
     let state = label_state(ctx).await?;
     let labels = ctx.jmap.store.assist_labels(ctx.account.id).await?;
     let counts = ctx.jmap.store.label_counts(ctx.account.id).await?;
@@ -849,6 +852,15 @@ fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> R
                         .to_owned(),
                 )
             }
+            // A base label's definition is fixed: it may only be sent back as it is.
+            "description" if before.is_some_and(|(b, _)| b.base.is_some()) => {
+                if value.as_str() != before.map(|(b, _)| b.description.as_str()) {
+                    return Err(SetError::invalid_properties(
+                        &["description"],
+                        "the description of a base label can't be changed",
+                    ));
+                }
+            }
             "description" => {
                 write.description = match value {
                     Value::Null => String::new(),
@@ -875,13 +887,16 @@ fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> R
                     _ => {
                         return Err(SetError::invalid_properties(
                             &["detector"],
-                            "detector is invoice, appointment, newsletter, shipping or null",
+                            "detector is invoice, appointment, newsletter, shipping, account, personal, work, \
+advertising or null",
                         ));
                     }
                 }
             }
             "learnSenders" => write.learn_senders = boolean(value, "learnSenders")?,
             "classifier" => write.classifier = boolean(value, "classifier")?,
+            "auto" => write.auto = boolean(value, "auto")?,
+            "base" if before.is_some_and(|(b, _)| value.as_str() == b.base.as_deref()) => {}
             "id" if before.is_some() => {}
             "keyword" if before.is_some_and(|(b, _)| value.as_str() == Some(b.keyword.as_str())) => {}
             "totalEmails" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.total)) => {}
@@ -894,6 +909,76 @@ fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> R
     }
     write.name = name.ok_or_else(|| SetError::invalid_properties(&["name"], "a label needs a name"))?;
     Ok(write)
+}
+
+/// A base label made again after it was deleted: `{"base": "invoice"}`, perhaps with `auto`. When
+/// it is there, it is answered.
+async fn create_base_label(ctx: &Ctx<'_>, base: &Value, object: &Value) -> Result<AssistLabel, SetError> {
+    let base = base.as_str().and_then(Base::parse).ok_or_else(|| {
+        SetError::invalid_properties(
+            &["base"],
+            "base is invoice, shipping, appointment, newsletter, account, personal, work or advertising",
+        )
+    })?;
+    let auto = match object.get("auto") {
+        None => None,
+        Some(value) => Some(boolean(value, "auto")?),
+    };
+    if let Some(other) = object.as_object().and_then(|o| o.keys().find(|k| !matches!(k.as_str(), "base" | "auto"))) {
+        return Err(SetError::invalid_properties(&[other], format!("{other} can't be set with base")));
+    }
+    let store = &ctx.jmap.store;
+    let language = ctx.jmap.smtp.tone().language.code();
+    let label = store.create_base_label(ctx.account.id, base, language).await.map_err(label_store_error)?;
+    match auto {
+        Some(auto) if auto != label.auto => {
+            let write = AssistLabelWrite { auto, ..AssistLabelWrite::of(&label) };
+            store.update_assist_label_with(ctx.account.id, label.id, write).await.map_err(label_store_error)
+        }
+        _ => Ok(label),
+    }
+}
+
+/// Longest name and description `AssistLabel/checkOverlap` reads.
+const OVERLAP_MAX_NAME_CHARS: usize = 100;
+const OVERLAP_MAX_DESCRIPTION_CHARS: usize = 2000;
+
+/// `AssistLabel/checkOverlap`: which of the person's labels a label called `name` with
+/// `description` would overlap with (docs/jmap-assist.md, "Overlapping labels"). `id` is the label
+/// being changed, left out of the comparison. Changes nothing.
+pub async fn label_check_overlap(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    assist(ctx)?;
+    let name = arg_str(args, "name")?.ok_or_else(|| MethodError::invalid_arguments("name is required"))?;
+    let description = arg_str(args, "description")?.unwrap_or_default();
+    if name.chars().count() > OVERLAP_MAX_NAME_CHARS || description.chars().count() > OVERLAP_MAX_DESCRIPTION_CHARS {
+        return Err(MethodError::invalid_arguments("name or description is too long"));
+    }
+    let id = arg_id(ctx, args, "id", 'g')?;
+    let labels = ctx.jmap.store.assist_labels(ctx.account.id).await?;
+    let others: Vec<OverlapLabel<'_>> = labels
+        .iter()
+        .filter(|label| Some(label.id) != id)
+        .map(|label| OverlapLabel {
+            id: label.id,
+            name: &label.name,
+            description: &label.description,
+            base: label.base.as_deref().and_then(Base::parse),
+        })
+        .collect();
+    let found: Vec<Value> = overlaps(name, description, &others)
+        .into_iter()
+        .filter_map(|overlap| {
+            let label = labels.iter().find(|label| label.id == overlap.id)?;
+            Some(json!({
+                "id": label_id(label.id),
+                "name": label.name,
+                "base": label.base,
+                "kind": overlap.kind,
+                "words": overlap.words,
+            }))
+        })
+        .collect();
+    Ok(json!({ "accountId": ctx.account_id(), "overlaps": found }))
 }
 
 fn label_store_error(err: StoreError) -> SetError {
@@ -914,9 +999,12 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let mut response = SetResponse::default();
     if let Some(create) = args.get("create").and_then(Value::as_object) {
         for (creation_id, object) in create {
-            let result = match label_fields(object, None) {
-                Ok(write) => store.create_assist_label_with(account.id, write).await.map_err(label_store_error),
-                Err(err) => Err(err),
+            let result = match object.get("base") {
+                Some(base) => create_base_label(ctx, base, object).await,
+                None => match label_fields(object, None) {
+                    Ok(write) => store.create_assist_label_with(account.id, write).await.map_err(label_store_error),
+                    Err(err) => Err(err),
+                },
             };
             match result {
                 Ok(label) => {

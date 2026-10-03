@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adminKinds,
   byDay,
   byFeature,
   byPerson,
@@ -14,12 +15,15 @@ import {
   normalizeChip,
   parseLimit,
   parsePrice,
+  personalKinds,
   hasThinking,
+  isEmbeddings,
   listedFeatures,
   MAX_PRICE_PER_REQUEST,
   pollSeconds,
   providerBody,
   share,
+  smallModelHint,
   urlProblem,
   usageSum,
   validateDraft,
@@ -40,6 +44,7 @@ const kind = (over: Partial<KindInfo>): KindInfo => ({
   keyUrl: null,
   experimental: false,
   personalOnly: false,
+  embeddings: false,
   ...over,
 });
 
@@ -60,6 +65,25 @@ const COMPATIBLE = kind({
 });
 const OPENROUTER = kind({ kind: "openrouter", name: "OpenRouter", baseUrl: "optional" });
 const CHATGPT = kind({ kind: "chatgpt", name: "ChatGPT", key: "login", experimental: true, personalOnly: true });
+const OPENAI_EMBEDDINGS = kind({
+  kind: "openaiEmbeddings",
+  name: "OpenAI embeddings",
+  baseUrl: "optional",
+  model: "text-embedding-3-small",
+  fastModel: null,
+  embeddings: true,
+});
+const EMBEDDINGS_COMPATIBLE = kind({
+  kind: "embeddingsCompatible",
+  name: "OpenAI-compatible embeddings",
+  defaultBaseUrl: null,
+  baseUrl: "required",
+  key: "optional",
+  model: null,
+  fastModel: null,
+  embeddings: true,
+});
+const ALL_KINDS = [OPENAI, OLLAMA, COMPATIBLE, OPENROUTER, CHATGPT, OPENAI_EMBEDDINGS, EMBEDDINGS_COMPATIBLE];
 
 describe("parseLimit", () => {
   it("reads empty as no limit", () => {
@@ -264,6 +288,66 @@ describe("the provider form", () => {
     expect(draft).toMatchObject({ name: "Keller-Ollama", baseUrl: "http://192.0.2.10:11434" });
     draft = changeKind({ ...draft, apiKey: "sk" }, COMPATIBLE, OPENAI);
     expect(draft).toMatchObject({ baseUrl: "", apiKey: "sk" });
+  });
+
+  it("offers embeddings kinds to the admin only, and kinds only people may add to people only", () => {
+    expect(personalKinds(ALL_KINDS).map((info) => info.kind)).toEqual([
+      "openai",
+      "ollama",
+      "openaiCompatible",
+      "openrouter",
+      "chatgpt",
+    ]);
+    expect(adminKinds(ALL_KINDS).map((info) => info.kind)).toEqual([
+      "openai",
+      "ollama",
+      "openaiCompatible",
+      "openrouter",
+      "openaiEmbeddings",
+      "embeddingsCompatible",
+    ]);
+    expect([isEmbeddings(OPENAI_EMBEDDINGS), isEmbeddings(OPENAI), isEmbeddings(undefined)]).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  it("asks no features of an embeddings provider and sends neither features nor a fast model", () => {
+    const admin = { hasKey: true, admin: true };
+    const draft = { ...emptyDraft(OPENAI_EMBEDDINGS), features: [], fastModel: "stray" };
+    expect(validateDraft(draft, OPENAI_EMBEDDINGS, admin)).toEqual({});
+    const body = providerBody({ ...draft, apiKey: "sk-test" }, OPENAI_EMBEDDINGS, { create: true, admin: true });
+    expect(body).not.toHaveProperty("features");
+    expect(body).not.toHaveProperty("fastModel");
+    expect(body).toMatchObject({ kind: "openaiEmbeddings", apiKey: "sk-test", model: null, access: "everyone" });
+  });
+
+  it("needs a model for the generic embeddings kind", () => {
+    const admin = { hasKey: false, admin: true };
+    const draft = { ...emptyDraft(EMBEDDINGS_COMPATIBLE), baseUrl: "http://192.0.2.10:8081/v1" };
+    expect(validateDraft(draft, EMBEDDINGS_COMPATIBLE, admin)).toEqual({ model: "embeddingsModelRequired" });
+    expect(validateDraft({ ...draft, model: " bge-m3 " }, EMBEDDINGS_COMPATIBLE, admin)).toEqual({});
+    // The presets have a default model of their own.
+    expect(
+      validateDraft({ ...emptyDraft(OPENAI_EMBEDDINGS) }, OPENAI_EMBEDDINGS, { hasKey: true, admin: true }),
+    ).toEqual({});
+    // Chat kinds keep their default model too, even the generic one.
+    expect(
+      validateDraft({ ...emptyDraft(COMPATIBLE), baseUrl: "http://192.0.2.10:8080/v1" }, COMPATIBLE, admin),
+    ).toEqual({});
+  });
+
+  it("warns about small models only", () => {
+    const recommended = ["Qwen3-8B", "Qwen3-14B", "gemma-3-12b-it"];
+    expect(smallModelHint({ modelHint: { billions: 4, small: true, recommended } })).toEqual({
+      billions: 4,
+      small: true,
+      recommended,
+    });
+    expect(smallModelHint({ modelHint: { billions: 14, small: false, recommended } })).toBeNull();
+    expect(smallModelHint({ modelHint: null })).toBeNull();
+    expect(smallModelHint({})).toBeNull();
   });
 
   it("normalizes chips", () => {

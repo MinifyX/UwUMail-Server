@@ -21,7 +21,17 @@ export function listedFeatures(features: readonly ProviderFeature[]): "all" | Fe
 }
 
 export type ProviderKind =
-  "openai" | "anthropic" | "gemini" | "mistral" | "openrouter" | "ollama" | "openaiCompatible" | "chatgpt";
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "mistral"
+  | "openrouter"
+  | "ollama"
+  | "openaiCompatible"
+  | "chatgpt"
+  | "openaiEmbeddings"
+  | "ollamaEmbeddings"
+  | "embeddingsCompatible";
 
 /** The preset of a kind, as the server hands it out. */
 export interface KindInfo {
@@ -39,6 +49,36 @@ export interface KindInfo {
   experimental: boolean;
   /** Only people may add it for themselves, never the admin for the server. */
   personalOnly: boolean;
+  /**
+   * It turns text into vectors for "similar mails" in auto-labels instead of chatting: only the
+   * admin may add it, it serves no feature and has no fast model.
+   */
+  embeddings: boolean;
+}
+
+/** Whether a kind is an embeddings model (similar mails for labels) rather than a chat model. */
+export const isEmbeddings = (kind: KindInfo | undefined): boolean => kind?.embeddings === true;
+
+/** The kinds the admin may add for the server: everything but the ones only people may add. */
+export const adminKinds = (kinds: KindInfo[]): KindInfo[] => kinds.filter((kind) => !kind.personalOnly);
+
+/** The kinds a person may add for themselves: no embeddings, those are the admin's alone. */
+export const personalKinds = (kinds: KindInfo[]): KindInfo[] => kinds.filter((kind) => !kind.embeddings);
+
+/** What the name of a provider's default model says about its size. */
+export interface ModelHint {
+  /** Parameters in billions, as the name says (gemma-3-4b-it: 4). */
+  billions: number;
+  /** Below 7 billion: labels and spam are judged poorly. */
+  small: boolean;
+  /** Models that judge well enough, by name. */
+  recommended: string[];
+}
+
+/** The hint to warn with: only for a small chat model, never for an embeddings provider. */
+export function smallModelHint(provider: { modelHint?: ModelHint | null }): ModelHint | null {
+  const hint = provider.modelHint;
+  return hint?.small ? hint : null;
 }
 
 export interface Choice {
@@ -137,6 +177,8 @@ export interface AdminProvider {
   showCostToUsers: boolean;
   /** What the default model costs, when known. */
   price: Price | null;
+  /** What the default model's name says about its size; null when it says nothing, and for embeddings. */
+  modelHint?: ModelHint | null;
   createdAt: number;
 }
 
@@ -395,6 +437,7 @@ export type DraftField =
   | "name"
   | "baseUrl"
   | "apiKey"
+  | "model"
   | "access"
   | "features"
   | "requestsPerDay"
@@ -518,6 +561,9 @@ export function validateDraft(
     if (!willHaveKey) errors.apiKey = "keyRequired";
   }
 
+  // The generic embeddings kind knows no default model; the server would refuse it (badModel).
+  if (kind?.kind === "embeddingsCompatible" && !draft.model.trim()) errors.model = "embeddingsModelRequired";
+
   if (parsePrice(draft.inputPrice) === "invalid") errors.inputPrice = "priceInvalid";
   if (parsePrice(draft.outputPrice) === "invalid") errors.outputPrice = "priceInvalid";
   if (parsePrice(draft.requestPrice, MAX_PRICE_PER_REQUEST) === "invalid") errors.requestPrice = "requestPriceInvalid";
@@ -525,7 +571,8 @@ export function validateDraft(
   if (context.admin) {
     if (draft.access === "domains" && draft.domains.length === 0) errors.access = "domainsRequired";
     if (draft.access === "people" && draft.people.length === 0) errors.access = "peopleRequired";
-    if (!draft.features.some((feature) => feature !== FOREIGN_MAIL)) errors.features = "featuresRequired";
+    if (!isEmbeddings(kind) && !draft.features.some((feature) => feature !== FOREIGN_MAIL))
+      errors.features = "featuresRequired";
     if (parseLimit(draft.requestsPerDay) === "invalid") errors.requestsPerDay = "limitInvalid";
     if (parseLimit(draft.tokensPerDay) === "invalid") errors.tokensPerDay = "limitInvalid";
   }
@@ -534,7 +581,8 @@ export function validateDraft(
 
 /**
  * The body of a create or update. A key left empty is left out, so the stored one stays; taking
- * it away sends "". Fields the kind has no use for are not sent.
+ * it away sends "". Fields the kind has no use for are not sent: an embeddings provider has no
+ * features and no fast model.
  */
 export function providerBody(
   draft: ProviderDraft,
@@ -552,8 +600,9 @@ export function providerBody(
     if (key) body.apiKey = key;
     else if (draft.removeKey && !context.create) body.apiKey = "";
   }
+  const embeddings = isEmbeddings(kind);
   body.model = draft.model.trim() || null;
-  body.fastModel = draft.fastModel.trim() || null;
+  if (!embeddings) body.fastModel = draft.fastModel.trim() || null;
   const inputPrice = parsePrice(draft.inputPrice);
   const outputPrice = parsePrice(draft.outputPrice);
   body.inputPricePerMillion = inputPrice === "invalid" ? null : inputPrice;
@@ -569,11 +618,13 @@ export function providerBody(
       access: draft.access,
       domains: draft.access === "domains" ? draft.domains : [],
       people: draft.access === "people" ? draft.people : [],
-      // In the order the features are always listed, whatever order they were ticked in.
-      features: [...FEATURES, FOREIGN_MAIL].filter((feature) => draft.features.includes(feature)),
       requestsPerDay: requests === "invalid" ? null : requests,
       tokensPerDay: tokens === "invalid" ? null : tokens,
     });
+    if (!embeddings) {
+      // In the order the features are always listed, whatever order they were ticked in.
+      body.features = [...FEATURES, FOREIGN_MAIL].filter((feature) => draft.features.includes(feature));
+    }
   }
   return body;
 }

@@ -4067,7 +4067,10 @@
       "priceLists_other": "Prijzen bijgewerkt {{date}}, {{count}} modellen bekend.",
       "priceListsNone": "De prijzen zijn nog niet opgehaald.",
       "foreignMail": "AI voor mail uit andere accounts",
-      "foreignMailHint": "Mensen mogen de assistent in de UwUMail-app gebruiken voor de mail van hun andere accounts (Exchange, Gmail, IMAP). De app stuurt dan de tekst van die mail hierheen; alleen het gebruik wordt bewaard. Alleen providers die het toestaan worden gebruikt."
+      "foreignMailHint": "Mensen mogen de assistent in de UwUMail-app gebruiken voor de mail van hun andere accounts (Exchange, Gmail, IMAP). De app stuurt dan de tekst van die mail hierheen; alleen het gebruik wordt bewaard. Alleen providers die het toestaan worden gebruikt.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Vergelijkbare mails voor labels",
+      "smallModel": "Dit model heeft maar ongeveer {{size}} miljard parameters; labels en spam worden slecht beoordeeld. Aanbevolen: {{recommended}}."
     },
     "choices": {
       "title": "Welke provider waarvoor",
@@ -4177,7 +4180,8 @@
         "featuresRequired": "Kies minstens één functie.",
         "limitInvalid": "Een heel getal boven nul, of leeg.",
         "priceInvalid": "Vul een prijs van 0 of meer in, zoals 0,25.",
-        "requestPriceInvalid": "Vul een prijs van 0 tot 100 in, zoals 0,005."
+        "requestPriceInvalid": "Vul een prijs van 0 tot 100 in, zoals 0,005.",
+        "embeddingsModelRequired": "Geef het embeddingsmodel op."
       },
       "price": "Prijs",
       "priceIntro": "Amerikaanse dollar per miljoen tokens, om kosten te tonen. Leeg neemt de prijs uit openbare prijslijsten.",
@@ -4190,7 +4194,13 @@
       "showCostHint": "Zij zien dan wat hun verzoeken kosten. Jij ziet het altijd.",
       "requestPrice": "Per verzoek, Amerikaanse dollar",
       "foreignMail": "Mail uit andere accounts",
-      "foreignMailHint": "Mag gebruikt worden voor de mail van andere accounts van mensen als \"AI voor mail uit andere accounts\" aan staat."
+      "foreignMailHint": "Mag gebruikt worden voor de mail van andere accounts van mensen als \"AI voor mail uit andere accounts\" aan staat.",
+      "chatGroup": "Chatmodellen",
+      "embeddingsGroup": "Embeddings (vergelijkbare mails voor labels)",
+      "embeddingsTitle": "Embeddings: vergelijkbare mails voor labels",
+      "embeddingsHelp": "Een embeddingsmodel zet mails om in vectoren. Daarmee vinden automatische labels vergelijkbare mails die al een label hebben en kunnen ze veel labels kiezen zonder het chatmodel te vragen. Het dient geen andere functie en heeft geen snel model nodig.",
+      "embeddingsStorage": "De vectoren worden compact per gelabelde mail opgeslagen en samen met de mail of het account verwijderd.",
+      "embeddingsModelNeeded": "Geef bij dit type het embeddingsmodel op dat de server aanbiedt."
     },
     "chatgpt": {
       "title": "ChatGPT-aanmelding",

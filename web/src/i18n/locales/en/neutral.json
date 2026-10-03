@@ -4067,7 +4067,10 @@
       "priceLists_other": "Prices updated {{date}}, {{count}} models known.",
       "priceListsNone": "Prices have not been fetched yet.",
       "foreignMail": "AI for mail from other accounts",
-      "foreignMailHint": "People may use the assistant in the UwUMail app for the mail of their other accounts (Exchange, Gmail, IMAP). The app then sends that mail's text here; nothing of it is kept but the usage. Only providers that allow it are used."
+      "foreignMailHint": "People may use the assistant in the UwUMail app for the mail of their other accounts (Exchange, Gmail, IMAP). The app then sends that mail's text here; nothing of it is kept but the usage. Only providers that allow it are used.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Similar mails for labels",
+      "smallModel": "This model has only about {{size}} billion parameters; labels and spam are judged poorly. Recommended: {{recommended}}."
     },
     "choices": {
       "title": "Which provider for what",
@@ -4177,7 +4180,8 @@
         "featuresRequired": "Pick at least one feature.",
         "limitInvalid": "A whole number above zero, or empty.",
         "priceInvalid": "Enter a price of 0 or more, like 0.25.",
-        "requestPriceInvalid": "Enter a price from 0 to 100, like 0.005."
+        "requestPriceInvalid": "Enter a price from 0 to 100, like 0.005.",
+        "embeddingsModelRequired": "Name the embeddings model."
       },
       "price": "Price",
       "priceIntro": "US dollars per million tokens, for showing costs. Empty takes the price from public price lists.",
@@ -4190,7 +4194,13 @@
       "showCostHint": "They then see what their requests cost. You always see it.",
       "requestPrice": "Per request, US dollars",
       "foreignMail": "Mail from other accounts",
-      "foreignMailHint": "May be used for the mail of people's other accounts when \"AI for mail from other accounts\" is on."
+      "foreignMailHint": "May be used for the mail of people's other accounts when \"AI for mail from other accounts\" is on.",
+      "chatGroup": "Chat models",
+      "embeddingsGroup": "Embeddings (similar mails for labels)",
+      "embeddingsTitle": "Embeddings: similar mails for labels",
+      "embeddingsHelp": "An embeddings model turns mails into vectors. With them, auto-labels find similar mails that already have a label and can decide many labels without asking the chat model. It serves no other feature and needs no fast model.",
+      "embeddingsStorage": "The vectors are stored compactly for each labelled mail and are deleted together with the mail or the account.",
+      "embeddingsModelNeeded": "For this kind, name the embeddings model the server offers."
     },
     "chatgpt": {
       "title": "ChatGPT login",

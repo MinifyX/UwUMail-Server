@@ -303,26 +303,68 @@ little:
 
 ## Auto-labels
 
-A person switches them on under the assistant's settings and keeps a list of
-labels, each a name and a description of what belongs there. The webmail offers
-a starter set: *Rechnungen*, *Newsletter*, *Bestellungen & Versand*, *Reisen*,
-*Termine*, *Persönlich* (in the person's language). A label is a JMAP keyword
-(`rechnungen`, …), so IMAP apps see it as a tag.
+A person switches them on under the assistant's settings. Everyone has the
+eight base labels (*Rechnung*, *Versand*, *Termin*, *Newsletter*, *Konto &
+Sicherheit*, *Persönlich*, *Arbeit/Geschäftlich*, *Werbung*, in the
+person's language), each with a fixed definition and switched on or off one by
+one, plus labels of their own, each a name and a description of what belongs
+there. A label is a JMAP keyword (`rechnung`, …), so IMAP apps see it as a tag.
 
 Before the model, labels are put on without one, during delivery and before
 the person's rules (with *Labels without AI* on, the default; see
 [labels.md](labels.md)). When mail is delivered, after the spam filter and the
 person's rules, and it is not in Junk, it is put in a queue. A background
-worker asks the provider chosen for `autoLabels` which of the labels **not yet
-on the mail** fit (a reason for each first, then yes or no), puts those on, and
-logs each with the reason. The model never takes a label off, and what it puts
-on teaches the labels' learning nothing. Delivery never waits for it. A busy provider (HTTP 429, a timeout) is
-tried again after one and after five minutes; after three tries, a wrong key
-or a day in the queue the mail is left without labels. Mail that was moved to
-Junk or the Trash meanwhile is skipped. Each mail counts against the daily
-limit like any other request. The worker takes one mail per person at a time,
-four people side by side, and gives each mail 45 seconds before it tries
-again later; at most 200 mails of one person wait, more keep no labels.
+worker looks at it again with the same cheap ways plus similar mails, and asks
+the provider chosen for `autoLabels` only about the labels they leave in doubt:
+with the facts read from the mail (sender type, List-Unsubscribe, amounts,
+tracking numbers …), hints and the person's corrections; the model gives a
+reason first, then yes, no or unsure. A mail gets at most a main label and a
+second one, a lone yes of the model is never a second label, and the facts
+overrule the model (a mass mail is never personal). See
+[labels.md](labels.md#asking-the-model). Each label is logged with its source,
+reason and confidence. The model never takes a label off, and what it puts on
+teaches the labels' learning nothing. Delivery never waits for it. A busy
+provider (HTTP 429, a timeout) is tried again after one and after five minutes;
+after three tries, a wrong key or a day in the queue the mail is left without
+the model's labels. Mail that was moved to Junk or the Trash meanwhile is
+skipped. Each mail the model is asked about counts against the daily limit like
+any other request. The worker takes one mail per person at a time, four people
+side by side, and gives each mail 45 seconds before it tries again later; at
+most 200 mails of one person wait, more keep no labels.
+
+### Embeddings
+
+An **embeddings provider** makes labels from similar mails: the person's
+labeled mails are compared with a new one, and when the most alike agree, the
+label goes on without asking the chat model at all (see
+[labels.md](labels.md#similar-mails)). Add one under *Providers* with one of
+the kinds *OpenAI embeddings* (`text-embedding-3-small`), *Ollama embeddings*
+(`http://<address>:11434`, `nomic-embed-text`) or *OpenAI-compatible
+embeddings* (any `/v1/embeddings`, e.g. llama.cpp's server with an embedding
+model; name the model). It is the admin's only, serves no feature by itself,
+and the first enabled one a person may use (by its access list) is taken; its
+daily limits and price count like any provider's, under the feature
+`autoLabels`. One vector per labeled mail (one byte per dimension, 772 bytes
+for 768 dimensions) is kept and goes with the mail and the account. Without an
+embeddings provider, the mails' words are compared instead.
+
+### Choosing a model
+
+Labels and the spam check need a model that follows definitions closely. Below
+about **7 billion parameters** (gemma-3-4b, Llama 3.2 3B, Qwen 2.5 3B …) models
+judge poorly: they put "personal" on every mail that greets the reader by name
+and answer yes to several labels at once. The portal reads the size from the
+model's name and warns for small ones; **Qwen3-8B**, **Qwen3-14B** or
+**gemma-3-12b-it** do much better, and the server's own checks catch the rest.
+
+On a machine of your own, llama.cpp's server runs both: one instance for chat
+(`llama-server -m Qwen3-8B-Q4_K_M.gguf -c 16384 --port 8080`) and one for
+embeddings (`llama-server -m nomic-embed-text-v1.5.Q8_0.gguf --embeddings
+--port 8081`), each added as an *OpenAI-compatible* provider
+(`http://<address>:8080/v1`, `http://<address>:8081/v1`). Give both the same
+key with `LLAMA_API_KEY` (the old name `LLAMA_ARG_API_KEY` is ignored by
+current versions, which then run without a key), and keep the prompt cache
+small (`--cache-ram 1024`) on a host with little memory.
 
 ## Mail of other accounts
 

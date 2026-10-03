@@ -105,7 +105,7 @@ fn newsletters() {
         ],
         "Die Themen dieser Woche …",
     );
-    assert_eq!(finds(Detector::Newsletter, &news), Some(json!({ "header": "List-Id" })));
+    assert_eq!(finds(Detector::Newsletter, &news), Some(json!({ "header": "List-Id", "word": "dieser woche" })));
 
     let one_click = message(
         &[
@@ -116,7 +116,9 @@ fn newsletters() {
         ],
         "See what's new this autumn.",
     );
-    assert_eq!(finds(Detector::Newsletter, &one_click), Some(json!({ "header": "List-Unsubscribe-Post" })));
+    // New arrivals are for sale: advertising, not a newsletter.
+    assert_eq!(finds(Detector::Newsletter, &one_click), None);
+    assert_eq!(finds(Detector::Advertising, &one_click), Some(json!({ "words": ["new arrivals"] })));
 
     // A discussion list has List-Post.
     let list = message(
@@ -217,6 +219,6 @@ fn a_long_subject_costs_no_more_than_its_length() {
     let uncut = uwumail_labels::Mail { subject: word, ..mail };
     let started = std::time::Instant::now();
     assert!(detect(Detector::Appointment, &uncut).is_none());
-    assert!(detect(Detector::Newsletter, &uncut).is_none());
+    assert!(detect(Detector::Newsletter, &uncut).is_none_or(|f| f.confidence < uwumail_labels::MAIN_THRESHOLD));
     assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
 }

@@ -49,7 +49,7 @@ const TYPICAL_SUMMARY_TOKENS_PER_MAIL: i64 = 50;
 const TYPICAL_SUMMARY_MAX_TOKENS: i64 = 600;
 const TYPICAL_SPAM_TOKENS: i64 = 150;
 const TYPICAL_EVENTS_TOKENS: i64 = 250;
-const TYPICAL_LABEL_TOKENS_PER_LABEL: i64 = 40;
+pub(crate) const TYPICAL_LABEL_TOKENS_PER_LABEL: i64 = 40;
 /// … and what proposing new labels adds.
 const TYPICAL_NEW_LABEL_TOKENS: i64 = 120;
 /// New labels `AssistLabel/suggest` proposes, at most.
@@ -570,11 +570,14 @@ pub fn plan_estimate(plan: &EstimatePlan<'_>, calibration: &Calibration) -> (Vec
     (calls, cost)
 }
 
-/// A label the model put on a mail, and why.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A label put on a mail, why, by which way (`rule`, `detector`, `sender`, `similar`,
+/// `classifier`, `ai`) and how sure.
+#[derive(Debug, Clone, PartialEq)]
 pub struct LabelPick {
     pub label: AssistLabel,
     pub reason: String,
+    pub source: &'static str,
+    pub confidence: f64,
 }
 
 fn invalid(property: &'static str, description: impl Into<String>) -> AssistError {
@@ -1118,53 +1121,6 @@ impl Assist {
         })
     }
 
-    /// Asks which of the person's labels fit one of their mails and puts them on. Only the labels not
-    /// on the mail yet are asked about; the model never takes one off.
-    pub async fn label_email(&self, account: &Account, email_id: i64) -> Result<Vec<LabelPick>> {
-        let record = self.record(account, email_id).await?;
-        let mut labels = self.store().assist_labels(account.id).await?;
-        labels.retain(|label| !record.keywords.contains(&label.keyword));
-        if labels.is_empty() {
-            return Ok(Vec::new());
-        }
-        let ticket =
-            self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS_PER_LABEL * labels.len() as i64);
-        let mail = self.text(&record, LABEL_MAIL_CHARS).await?;
-        let list: Vec<(String, String)> = labels.iter().map(|l| (l.name.clone(), l.description.clone())).collect();
-        let prompt = prompts::labels(&mail, &list);
-        let (completion, effective) = self.send(ticket, &prompt, None).await?;
-        let answer = llm::json_answer(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
-            description: "the model's answer was not a list of labels".into(),
-            retry_after: None,
-            transient: false,
-        })?;
-        let picks: Vec<LabelPick> = parse_labels(&answer, &labels)
-            .into_iter()
-            .filter(|pick| !record.keywords.contains(&pick.label.keyword))
-            .collect();
-        if picks.is_empty() {
-            return Ok(picks);
-        }
-        let change = KeywordsChange::Patch(picks.iter().map(|pick| (pick.label.keyword.clone(), true)).collect());
-        let update = uwumail_store::EmailUpdate { id: email_id, keywords: change, ..Default::default() };
-        if let Some(Err(err)) = self.store().update_emails_by_server(account.id, vec![update]).await?.pop() {
-            return Err(err.into());
-        }
-        for pick in &picks {
-            self.store()
-                .add_label_log(
-                    account.id,
-                    email_id,
-                    pick.label.id,
-                    pick.reason.clone(),
-                    effective.provider_name.clone(),
-                    effective.model.clone(),
-                )
-                .await?;
-        }
-        Ok(picks)
-    }
-
     /// Takes one label's keyword off emails, in batches: as the person (`by_hand`, which teaches the
     /// label's learning) or as the server.
     pub(crate) async fn remove_keyword(
@@ -1676,19 +1632,21 @@ pub fn parse_spam(text: &str) -> Option<SpamAnswer> {
     Some((verdict, confidence.clamp(0.0, 1.0), reasons))
 }
 
-/// Which of the person's labels the model chose, with its reasons. The model judges every label and
-/// says `"fits": false` for the ones that do not fit; those are dropped, like names that are not
-/// labels. An entry without `fits` counts as chosen. Each label counts once, by its first entry.
-pub fn parse_labels(answer: &Value, labels: &[AssistLabel]) -> Vec<LabelPick> {
-    let mut picks: Vec<LabelPick> = Vec::new();
+/// The model's verdict on each of the person's labels it was asked about, with its reasons:
+/// `"fits": "yes" | "no" | "unsure"` (or `true`/`false`). Names that are not labels are dropped;
+/// each label counts once, by its first entry. A bare name counts as yes, an entry without a
+/// verdict as unsure.
+pub fn parse_labels(answer: &Value, labels: &[AssistLabel]) -> Vec<uwumail_labels::AiVerdict> {
+    use uwumail_labels::{AiAnswer, AiVerdict};
+    let mut out: Vec<AiVerdict> = Vec::new();
     let mut seen = HashSet::new();
     for entry in answer.get("labels").and_then(Value::as_array).into_iter().flatten().take(50) {
-        let (name, reason, fits) = match entry {
-            Value::String(name) => (name.as_str(), "", true),
+        let (name, reason, verdict) = match entry {
+            Value::String(name) => (name.as_str(), "", AiAnswer::Yes),
             Value::Object(object) => (
                 object.get("name").and_then(Value::as_str).unwrap_or_default(),
                 object.get("reason").and_then(Value::as_str).unwrap_or_default(),
-                object.get("fits").and_then(Value::as_bool).unwrap_or(true),
+                object.get("fits").and_then(AiAnswer::parse).unwrap_or(AiAnswer::Unsure),
             ),
             _ => continue,
         };
@@ -1696,12 +1654,16 @@ pub fn parse_labels(answer: &Value, labels: &[AssistLabel]) -> Vec<LabelPick> {
         let Some(label) = labels.iter().find(|label| label.name.trim().to_lowercase() == name.to_lowercase()) else {
             continue;
         };
-        if !seen.insert(label.id) || !fits {
+        if !seen.insert(label.id) {
             continue;
         }
-        picks.push(LabelPick { label: label.clone(), reason: clean(&reason.replace('\n', " "), MAX_REASON_CHARS) });
+        out.push(AiVerdict {
+            label_id: label.id,
+            verdict,
+            reason: clean(&reason.replace('\n', " "), MAX_REASON_CHARS),
+        });
     }
-    picks
+    out
 }
 
 /// What an extracted event is checked against.
@@ -2079,6 +2041,8 @@ mod tests {
             detector: None,
             learn_senders: true,
             classifier: true,
+            base: None,
+            auto: true,
         }
     }
 
@@ -2130,7 +2094,12 @@ mod tests {
             "Reisen"
         ]});
         let picks = parse_labels(&answer, &labels);
-        assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [1, 2]);
+        let yes = |picks: &[uwumail_labels::AiVerdict]| -> Vec<i64> {
+            picks.iter().filter(|p| p.verdict == uwumail_labels::AiAnswer::Yes).map(|p| p.label_id).collect()
+        };
+        // Without a verdict the first entry is unsure; a bare name is a yes.
+        assert_eq!(picks.iter().map(|p| p.label_id).collect::<Vec<_>>(), [1, 2]);
+        assert_eq!(yes(&picks), [2]);
         assert_eq!(picks[0].reason, "Eine Rechnung");
     }
 
@@ -2141,10 +2110,14 @@ mod tests {
             { "name": "Rechnungen", "reason": "Keine Rechnung, sondern ein Sicherheitshinweis.", "fits": false },
             { "name": "Rechnungen", "reason": "again", "fits": true },
             { "name": "Termine", "reason": "Kein Termin.", "fits": false },
-            { "name": "Sicherheit", "reason": "Eine neue App hat Zugriff aufs Konto.", "fits": true }
+            { "name": "Sicherheit", "reason": "Eine neue App hat Zugriff aufs Konto.", "fits": "yes" }
         ]});
         let picks = parse_labels(&answer, &labels);
-        assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [3]);
+        let yes: Vec<i64> =
+            picks.iter().filter(|p| p.verdict == uwumail_labels::AiAnswer::Yes).map(|p| p.label_id).collect();
+        assert_eq!(yes, [3]);
+        let unsure = json!({ "labels": [{ "name": "Termine", "reason": "?", "fits": "unsure" }] });
+        assert_eq!(parse_labels(&unsure, &labels)[0].verdict, uwumail_labels::AiAnswer::Unsure);
     }
 
     #[test]

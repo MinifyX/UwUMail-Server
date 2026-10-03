@@ -1,6 +1,6 @@
 //! Labels without a model, put on at delivery before the person's Sieve rules run (docs/labels.md,
 //! docs/jmap-assist.md "Auto-labels"): the label's rules, its detector, learned senders and its
-//! classifier. The decisions are made by `uwumail_labels`; this reads what they need and logs what
+//! classifier, at most a main label and a second one, and none when in doubt. The decisions are made by `uwumail_labels`; this reads what they need and logs what
 //! they put on.
 //!
 //! It is cheap and it never stands in the way of the mail: after [`TIMEOUT`], or on any error, the
@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use uwumail_labels::{Decision, Detector, Label, Mail, Rules};
+use uwumail_labels::{Base, Decision, Detector, Label, Mail, Rules};
 use uwumail_store::LabelLogWrite;
 
 use crate::Context;
@@ -111,6 +111,7 @@ async fn decide_now(
     parsed: &Parsed,
     sender: &SenderTrust,
 ) -> Result<Labeled, uwumail_store::StoreError> {
+    ctx.store.ensure_base_labels(account_id, ctx.tone().language.code()).await?;
     let setup = ctx.store.label_setup(account_id).await?;
     if setup.labels.is_empty() {
         return Ok(Labeled::default());
@@ -123,12 +124,14 @@ async fn decide_now(
     let classifiers = setup.labels.iter().filter(|label| label.classifier).map(|label| label.id).collect();
     let knowledge = ctx.store.label_knowledge(account_id, mail.from.clone(), tokens.clone(), classifiers).await?;
     let from_trusted = sender.vouches_for(&mail.from);
+    let known_sender = !mail.from.is_empty() && ctx.store.knows_sender(account_id, mail.from.clone()).await?;
     // Deciding is plain computing: on the blocking pool, so the timeout above always ends the wait
     // and no worker of the server is held by one message.
     tokio::task::spawn_blocking(move || {
         let (mail, tokens) = &*parsed;
         let mut mail = mail.clone();
         mail.from_trusted = from_trusted;
+        mail.known_sender = known_sender;
         // Rules were checked when they were written; one that no longer reads is left out.
         let rules: Vec<Option<Rules>> = setup
             .labels
@@ -146,6 +149,8 @@ async fn decide_now(
                 detector: label.detector.as_deref().and_then(Detector::parse),
                 learn_senders: label.learn_senders,
                 classifier: label.classifier,
+                base: label.base.as_deref().and_then(Base::parse),
+                auto: label.auto,
             })
             .collect();
         Labeled { decisions: uwumail_labels::decide(&labels, &mail, &[], &knowledge, tokens) }

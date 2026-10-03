@@ -1,5 +1,5 @@
 use serde_json::json;
-use uwumail_labels::{Detector, Knowledge, Label, Rules, Source, decide};
+use uwumail_labels::{Detector, Knowledge, Label, Rules, Source, candidates, decide};
 
 use crate::{message, with_attachment};
 
@@ -35,7 +35,7 @@ fn rules_are_checked_strictly() {
 }
 
 #[test]
-fn the_first_source_that_matches_wins_once_per_label() {
+fn the_surest_labels_win_at_most_two() {
     let rules = Rules::check(&json!({ "match": "all", "conditions": [
         { "field": "from", "value": "stadtwerke.example" },
         { "field": "subject", "value": "RECHNUNG" },
@@ -50,6 +50,8 @@ fn the_first_source_that_matches_wins_once_per_label() {
             detector: Some(Detector::Invoice),
             learn_senders: true,
             classifier: true,
+            base: None,
+            auto: true,
         },
         Label {
             id: 2,
@@ -58,9 +60,29 @@ fn the_first_source_that_matches_wins_once_per_label() {
             detector: Some(Detector::Invoice),
             learn_senders: true,
             classifier: true,
+            base: None,
+            auto: true,
         },
-        Label { id: 3, keyword: "stadtwerke", rules: None, detector: None, learn_senders: true, classifier: true },
-        Label { id: 4, keyword: "gelernt-aus", rules: None, detector: None, learn_senders: false, classifier: false },
+        Label {
+            id: 3,
+            keyword: "stadtwerke",
+            rules: None,
+            detector: None,
+            learn_senders: true,
+            classifier: true,
+            base: None,
+            auto: true,
+        },
+        Label {
+            id: 4,
+            keyword: "gelernt-aus",
+            rules: None,
+            detector: None,
+            learn_senders: false,
+            classifier: false,
+            base: None,
+            auto: true,
+        },
         Label {
             id: 5,
             keyword: "schon-da",
@@ -68,6 +90,8 @@ fn the_first_source_that_matches_wins_once_per_label() {
             detector: Some(Detector::Invoice),
             learn_senders: true,
             classifier: true,
+            base: None,
+            auto: true,
         },
     ];
     let mail = with_attachment(
@@ -79,16 +103,44 @@ fn the_first_source_that_matches_wins_once_per_label() {
     let mut knowledge = Knowledge::default();
     knowledge.senders.insert(3, 2);
     knowledge.senders.insert(4, 5);
-    let decisions = decide(&labels, &mail, &["schon-da".to_owned()], &knowledge, &[]);
-    let summary: Vec<(i64, Source, &str)> = decisions.iter().map(|d| (d.label_id, d.source, d.code)).collect();
-    assert_eq!(summary, [(1, Source::Rule, "rule"), (2, Source::Detector, "invoice"), (3, Source::Sender, "sender")]);
+    // Each label once with its surest source; the rule first, then of the equally sure sender and
+    // detector the sender (the person's own doing), and no third label.
+    let found = candidates(&labels, &mail, &[], &knowledge, &[]);
+    let summary: Vec<(i64, Source, &str)> = found.iter().map(|d| (d.label_id, d.source, d.code)).collect();
+    assert_eq!(
+        summary,
+        [
+            (1, Source::Rule, "rule"),
+            (2, Source::Detector, "invoice"),
+            (3, Source::Sender, "sender"),
+            (5, Source::Detector, "invoice")
+        ]
+    );
+    assert_eq!(found[1].params, json!({ "word": "Rechnung", "amount": null }));
+    let decisions = decide(&labels, &mail, &[], &knowledge, &[]);
+    let summary: Vec<(i64, Source)> = decisions.iter().map(|d| (d.label_id, d.source)).collect();
+    assert_eq!(summary, [(1, Source::Rule), (3, Source::Sender)]);
     assert_eq!(
         decisions[0].reason,
         "Matches the label's rules: sender is stadtwerke.example and subject contains \"RECHNUNG\""
     );
-    assert_eq!(decisions[1].params, json!({ "word": "Rechnung", "amount": null }));
-    assert_eq!(decisions[2].params, json!({ "address": "rechnung@mail.stadtwerke.example", "count": 2 }));
-    assert_eq!(decisions[2].reason, "rechnung@mail.stadtwerke.example got this label by hand 2 times");
+    assert_eq!(decisions[1].params, json!({ "address": "rechnung@mail.stadtwerke.example", "count": 2 }));
+    assert_eq!(decisions[1].reason, "rechnung@mail.stadtwerke.example got this label by hand 2 times");
+
+    // With one label on the mail already, only one more comes.
+    let decisions = decide(&labels, &mail, &["schon-da".to_owned()], &knowledge, &[]);
+    assert_eq!(decisions.iter().map(|d| d.label_id).collect::<Vec<_>>(), [1]);
+
+    // Taken off this sender's mail by hand, a label comes back only by its rules.
+    let mut blocked = knowledge.clone();
+    blocked.senders.insert(2, -1);
+    blocked.senders.insert(1, -1);
+    let found = candidates(&labels[..2], &mail, &[], &blocked, &[]);
+    assert_eq!(found.iter().map(|d| d.label_id).collect::<Vec<_>>(), [1]);
+
+    // Switched off, a label is not put on by itself at all.
+    let off = [Label { auto: false, ..labels[1] }];
+    assert!(decide(&off, &mail, &[], &knowledge, &[]).is_empty());
 
     // A From address nothing vouches for gets no learned sender's label (security audit 0.21.0
     // LABELS-L3): anyone can write a known address there.

@@ -156,7 +156,7 @@ pub use groups::{GROUP_MAX_MEMBERS, Group, GroupDelivery, GroupMember, GroupUpda
 pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
-pub use labels::{LabelSetup, LabelTraining};
+pub use labels::{BASE_LABELS_VERSION, LabelSetup, LabelShot, LabelTokens, LabelTraining, LabelVector};
 pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
 pub use mail::{
     EmailSummary, IngestRequest, IngestedEmail, MAX_KEYWORDS_PER_EMAIL, Mailbox, MailboxRole, MailboxTarget,

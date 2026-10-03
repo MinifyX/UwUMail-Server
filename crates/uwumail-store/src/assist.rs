@@ -235,10 +235,14 @@ pub struct AssistLabel {
     pub created_at: i64,
     /// `{"match", "conditions"}` as the caller checked it (`uwumail_labels::Rules`), or `None`.
     pub rules: Option<Value>,
-    /// `invoice`, `appointment`, `newsletter` or `shipping`.
+    /// A detector's name (`uwumail_labels::Detector`).
     pub detector: Option<String>,
     pub learn_senders: bool,
     pub classifier: bool,
+    /// The base label it is (`uwumail_labels::Base`), if any.
+    pub base: Option<String>,
+    /// Put on by itself; off, only by hand.
+    pub auto: bool,
 }
 
 /// What is written of a label; the caller checked `rules` and `detector`.
@@ -251,6 +255,7 @@ pub struct AssistLabelWrite {
     pub detector: Option<String>,
     pub learn_senders: bool,
     pub classifier: bool,
+    pub auto: bool,
 }
 
 impl AssistLabelWrite {
@@ -264,6 +269,7 @@ impl AssistLabelWrite {
             detector: None,
             learn_senders: true,
             classifier: true,
+            auto: true,
         }
     }
 
@@ -276,6 +282,7 @@ impl AssistLabelWrite {
             detector: label.detector.clone(),
             learn_senders: label.learn_senders,
             classifier: label.classifier,
+            auto: label.auto,
         }
     }
 }
@@ -553,7 +560,7 @@ fn bump_version(tx: &Connection) -> Result<()> {
     set_setting(tx, VERSION_KEY, &(version + 1).to_string())
 }
 
-fn bump_prefs(tx: &Connection, account_id: i64) -> Result<()> {
+pub(crate) fn bump_prefs(tx: &Connection, account_id: i64) -> Result<()> {
     tx.execute(
         "INSERT INTO assist_prefs (account_id, modseq) VALUES (?1, 1)
          ON CONFLICT (account_id) DO UPDATE SET modseq = modseq + 1",
@@ -582,7 +589,7 @@ pub(crate) fn stop_personal_assist(tx: &Connection, account_id: i64) -> Result<(
 }
 
 pub(crate) const LABEL_COLUMNS: &str =
-    "id, name, description, keyword, color, created_at, rules, detector, learn_senders, classifier";
+    "id, name, description, keyword, color, created_at, rules, detector, learn_senders, classifier, base, auto";
 
 pub(crate) fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
     let rules: Option<String> = row.get(6)?;
@@ -597,6 +604,8 @@ pub(crate) fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
         detector: row.get(7)?,
         learn_senders: row.get(8)?,
         classifier: row.get(9)?,
+        base: row.get(10)?,
+        auto: row.get(11)?,
     })
 }
 
@@ -605,7 +614,7 @@ fn load_label(conn: &Connection, id: i64) -> Result<AssistLabel> {
 }
 
 /// Records a change of a label for push and the label state (`AssistLabel` is a push type).
-fn label_changed(tx: &Transaction<'_>, account_id: i64, label_id: i64, change: &str) -> Result<i64> {
+pub(crate) fn label_changed(tx: &Transaction<'_>, account_id: i64, label_id: i64, change: &str) -> Result<i64> {
     let modseq = crate::db::next_modseq(tx, account_id)?;
     crate::db::record_change(tx, account_id, modseq, "AssistLabel", label_id, change)?;
     Ok(modseq)
@@ -634,7 +643,7 @@ fn check_label(name: &str, description: &str, color: Option<&str>) -> Result<()>
     Ok(())
 }
 
-fn name_taken(tx: &Transaction<'_>, account_id: i64, name: &str, except: i64) -> Result<bool> {
+pub(crate) fn name_taken(tx: &Transaction<'_>, account_id: i64, name: &str, except: i64) -> Result<bool> {
     Ok(tx.query_row(
         "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE account_id = ?1 AND lower(name) = lower(?2) AND id != ?3)",
         params![account_id, name.trim(), except],
@@ -887,10 +896,12 @@ impl Store {
         check_label(&write.name, &write.description, write.color.as_deref())?;
         let (label, modseq) = self
             .write(move |tx| {
-                let count: i64 =
-                    tx.query_row("SELECT COUNT(*) FROM assist_labels WHERE account_id = ?1", [account_id], |row| {
-                        row.get(0)
-                    })?;
+                // The base labels come on top of the person's own.
+                let count: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM assist_labels WHERE account_id = ?1 AND base IS NULL",
+                    [account_id],
+                    |row| row.get(0),
+                )?;
                 if count as usize >= ASSIST_MAX_LABELS {
                     return Err(StoreError::Rule {
                         code: "overQuota",
@@ -903,27 +914,7 @@ impl Store {
                         message: format!("there is a label called {} already", write.name.trim()),
                     });
                 }
-                let base = label_keyword(&write.name);
-                let taken = |keyword: &str| -> Result<bool> {
-                    Ok(tx.query_row(
-                        "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE account_id = ?1 AND keyword = ?2)",
-                        params![account_id, keyword],
-                        |row| row.get(0),
-                    )?)
-                };
-                let mut keyword = if base.is_empty() { "label-1".to_owned() } else { base.clone() };
-                let mut n = 1;
-                while taken(&keyword)? || keyword.starts_with('$') {
-                    n += 1;
-                    keyword = if base.is_empty() { format!("label-{n}") } else { format!("{base}-{n}") };
-                }
-                tx.execute(
-                    "INSERT INTO assist_labels (account_id, name, description, keyword, color, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![account_id, write.name.trim(), write.description.trim(), keyword, write.color, now()],
-                )?;
-                let id = tx.last_insert_rowid();
-                write_label_extras(tx, id, &write)?;
+                let id = insert_label(tx, account_id, &write, None)?;
                 bump_prefs(tx, account_id)?;
                 let modseq = label_changed(tx, account_id, id, "created")?;
                 Ok((load_label(tx, id)?, modseq))
@@ -958,17 +949,29 @@ impl Store {
         id: i64,
         write: AssistLabelWrite,
     ) -> Result<AssistLabel> {
-        check_label(&write.name, &write.description, write.color.as_deref())?;
+        check_label(&write.name, "", write.color.as_deref())?;
         let (label, modseq) = self
             .write(move |tx| {
-                let exists: bool = tx.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE id = ?1 AND account_id = ?2)",
-                    params![id, account_id],
-                    |row| row.get(0),
-                )?;
-                if !exists {
+                let base: Option<Option<String>> = tx
+                    .query_row(
+                        "SELECT base FROM assist_labels WHERE id = ?1 AND account_id = ?2",
+                        params![id, account_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let Some(base) = base else {
                     return Err(StoreError::NotFound(format!("label {id}")));
-                }
+                };
+                // A base label's description is its definition: it stays as it is.
+                let description = match base {
+                    Some(_) => tx.query_row("SELECT description FROM assist_labels WHERE id = ?1", [id], |row| {
+                        row.get::<_, String>(0)
+                    })?,
+                    None => {
+                        check_label(&write.name, &write.description, None)?;
+                        write.description.trim().to_owned()
+                    }
+                };
                 if name_taken(tx, account_id, &write.name, id)? {
                     return Err(StoreError::Rule {
                         code: "invalidProperties",
@@ -977,7 +980,7 @@ impl Store {
                 }
                 tx.execute(
                     "UPDATE assist_labels SET name = ?2, description = ?3, color = ?4 WHERE id = ?1",
-                    params![id, write.name.trim(), write.description.trim(), write.color],
+                    params![id, write.name.trim(), description, write.color],
                 )?;
                 write_label_extras(tx, id, &write)?;
                 bump_prefs(tx, account_id)?;
@@ -1562,10 +1565,49 @@ fn card_addresses(content: &str) -> Vec<(String, String)> {
 }
 
 /// The columns of a label besides name, description and color.
+/// Writes a new label with a keyword made from its name (unique for the account, never `$…`), and
+/// answers its id.
+pub(crate) fn insert_label(
+    tx: &Transaction<'_>,
+    account_id: i64,
+    write: &AssistLabelWrite,
+    base: Option<&str>,
+) -> Result<i64> {
+    let stem = label_keyword(&write.name);
+    let taken = |keyword: &str| -> Result<bool> {
+        Ok(tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE account_id = ?1 AND keyword = ?2)",
+            params![account_id, keyword],
+            |row| row.get(0),
+        )?)
+    };
+    let mut keyword = if stem.is_empty() { "label-1".to_owned() } else { stem.clone() };
+    let mut n = 1;
+    while taken(&keyword)? || keyword.starts_with('$') {
+        n += 1;
+        keyword = if stem.is_empty() { format!("label-{n}") } else { format!("{stem}-{n}") };
+    }
+    tx.execute(
+        "INSERT INTO assist_labels (account_id, name, description, keyword, color, created_at, base)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![account_id, write.name.trim(), write.description.trim(), keyword, write.color, now(), base],
+    )?;
+    let id = tx.last_insert_rowid();
+    write_label_extras(tx, id, write)?;
+    Ok(id)
+}
+
 fn write_label_extras(tx: &Transaction<'_>, id: i64, write: &AssistLabelWrite) -> Result<()> {
     tx.execute(
-        "UPDATE assist_labels SET rules = ?2, detector = ?3, learn_senders = ?4, classifier = ?5 WHERE id = ?1",
-        params![id, write.rules.as_ref().map(Value::to_string), write.detector, write.learn_senders, write.classifier],
+        "UPDATE assist_labels SET rules = ?2, detector = ?3, learn_senders = ?4, classifier = ?5, auto = ?6 WHERE id = ?1",
+        params![
+            id,
+            write.rules.as_ref().map(Value::to_string),
+            write.detector,
+            write.learn_senders,
+            write.classifier,
+            write.auto
+        ],
     )?;
     Ok(())
 }

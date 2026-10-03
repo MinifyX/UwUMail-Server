@@ -1,6 +1,7 @@
 mod access;
 mod common;
 mod estimate;
+mod eval;
 mod features;
 mod foreign;
 mod labels;
