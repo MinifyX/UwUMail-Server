@@ -1986,7 +1986,8 @@ pub(crate) async fn receive(
         // was waiting. Take it and let it go: delivering it again would double it, and bringing
         // a discarded one back would undo what they decided.
         if let Some(raw_hash) = &raw_hash {
-            match ctx.store.returning_greylist_hold(account_id, raw_hash, message_id.as_deref()).await {
+            let envelope_from = shorten(&envelope.address, 320);
+            match ctx.store.returning_greylist_hold(account_id, raw_hash, message_id.as_deref(), &envelope_from).await {
                 Ok(uwumail_store::Returning::Fresh) => {}
                 Ok(settled) => {
                     tracing::info!(

@@ -130,6 +130,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   otherwise spotless mail now holds only for a sender with a good history or while the server's
   Bayes is less than 99 % sure, and never for a sender whose mail mostly went to Junk; a throwaway
   domain with its own DMARC no longer slips into the inbox on clean content.
+- **Waiting messages cannot be taken over by a guessed Message-ID (SPAM-5).** A retry only joins a
+  waiting entry with the same Message-ID when envelope sender and From match too, an arriving
+  message only removes waiting entries by Message-ID from the same envelope sender, and retries
+  keep an entry at most twice the waiting time from its first attempt.
 
 ## 0.21.2
 

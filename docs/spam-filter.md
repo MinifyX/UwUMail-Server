@@ -50,9 +50,11 @@ greylisting off.
 While a sender is asked to come back, the message waits under *Mein Konto →
 Spamfilter → Wartende Nachrichten* (`greylist_hold`). Retries of the same
 message are one entry with a count of attempts: the same bytes, or the same
-Message-ID from the same envelope sender (large senders retry from another
-machine, which writes another `Received` line). Once the message arrives by
-itself, every waiting entry of it disappears; a retry of a message that was
+Message-ID from the same envelope sender with the same From (large senders
+retry from another machine, which writes another `Received` line). Retries keep
+an entry no longer than twice the waiting time from its first attempt. Once the
+message arrives by itself, every waiting entry of it disappears (by Message-ID
+only when the envelope sender is the same too); a retry of a message that was
 already delivered or discarded by hand does not show up again. Whether a retry
 is dropped because someone decided about it is still a question of the exact
 bytes only — a Message-ID is a line anyone can write.
