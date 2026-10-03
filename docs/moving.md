@@ -272,6 +272,8 @@ directory.
 - The 512 MiB import budget counts fetched message bodies only: the `RFC822.SIZE` answers and the copies made while storing a message are outside it.
 - "Skipped" counts messages that were here already and messages too large for this server together; the UIDs of the large ones are only in the server log.
 - A higher number of turns at once (`MAX_TURNS`, now 4) could make the shared budget slow imports down, as turns wait for room.
+- A message announced at more than 128 MiB, or one that does not arrive within two minutes, still fails its portion, so the mailbox pauses as failed until the message is gone at the old provider. A message whose size was understated is transferred once more when it is fetched again on its own.
+- An answer with two bodies for one message, one of them too large, counts as too large and is fetched again on its own; answers for UIDs that were not asked for are ignored.
 - Contacts a move brings in count as known senders for the spam check and labels, like any other contact.
 - An old server name that does not exist is reported as "does not resolve to a public address", not as "not found".
 

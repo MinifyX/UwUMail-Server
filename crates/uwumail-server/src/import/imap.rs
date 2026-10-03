@@ -361,15 +361,18 @@ async fn read_response_dropping<R: AsyncBufRead + Unpin>(
         };
         response.text.push_str(String::from_utf8_lossy(shown).trim_end_matches(['\r', '\n']));
         let Some(size) = literal else { return Ok(response) };
-        // Read past, a literal may be somewhat larger: a message whose size the provider
-        // understated is skipped instead of stopping the import.
+        // Only a literal of at most MAX_LITERAL is ever kept. Read past and dropped, one may be
+        // larger (up to twice that): a message whose size the provider understated is skipped
+        // instead of stopping the import (security review 0.22 MFIX-M1, MFIX2-H1).
         if size > MAX_LITERAL && !(drop_large && size <= 2 * MAX_LITERAL) {
             bail!("the server announced a {size}-byte literal, more than this reads at once");
         }
-        if size > *budget {
+        if size > *budget || size > MAX_LITERAL {
             if !drop_large {
                 bail!("the server sent more than this reads for one answer");
             }
+            // The token it leaves is charged like any other.
+            *budget = budget.checked_sub(TOKEN_COST).ok_or_else(too_much)?;
             let mut sink = tokio::io::sink();
             let read = tokio::time::timeout(TIMEOUT, tokio::io::copy(&mut (&mut *stream).take(size as u64), &mut sink))
                 .await
@@ -542,8 +545,11 @@ pub(crate) struct Fetched {
     pub(crate) body: Option<Vec<u8>>,
     /// `RFC822.SIZE`, when asked for.
     pub(crate) size: Option<usize>,
-    /// The body was larger than the fetch could take and was left out (see [`fetch_chunk`]).
+    /// The body was left out: larger than this server takes, or than the fetch could take
+    /// (see [`fetch_chunk`]).
     pub(crate) dropped: bool,
+    /// The body was larger than the answer could still take and was read past.
+    pub(crate) read_past: bool,
 }
 
 /// How a batch of messages is fetched: in portions of about [`CHUNK_BYTES`], each message with
@@ -571,25 +577,37 @@ pub(crate) async fn plan_fetch(
         .filter_map(|fetched| Some((fetched.uid, fetched.size?)))
         .collect();
     let mut plan = FetchPlan::default();
-    let mut chunk: Vec<(u32, usize)> = Vec::new();
-    let mut chunk_bytes = 0;
+    let mut planned = Vec::new();
     for &uid in uids {
         let size = sizes.get(&uid).copied().unwrap_or(max_size);
         if size > max_size {
             plan.too_large.push(uid);
-            continue;
+        } else {
+            planned.push((uid, size));
         }
+    }
+    plan.chunks = chunks_of(&planned);
+    Ok(plan)
+}
+
+/// Groups messages with their sizes, in order, into portions of about [`CHUNK_BYTES`] and at most
+/// [`BATCH`]; a larger message comes alone.
+fn chunks_of(messages: &[(u32, usize)]) -> Vec<Vec<(u32, usize)>> {
+    let mut chunks = Vec::new();
+    let mut chunk: Vec<(u32, usize)> = Vec::new();
+    let mut chunk_bytes = 0;
+    for &(uid, size) in messages {
         if !chunk.is_empty() && (chunk_bytes + size > CHUNK_BYTES || chunk.len() >= BATCH) {
-            plan.chunks.push(std::mem::take(&mut chunk));
+            chunks.push(std::mem::take(&mut chunk));
             chunk_bytes = 0;
         }
         chunk.push((uid, size));
         chunk_bytes += size;
     }
     if !chunk.is_empty() {
-        plan.chunks.push(chunk);
+        chunks.push(chunk);
     }
-    Ok(plan)
+    chunks
 }
 
 /// What a fetch of messages said to take `declared` bytes in all may read: sizes are not always
@@ -599,53 +617,104 @@ fn fetch_budget(declared: usize, messages: usize) -> usize {
     (declared + declared / 4 + messages * 64 * 1024 + 1024 * 1024).min(MAX_ANSWER)
 }
 
+/// Room in the import budget for `bytes`. Never more than the whole budget can be asked for: a
+/// request above it is an error, not a smaller permit that would leave bytes uncounted.
 async fn import_permit(bytes: usize) -> anyhow::Result<tokio::sync::SemaphorePermit<'static>> {
-    let kib = bytes.div_ceil(1024).min(IMPORT_BUDGET_KIB) as u32;
-    IMPORT_BYTES.acquire_many(kib).await.context("the import budget is closed")
+    let kib = bytes.div_ceil(1024);
+    if kib > IMPORT_BUDGET_KIB {
+        bail!("a fetch of {bytes} bytes is more than all imports together may hold");
+    }
+    IMPORT_BYTES.acquire_many(kib as u32).await.context("the import budget is closed")
 }
 
-/// Fetches one portion of a [`FetchPlan`] once the server-wide import budget has room for it. The
-/// answer may only take a little more than the sizes the provider gave; the permit is held while
-/// the caller stores the messages.
+/// Fetches the portions of a [`FetchPlan`] one after another; see [`fetch_chunk`].
+pub(crate) struct FetchQueue {
+    chunks: std::collections::VecDeque<Vec<(u32, usize)>>,
+    max_size: usize,
+}
+
+/// What one step of a [`FetchQueue`] brought: the UIDs it dealt with, in order, the messages
+/// among them, and the room in the import budget they take, held while they are stored.
+pub(crate) struct FetchedPortion {
+    pub(crate) uids: Vec<u32>,
+    pub(crate) messages: Vec<Fetched>,
+    pub(crate) _permit: tokio::sync::SemaphorePermit<'static>,
+}
+
+impl FetchQueue {
+    pub(crate) fn new(chunks: Vec<Vec<(u32, usize)>>, max_size: usize) -> FetchQueue {
+        FetchQueue { chunks: chunks.into(), max_size }
+    }
+
+    /// The next portion, `None` once all of them came. What a portion could not take yet goes
+    /// back to the front of the queue, in UID order.
+    pub(crate) async fn next(&mut self, connection: &mut Connection) -> anyhow::Result<Option<FetchedPortion>> {
+        let Some(chunk) = self.chunks.pop_front() else { return Ok(None) };
+        let (portion, rest) = fetch_chunk(connection, &chunk, self.max_size).await?;
+        for chunk in rest.into_iter().rev() {
+            self.chunks.push_front(chunk);
+        }
+        Ok(Some(portion))
+    }
+}
+
+/// Fetches one portion once the server-wide import budget has room for it. The answer may only
+/// take a little more than the sizes the provider gave, and nothing beyond that is held: one call
+/// holds at most the room it counted.
 ///
 /// A body larger than that (`RFC822.SIZE` is only an estimate at some providers, Exchange among
-/// them) is fetched again on its own with room for `max_size`; one that still does not fit comes
-/// back with [`Fetched::dropped`], for the caller to count as skipped and move on (security review
-/// 0.22 MFIX-M1). Network and protocol errors fail as before.
-pub(crate) async fn fetch_chunk(
+/// them) is read past. The portion then ends before it, and it and everything after it are handed
+/// back to be fetched again, it with room for `max_size` (security review 0.22 MFIX-M1, MFIX2-H1).
+/// A message that had that room and still did not fit, or whose body is larger than `max_size`,
+/// comes back with [`Fetched::dropped`] and no body, for the caller to count as skipped. Answers
+/// for UIDs that were not asked for are left out. Network and protocol errors fail as before.
+async fn fetch_chunk(
     connection: &mut Connection,
     chunk: &[(u32, usize)],
     max_size: usize,
-) -> anyhow::Result<(Vec<Fetched>, tokio::sync::SemaphorePermit<'static>)> {
+) -> anyhow::Result<(FetchedPortion, Vec<Vec<(u32, usize)>>)> {
     let declared: usize = chunk.iter().map(|(_, size)| size).sum();
     let budget = fetch_budget(declared, chunk.len());
-    let mut permit = import_permit(budget).await?;
+    let permit = import_permit(budget).await?;
     let set = chunk.iter().map(|(uid, _)| uid.to_string()).collect::<Vec<_>>().join(",");
     let responses =
         connection.fetch_within(&format!("UID FETCH {set} (UID FLAGS INTERNALDATE BODY.PEEK[])"), budget).await?;
-    let mut fetched: Vec<Fetched> = responses.into_iter().filter_map(parse_fetch).collect();
-    let dropped: Vec<u32> = fetched.iter().filter(|fetched| fetched.dropped).map(|fetched| fetched.uid).collect();
-    if dropped.is_empty() || (chunk.len() == 1 && budget >= fetch_budget(max_size, 1)) {
-        return Ok((fetched, permit));
+    let mut by_uid: HashMap<u32, Fetched> = HashMap::new();
+    for mut fetched in responses.into_iter().filter_map(parse_fetch) {
+        // Only what was asked for, and each message once.
+        if !chunk.iter().any(|(uid, _)| *uid == fetched.uid) || by_uid.contains_key(&fetched.uid) {
+            continue;
+        }
+        if fetched.body.as_ref().is_some_and(|body| body.len() > max_size) {
+            fetched.body = None;
+            fetched.dropped = true;
+        }
+        by_uid.insert(fetched.uid, fetched);
     }
-    let single = fetch_budget(max_size, 1);
-    for uid in dropped {
-        // What the others hold stays counted; the permit before is given back first, so two
-        // imports never wait for each other's room while holding their own.
-        let held: usize = fetched.iter().filter_map(|fetched| fetched.body.as_ref().map(Vec::len)).sum();
-        drop(permit);
-        permit = import_permit(held + single).await?;
-        let again = connection
-            .fetch_within(&format!("UID FETCH {uid} (UID FLAGS INTERNALDATE BODY.PEEK[])"), single)
-            .await?
-            .into_iter()
-            .filter_map(parse_fetch)
-            .find(|again| again.uid == uid);
-        if let (Some(again), Some(slot)) = (again, fetched.iter_mut().find(|fetched| fetched.uid == uid)) {
-            *slot = again;
+    // The first message that was read past without having had room of its own ends the portion.
+    // Each message read past is fetched again alone with room for `max_size`, the others in
+    // portions as before, all in UID order. Alone with that room, being read past is final.
+    let alone = chunk.len() == 1 && chunk[0].1 >= max_size;
+    let read_past = |uid: &u32| by_uid.get(uid).is_some_and(|fetched| fetched.read_past);
+    let cut = if alone { None } else { chunk.iter().position(|(uid, _)| read_past(uid)) };
+    let (taken, after) = match cut {
+        Some(at) => (&chunk[..at], &chunk[at..]),
+        None => (chunk, &chunk[chunk.len()..]),
+    };
+    let mut rest = Vec::new();
+    let mut run = Vec::new();
+    for &(uid, size) in after {
+        if read_past(&uid) {
+            rest.extend(chunks_of(&std::mem::take(&mut run)));
+            rest.push(vec![(uid, size.max(max_size))]);
+        } else {
+            run.push((uid, size));
         }
     }
-    Ok((fetched, permit))
+    rest.extend(chunks_of(&run));
+    let uids: Vec<u32> = taken.iter().map(|(uid, _)| *uid).collect();
+    let messages = uids.iter().filter_map(|uid| by_uid.remove(uid)).collect();
+    Ok((FetchedPortion { uids, messages, _permit: permit }, rest))
 }
 
 /// Reads one FETCH answer, taking the body out of it instead of copying it.
@@ -686,7 +755,10 @@ pub(crate) fn parse_fetch(mut response: Response) -> Option<Fetched> {
             key if key.starts_with("BODY[") || key == "RFC822" => {
                 match tokens.get_mut(i + 1) {
                     Some(Token::String(bytes)) => fetched.body = Some(std::mem::take(bytes)),
-                    Some(Token::Dropped(_)) => fetched.dropped = true,
+                    Some(Token::Dropped(_)) => {
+                        fetched.dropped = true;
+                        fetched.read_past = true;
+                    }
                     _ => {}
                 }
                 i += 2;
@@ -987,13 +1059,13 @@ pub(crate) async fn copy_folders(
                 tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
                 copied.skipped += 1;
             }
-            for chunk in &plan.chunks {
-                let (fetched, _permit) = fetch_chunk(connection, chunk, options.max_size()).await?;
-                let mut by_uid: HashMap<u32, Fetched> = fetched.into_iter().map(|f| (f.uid, f)).collect();
+            let mut queue = FetchQueue::new(plan.chunks, options.max_size());
+            while let Some(FetchedPortion { uids: chunk, messages, _permit }) = queue.next(connection).await? {
+                let mut by_uid: HashMap<u32, Fetched> = messages.into_iter().map(|f| (f.uid, f)).collect();
                 let mut found_objects = Vec::new();
                 // The messages the objects came in, copied as mail when the objects cannot be stored.
                 let mut object_messages = Vec::new();
-                for (uid, _) in chunk {
+                for uid in &chunk {
                     let Some(fetched) = by_uid.remove(uid) else { continue };
                     if fetched.dropped {
                         tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
@@ -1497,6 +1569,24 @@ pub(crate) mod tests {
         }
     }
 
+    /// What a [`FetchQueue`] brings for `chunks`: each message as (UID, body length, dropped), how
+    /// many portions it took, and the most body bytes one portion held.
+    async fn fetch_all(
+        connection: &mut Connection,
+        chunks: Vec<Vec<(u32, usize)>>,
+        max_size: usize,
+    ) -> (Vec<(u32, Option<usize>, bool)>, usize, usize) {
+        let mut queue = FetchQueue::new(chunks, max_size);
+        let (mut shape, mut portions, mut most) = (Vec::new(), 0, 0);
+        while let Some(portion) = queue.next(connection).await.unwrap() {
+            portions += 1;
+            let held: usize = portion.messages.iter().filter_map(|f| f.body.as_ref().map(Vec::len)).sum();
+            most = most.max(held);
+            shape.extend(portion.messages.iter().map(|f| (f.uid, f.body.as_ref().map(Vec::len), f.dropped)));
+        }
+        (shape, portions, most)
+    }
+
     /// Security review 0.22 M-1 and MFIX-M1: a fetch may only take a little more than the
     /// provider said the messages take. A body larger than that is not kept but read past, and
     /// fetched again on its own with room for the largest message this server takes; one larger
@@ -1506,16 +1596,72 @@ pub(crate) mod tests {
         let source = fake_provider(understating_provider).await;
         let mut connection = Connection::open(&source).await.unwrap();
         let small = message_of("Klein1", 200).len();
-        let chunk = [(1, small), (2, 100), (3, small)];
+        let chunk = vec![(1, small), (2, 100), (3, small)];
 
-        let (fetched, _permit) = fetch_chunk(&mut connection, &chunk, 100_000).await.unwrap();
-        let shape: Vec<_> = fetched.iter().map(|f| (f.uid, f.body.as_ref().map(Vec::len), f.dropped)).collect();
+        let (shape, ..) = fetch_all(&mut connection, vec![chunk.clone()], 100_000).await;
         assert_eq!(shape, [(1, Some(small), false), (2, None, true), (3, Some(small), false)]);
 
-        let (fetched, _permit) = fetch_chunk(&mut connection, &chunk, MAX_LITERAL).await.unwrap();
-        let shape: Vec<_> = fetched.iter().map(|f| (f.uid, f.body.as_ref().map(Vec::len), f.dropped)).collect();
-        assert_eq!(shape[1], (2, Some(message_of("Gross", UNDERSTATED).len()), false));
-        assert_eq!((shape[0].1, shape[2].1), (Some(small), Some(small)));
+        let (shape, ..) = fetch_all(&mut connection, vec![chunk], MAX_LITERAL).await;
+        let large = message_of("Gross", UNDERSTATED).len();
+        assert_eq!(shape, [(1, Some(small), false), (2, Some(large), false), (3, Some(small), false)]);
+    }
+
+    static HOSTILE_FETCHES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    static HOSTILE_EXTRA_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// A provider that says every message takes 100 bytes, sends each one far larger than a
+    /// portion may take, answers a fetch of one message with 500 kB, and adds UIDs nobody asked
+    /// for (90, 91, and the first one twice).
+    fn hostile_provider(command: &str) -> Vec<u8> {
+        use std::sync::atomic::Ordering;
+        let literal = |uid: &str, size: usize| {
+            let mut out = format!("* 1 FETCH (UID {uid} FLAGS () BODY[] {{{size}}}\r\n").into_bytes();
+            out.resize(out.len() + size, b'x');
+            out.extend(b")\r\n");
+            out
+        };
+        let Some(set) =
+            command.strip_prefix("UID FETCH ").and_then(|rest| rest.split_once(" (UID FLAGS")).map(|(set, _)| set)
+        else {
+            return Vec::new();
+        };
+        HOSTILE_FETCHES.fetch_add(1, Ordering::SeqCst);
+        if set.split(',').any(|uid| uid == "90" || uid == "91") {
+            HOSTILE_EXTRA_ASKED.store(true, Ordering::SeqCst);
+        }
+        if !set.contains(',') {
+            return literal(set, 500_000);
+        }
+        let mut out: Vec<u8> = set.split(',').flat_map(|uid| literal(uid, 2_900_000)).collect();
+        for extra in ["90", "91", set.split(',').next().unwrap_or("1")] {
+            out.extend(literal(extra, 5));
+        }
+        out
+    }
+
+    /// Security review 0.22 MFIX2-H1: a provider that understates every message and answers each
+    /// fetch of one with more than this server takes cannot make one import hold more than a
+    /// portion's room: what is read past is fetched again one at a time, what is too large is let
+    /// go at once, UIDs nobody asked for are left out and never fetched again.
+    #[tokio::test]
+    async fn a_hostile_provider_cannot_make_an_import_hold_more_than_its_room() {
+        use std::sync::atomic::Ordering;
+        let source = fake_provider(hostile_provider).await;
+        let mut connection = Connection::open(&source).await.unwrap();
+        let chunk: Vec<(u32, usize)> = (1..=25).map(|uid| (uid, 100)).collect();
+        let (shape, portions, most) = fetch_all(&mut connection, vec![chunk], 100_000).await;
+        let expected: Vec<_> = (1..=25).map(|uid| (uid, None, true)).collect();
+        assert_eq!(shape, expected, "every message once, in order, dropped");
+        assert_eq!(most, 0, "nothing larger than this server takes is held");
+        // One portion for all, then each message read past once more on its own.
+        assert_eq!((portions, HOSTILE_FETCHES.load(Ordering::SeqCst)), (26, 26));
+        assert!(!HOSTILE_EXTRA_ASKED.load(Ordering::SeqCst), "UIDs nobody asked for are not fetched");
+    }
+
+    #[test]
+    fn a_permit_is_never_smaller_than_asked() {
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        assert!(runtime.block_on(import_permit(IMPORT_BUDGET_KIB * 1024 + 1)).is_err());
     }
 
     /// Security review 0.22 M-1: a message larger than this server takes is left out and counted

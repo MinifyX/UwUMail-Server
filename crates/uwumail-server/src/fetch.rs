@@ -34,7 +34,9 @@ use uwumail_store::{
     StoreError,
 };
 
-use crate::import::imap::{Connection, Fetched, MAX_LITERAL, Source, Token, fetch_chunk, folders, plan_fetch, quoted};
+use crate::import::imap::{
+    Connection, FetchQueue, Fetched, FetchedPortion, MAX_LITERAL, Source, Token, folders, plan_fetch, quoted,
+};
 
 /// How often the list of fetch accounts is looked at. Each account has its own interval on top.
 const TICK: Duration = Duration::from_secs(30);
@@ -373,9 +375,8 @@ async fn take_new(
     for uid in &plan.too_large {
         tracing::warn!(address = %account.address, folder, uid, "too large to fetch, left at the provider");
     }
-    'batches: for chunk in &plan.chunks {
-        let batch: Vec<u32> = chunk.iter().map(|(uid, _)| *uid).collect();
-        let (mut messages, _permit) = fetch_chunk(connection, chunk, MAX_LITERAL).await?;
+    let mut queue = FetchQueue::new(plan.chunks, MAX_LITERAL);
+    'batches: while let Some(FetchedPortion { uids: batch, mut messages, _permit }) = queue.next(connection).await? {
         messages.sort_by_key(|message| message.uid);
         // A UID the search named but the answer left out would be passed over for good once a later
         // one moves the folder on. Nothing can be done about it from here, but it is written down.
@@ -524,11 +525,10 @@ async fn take_backlog(
         for uid in &plan.too_large {
             tracing::warn!(address = %account.address, folder, uid, "too large to fetch, left at the provider");
         }
-        for chunk in &plan.chunks {
-            let batch: Vec<u32> = chunk.iter().map(|(uid, _)| *uid).collect();
-            let (fetched, _permit) = fetch_chunk(connection, chunk, MAX_LITERAL).await?;
+        let mut queue = FetchQueue::new(plan.chunks, MAX_LITERAL);
+        while let Some(FetchedPortion { uids: batch, messages, _permit }) = queue.next(connection).await? {
             let mut by_uid: std::collections::HashMap<u32, Fetched> =
-                fetched.into_iter().map(|fetched| (fetched.uid, fetched)).collect();
+                messages.into_iter().map(|fetched| (fetched.uid, fetched)).collect();
             for uid in &batch {
                 let fetched = by_uid.remove(uid);
                 let gone = fetched

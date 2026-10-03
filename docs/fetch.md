@@ -411,6 +411,10 @@ own.
 - Messages are fetched by `RFC822.SIZE` within the 512 MiB budget all imports share; the size answers and the copies made while storing a message are outside it.
 - A message larger than a fetch takes is left at the provider and stepped over; its UID is only in the server log.
 - Fetched mailboxes have no crash counter like moves do: a message that brings the server down would be fetched again after the restart.
+- Once messages too large to fetch are stepped over, a lower UID the provider left out of its answer ("did not hand this message out", logged) is not asked for again.
+- A message announced at more than 128 MiB, or one that does not arrive within two minutes, still fails the whole portion, and the folder stays at it until it is gone at the provider. Reading past a message whose size was understated costs its transfer once more.
+- A provider answer with two bodies for one message, one of them too large, counts as too large and is fetched again on its own.
+- Answers for UIDs that were not asked for are ignored.
 
 ## What is not there yet
 

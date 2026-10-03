@@ -133,6 +133,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   than its `RFC822.SIZE` allows (Exchange only estimates it) is read past instead of failing the
   portion, fetched again on its own with room for `smtp.max_message_size`, and skipped (UID in the
   log) if it still does not fit, so fetched mailboxes and moves keep going past it.
+- **One import holds no more than the room it counted** (review MFIX2-H1): a portion ends at the
+  first message it read past, which comes again alone and the rest after it; a body larger than
+  `smtp.max_message_size` is let go at once; answers for UIDs that were not asked for, or twice,
+  are left out; only literals of at most 64 MiB are kept (larger ones are only read past); a
+  request above the 512 MiB budget is an error instead of a smaller permit.
 - **Submission removes `X-UwUMail-Label`** a sender wrote, as inbound delivery already did.
 - docs/moving.md and docs/signatures.md list the known limitations the review left as they are.
 - **Regional bank names only under their own endings (SPAM-1).** `sparkasse-…` and `volksbank-…`
