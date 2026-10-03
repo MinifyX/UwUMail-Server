@@ -2027,7 +2027,9 @@ where
                 keywords,
                 received_at: Some(email.received_at),
             };
-            let copied = self.store.ingest(request).await?;
+            // A copy is what its original is (security review 0.22 R2-L2).
+            let delivered = self.store.smtp_delivered(email.email_id).await?;
+            let copied = self.store.ingest_marked(request, delivered).await?;
             pairs.push((email.uid, copied.uid as u32));
         }
         Ok(pairs)

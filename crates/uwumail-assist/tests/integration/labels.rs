@@ -397,6 +397,30 @@ Authentication-Results: mx.example.org; spf=pass smtp.mailfrom=example.com; dkim
     rig.fake.push(picks(json!({ "labels": [] })));
     let _ = rig.assist.label_email(&rig.mia, real).await;
     assert!(known_line(&rig, 1).ends_with("yes"), "{}", known_line(&rig, 1));
+
+    // Security review 0.22 R2-L2: the same block in a mail appended over IMAP or imported over JMAP
+    // is anybody's copy of it.
+    let appended = rig.append(&rig.mia, &mail(ours, 3)).await;
+    rig.fake.push(picks(json!({ "labels": [] })));
+    let _ = rig.assist.label_email(&rig.mia, appended).await;
+    assert!(known_line(&rig, 2).ends_with("no"), "{}", known_line(&rig, 2));
+
+    // Security review 0.22 R2-M1: passes for the sender's own other domain, or a DMARC failure,
+    // do not make the contact's address known.
+    for (n, results) in [
+        (4, "spf=pass smtp.mailfrom=x@attacker.example; dkim=pass header.d=attacker.example; dmarc=none"),
+        (5, "spf=pass smtp.mailfrom=x@example.com; dkim=pass header.d=example.com; dmarc=fail"),
+    ] {
+        let block = format!(
+            "Received: from relay.example\n\tby mx.example.org (UwUMail) with ESMTPS id {n}\n\
+Authentication-Results: mx.example.org; {results}\n"
+        );
+        let spoofed = rig.deliver(&rig.mia, &mail(&block, n)).await;
+        rig.fake.push(picks(json!({ "labels": [] })));
+        let _ = rig.assist.label_email(&rig.mia, spoofed).await;
+        let at = rig.fake.seen().len() - 1;
+        assert!(known_line(&rig, at).ends_with("no"), "{results}: {}", known_line(&rig, at));
+    }
 }
 
 /// Security review 0.22 LABELS22-L3: corrections kept as examples carry no codes or links, and

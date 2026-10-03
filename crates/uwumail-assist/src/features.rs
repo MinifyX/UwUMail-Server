@@ -868,8 +868,9 @@ impl Assist {
         mail: &MailText,
         contacts: &[(String, String)],
     ) -> Result<SpamSignals> {
-        let authentication = authentication(&mail.headers, Some(self.hostname()), &record.from);
-        let (spam_score, spam_threshold, tests) = spam_status(trusted_headers(&mail.headers, Some(self.hostname())));
+        let headers = delivered_headers(record, &mail.headers);
+        let authentication = authentication(headers, Some(self.hostname()), &record.from);
+        let (spam_score, spam_threshold, tests) = spam_status(trusted_headers(headers, Some(self.hostname())));
         let mailboxes = self.store().mailboxes(account.id).await?;
         let in_junk = mailboxes
             .iter()
@@ -956,7 +957,7 @@ impl Assist {
         let hostname = self.hostname().to_owned();
         let (mail, phishing, attachments) = tokio::task::spawn_blocking(move || {
             let mail = MailText::read(&owned, &raw, MAX_MAIL_CHARS);
-            let auth = authentication(&mail.headers, Some(&hostname), &owned.from);
+            let auth = authentication(delivered_headers(&owned, &mail.headers), Some(&hostname), &owned.from);
             let phishing = uwumail_smtp::phishing::check_message(&raw, &domains, crate::spam::authentic(&auth));
             (mail, phishing, record_attachments(&raw))
         })
@@ -1631,6 +1632,14 @@ pub(crate) fn auth_results_parts(value: &str) -> Vec<Vec<String>> {
     }
     end_word(&mut parts, &mut word);
     parts
+}
+
+/// The headers of an own mail in which this server's verdicts may stand: all of them when its SMTP
+/// delivery stored the mail, none for mail stored any other way (IMAP APPEND, JMAP import), which
+/// can start with a forged copy of this server's block (security review 0.22 R2-L2). The block
+/// itself is then found by [`trusted_headers`].
+pub(crate) fn delivered_headers<'a>(record: &EmailRecord, headers: &'a [(String, String)]) -> &'a [(String, String)] {
+    if record.smtp_delivered { headers } else { &[] }
 }
 
 /// The headers whose verdicts can be believed (security review 0.22, client C-1 checked on the

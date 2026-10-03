@@ -134,7 +134,12 @@ pub(super) async fn copy_emails(
             let email = ctx
                 .jmap
                 .store
-                .ingest(IngestRequest { account_id: ctx.account.id, raw, mailboxes, keywords, received_at })
+                // A copy is what its original is: delivered here over SMTP or not (security review
+                // 0.22 R2-L2).
+                .ingest_marked(
+                    IngestRequest { account_id: ctx.account.id, raw, mailboxes, keywords, received_at },
+                    original.smtp_delivered,
+                )
                 .await
                 .map_err(|err| match err {
                     StoreError::QuotaExceeded => SetError::new("overQuota", "the mailbox is full"),

@@ -351,6 +351,8 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
 
     let inbox = a.wait_for_inbox("mini@a.test", 1).await;
     let raw = a.raw(&inbox[0]).await;
+    // Marked as delivered here, so the block on top is read as this server's (R2-L2).
+    assert!(a.smtp.store().smtp_delivered(inbox[0].id).await.unwrap());
     assert!(!raw.contains("header.d=bank.example"), "{raw}");
     assert!(raw.contains("Authentication-Results: mx.a.test"), "{raw}");
     // The sender's own spam verdict never stays, whether the filter looked or not (client C-1).
@@ -370,7 +372,9 @@ async fn submitted_mail_cannot_bring_our_verdicts() {
         lettre::address::Envelope::new(Some("ami@a.test".parse().unwrap()), vec!["mini@a.test".parse().unwrap()])
             .unwrap();
     a.mailer("ami@a.test", PASSWORD, false).send_raw(&envelope, written.as_bytes()).await.unwrap();
-    let raw = a.raw(&a.wait_for_inbox("mini@a.test", 1).await[0]).await;
+    let inbox = a.wait_for_inbox("mini@a.test", 1).await;
+    let raw = a.raw(&inbox[0]).await;
+    assert!(!a.smtp.store().smtp_delivered(inbox[0].id).await.unwrap(), "submitted, not delivered over SMTP");
     assert!(!raw.contains("mx.a.test; spf=pass"), "{raw}");
     assert!(!raw.contains("score=-50") && !raw.contains("X-Spam-Score: -50"), "{raw}");
     assert!(raw.contains("Authentication-Results: elsewhere.test"), "another server's claim is left as it is");

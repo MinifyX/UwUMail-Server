@@ -14,7 +14,7 @@ use uwumail_store::{Account, AssistLabel, EmailRecord, KeywordsChange, LabelLogW
 
 use crate::access::Embedder;
 use crate::features::TYPICAL_LABEL_TOKENS_PER_LABEL;
-use crate::features::{LabelPick, authentication, parse_labels};
+use crate::features::{LabelPick, authentication, delivered_headers, parse_labels};
 use crate::llm;
 use crate::mail::MailText;
 use crate::prompts::{self, MAX_PROMPT_SHOTS, PromptLabel, PromptShot};
@@ -130,7 +130,7 @@ impl Assist {
         if !mail.from.is_empty() && store.account_owns_address(account.id, &mail.from).await? {
             return Ok(Vec::new());
         }
-        let auth = authentication(&mail_text.headers, Some(self.hostname()), &record.from);
+        let auth = authentication(delivered_headers(&record, &mail_text.headers), Some(self.hostname()), &record.from);
         // Aligned with the From domain, as the SMTP checks and the spam check decide it (security
         // review 0.22 R2-M1): a pass for the sender's own other domain, or a DMARC failure, is not.
         mail.from_trusted = crate::spam::authentic(&auth);
