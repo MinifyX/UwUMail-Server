@@ -34,11 +34,21 @@ const RUN_LIMIT: Duration = Duration::from_secs(300);
 const GRACE: Duration = Duration::from_secs(300);
 
 /// Works through the queued moves until `shutdown` changes.
-pub async fn run_migrations(store: Store, egress: uwumail_smtp::egress::Egress, mut shutdown: watch::Receiver<bool>) {
+pub async fn run_migrations(
+    store: Store,
+    smtp: uwumail_smtp::Smtp,
+    egress: uwumail_smtp::egress::Egress,
+    mut shutdown: watch::Receiver<bool>,
+) {
     // Moves that were running when the server stopped go on where their folders stood.
-    match store.requeue_running_migrations().await {
-        Ok(0) => {}
-        Ok(count) => tracing::info!(count, "moves from other providers continue after the restart"),
+    match store.recover_interrupted_migrations().await {
+        Ok((0, 0)) => {}
+        Ok((count, paused)) => {
+            tracing::info!(count, "moves from other providers continue after the restart");
+            if paused > 0 {
+                tracing::warn!(paused, "moves the server went down during again and again are paused");
+            }
+        }
         Err(err) => tracing::warn!(%err, "looking for interrupted moves failed"),
     }
     loop {
@@ -56,7 +66,7 @@ pub async fn run_migrations(store: Store, egress: uwumail_smtp::egress::Egress, 
             };
             let dialer = Some(egress.dialer(uwumail_smtp::egress::Purpose::Fetch));
             let run = tokio::select! {
-                run = run_job(&store, &job, None, dialer, RUN_LIMIT) => run,
+                run = run_job(&store, &job, None, dialer, RUN_LIMIT, smtp.max_message_size()) => run,
                 // Back in the queue; the next start goes on with it.
                 _ = shutdown.changed() => MigrationRun::Continue,
             };
@@ -94,8 +104,9 @@ pub(crate) async fn run_job(
     detour: Option<Detour>,
     dialer: Option<uwumail_smtp::egress::Dialer>,
     limit: Duration,
+    max_size: usize,
 ) -> MigrationRun {
-    run_job_within(store, job, detour, dialer, limit, GRACE).await
+    run_job_within(store, job, detour, dialer, limit, GRACE, max_size).await
 }
 
 /// [`run_job`] with another grace than [`GRACE`].
@@ -106,6 +117,7 @@ async fn run_job_within(
     dialer: Option<uwumail_smtp::egress::Dialer>,
     limit: Duration,
     grace: Duration,
+    max_size: usize,
 ) -> MigrationRun {
     let deadline = tokio::time::Instant::now() + limit + grace;
     let password = match store.migration_password(job.account_id, job.id).await {
@@ -125,7 +137,7 @@ async fn run_job_within(
         // `false` from the store: the person paused the move or ended it meanwhile.
         Box::pin(async move { store.note_migration_progress(id, progress).await.unwrap_or(true) })
     };
-    let options = CopyOptions { skip_known: true, ..CopyOptions::default() };
+    let options = CopyOptions { skip_known: true, max_size, ..CopyOptions::default() };
     let source_name = source_name(job);
     let copy = copy(store, &mut connection, job.account_id, &source_name, job.progress, options, limit, note);
     let run = match tokio::time::timeout_at(deadline, copy).await {
@@ -360,7 +372,7 @@ mod tests {
     /// One turn of the worker, as `run_migrations` takes it.
     async fn turn(store: &Store, detour: &Detour, limit: Duration) -> MigrationJob {
         let job = store.take_migration_job().await.unwrap().expect("the move is queued");
-        let run = run_job(store, &job, Some(detour.clone()), None, limit).await;
+        let run = run_job(store, &job, Some(detour.clone()), None, limit, 0).await;
         store.finish_migration_run(job.id, run).await.unwrap();
         store.migration_job(job.account_id, job.id).await.unwrap().unwrap()
     }
@@ -381,7 +393,7 @@ mod tests {
 
         // A wrong password pauses the move and says why.
         let job = start(&new, new_id, "falsch-falsch").await;
-        let run = run_job(&new, &job, Some(detour.clone()), None, RUN_LIMIT).await;
+        let run = run_job(&new, &job, Some(detour.clone()), None, RUN_LIMIT, 0).await;
         assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "loginRefused"), "{run:?}");
         new.finish_migration_run(job.id, run).await.unwrap();
 
@@ -434,7 +446,7 @@ mod tests {
         let (detour, _stop) = old_provider(&old).await;
         let (new, new_id) = store_with_person(&dir.path().join("new"), None, 1).await;
         let job = start(&new, new_id, PASSWORD).await;
-        let run = run_job(&new, &job, Some(detour), None, RUN_LIMIT).await;
+        let run = run_job(&new, &job, Some(detour), None, RUN_LIMIT, 0).await;
         assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "quotaExceeded"), "{run:?}");
     }
 
@@ -457,10 +469,12 @@ mod tests {
             }
         });
         let detour = Detour { address, tls_name: "imap.example.net".into(), roots: rustls::RootCertStore::empty() };
-        let run =
-            tokio::time::timeout(Duration::from_secs(10), run_job_within(&new, &job, Some(detour), None, limit, limit))
-                .await
-                .expect("the turn ended in time");
+        let run = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_job_within(&new, &job, Some(detour), None, limit, limit, 0),
+        )
+        .await
+        .expect("the turn ended in time");
         assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "unreachable"), "{run:?}");
 
         // Greets over TLS, then answers LOGIN with "* OK" every few milliseconds, never with its tag.
@@ -494,10 +508,12 @@ mod tests {
         let mut roots = rustls::RootCertStore::empty();
         roots.add(generated.cert.der().clone()).unwrap();
         let detour = Detour { address, tls_name: "imap.example.net".into(), roots };
-        let run =
-            tokio::time::timeout(Duration::from_secs(10), run_job_within(&new, &job, Some(detour), None, limit, limit))
-                .await
-                .expect("the turn ended in time");
+        let run = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_job_within(&new, &job, Some(detour), None, limit, limit, 0),
+        )
+        .await
+        .expect("the turn ended in time");
         assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "unreachable"), "{run:?}");
     }
 }

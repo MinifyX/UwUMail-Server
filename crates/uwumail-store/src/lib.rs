@@ -89,6 +89,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{Notify, broadcast};
 
+/// After this many starts of the server that found a move still running (cut off by a crash), it
+/// is paused with `interrupted` instead of started again (security review 0.22 M-1).
+pub const INTERRUPTIONS: i64 = 3;
+
 pub use acl::{ALL_RIGHTS, AclEntry, ShareLevel, SharePerson, SharedMailbox, has_rights, normalize_rights};
 pub use address::{EmailAddress, normalize_address, normalize_domain};
 pub use admin::{

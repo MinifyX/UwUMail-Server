@@ -2338,8 +2338,8 @@
       "progress": "{{done}} sur {{total}} messages · {{size}}",
       "progressLabel": "Avancement du déménagement",
       "folders": "dossier {{done}} sur {{total}}",
-      "skipped": "{{count}} message était déjà là et a été ignoré",
-      "skipped_other": "{{count}} messages étaient déjà là et ont été ignorés",
+      "skipped": "{{count}} message a été ignoré : il était déjà là ou dépasse la taille acceptée par ce serveur",
+      "skipped_other": "{{count}} messages ont été ignorés : ils étaient déjà là ou dépassent la taille acceptée par ce serveur",
       "done": "Tout est là.",
       "doneAt": "Tout ce qui s'y trouvait est ici, au {{date}}."
     },
@@ -2350,6 +2350,7 @@
       "notPublic": "Le serveur de l'ancien fournisseur n'est pas sur Internet, pour autant que ce serveur puisse en juger.",
       "noMailbox": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver.",
       "stopped": "En pause. Continuez quand vous voulez ; cela reprend là où cela s'est arrêté.",
+      "interrupted": "Le serveur s'est arrêté plusieurs fois de suite pendant ce déménagement, il a donc été mis en pause. Reprenez-le quand vous voulez, ou demandez à votre admin.",
       "failed": "Quelque chose s'est mal passé. Continuez pour réessayer."
     },
     "actions": {
@@ -4761,9 +4762,9 @@
       "title": "Migration de {{domain}}",
       "overview": "Progression",
       "messages": "{{done}} sur {{total}} messages ({{size}})",
-      "skipped_one": "{{count}} était déjà là",
-      "skipped_many": "{{count}} étaient déjà là",
-      "skipped_other": "{{count}} étaient déjà là",
+      "skipped_one": "{{count}} ignoré (déjà là ou trop grand)",
+      "skipped_many": "{{count}} ignorés (déjà là ou trop grands)",
+      "skipped_other": "{{count}} ignorés (déjà là ou trop grands)",
       "davCounts": "{{contacts}} contacts, {{events}} entrées d'agenda",
       "source": "Depuis {{host}}",
       "noDav": "messages seulement",
@@ -4794,6 +4795,7 @@
       "noMailbox": "Ce compte n'a pas de boîte où déplacer les messages.",
       "stopped": "Mis en pause à la main. Reprenez quand vous voulez.",
       "accountDeleted": "Ce compte est dans la corbeille : le déménagement s'est arrêté et l'ancien mot de passe a été supprimé. Restaure le compte, saisis à nouveau le mot de passe et réessaie.",
+      "interrupted": "Le serveur s'est arrêté plusieurs fois de suite pendant cette boîte, elle a donc été mise en pause. Consultez le journal du serveur, puis reprenez.",
       "failed": "Un problème est survenu. Réessayez."
     },
     "davErrors": {

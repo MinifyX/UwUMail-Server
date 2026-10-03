@@ -2288,8 +2288,8 @@
       "progress": "{{done}} von {{total}} Mails · {{size}}",
       "progressLabel": "Wie weit der Umzug ist",
       "folders": "Ordner {{done}} von {{total}}",
-      "skipped": "{{count}} Mail war schon da und wurde ausgelassen",
-      "skipped_other": "{{count}} Mails waren schon da und wurden ausgelassen",
+      "skipped": "{{count}} Mail wurde ausgelassen: Sie war schon da oder ist größer, als dieser Server annimmt",
+      "skipped_other": "{{count}} Mails wurden ausgelassen: Sie waren schon da oder sind größer, als dieser Server annimmt",
       "done": "Alles ist da.",
       "doneAt": "Alles, was dort war, ist hier, Stand {{date}}."
     },
@@ -2300,6 +2300,7 @@
       "notPublic": "Der Server des alten Anbieters ist nicht im Internet, soweit dieser Server das sehen kann.",
       "noMailbox": "Dein Konto hat kein Postfach, in das Mails umziehen könnten.",
       "stopped": "Pausiert. Mach weiter, wann du willst; es geht dort weiter, wo es aufgehört hat.",
+      "interrupted": "Der Server ist während dieses Umzugs mehrmals hintereinander ausgefallen, daher wurde er pausiert. Setze ihn fort, wenn du bereit bist, oder frag deinen Admin.",
       "failed": "Etwas ist schiefgegangen. Mach weiter, um es noch mal zu versuchen."
     },
     "actions": {
@@ -4672,8 +4673,8 @@
       "title": "Umzug von {{domain}}",
       "overview": "Fortschritt",
       "messages": "{{done}} von {{total}} Mails ({{size}})",
-      "skipped_one": "{{count}} war schon da",
-      "skipped_other": "{{count}} waren schon da",
+      "skipped_one": "{{count}} ausgelassen (schon da oder zu groß)",
+      "skipped_other": "{{count}} ausgelassen (schon da oder zu groß)",
       "davCounts": "{{contacts}} Kontakte, {{events}} Kalendereinträge",
       "source": "Von {{host}}",
       "noDav": "nur Mails",
@@ -4703,6 +4704,7 @@
       "noMailbox": "Dieses Konto hat kein Postfach, in das Mails umziehen könnten.",
       "stopped": "Von Hand pausiert. Mach weiter, wann du willst.",
       "accountDeleted": "Dieses Konto liegt im Papierkorb, daher wurde der Umzug gestoppt und das alte Passwort gelöscht. Stell das Konto wieder her, gib das Passwort erneut ein und versuch es noch mal.",
+      "interrupted": "Der Server ist während dieses Postfachs mehrmals hintereinander ausgefallen, daher wurde es pausiert. Prüfe das Server-Log und setze dann fort.",
       "failed": "Etwas ist schiefgegangen. Versuch es noch mal."
     },
     "davErrors": {

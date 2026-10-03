@@ -2236,8 +2236,8 @@
       "progress": "{{done}} / {{total}} 封邮件 · {{size}}",
       "progressLabel": "搬家进度",
       "folders": "文件夹 {{done}} / {{total}}",
-      "skipped": "{{count}} 封邮件已经存在，已跳过",
-      "skipped_other": "{{count}} 封邮件已经存在，已跳过",
+      "skipped": "已跳过 {{count}} 封邮件：已经存在或超过此服务器允许的大小",
+      "skipped_other": "已跳过 {{count}} 封邮件：已经存在或超过此服务器允许的大小",
       "done": "全部到齐了。",
       "doneAt": "截至 {{date}}，原来的内容已全部在这里。"
     },
@@ -2248,6 +2248,7 @@
       "notPublic": "据本服务器判断，原服务商的服务器不在互联网上。",
       "noMailbox": "你的账户没有可以接收邮件的邮箱。",
       "stopped": "已暂停。随时可以继续，会从停下的地方接着进行。",
+      "interrupted": "服务器在此迁移期间连续多次停止，因此已暂停。准备好后继续，或联系管理员。",
       "failed": "出了点问题。点击继续以重试。"
     },
     "actions": {
@@ -4581,7 +4582,7 @@
       "title": "{{domain}} 的迁移",
       "overview": "进度",
       "messages": "{{done}}/{{total}} 封邮件（{{size}}）",
-      "skipped_other": "{{count}} 封已存在",
+      "skipped_other": "已跳过 {{count}} 封（已存在或过大）",
       "davCounts": "{{contacts}} 位联系人，{{events}} 条日程",
       "source": "来自 {{host}}",
       "noDav": "仅邮件",
@@ -4610,6 +4611,7 @@
       "noMailbox": "该账户没有可迁入邮件的邮箱。",
       "stopped": "已手动暂停。随时可以继续。",
       "accountDeleted": "此账户已移至回收站，因此迁移已停止，旧密码已删除。恢复账户后，请重新输入密码并重试。",
+      "interrupted": "服务器在处理此邮箱时连续多次停止，因此已暂停。请检查服务器日志，然后继续。",
       "failed": "出了点问题。请重试。"
     },
     "davErrors": {

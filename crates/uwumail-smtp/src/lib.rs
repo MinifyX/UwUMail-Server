@@ -399,6 +399,11 @@ impl Smtp {
         self.inner.live().smtp.allow_external_forwarding
     }
 
+    /// The largest message this server takes (`smtp.max_message_size`), as set now.
+    pub fn max_message_size(&self) -> usize {
+        self.inner.live().smtp.max_message_size
+    }
+
     /// The relay outgoing mail leaves through, if one is configured.
     pub fn relay_host(&self) -> Option<String> {
         self.inner.live().delivery.relay.as_ref().map(|relay| relay.host.clone())

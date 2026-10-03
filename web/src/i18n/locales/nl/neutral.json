@@ -2288,8 +2288,8 @@
       "progress": "{{done}} van {{total}} berichten · {{size}}",
       "progressLabel": "Hoe ver de verhuizing is",
       "folders": "map {{done}} van {{total}}",
-      "skipped": "{{count}} bericht was er al en is overgeslagen",
-      "skipped_other": "{{count}} berichten waren er al en zijn overgeslagen",
+      "skipped": "{{count}} bericht is overgeslagen: het was er al of is groter dan deze server aanneemt",
+      "skipped_other": "{{count}} berichten zijn overgeslagen: ze waren er al of zijn groter dan deze server aanneemt",
       "done": "Alles is er.",
       "doneAt": "Alles wat daar was, is hier, stand {{date}}."
     },
@@ -2300,6 +2300,7 @@
       "notPublic": "De server van de oude provider staat niet op internet, voor zover deze server kan zien.",
       "noMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
       "stopped": "Gepauzeerd. Ga verder wanneer je wilt; het gaat verder waar het stopte.",
+      "interrupted": "De server stopte meerdere keren achter elkaar tijdens deze verhuizing, dus die is gepauzeerd. Ga verder wanneer je klaar bent, of vraag je beheerder.",
       "failed": "Er ging iets mis. Ga verder om het opnieuw te proberen."
     },
     "actions": {
@@ -4672,8 +4673,8 @@
       "title": "Verhuizing van {{domain}}",
       "overview": "Voortgang",
       "messages": "{{done}} van {{total}} berichten ({{size}})",
-      "skipped_one": "{{count}} was er al",
-      "skipped_other": "{{count}} waren er al",
+      "skipped_one": "{{count}} overgeslagen (er al of te groot)",
+      "skipped_other": "{{count}} overgeslagen (er al of te groot)",
       "davCounts": "{{contacts}} contacten, {{events}} agenda-items",
       "source": "Van {{host}}",
       "noDav": "alleen mail",
@@ -4703,6 +4704,7 @@
       "noMailbox": "Dit account heeft geen mailbox om mail naartoe te verhuizen.",
       "stopped": "Handmatig gepauzeerd. Ga verder wanneer je wilt.",
       "accountDeleted": "Dit account staat in de prullenbak, daarom is de verhuizing gestopt en het oude wachtwoord verwijderd. Zet het account terug, vul het wachtwoord opnieuw in en probeer opnieuw.",
+      "interrupted": "De server stopte meerdere keren achter elkaar tijdens deze mailbox, dus die is gepauzeerd. Bekijk het serverlog en ga daarna verder.",
       "failed": "Er ging iets mis. Probeer het opnieuw."
     },
     "davErrors": {

@@ -56,6 +56,8 @@ pub(crate) struct Env {
     pub names: (String, String),
     pub limit: Duration,
     pub grace: Duration,
+    /// The largest message this server takes; larger ones are left out (0: no limit of its own).
+    pub max_size: usize,
 }
 
 /// Works through the mailboxes of the admin's moves until `shutdown` changes.
@@ -65,14 +67,20 @@ pub async fn run_moves(
     egress: uwumail_smtp::egress::Egress,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    match store.requeue_running_moves().await {
-        Ok(0) => {}
-        Ok(count) => tracing::info!(count, "moves of the admin continue after the restart"),
+    // A clean stop requeues what was running, so what is still running now was cut off by a crash.
+    match store.recover_interrupted_moves().await {
+        Ok((0, 0)) => {}
+        Ok((count, paused)) => {
+            tracing::info!(count, "moves of the admin continue after the restart");
+            if paused > 0 {
+                tracing::warn!(paused, "mailboxes the server went down during again and again are paused");
+            }
+        }
         Err(err) => tracing::warn!(%err, "looking for interrupted moves failed"),
     }
     let dialer = egress.dialer(uwumail_smtp::egress::Purpose::Fetch);
     let (calendar, book) = smtp.tone().language.collection_names();
-    let env = Env {
+    let mut env = Env {
         transport: Arc::new(client::HttpsTransport::new(&dialer)),
         dns: DnsChecker::new().ok().map(Arc::new),
         dialer: Some(dialer),
@@ -80,12 +88,14 @@ pub async fn run_moves(
         names: (calendar.to_owned(), book.to_owned()),
         limit: RUN_LIMIT,
         grace: GRACE,
+        max_size: 0,
     };
     let mut turns = JoinSet::new();
     loop {
         if *shutdown.borrow() {
             break;
         }
+        env.max_size = smtp.max_message_size();
         if let Err(err) = store.queue_due_move_mailboxes().await {
             tracing::warn!(%err, "queueing the next rounds of moves failed");
         }
@@ -205,6 +215,7 @@ pub(crate) async fn run_turn(store: &Store, env: &Env, mailbox: &MoveMailbox) ->
         skip_known: true,
         contacts: found.contacts,
         calendars: found.calendars,
+        max_size: env.max_size,
         ..CopyOptions::default()
     };
     let source_name = mailbox.source_name(&host);

@@ -56,6 +56,19 @@ the login, pauses the move as unreachable instead of holding up everybody
 else's. Each command to the provider has five minutes to be answered (half an
 hour for a portion of messages).
 
+Messages are fetched by size: the provider is first asked how large they are
+(`RFC822.SIZE`), small ones come in portions of about 16 MiB, large ones one at
+a time, and a fetch may take only a little more than the size the provider gave.
+A message larger than this server takes (`smtp.max_message_size`) is left out
+and counted with the skipped ones. All imports together (admin moves, personal
+moves, fetched mailboxes) hold at most 512 MiB of fetched mail at once; the
+rest waits for its turn.
+
+When the server starts and finds a move still running, it went down during it
+(a clean stop puts running moves back in the queue). The move goes on, but the
+third start in a row that finds it running pauses it as `interrupted`, so a
+mailbox that brings the server down cannot do so again and again.
+
 A move pauses, and says why, when the person has to do something:
 
 | Reason | What to do |
@@ -64,6 +77,7 @@ A move pauses, and says why, when the person has to do something:
 | The old provider refused the password | Enter a new one (often an app password) and *Continue*. |
 | The provider could not be reached, or something else went wrong | *Continue* tries again. |
 | Paused by hand | *Continue* whenever you like. |
+| The server stopped during the move several times in a row | Ask the admin to look at the server log, then *Continue*. |
 
 Nothing is retried behind the person's back, so a wrong password never runs
 into the provider's lockout.
@@ -242,6 +256,17 @@ directory.
   with the password.
 - The links CSV neutralises cells a spreadsheet would read as a formula
   (starting with `=`, `+`, `-`, `@`, tab or CR get a leading `'`).
+- Messages are fetched by size, larger than `smtp.max_message_size` are
+  skipped, and all imports share a 512 MiB budget of fetched mail; a mailbox
+  the server went down during at three starts in a row is paused as
+  `interrupted` (see *How it runs*).
+
+### Known limitations (security review)
+
+- `…/import` (upload `.ics`/`.vcf`) still works on a finished move and on an account in the trash.
+- There is no limit on the number or the depth of the folders a move copies.
+- DAV import merges into a collection of the same name and can overwrite items with the same UID when it fills a mailbox that already has them.
+- Imported events keep their alarms (`VALARM`).
 
 ### API
 

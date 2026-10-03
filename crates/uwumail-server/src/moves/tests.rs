@@ -102,6 +102,7 @@ fn env(old: &Store, detour: Detour) -> Env {
         detour: Some(detour),
         names: ("Kalender".into(), "Kontakte".into()),
         limit: Duration::from_secs(60),
+        max_size: 0,
         grace: Duration::from_secs(60),
     }
 }

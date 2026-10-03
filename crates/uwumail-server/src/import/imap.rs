@@ -29,14 +29,23 @@ const FETCH_LIMIT: Duration = Duration::from_secs(30 * 60);
 /// otherwise announce something like `{9223372036854775808}` and make the allocation abort the
 /// whole server, which then crash-loops on the same account (security-audit-0.5.2 S-25). It also
 /// bounds a fetched message body, since that arrives as a literal.
-const MAX_LITERAL: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_LITERAL: usize = 64 * 1024 * 1024;
 /// The longest response line this reads. A line grows until its newline comes, so without a limit a
 /// provider that never sends one fills the memory (security-audit-0.8.0 T-7). Real lines are short;
 /// the longest are `SEARCH` answers, a dozen bytes per message.
 const MAX_LINE: usize = 16 * 1024 * 1024;
-/// What one command's answers may add up to, lines and literals together: a full batch of the
-/// largest messages and room besides. Without it a provider could keep answering for ever.
-const MAX_ANSWER: usize = BATCH * MAX_LITERAL + 4 * MAX_LINE;
+/// What one command's answers may add up to, lines and literals together: two of the largest
+/// messages and room besides. Without it a provider could keep answering for ever. Fetches ask for
+/// less: what the provider said the messages take (see [`fetch_chunk`]).
+const MAX_ANSWER: usize = 2 * MAX_LITERAL + 4 * MAX_LINE;
+/// Messages are fetched in portions of about this many bytes (by their `RFC822.SIZE`); a larger
+/// message comes alone.
+const CHUNK_BYTES: usize = 16 * 1024 * 1024;
+/// What every import together (the admin's moves, personal moves, fetched mailboxes) may hold of
+/// fetched messages at once, in KiB: a hostile or broken provider, or many at once, cannot fill
+/// the memory (security review 0.22 M-1).
+const IMPORT_BUDGET_KIB: usize = 512 * 1024;
+static IMPORT_BYTES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(IMPORT_BUDGET_KIB);
 /// What the answers to any other command may add up to, in memory: folder lists, status lines and
 /// searches, which for a folder of a million messages are a million tokens.
 const MAX_SMALL_ANSWER: usize = 16 * MAX_LINE;
@@ -233,9 +242,15 @@ impl Connection {
     /// [`TIMEOUT`] to come, and the whole answer [`COMMAND_LIMIT`] ([`FETCH_LIMIT`] for a batch of
     /// messages): an untagged line now and then must not keep a command going for ever.
     pub(crate) async fn command(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
+        let budget = if command.starts_with("UID FETCH") { MAX_ANSWER } else { MAX_SMALL_ANSWER };
+        self.command_within(command, budget).await
+    }
+
+    /// [`Connection::command`] with the answer limited to `budget` bytes.
+    async fn command_within(&mut self, command: &str, budget: usize) -> anyhow::Result<Vec<Response>> {
         let limit = if command.starts_with("UID FETCH") { FETCH_LIMIT } else { COMMAND_LIMIT };
         let shown = if command.starts_with("LOGIN") { "LOGIN" } else { command }.to_owned();
-        tokio::time::timeout(limit, self.command_untimed(command))
+        tokio::time::timeout(limit, self.command_untimed(command, budget))
             .await
             .map_err(|_| anyhow!("{shown}: the server did not finish answering in time"))?
     }
@@ -245,21 +260,19 @@ impl Connection {
     /// an empty line; the refusal after it is the error. The token never shows in an error.
     pub(crate) async fn authenticate_xoauth2(&mut self, user: &str, token: &str) -> anyhow::Result<()> {
         let command = format!("AUTHENTICATE XOAUTH2 {}", uwumail_smtp::provider_oauth::xoauth2(user, token));
-        tokio::time::timeout(COMMAND_LIMIT, self.command_untimed(&command))
+        tokio::time::timeout(COMMAND_LIMIT, self.command_untimed(&command, MAX_SMALL_ANSWER))
             .await
             .map_err(|_| anyhow!("AUTHENTICATE: the server did not finish answering in time"))??;
         Ok(())
     }
 
-    async fn command_untimed(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
+    async fn command_untimed(&mut self, command: &str, mut budget: usize) -> anyhow::Result<Vec<Response>> {
         let tag = format!("u{}", self.next_tag);
         self.next_tag += 1;
         self.stream.get_mut().write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
         let authenticating = command.starts_with("AUTHENTICATE");
         let mut challenged = false;
         let mut untagged = Vec::new();
-        // Only fetching messages needs room for a batch of them.
-        let mut budget = if command.starts_with("UID FETCH") { MAX_ANSWER } else { MAX_SMALL_ANSWER };
         loop {
             let response = read_response(&mut self.stream, &mut budget).await?;
             if let Some(status) = response.text.strip_prefix(&format!("{tag} ")) {
@@ -486,10 +499,78 @@ pub(crate) struct Fetched {
     pub(crate) flags: Vec<String>,
     pub(crate) internal_date: Option<i64>,
     pub(crate) body: Option<Vec<u8>>,
+    /// `RFC822.SIZE`, when asked for.
+    pub(crate) size: Option<usize>,
 }
 
-pub(crate) fn parse_fetch(response: &Response) -> Option<Fetched> {
-    let tokens = &response.tokens;
+/// How a batch of messages is fetched: in portions of about [`CHUNK_BYTES`], each message with
+/// the size the provider gave, and the ones larger than this server takes.
+#[derive(Debug, Default)]
+pub(crate) struct FetchPlan {
+    pub(crate) chunks: Vec<Vec<(u32, usize)>>,
+    pub(crate) too_large: Vec<u32>,
+}
+
+/// Asks the provider how large the messages are (`RFC822.SIZE`) and plans their fetching: larger
+/// ones alone, ones above `max_size` not at all (security review 0.22 M-1). A message the answer
+/// leaves out is planned at `max_size`, alone.
+pub(crate) async fn plan_fetch(
+    connection: &mut Connection,
+    uids: &[u32],
+    max_size: usize,
+) -> anyhow::Result<FetchPlan> {
+    let set = uids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+    let sizes: HashMap<u32, usize> = connection
+        .command_within(&format!("UID FETCH {set} (UID RFC822.SIZE)"), MAX_SMALL_ANSWER)
+        .await?
+        .into_iter()
+        .filter_map(parse_fetch)
+        .filter_map(|fetched| Some((fetched.uid, fetched.size?)))
+        .collect();
+    let mut plan = FetchPlan::default();
+    let mut chunk: Vec<(u32, usize)> = Vec::new();
+    let mut chunk_bytes = 0;
+    for &uid in uids {
+        let size = sizes.get(&uid).copied().unwrap_or(max_size);
+        if size > max_size {
+            plan.too_large.push(uid);
+            continue;
+        }
+        if !chunk.is_empty() && (chunk_bytes + size > CHUNK_BYTES || chunk.len() >= BATCH) {
+            plan.chunks.push(std::mem::take(&mut chunk));
+            chunk_bytes = 0;
+        }
+        chunk.push((uid, size));
+        chunk_bytes += size;
+    }
+    if !chunk.is_empty() {
+        plan.chunks.push(chunk);
+    }
+    Ok(plan)
+}
+
+/// Fetches one portion of a [`FetchPlan`] once the server-wide import budget has room for it. The
+/// answer may only take a little more than the sizes the provider gave; the permit is held while
+/// the caller stores the messages.
+pub(crate) async fn fetch_chunk(
+    connection: &mut Connection,
+    chunk: &[(u32, usize)],
+) -> anyhow::Result<(Vec<Fetched>, tokio::sync::SemaphorePermit<'static>)> {
+    let declared: usize = chunk.iter().map(|(_, size)| size).sum();
+    // Sizes are not always exact (some servers count line ends differently); flags, dates and
+    // the answer lines take room too.
+    let budget = (declared + declared / 4 + chunk.len() * 64 * 1024 + 1024 * 1024).min(MAX_ANSWER);
+    let kib = budget.div_ceil(1024).min(IMPORT_BUDGET_KIB) as u32;
+    let permit = IMPORT_BYTES.acquire_many(kib).await.context("the import budget is closed")?;
+    let set = chunk.iter().map(|(uid, _)| uid.to_string()).collect::<Vec<_>>().join(",");
+    let responses =
+        connection.command_within(&format!("UID FETCH {set} (UID FLAGS INTERNALDATE BODY.PEEK[])"), budget).await?;
+    Ok((responses.into_iter().filter_map(parse_fetch).collect(), permit))
+}
+
+/// Reads one FETCH answer, taking the body out of it instead of copying it.
+pub(crate) fn parse_fetch(mut response: Response) -> Option<Fetched> {
+    let tokens = &mut response.tokens;
     if tokens.get(2) != Some(&Token::Atom("FETCH".into())) {
         return None;
     }
@@ -523,9 +604,13 @@ pub(crate) fn parse_fetch(response: &Response) -> Option<Fetched> {
                 i += 2;
             }
             key if key.starts_with("BODY[") || key == "RFC822" => {
-                if let Some(Token::String(bytes)) = tokens.get(i + 1) {
-                    fetched.body = Some(bytes.clone());
+                if let Some(Token::String(bytes)) = tokens.get_mut(i + 1) {
+                    fetched.body = Some(std::mem::take(bytes));
                 }
+                i += 2;
+            }
+            "RFC822.SIZE" => {
+                fetched.size = tokens.get(i + 1).and_then(Token::text).and_then(|size| size.parse().ok());
                 i += 2;
             }
             _ => i += 1,
@@ -539,7 +624,8 @@ pub(crate) fn parse_fetch(response: &Response) -> Option<Fetched> {
 pub struct Copied {
     pub folders: usize,
     pub messages: usize,
-    /// Messages the mailbox here held already, left out (only when asked to look).
+    /// Messages left out: ones the mailbox here held already (only when asked to look), and ones
+    /// larger than this server takes.
     pub skipped: usize,
     pub bytes: usize,
 }
@@ -583,9 +669,16 @@ pub struct CopyOptions {
     pub contacts: bool,
     /// Look for calendar entries kept as messages in folders named so.
     pub calendars: bool,
+    /// The largest message this server takes (`smtp.max_message_size`); larger ones are left out
+    /// and counted as skipped. 0 means the largest a fetch reads at all.
+    pub max_size: usize,
 }
 
 impl CopyOptions {
+    fn max_size(&self) -> usize {
+        if self.max_size == 0 { MAX_LITERAL } else { self.max_size.min(MAX_LITERAL) }
+    }
+
     /// The kind of objects to take out of `folder`, when it is a folder of a kind asked for.
     fn objects_in(&self, folder: &Folder) -> Option<DavKind> {
         object_folder(folder).filter(|kind| match kind {
@@ -807,43 +900,54 @@ pub(crate) async fn copy_folders(
             if options.deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                 return Ok((copied, CopyEnd::OutOfTime));
             }
-            let set = batch.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-            let responses =
-                connection.command(&format!("UID FETCH {set} (UID FLAGS INTERNALDATE BODY.PEEK[])")).await?;
-            let mut by_uid: HashMap<u32, Fetched> =
-                responses.iter().filter_map(parse_fetch).map(|fetched| (fetched.uid, fetched)).collect();
-            let mut found_objects = Vec::new();
-            // The messages the objects came in, copied as mail when the objects cannot be stored.
-            let mut object_messages = Vec::new();
-            for uid in batch {
-                let Some(fetched) = by_uid.remove(uid) else { continue };
-                let Some(body) = fetched.body.as_deref() else { continue };
-                if fetched.flags.iter().any(|flag| flag.eq_ignore_ascii_case("\\Deleted")) {
-                    continue;
-                }
-                if let Some(kind) = objects {
-                    let texts = pure_object_texts(body, kind);
-                    if !texts.is_empty() {
-                        found_objects.extend(texts);
-                        object_messages.push(fetched);
+            let plan = plan_fetch(connection, batch, options.max_size()).await?;
+            for uid in &plan.too_large {
+                tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
+                copied.skipped += 1;
+            }
+            for chunk in &plan.chunks {
+                let (fetched, _permit) = fetch_chunk(connection, chunk).await?;
+                let mut by_uid: HashMap<u32, Fetched> = fetched.into_iter().map(|f| (f.uid, f)).collect();
+                let mut found_objects = Vec::new();
+                // The messages the objects came in, copied as mail when the objects cannot be stored.
+                let mut object_messages = Vec::new();
+                for (uid, _) in chunk {
+                    let Some(fetched) = by_uid.remove(uid) else { continue };
+                    let Some(body) = fetched.body.as_deref() else { continue };
+                    if fetched.flags.iter().any(|flag| flag.eq_ignore_ascii_case("\\Deleted")) {
                         continue;
                     }
-                }
-                copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied).await?;
-            }
-            if let Some(kind) = objects
-                && !found_objects.is_empty()
-            {
-                let event = CopyEvent::Objects { folder: folder.raw.clone(), kind, texts: found_objects };
-                if report(event).await {
-                    for fetched in &object_messages {
-                        copied.messages += 1;
-                        copied.bytes += fetched.body.as_ref().map_or(0, Vec::len);
+                    // The provider said it was smaller.
+                    if body.len() > options.max_size() {
+                        tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
+                        copied.skipped += 1;
+                        continue;
                     }
-                } else {
-                    tracing::info!(folder = %folder.raw, "objects could not be stored, copying them as mail");
-                    for fetched in object_messages {
-                        copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied).await?;
+                    if let Some(kind) = objects {
+                        let texts = pure_object_texts(body, kind);
+                        if !texts.is_empty() {
+                            found_objects.extend(texts);
+                            object_messages.push(fetched);
+                            continue;
+                        }
+                    }
+                    copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied).await?;
+                }
+                if let Some(kind) = objects
+                    && !found_objects.is_empty()
+                {
+                    let event = CopyEvent::Objects { folder: folder.raw.clone(), kind, texts: found_objects };
+                    if report(event).await {
+                        for fetched in &object_messages {
+                            copied.messages += 1;
+                            copied.bytes += fetched.body.as_ref().map_or(0, Vec::len);
+                        }
+                    } else {
+                        tracing::info!(folder = %folder.raw, "objects could not be stored, copying them as mail");
+                        for fetched in object_messages {
+                            copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied)
+                                .await?;
+                        }
                     }
                 }
             }
@@ -873,7 +977,7 @@ async fn copy_message(
     fetched: Fetched,
     copied: &mut Copied,
 ) -> anyhow::Result<()> {
-    let Fetched { uid, flags, internal_date, body } = fetched;
+    let Fetched { uid, flags, internal_date, body, .. } = fetched;
     let Some(body) = body else { return Ok(()) };
     let mailbox = match *mailbox {
         Some(mailbox) => mailbox,
@@ -1008,8 +1112,8 @@ mod tests {
             let mut response = Response::default();
             let _ = tokenize(&line, &mut response.tokens, 100_000);
             let _ = list_entry(&response.tokens);
-            let _ = parse_fetch(&response);
             let _ = examined_exists(std::slice::from_ref(&response));
+            let _ = parse_fetch(response);
         }
     }
 
@@ -1084,7 +1188,7 @@ mod tests {
         assert_eq!(literal, Some(5));
         tokens.push(Token::String(b"Hallo".to_vec()));
         tokenize(b")\r\n", &mut tokens, usize::MAX).unwrap();
-        let fetched = parse_fetch(&Response { tokens, text: String::new() }).unwrap();
+        let fetched = parse_fetch(Response { tokens, text: String::new() }).unwrap();
         assert_eq!(fetched.uid, 17);
         assert_eq!(fetched.flags, ["\\Seen", "$Label1"]);
         assert_eq!(fetched.body.as_deref(), Some(&b"Hallo"[..]));
@@ -1181,6 +1285,135 @@ mod tests {
         assert_eq!(again.await.unwrap().messages, 1, "only what arrived since");
         let inbox = new.mailboxes(new_id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
         assert_eq!(inbox.unwrap().total_emails, 2);
+    }
+
+    /// A certificate for `imap.example.org` and the roots that trust it.
+    fn test_tls() -> (rustls::ServerConfig, rustls::RootCertStore) {
+        let generated = rcgen::generate_simple_self_signed(vec!["imap.example.org".to_owned()]).unwrap();
+        let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
+        let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![generated.cert.der().clone()], key)
+            .unwrap();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(generated.cert.der().clone()).unwrap();
+        (tls, roots)
+    }
+
+    fn source_at(address: String, roots: rustls::RootCertStore, password: &str) -> Source {
+        Source {
+            address,
+            tls_name: Some("imap.example.org".into()),
+            roots: Some(roots),
+            master_user: None,
+            password: password.into(),
+            dialer: None,
+        }
+    }
+
+    /// A provider that answers every command with what `answer` gives for it, then `OK`.
+    async fn fake_provider(answer: fn(&str) -> Vec<u8>) -> Source {
+        let (tls, roots) = test_tls();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let tls = tokio_rustls::TlsAcceptor::from(Arc::new(tls)).accept(tcp).await.unwrap();
+            let mut stream = BufReader::new(tls);
+            stream.write_all(b"* OK fake\r\n").await.unwrap();
+            stream.flush().await.unwrap();
+            let mut line = String::new();
+            while stream.read_line(&mut line).await.unwrap_or(0) > 0 {
+                let Some((tag, command)) = line.trim_end().split_once(' ') else { break };
+                let mut out = answer(command);
+                out.extend(format!("{tag} OK done\r\n").bytes());
+                if stream.write_all(&out).await.is_err() || stream.flush().await.is_err() {
+                    break;
+                }
+                line.clear();
+            }
+        });
+        source_at(address, roots, "")
+    }
+
+    /// Security review 0.22 M-1: sizes come first; small messages are fetched together, large
+    /// ones alone, ones the answer leaves out alone at the limit, and ones above it not at all.
+    #[tokio::test]
+    async fn fetching_is_planned_by_size() {
+        let source = fake_provider(|command| {
+            assert_eq!(command, "UID FETCH 1,2,3,4,5,6 (UID RFC822.SIZE)");
+            b"* 1 FETCH (UID 1 RFC822.SIZE 100)\r\n* 2 FETCH (UID 2 RFC822.SIZE 100)\r\n\
+              * 3 FETCH (UID 3 RFC822.SIZE 20971520)\r\n* 4 FETCH (UID 4 RFC822.SIZE 100)\r\n\
+              * 6 FETCH (UID 6 RFC822.SIZE 209715200)\r\n"
+                .to_vec()
+        })
+        .await;
+        let mut connection = Connection::open(&source).await.unwrap();
+        let max = 50 * 1024 * 1024;
+        let plan = plan_fetch(&mut connection, &[1, 2, 3, 4, 5, 6], max).await.unwrap();
+        assert_eq!(plan.chunks, [vec![(1, 100), (2, 100)], vec![(3, 20_971_520)], vec![(4, 100)], vec![(5, max)]]);
+        assert_eq!(plan.too_large, [6]);
+    }
+
+    /// Security review 0.22 M-1: a fetch may only take a little more than the provider said the
+    /// messages take, so a provider that understates them cannot fill the memory.
+    #[tokio::test]
+    async fn a_fetch_takes_little_more_than_the_sizes_given() {
+        let source = fake_provider(|command| {
+            if command.starts_with("UID FETCH 1 ") {
+                b"* 1 FETCH (UID 1 FLAGS (\\Seen) BODY[] {5}\r\nhello)\r\n".to_vec()
+            } else {
+                // Said 100 bytes, sends 4 MiB.
+                b"* 2 FETCH (UID 2 BODY[] {4194304}\r\n".to_vec()
+            }
+        })
+        .await;
+        let mut connection = Connection::open(&source).await.unwrap();
+        let (fetched, _permit) = fetch_chunk(&mut connection, &[(1, 5)]).await.unwrap();
+        assert_eq!(fetched[0].body.as_deref(), Some(&b"hello"[..]));
+        assert_eq!(fetched[0].flags, ["\\Seen"]);
+        let error = fetch_chunk(&mut connection, &[(2, 100)]).await.unwrap_err();
+        assert!(error.to_string().contains("more than this reads"), "{error}");
+    }
+
+    /// Security review 0.22 M-1: a message larger than this server takes is left out and counted
+    /// as skipped; the rest comes.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn messages_larger_than_this_server_takes_are_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let (old, old_id) = store_with_person(&dir.path().join("old"), Some("katzenpfote-123")).await;
+        deliver(&old, old_id, MailboxTarget::Role(MailboxRole::Inbox), "Klein", &[]).await;
+        let big =
+            format!("From: nyu@example.net\r\nTo: mini@example.org\r\nSubject: Gross\r\n\r\n{}\r\n", "x".repeat(4000));
+        let request = IngestRequest {
+            account_id: old_id,
+            raw: big.into_bytes(),
+            mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
+            keywords: Vec::new(),
+            received_at: Some(1_700_000_000),
+        };
+        old.ingest(request).await.unwrap();
+
+        let (tls, roots) = test_tls();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (_shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
+        tokio::spawn(uwumail_imap::Imap::new(old.clone(), 1 << 20).serve(listener, Arc::new(tls), shutdown_rx));
+        let source = source_at(address, roots, "katzenpfote-123");
+
+        let (new, new_id) = store_with_person(&dir.path().join("new"), None).await;
+        let mut connection = Connection::open(&source).await.unwrap();
+        connection.command("LOGIN mini@example.org katzenpfote-123").await.unwrap();
+        let mut report =
+            |_: CopyEvent| -> Pin<Box<dyn Future<Output = bool> + Send>> { Box::pin(std::future::ready(true)) };
+        let options = CopyOptions { max_size: 2000, ..CopyOptions::default() };
+        let (copied, _) = copy_folders(&new, &mut connection, new_id, "test", options, &mut report).await.unwrap();
+        assert_eq!((copied.messages, copied.skipped), (1, 1));
+        let inbox = new.mailboxes(new_id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
+        let emails = new.emails_in_mailbox(inbox.unwrap().id, 10).await.unwrap();
+        assert_eq!(emails.iter().map(|email| email.subject.as_str()).collect::<Vec<_>>(), ["Klein"]);
     }
 
     #[test]

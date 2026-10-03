@@ -1157,6 +1157,26 @@ impl Store {
     }
 
     /// Mailboxes that were running when the server stopped go back in the queue.
+    /// At the start of the server: mailboxes still marked running were cut off by a crash, not a
+    /// clean stop (that requeues them on its way out). They go on, unless this happened
+    /// [`crate::INTERRUPTIONS`] times in a row: then they are paused with `interrupted`, so a
+    /// mailbox that brings the server down cannot do so in a loop (security review 0.22 M-1).
+    /// Returns how many go on and how many were paused.
+    pub async fn recover_interrupted_moves(&self) -> Result<(usize, usize)> {
+        self.write(|tx| {
+            tx.execute("UPDATE move_mailboxes SET interrupted = interrupted + 1 WHERE state = 'running'", [])?;
+            let paused = tx.execute(
+                "UPDATE move_mailboxes SET state = 'paused', error = 'interrupted',
+                     error_detail = 'the server stopped during this mailbox several times in a row', interrupted = 0
+                 WHERE state = 'running' AND interrupted >= ?1",
+                [crate::INTERRUPTIONS],
+            )?;
+            let queued = tx.execute("UPDATE move_mailboxes SET state = 'queued' WHERE state = 'running'", [])?;
+            Ok((queued, paused))
+        })
+        .await
+    }
+
     pub async fn requeue_running_moves(&self) -> Result<usize> {
         self.write(|tx| Ok(tx.execute("UPDATE move_mailboxes SET state = 'queued' WHERE state = 'running'", [])?)).await
     }
@@ -1247,6 +1267,8 @@ impl Store {
                 )
                 .optional()?;
             let Some((move_id, final_round, sync_minutes)) = row else { return Ok(()) };
+            // The turn came to an end, so the server did not go down during it.
+            tx.execute("UPDATE move_mailboxes SET interrupted = 0 WHERE id = ?1", [id])?;
             match turn {
                 MoveTurn::Continue => {
                     tx.execute("UPDATE move_mailboxes SET state = 'queued' WHERE id = ?1", [id])?;
@@ -1480,6 +1502,31 @@ mod tests {
         }
         // A finished mailbox may be moved again later.
         store.create_move(new_move(MoveKind::Mailbox), vec![mailbox(mini, "mini@example.net")]).await.unwrap();
+    }
+
+    /// Security review 0.22 M-1: a mailbox the server keeps going down on is paused at the third
+    /// start in a row that finds it running, instead of starting the crash again.
+    #[tokio::test]
+    async fn a_mailbox_the_server_keeps_going_down_on_is_paused() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        store.create_move(new_move(MoveKind::Mailbox), vec![mailbox(mini, "mini@example.net")]).await.unwrap();
+        let id = store.take_move_mailbox().await.unwrap().unwrap().id;
+        assert_eq!(store.recover_interrupted_moves().await.unwrap(), (1, 0));
+        // A turn that ends forgets the crashes before it.
+        store.take_move_mailbox().await.unwrap().unwrap();
+        store.finish_move_turn(id, MoveTurn::Continue, false).await.unwrap();
+        for round in 1..=crate::INTERRUPTIONS {
+            assert_eq!(store.take_move_mailbox().await.unwrap().unwrap().id, id);
+            let expected = if round < crate::INTERRUPTIONS { (1, 0) } else { (0, 1) };
+            assert_eq!(store.recover_interrupted_moves().await.unwrap(), expected, "start {round}");
+        }
+        let paused = store.move_mailbox(None, id).await.unwrap().unwrap();
+        assert_eq!((paused.state, paused.error.as_str()), (MoveMailboxState::Paused, "interrupted"));
+        assert!(store.take_move_mailbox().await.unwrap().is_none());
+        // A clean stop is no crash.
+        assert_eq!(store.recover_interrupted_moves().await.unwrap(), (0, 0));
     }
 
     #[tokio::test]

@@ -34,15 +34,13 @@ use uwumail_store::{
     StoreError,
 };
 
-use crate::import::imap::{Connection, Fetched, Source, Token, folders, parse_fetch, quoted};
+use crate::import::imap::{Connection, Fetched, MAX_LITERAL, Source, Token, fetch_chunk, folders, plan_fetch, quoted};
 
 /// How often the list of fetch accounts is looked at. Each account has its own interval on top.
 const TICK: Duration = Duration::from_secs(30);
 /// At most this many messages from one folder per run, so a mailbox with a backlog is worked
 /// through in portions instead of holding the connection for an hour.
 const PER_RUN: usize = 200;
-/// How many messages are asked for at once.
-const BATCH: usize = 20;
 /// How long one account's run may take before it is cut short and continued next time.
 const RUN_LIMIT: Duration = Duration::from_secs(300);
 
@@ -370,14 +368,18 @@ async fn take_new(
     let mut taken = 0;
     let mut deleted = false;
     let mut held = None;
-    'batches: for batch in uids.chunks(BATCH) {
-        let range = batch.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-        let responses = connection.command(&format!("UID FETCH {range} (UID FLAGS INTERNALDATE BODY.PEEK[])")).await?;
-        let mut messages: Vec<Fetched> = responses.iter().filter_map(parse_fetch).collect();
+    // Fetched in portions by size, within the budget all imports share (security review 0.22 M-1).
+    let plan = plan_fetch(connection, &uids, MAX_LITERAL).await?;
+    for uid in &plan.too_large {
+        tracing::warn!(address = %account.address, folder, uid, "too large to fetch, left at the provider");
+    }
+    'batches: for chunk in &plan.chunks {
+        let batch: Vec<u32> = chunk.iter().map(|(uid, _)| *uid).collect();
+        let (mut messages, _permit) = fetch_chunk(connection, chunk).await?;
         messages.sort_by_key(|message| message.uid);
         // A UID the search named but the answer left out would be passed over for good once a later
         // one moves the folder on. Nothing can be done about it from here, but it is written down.
-        for uid in batch {
+        for uid in &batch {
             if !messages.iter().any(|message| message.uid == *uid && message.body.is_some()) {
                 tracing::warn!(address = %account.address, folder, uid, "the provider did not hand this message out");
             }
@@ -504,13 +506,16 @@ async fn take_backlog(
     let mut deleted = false;
     // Whether every message of this portion was dealt with.
     let result: anyhow::Result<bool> = async {
-        for batch in uids.chunks(BATCH) {
-            let range = batch.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-            let responses =
-                connection.command(&format!("UID FETCH {range} (UID FLAGS INTERNALDATE BODY.PEEK[])")).await?;
+        let plan = plan_fetch(connection, &uids, MAX_LITERAL).await?;
+        for uid in &plan.too_large {
+            tracing::warn!(address = %account.address, folder, uid, "too large to fetch, left at the provider");
+        }
+        for chunk in &plan.chunks {
+            let batch: Vec<u32> = chunk.iter().map(|(uid, _)| *uid).collect();
+            let (fetched, _permit) = fetch_chunk(connection, chunk).await?;
             let mut by_uid: std::collections::HashMap<u32, Fetched> =
-                responses.iter().filter_map(parse_fetch).map(|fetched| (fetched.uid, fetched)).collect();
-            for uid in batch {
+                fetched.into_iter().map(|fetched| (fetched.uid, fetched)).collect();
+            for uid in &batch {
                 let fetched = by_uid.remove(uid);
                 let gone = fetched
                     .as_ref()
