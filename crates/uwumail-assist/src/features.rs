@@ -2139,6 +2139,7 @@ mod tests {
             rules: None,
             detector: None,
             learn_senders: true,
+            previous_description: None,
             classifier: true,
             base: None,
             auto: true,

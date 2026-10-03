@@ -42,7 +42,10 @@ English otherwise. The language is the person's (`preferences.language`), else t
 - **Adopted labels.** A label the person had before with the same meaning (`Rechnungen`,
   `Invoices`, `Bestellungen & Versand`, `Termine`, `Persönlich` …) becomes the base label instead of
   a second one: it keeps its name, keyword and color and gets the definition; a detector that is
-  the base label's own is dropped.
+  the base label's own is dropped. A description the person had written is not lost: it is kept
+  as `previousDescription` (shown over JMAP) and goes to the model as a hint next to the
+  definition. To get the old label back, delete the base label and create an own one with that
+  description.
 - **Switched one by one.** `auto: false` keeps a label from being put on by itself (by any of the
   ways below or the model); the person may still put it on by hand. The definition can't be
   changed, the name and color can. A deleted base label stays deleted until it is made again

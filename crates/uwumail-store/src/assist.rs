@@ -243,6 +243,9 @@ pub struct AssistLabel {
     pub base: Option<String>,
     /// Put on by itself; off, only by hand.
     pub auto: bool,
+    /// For a label of the person's that became a base label because of its name: the description
+    /// they had written before.
+    pub previous_description: Option<String>,
 }
 
 /// What is written of a label; the caller checked `rules` and `detector`.
@@ -589,7 +592,8 @@ pub(crate) fn stop_personal_assist(tx: &Connection, account_id: i64) -> Result<(
 }
 
 pub(crate) const LABEL_COLUMNS: &str =
-    "id, name, description, keyword, color, created_at, rules, detector, learn_senders, classifier, base, auto";
+    "id, name, description, keyword, color, created_at, rules, detector, learn_senders, classifier, base, auto,
+     previous_description";
 
 pub(crate) fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
     let rules: Option<String> = row.get(6)?;
@@ -606,6 +610,7 @@ pub(crate) fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
         classifier: row.get(9)?,
         base: row.get(10)?,
         auto: row.get(11)?,
+        previous_description: row.get(12)?,
     })
 }
 

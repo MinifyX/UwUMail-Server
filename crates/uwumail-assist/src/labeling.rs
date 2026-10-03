@@ -58,9 +58,18 @@ fn prompt_label(label: &AssistLabel) -> PromptLabel {
         Some(base) => {
             let language = base_label_language(base, label);
             let text = base.text(language);
+            // What the person had written for the label before it became a base label: a hint that
+            // says what they mean by it, the definition still decides (security review LABELS22-L2).
+            let description = match label.previous_description.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+                Some(own) => {
+                    let own: String = own.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(500).collect();
+                    format!("{} The person's own words for this label (a hint): \"{own}\"", text.description)
+                }
+                None => text.description.to_owned(),
+            };
             PromptLabel {
                 name: label.name.clone(),
-                description: text.description.to_owned(),
+                description,
                 examples: text.examples.iter().map(|e| e.to_string()).collect(),
                 counter_examples: text.counter_examples.iter().map(|e| e.to_string()).collect(),
             }
@@ -365,5 +374,36 @@ impl Assist {
                 })
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Security review 0.22 LABELS22-L2: what the person had written for an adopted label goes to
+    /// the model as a hint next to the base definition.
+    #[test]
+    fn an_adopted_label_brings_the_persons_words_as_a_hint() {
+        let label = AssistLabel {
+            id: 1,
+            name: "Rechnung".into(),
+            description: Base::Invoice.text("de").description.into(),
+            keyword: "rechnung".into(),
+            color: None,
+            created_at: 0,
+            rules: None,
+            detector: None,
+            learn_senders: true,
+            classifier: true,
+            base: Some("invoice".into()),
+            auto: true,
+            previous_description: Some("Alles vom\nSteuerberater".into()),
+        };
+        let prompt = prompt_label(&label);
+        assert!(prompt.description.starts_with(Base::Invoice.text("de").description));
+        assert!(prompt.description.ends_with("(a hint): \"Alles vom Steuerberater\""), "{}", prompt.description);
+        let plain = prompt_label(&AssistLabel { previous_description: None, ..label });
+        assert_eq!(plain.description, Base::Invoice.text("de").description);
     }
 }

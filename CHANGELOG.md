@@ -153,6 +153,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   addresses (migration 0072, filled once at start) is kept with every card write. A sender counts
   as known only by exactly a card's address (not a prefix of one) and only when authentication
   backs the From address.
+- **An adopted label keeps your own description (LABELS22-L2).** A label of yours that becomes a
+  base label because of its name keeps the description you had written as `previousDescription`
+  (migration 0073, shown in `AssistLabel/get`); the model gets it as a hint next to the definition.
 
 ## 0.21.2
 

@@ -87,20 +87,27 @@ fn base_language(conn: &Connection, account_id: i64, fallback: &str) -> Result<S
 /// label yet. Answers its id.
 pub(crate) fn make_base_label(tx: &Transaction<'_>, account_id: i64, base: Base, language: &str) -> Result<i64> {
     let text = base.text(language);
-    let mut stmt =
-        tx.prepare("SELECT id, name, detector FROM assist_labels WHERE account_id = ?1 AND base IS NULL ORDER BY id")?;
-    let own: Vec<(i64, String, Option<String>)> =
-        stmt.query_map([account_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?.collect::<Result<_, _>>()?;
+    let mut stmt = tx.prepare(
+        "SELECT id, name, detector, description FROM assist_labels WHERE account_id = ?1 AND base IS NULL ORDER BY id",
+    )?;
+    let own: Vec<(i64, String, Option<String>, String)> = stmt
+        .query_map([account_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?
+        .collect::<Result<_, _>>()?;
     drop(stmt);
-    if let Some((id, _, detector)) = own.iter().find(|(_, name, _)| Base::named(name) == Some(base)) {
+    if let Some((id, _, detector, description)) = own.iter().find(|(_, name, _, _)| Base::named(name) == Some(base)) {
         // Adopted: name, keyword and color stay; the definition is the base label's, and a detector
-        // of its own is kept unless it is the base label's anyway.
+        // of its own is kept unless it is the base label's anyway. A description the person wrote
+        // themselves is kept aside, not lost (security review 0.22 LABELS22-L2).
         let detector = detector.clone().filter(|detector| detector != base.detector().as_str());
+        let written = description.trim();
+        let own_words = (!written.is_empty()
+            && ["de", "en"].iter().all(|language| base.text(language).description != written))
+        .then(|| written.to_owned());
         tx.execute(
             "UPDATE assist_labels SET base = ?2, description = ?3, detector = ?4, base_written = ?3,
-                 base_language = ?5
+                 base_language = ?5, previous_description = coalesce(?6, previous_description)
              WHERE id = ?1",
-            params![id, base.as_str(), text.description, detector, language],
+            params![id, base.as_str(), text.description, detector, language, own_words],
         )?;
         return Ok(*id);
     }
@@ -1178,5 +1185,34 @@ mod tests {
         assert_eq!(description(invoice), Base::Invoice.text("de").description, "in the language it was written in");
         assert_eq!(description(work), "eigene Worte");
         assert!(!labels.iter().any(|l| l.base.as_deref() == Some("shipping")), "deleted stays deleted");
+    }
+
+    /// Security review 0.22 LABELS22-L2: a label of the person's that becomes a base label because
+    /// of its name keeps the description they had written, aside; an empty one or the base text
+    /// itself is nothing to keep.
+    #[tokio::test]
+    async fn an_adopted_label_keeps_the_persons_own_description() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "leni@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let leni = store.create_account(account).await.unwrap().id;
+        let own = "Alles vom Steuerberater und vom Finanzamt";
+        let invoice = store.create_assist_label(leni, "Rechnung".into(), own.into(), None).await.unwrap().id;
+        let news = store.create_assist_label(leni, "Newsletter".into(), String::new(), None).await.unwrap().id;
+        store.ensure_base_labels(leni, "de").await.unwrap();
+        let labels = store.assist_labels(leni).await.unwrap();
+        let label = |id: i64| labels.iter().find(|l| l.id == id).unwrap().clone();
+        assert_eq!(label(invoice).base.as_deref(), Some("invoice"));
+        assert_eq!(label(invoice).description, Base::Invoice.text("de").description);
+        assert_eq!(label(invoice).previous_description.as_deref(), Some(own), "kept, not lost");
+        assert_eq!(label(news).base.as_deref(), Some("newsletter"));
+        assert_eq!(label(news).previous_description, None, "nothing written, nothing kept");
     }
 }

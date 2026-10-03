@@ -226,6 +226,7 @@ fn label_json(label: &AssistLabel, counts: LabelCounts) -> Value {
         "classifier": label.classifier,
         "base": label.base,
         "auto": label.auto,
+        "previousDescription": label.previous_description,
         "totalEmails": counts.total,
         "unreadEmails": counts.unread,
         "examples": counts.examples,
@@ -897,6 +898,8 @@ advertising or null",
             "classifier" => write.classifier = boolean(value, "classifier")?,
             "auto" => write.auto = boolean(value, "auto")?,
             "base" if before.is_some_and(|(b, _)| value.as_str() == b.base.as_deref()) => {}
+            "previousDescription"
+                if before.is_some_and(|(b, _)| value.as_str() == b.previous_description.as_deref()) => {}
             "id" if before.is_some() => {}
             "keyword" if before.is_some_and(|(b, _)| value.as_str() == Some(b.keyword.as_str())) => {}
             "totalEmails" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.total)) => {}
