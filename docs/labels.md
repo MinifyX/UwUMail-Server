@@ -125,7 +125,9 @@ the model gets them as they are and is told to rely on them:
   a **one-time code** (right after `Code`, `PIN`, `TAN`, `Sicherheitscode` …);
 - **sales words** (discounts, `% off`, coupons, "nur heute", review requests …), **account words**
   in the subject (password, sign-in, verify, terms …), a **casual** greeting ("Hi", "LG", "Cheers")
-  and a **formal** one ("Sehr geehrte", "Kind regards").
+  and a **formal** one ("Sehr geehrte", "Kind regards");
+- an **order word** in the subject, an **invoice word** in the subject (or a PDF named like an
+  invoice), and whether the mail went **to the sender's own address**.
 
 A mail is a **mass mail** when it has List-Unsubscribe, is sent in bulk or comes from a marketing
 sender; it is **written by a person** when the sender type is `person` and it is no mass mail, not
@@ -304,9 +306,11 @@ data, never orders). The model gives a reason first and then `"fits": "yes"`, `"
 
 A yes counts **0.85** (`AI_YES`): enough for a main label, not for a second one. With a hint of at
 least 0.5 from another way it counts **0.92** (`AI_SUPPORTED`). Then the facts may still rule it out
-(`ruled_out`): `personal` needs a mail written by a person and not from the person's domain;
-`work` no mass mail, nothing automatic, no no-reply or marketing sender and no role address
-(`info@` …) the person does not know; `newsletter` and `advertising` a mass mail that is not to a
+(`ruled_out`): `personal` needs a mail written by a person, not from the person's domain and not
+to the sender's own address;
+`work` no mass mail, nothing automatic, no no-reply or marketing sender, no role address
+(`info@` …) the person does not know and no mail to the sender's own address; `invoice` no order
+confirmation (an order word in the subject) without an invoice word or number; `newsletter` and `advertising` a mass mail that is not to a
 discussion list; `account` no mail written by a person, and an account word in the subject or a
 one-time code (notices of apps and devices are no account mail); `shipping` no mail a person wrote
 from a freemail address; a bounce gets nothing. A
