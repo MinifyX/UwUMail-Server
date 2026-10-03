@@ -116,9 +116,15 @@ export function isBusy(move: MoveInfo): boolean {
   return (move.state === "active" || move.state === "finishing") && move.summary.queued + move.summary.running > 0;
 }
 
-/** A cell for CSV: quoted when it holds the delimiter, a quote or a line break. */
-function cell(value: string): string {
-  return /[;"\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+/**
+ * A cell for CSV: quoted when it holds the delimiter, a quote or a line break. A cell a spreadsheet
+ * would read as a formula (starting with `=`, `+`, `-`, `@`, a tab or a carriage return) gets a
+ * leading `'` and is quoted, so a name from the customer's list cannot run one next to the live
+ * password links (security review 0.22 MOV-2).
+ */
+export function csvCell(value: string): string {
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return safe !== value || /[;"\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 /** The password links as a CSV file a spreadsheet opens: one line per mailbox. */
@@ -128,10 +134,10 @@ export function linksCsv(
   headers: string[],
   expires: (at: number) => string,
 ): string {
-  const lines = [headers.map(cell).join(";")];
+  const lines = [headers.map(csvCell).join(";")];
   for (const link of links) {
     lines.push(
-      [link.address, link.name, link.oldAddress, `${origin}${link.path}`, expires(link.expiresAt)].map(cell).join(";"),
+      [link.address, link.name, link.oldAddress, `${origin}${link.path}`, expires(link.expiresAt)].map(csvCell).join(";"),
     );
   }
   // A byte order mark, so spreadsheets read umlauts right.

