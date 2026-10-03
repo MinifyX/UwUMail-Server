@@ -301,7 +301,12 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
     let mut found = Vec::new();
     let from_domain = input.from_address.and_then(domain_of);
     let from_site = from_domain.as_deref().map(site);
-    let from_brand = from_site.as_deref().and_then(own_brand);
+    // A regional prefix domain (`sparkasse-musterstadt.de`) is anybody's to register under `.de`
+    // and `.at`. It only counts as the brand's own when the From is authenticated, and even then
+    // it vouches for no credential request (security review 0.22 R2-L1).
+    let from_owned = from_site.as_deref().and_then(own_brand_by);
+    let from_by_prefix = from_owned.is_some_and(|(_, prefix)| prefix);
+    let from_brand = from_owned.filter(|(_, prefix)| !prefix || input.from_authenticated).map(|(brand, _)| brand);
 
     if let Some(from_site) = &from_site {
         if from_brand.is_none() {
@@ -406,10 +411,14 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
         });
         let own = |link: &SeenLink| match &link.target {
             LinkTarget::Ip(_) => false,
+            // A prefix domain has no site of its own that makes asking for a login harmless: a
+            // new registration links to itself as readily as the real regional bank does.
+            LinkTarget::Host(_) if from_by_prefix => false,
             LinkTarget::Host(host) => {
                 let target = site(host);
                 if claims_brand {
-                    own_brand(&target).is_some()
+                    // Only a brand's exact sites, never a prefix domain anybody can register.
+                    own_brand_by(&target).is_some_and(|(_, prefix)| !prefix)
                 } else {
                     from_site.as_deref() == Some(target.as_str())
                         || from_site.as_deref().is_some_and(|from| same_brand(from, &target))
@@ -920,6 +929,7 @@ mod tests {
         let input = Input {
             from_address: Some("info@sparkasse-musterstadt.de"),
             links: vec![link(Some("www.sparkasse.de"), "sparkasse-musterstadt.de")],
+            from_authenticated: true,
             ..Input::default()
         };
         assert_eq!(rules(&input), ["BRAND_LINK_TEXT"]);
@@ -931,6 +941,48 @@ mod tests {
             ..Input::default()
         };
         assert_eq!(rules(&input), ["BRAND_IN_FROM_DOMAIN", "CREDENTIAL_REQUEST"]);
+    }
+
+    /// Security review 0.22 R2-L1: anybody can register `sparkasse-<anything>.de`. A prefix domain
+    /// counts as the bank's own only for an authenticated From, and never vouches for a request
+    /// for a login or data.
+    #[test]
+    fn regional_prefixes_hide_neither_brand_nor_credential_findings() {
+        let from = "service@sparkasse-sicherheit.de";
+        let asks = "Bitte Konto verifizieren.";
+        // Unauthenticated: the brand findings stand, and links to the domain itself are no excuse.
+        let input = Input {
+            from_address: Some(from),
+            from_name: Some("Sparkasse"),
+            subject: "Sparkasse: Konto verifizieren",
+            text: asks,
+            links: vec![link(None, "sparkasse-sicherheit.de")],
+            ..Input::default()
+        };
+        assert_eq!(
+            rules(&input),
+            ["BRAND_IN_FROM_DOMAIN", "BRAND_IN_FROM_NAME", "BRAND_IN_SUBJECT", "CREDENTIAL_REQUEST"]
+        );
+        let input = Input { from_address: Some("info@volksbank-hilfe.at"), ..input };
+        assert!(rules(&input).contains(&"CREDENTIAL_REQUEST"), "{:?}", rules(&input));
+        // Authenticated (a fresh registration can publish SPF, DKIM and DMARC too): the bank's name
+        // is not held against it, a credential request still is.
+        let input = Input { from_address: Some(from), from_authenticated: true, ..input };
+        assert_eq!(rules(&input), ["CREDENTIAL_REQUEST"]);
+        // A real regional bank's ordinary mail, authenticated, stays clean.
+        let input = Input {
+            from_address: Some("info@sparkasse-musterstadt.de"),
+            from_name: Some("Sparkasse Musterstadt"),
+            subject: "Ihr Kontoauszug ist da",
+            text: "Ihr neuer Kontoauszug liegt im Postfach.",
+            links: vec![link(None, "sparkasse-musterstadt.de")],
+            from_authenticated: true,
+            ..Input::default()
+        };
+        assert!(rules(&input).is_empty(), "{:?}", rules(&input));
+        // Unauthenticated, the same mail only gets the hint that the name is in a domain.
+        let input = Input { from_authenticated: false, ..input };
+        assert_eq!(rules(&input), ["BRAND_IN_FROM_DOMAIN", "BRAND_IN_FROM_NAME"]);
     }
 
     #[test]
