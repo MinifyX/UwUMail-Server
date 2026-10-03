@@ -181,6 +181,7 @@ fn quoted_printable(text: &str) -> String {
         }
         let bytes = line.as_bytes();
         let mut width = 0;
+        let mut after_dash = false;
         for (i, &byte) in bytes.iter().enumerate() {
             let last = i + 1 == bytes.len();
             let plain = (byte == b' ' || byte == b'\t') && !last || (33..=126).contains(&byte) && byte != b'=';
@@ -189,11 +190,14 @@ fn quoted_printable(text: &str) -> String {
                 out.push_str("=\r\n");
                 width = 0;
             }
-            // No encoded line, after a hard or a soft line break, starts with `-`: so none can be
-            // read as a boundary of an enclosing multipart (security review 0.22 R2-SIG-1).
-            if width == 0 && byte == b'-' {
+            // No encoded line, after a hard or a soft line break, starts with `-`, and no two dashes
+            // ever stand together in the encoded text: so nothing can be read as a boundary of an enclosing multipart,
+            // not even by a parser that looks for `--boundary` in the middle of a line (security
+            // review 0.22 R2-SIG-1, R3-INFO-1).
+            if byte == b'-' && (width == 0 || after_dash) {
                 piece = "=2D".to_owned();
             }
+            after_dash = piece == "-";
             out.push_str(&piece);
             width += piece.len();
         }
@@ -321,17 +325,13 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
         // (security review 0.22 SIG-1, R2-SIG-1), so such text is not written as 7bit.
         // Quoted-printable writes a leading `-` as `=2D`, after soft line breaks too; should a line
         // of the encoded text start with `--` all the same, base64 cannot hold one.
-        let boundary_like = body.split("\r\n").any(|line| line.starts_with("--"));
+        let boundary_like = body.contains("--");
         let short_ascii = body.is_ascii() && body.split("\r\n").all(|line| line.len() <= 998);
         let (encoding, mut encoded) = if short_ascii && !boundary_like {
             ("7bit", body)
         } else {
             let encoded = quoted_printable(&body);
-            if encoded.split("\r\n").any(|line| line.starts_with("--")) {
-                ("base64", base64_lines(&body))
-            } else {
-                ("quoted-printable", encoded)
-            }
+            if encoded.contains("--") { ("base64", base64_lines(&body)) } else { ("quoted-printable", encoded) }
         };
         let mime = &message.parts[target.part];
         let (start, body_start, end) =
@@ -636,11 +636,19 @@ mod tests {
     fn a_dash_dash_signature_stays_quoted_printable() {
         let out = added("From: mini@example.org\n\nHallo\n-- \nMini\n");
         assert!(out.contains("Content-Transfer-Encoding: quoted-printable"), "{out}");
-        assert!(out.contains("\r\n=2D- \r\nMini") || out.contains("\r\n=2D-=20\r\nMini"), "{out}");
+        assert!(out.contains("\r\n=2D-=20\r\nMini"), "{out}");
         let (text, _) = texts(&out);
         assert!(text.unwrap().starts_with("Hallo\r\n-- \r\nMini\r\n\r\nMustermann GmbH"));
         let encoded = quoted_printable(&format!("{}--x\r\n-a", "ä".repeat(30)));
         assert!(encoded.split("\r\n").all(|line| !line.starts_with('-')), "{encoded}");
+        // Not in the middle of a line either, where some parsers look for a boundary too
+        // (security review 0.22 R3-INFO-1); the text reads the same.
+        let text = "Grüße x--m und ---\r\n- a -";
+        let encoded = quoted_printable(text);
+        assert!(!encoded.contains("--"), "{encoded}");
+        assert_eq!(String::from_utf8(quoted_printable_decode(encoded.as_bytes()).unwrap()).unwrap(), text);
+        let out = added("From: mini@example.org\n\nsiehe x--m\n");
+        assert!(out.contains("Content-Transfer-Encoding: quoted-printable") && out.contains("x-=2Dm"), "{out}");
     }
 
     #[test]

@@ -73,9 +73,9 @@ Changes are recorded in the audit log as `domain.signature`
   a text footer the HTML is turned into text.
 - A changed part is written anew as UTF-8: `7bit` when it is plain ASCII with short lines, else
   quoted-printable, whatever it was before (8bit, quoted-printable, base64, ISO-8859-x, Windows
-  code pages). Text with a line starting with `--` (a `-- ` signature, say) is always written
+  code pages). Text holding `--` anywhere (a `-- ` signature, say) is always written
   as quoted-printable, which writes a `-` at the start of any encoded line (also after a soft
-  line break) as `=2D`, so no text (nor a footer or a name with line breaks) can ever turn into a
+  line break) and any `-` right after another as `=2D`, so the encoded text holds no `--` at all, and no text (nor a footer or a name with line breaks) can ever turn into a
   MIME boundary of the message. After the change the message must parse into the same structure
   with the content of every other part unchanged, else it is sent without the footer. A part in a charset the server cannot read back is left alone. Every other
   byte of the message stays as it was.
