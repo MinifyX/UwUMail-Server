@@ -277,3 +277,17 @@ async fn similar_mails_decide_by_embeddings_without_asking_the_model() {
     let today = rig.assist.today(&rig.mia).await.unwrap();
     assert!(today.iter().all(|usage| usage.provider_id != embedder), "embeddings are no provider to choose");
 }
+
+#[tokio::test]
+async fn a_label_taken_off_a_senders_mail_is_not_asked_about_again() {
+    let (rig, _, _) = labelled_rig().await;
+    rig.store.ensure_base_labels(rig.mia.id, "en").await.unwrap();
+    let first = rig.deliver(&rig.mia, NEWSLETTER).await;
+    rig.store.update_emails(rig.mia.id, vec![keyword(first, "newsletter", true)]).await.unwrap();
+    rig.store.update_emails(rig.mia.id, vec![keyword(first, "newsletter", false)]).await.unwrap();
+    let second = rig.deliver(&rig.mia, &NEWSLETTER.replace("news-1@", "news-2@")).await;
+    rig.fake.push(picks(json!({ "labels": [{ "name": "Newsletter", "reason": "News", "fits": "yes" }] })));
+    assert!(rig.assist.label_email(&rig.mia, second).await.unwrap().is_empty());
+    let user = rig.fake.seen()[0].body["messages"][1]["content"].as_str().unwrap().to_owned();
+    assert!(!user.contains("- Newsletter:"), "{user}");
+}

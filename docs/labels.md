@@ -294,6 +294,7 @@ The label goes on when `probability ≥ 0.99` and at least 3 of the summed token
 The worker asks the model only about the labels in doubt (`ask_about`):
 
 - none when two labels are sure already (or on the mail);
+- never one the person took off a mail of the same sender by hand;
 - with a main label sure or on the mail, only the person's own labels (the base labels' detectors
   have had their say), never one excluded by a label there;
 - otherwise every label with `auto` on that is not on the mail.

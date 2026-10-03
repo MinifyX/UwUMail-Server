@@ -141,7 +141,11 @@ impl Assist {
             }
         }
         let sure = choose(&labels, &present, candidates.clone());
-        let asked = ask_about(&labels, &present, &candidates);
+        let mut asked = ask_about(&labels, &present, &candidates);
+        // A label the person took off this sender's mail by hand is not asked about either.
+        if !mail.from.is_empty() {
+            asked.retain(|id| knowledge.senders.get(id).is_none_or(|count| *count >= 0));
+        }
         let mut from_model = Vec::new();
         let mut effective = None;
         if !asked.is_empty() {

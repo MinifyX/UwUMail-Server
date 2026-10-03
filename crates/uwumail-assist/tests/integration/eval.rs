@@ -224,11 +224,13 @@ fn base_id(base: Base) -> i64 {
     Base::ALL.iter().position(|b| *b == base).unwrap() as i64 + 1
 }
 
-/// 0.22: the cheap ways, `similar` mails when given, the model only for what they leave in doubt.
+/// 0.22: the cheap ways, `similar` mails when given, the model only for what they leave in doubt;
+/// `blocked` labels per case were taken off a mail of the same sender by hand before.
 async fn after(
     eval: &Eval,
     cases: &[Case],
     similar: &[HashMap<i64, uwumail_labels::Likeness>],
+    blocked: &[Vec<i64>],
     model: bool,
 ) -> Results {
     let labels: Vec<Label<'static>> = base_labels();
@@ -248,8 +250,12 @@ async fn after(
         .map(|(index, case)| {
             let (labels, prompt_labels) = (&labels, &prompt_labels);
             async move {
-                let knowledge =
-                    Knowledge { similar: similar.get(index).cloned().unwrap_or_default(), ..Default::default() };
+                let blocked = blocked.get(index).cloned().unwrap_or_default();
+                let knowledge = Knowledge {
+                    similar: similar.get(index).cloned().unwrap_or_default(),
+                    senders: blocked.iter().map(|id| (*id, -1)).collect(),
+                    ..Default::default()
+                };
                 let candidates: Vec<Decision> = uwumail_labels::candidates(labels, &case.mail, &[], &knowledge, &[]);
                 let asked = if model { ask_about(labels, &[], &candidates) } else { Vec::new() };
                 let mut from_model = Vec::new();
@@ -270,6 +276,9 @@ async fn after(
                     let prompt = prompts::labels(&mail_text(case), &list, &facts.for_prompt(), &hints, &[]);
                     if let Some(answer) = eval.ask(&prompt).await {
                         from_model = ai_candidates(labels, &facts, &asked, &verdicts(&answer, &names), &candidates);
+                        // The server leaves these out of the prompt; here the same prompt is
+                        // asked (and cached) and their yes dropped.
+                        from_model.retain(|d| !blocked.contains(&d.label_id));
                     }
                 }
                 let chosen = choose(labels, &[], merge(candidates, from_model));
@@ -322,21 +331,49 @@ async fn similar_half(eval: &Eval, cases: &[Case]) -> (Vec<Case>, Vec<HashMap<i6
     (tests, likeness)
 }
 
+/// The labels each case would have blocked had the person taken every wrong label off the first
+/// mail of a sender that got it (in the corpus' order): what one correction per sender does.
+fn corrected_once(cases: &[Case], results: &Results) -> Vec<Vec<i64>> {
+    let mut first_wrong: HashMap<(String, i64), usize> = HashMap::new();
+    for (index, (case, (_, truth, predicted))) in cases.iter().zip(results).enumerate() {
+        for base in predicted.iter().filter(|base| !truth.contains(base)) {
+            first_wrong.entry((case.mail.from.clone(), base_id(*base))).or_insert(index);
+        }
+    }
+    cases
+        .iter()
+        .enumerate()
+        .map(|(index, case)| {
+            first_wrong
+                .iter()
+                .filter(|((from, _), first)| *from == case.mail.from && **first < index && !from.is_empty())
+                .map(|((_, label), _)| *label)
+                .collect()
+        })
+        .collect()
+}
+
 async fn measure(eval: &Eval, name: &str, cases: &[Case]) {
     score(&format!("{name}: 0.21, model only"), &before(eval, cases).await);
-    score(&format!("{name}: 0.22, no model"), &after(eval, cases, &[], false).await);
-    score(&format!("{name}: 0.22, model in doubt"), &after(eval, cases, &[], true).await);
+    score(&format!("{name}: 0.22, no model"), &after(eval, cases, &[], &[], false).await);
+    let in_doubt = after(eval, cases, &[], &[], true).await;
+    score(&format!("{name}: 0.22, model in doubt"), &in_doubt);
+    let blocked = corrected_once(cases, &in_doubt);
+    score(
+        &format!("{name}: 0.22, model in doubt, each wrong sender corrected once"),
+        &after(eval, cases, &[], &blocked, true).await,
+    );
     if eval.embed.is_some() {
         let (half, likeness) = similar_half(eval, cases).await;
         score(&format!("{name} (odd half): 0.21, model only"), &before(eval, &half).await);
-        score(&format!("{name} (odd half): 0.22, model in doubt"), &after(eval, &half, &[], true).await);
+        score(&format!("{name} (odd half): 0.22, model in doubt"), &after(eval, &half, &[], &[], true).await);
         score(
             &format!("{name} (odd half): 0.22, similar mails, no model"),
-            &after(eval, &half, &likeness, false).await,
+            &after(eval, &half, &likeness, &[], false).await,
         );
         score(
             &format!("{name} (odd half): 0.22, similar mails, model in doubt"),
-            &after(eval, &half, &likeness, true).await,
+            &after(eval, &half, &likeness, &[], true).await,
         );
     }
 }
