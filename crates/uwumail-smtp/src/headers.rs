@@ -153,8 +153,8 @@ pub fn authserv_id(value: &str) -> Option<String> {
 }
 
 /// An `Authentication-Results` value as its `;` parts, each as its words, read the way RFC 8601
-/// reads it: comments in parentheses (nested too) are left out, and a quoted string is part of a
-/// word without its quotes, so a quoted envelope sender (`"a;dmarc=pass"@attacker.example`) can
+/// reads it: words end only at ASCII space, tab, CR or LF, comments in parentheses (nested too)
+/// are left out, and a quoted string is part of a word without its quotes, so a quoted envelope sender (`"a;dmarc=pass"@attacker.example`) can
 /// neither end a part nor start a result of its own.
 ///
 /// One pass, part by part, so a value of any length costs time in its length and memory in one
@@ -245,7 +245,10 @@ impl Iterator for AuthResultsParts<'_> {
                         end_word(&mut part, &mut overflow, &mut word, &mut too_long);
                         return Some(if overflow { Vec::new() } else { part });
                     }
-                    c if c.is_whitespace() => end_word(&mut part, &mut overflow, &mut word, &mut too_long),
+                    // Only the whitespace of RFC 8601's CFWS: a DKIM `d=` may carry a no-break or
+                    // other Unicode space (mail-auth leaves them in), and `victim.example<U+00A0>x`
+                    // must stay one word, never read as `victim.example` (security review 0.22 R4 I-2).
+                    ' ' | '\t' | '\r' | '\n' => end_word(&mut part, &mut overflow, &mut word, &mut too_long),
                     c => push(&mut word, &mut too_long, c),
                 }
             }
@@ -370,6 +373,20 @@ mod tests {
     }
 
     /// Security review 0.22 R3-L1: many parts or a very long word before SPF and DMARC hide neither.
+    /// Security review 0.22 R4 I-2: only ASCII whitespace ends a word.
+    #[test]
+    fn unicode_spaces_do_not_split_a_word() {
+        for space in ['\u{a0}', '\u{2002}', '\u{3000}'] {
+            let value = format!("mx.example.org; dkim=pass header.d=victim.example{space}x.attacker.example");
+            let parts: Vec<Vec<String>> = auth_results_parts(&value).collect();
+            assert_eq!(parts[1], ["dkim=pass".to_owned(), format!("header.d=victim.example{space}x.attacker.example")]);
+        }
+        let parts: Vec<Vec<String>> =
+            auth_results_parts("mx.example.org;\tspf=pass\r\n smtp.mailfrom=a.example").collect();
+        assert_eq!(parts[1], ["spf=pass", "smtp.mailfrom=a.example"]);
+        assert_eq!(authserv_id("mx.example.org\u{a0}x;spf=pass").as_deref(), Some("mx.example.org\u{a0}x"));
+    }
+
     #[test]
     fn every_part_is_read_however_long_the_value() {
         let mut value = String::from("mx.example.org");

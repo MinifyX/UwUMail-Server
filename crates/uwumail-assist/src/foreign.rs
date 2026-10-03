@@ -20,6 +20,11 @@ const MAX_TEXT_CHARS: usize = 200_000;
 const MAX_HEADERS: usize = 100;
 const MAX_HEADER_NAME_CHARS: usize = 100;
 const MAX_HEADER_VALUE_CHARS: usize = 2000;
+/// The spam check's trace headers may be longer: an app sends them whole up to this length and
+/// leaves a longer one out, never cut, since a cut one can not be told from a whole one (security
+/// review 0.22 R4 I-4, client review C4-1).
+const MAX_TRACE_HEADER_VALUE_CHARS: usize = 16_000;
+const TRACE_HEADERS: [&str; 3] = ["Authentication-Results", "Received", "X-Spam-Status"];
 const MAX_LABEL_NAME_CHARS: usize = 40;
 const MAX_LABEL_DESCRIPTION_CHARS: usize = 300;
 
@@ -145,7 +150,12 @@ pub fn foreign_mails(value: &Value, count: std::ops::RangeInclusive<usize>) -> R
                     let here = format!("{at}.headers[{n}]");
                     let header = object_of(header, &here)?;
                     let name = string(header, &here, "name", MAX_HEADER_NAME_CHARS)?.unwrap_or_default();
-                    let value = string(header, &here, "value", MAX_HEADER_VALUE_CHARS)?.unwrap_or_default();
+                    let max = if TRACE_HEADERS.iter().any(|trace| trace.eq_ignore_ascii_case(name.trim())) {
+                        MAX_TRACE_HEADER_VALUE_CHARS
+                    } else {
+                        MAX_HEADER_VALUE_CHARS
+                    };
+                    let value = string(header, &here, "value", max)?.unwrap_or_default();
                     let value = value
                         .split(['\r', '\n'])
                         .map(str::trim)
@@ -246,6 +256,14 @@ mod tests {
         assert!(foreign_mails(&json!([{ "subject": "x".repeat(999) }]), 1..=1).is_err());
         assert!(foreign_mails(&json!([{ "date": "yesterday" }]), 1..=1).is_err());
         assert!(foreign_mails(&json!([{ "to": [{ "email": 5 }] }]), 1..=1).is_err());
+        // Trace headers up to 16,000 characters, others up to 2,000; longer ones are refused (R4 I-4).
+        let header = |name: &str, chars: usize| json!([{ "headers": [{ "name": name, "value": "v".repeat(chars) }] }]);
+        for name in ["Authentication-Results", "received", "X-Spam-Status"] {
+            assert_eq!(foreign_mails(&header(name, 16_000), 1..=1).unwrap()[0].headers[0].1.len(), 16_000);
+            assert!(foreign_mails(&header(name, 16_001), 1..=1).is_err(), "{name}");
+        }
+        assert!(foreign_mails(&header("X-Other", 2000), 1..=1).is_ok());
+        assert!(foreign_mails(&header("X-Other", 2001), 1..=1).is_err());
         let many: Vec<Value> = (0..51).map(|_| json!({ "email": "a@example.com" })).collect();
         assert!(foreign_mails(&json!([{ "cc": many }]), 1..=1).is_err());
 

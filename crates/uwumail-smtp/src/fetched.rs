@@ -109,14 +109,6 @@ pub struct Provenance {
     pub addressed: bool,
 }
 
-/// `name=value` pairs of one segment of an `Authentication-Results` header.
-fn parts(segment: &str) -> impl Iterator<Item = (&str, &str)> {
-    segment.split_whitespace().filter_map(|part| {
-        let (name, value) = part.trim_end_matches(';').split_once('=')?;
-        Some((name.trim(), value.trim()))
-    })
-}
-
 /// The provider's own `Authentication-Results`, or nothing.
 ///
 /// Only trusted when it carries the provider's name *and* stands above the provider's own trace:
@@ -132,16 +124,20 @@ fn attested(raw: &[u8], authserv: &str) -> Option<Attested> {
     if !header.name.eq_ignore_ascii_case("Authentication-Results") {
         return None;
     }
+    // Read with the parser of our own results (security review 0.22 R4 I-6): a quoted
+    // `smtp.mailfrom` with a `;` or a comment with a `client-ip=` adds no result of its own.
     let value = header.value();
-    let (id, results) = value.split_once(';')?;
-    let id = id.split_whitespace().next().unwrap_or_default().trim().to_ascii_lowercase();
+    if !value.contains(';') {
+        return None;
+    }
+    let id = headers::authserv_id(&value)?.to_ascii_lowercase();
     if !(id == authserv || id.ends_with(&format!(".{authserv}"))) {
         return None;
     }
 
     let mut found = Attested::default();
-    for segment in results.split(';') {
-        let mut pairs = parts(segment);
+    for part in headers::auth_results_parts(&value).skip(1) {
+        let mut pairs = part.iter().filter_map(|word| word.split_once('='));
         let Some((method, result)) = pairs.next() else { continue };
         let result = AuthResult::parse(result);
         match method.to_ascii_lowercase().as_str() {
@@ -157,10 +153,8 @@ fn attested(raw: &[u8], authserv: &str) -> Option<Attested> {
         }
         for (name, value) in pairs {
             match name.to_ascii_lowercase().as_str() {
-                "client-ip" | "smtp.remote-ip" | "sender-ip" => {
-                    found.client_ip = value.trim_matches('"').parse().ok();
-                }
-                "smtp.helo" | "helo" => found.helo = Some(value.trim_matches('"').to_owned()),
+                "client-ip" | "smtp.remote-ip" | "sender-ip" => found.client_ip = value.parse().ok(),
+                "smtp.helo" | "helo" => found.helo = Some(value.to_owned()),
                 _ => {}
             }
         }
@@ -312,6 +306,24 @@ mod tests {
         // The same header under somebody else's name says nothing at all.
         let forged = message("Authentication-Results: mx.somewhere.example; spf=pass; dmarc=pass");
         assert_eq!(read(&mailbox(), false, &forged).attested, None);
+    }
+
+    /// Security review 0.22 R4 I-6: read like our own results, quotes and comments included.
+    #[test]
+    fn quotes_and_comments_add_no_result() {
+        let raw = message(
+            "Authentication-Results: mx.icloud.example (\"x;\" client-ip=192.0.2.1); \
+             spf=fail smtp.mailfrom=\"a;dmarc=pass\"@attacker.example (client-ip=203.0.113.50) client-ip=198.51.100.7; \
+             dmarc=fail",
+        );
+        let found = attested(&raw, "icloud.example").unwrap();
+        assert_eq!(found.spf, Some(AuthResult::Fail));
+        assert_eq!(found.dmarc, Some(AuthResult::Fail));
+        assert_eq!(found.client_ip, Some("198.51.100.7".parse().unwrap()));
+        let quoted_last =
+            message("Authentication-Results: mx.icloud.example; spf=pass smtp.mailfrom=\"x;dmarc=pass\"@a.example");
+        assert_eq!(attested(&quoted_last, "icloud.example").unwrap().dmarc, None);
+        assert_eq!(attested(&message("Authentication-Results: mx.icloud.example"), "icloud.example"), None);
     }
 
     #[test]

@@ -896,7 +896,7 @@ A foreign mail:
 | `date` | `UTCDate\|null` | when it was sent; relative dates in the mail are read from it (now when `null`) |
 | `subject` | `String` | at most 998 characters |
 | `text` | `String` | the body as plain text (the client turns HTML into text), at most 200,000 characters. The server removes the quoted history and cuts it to size exactly as it does its own mail |
-| `headers` | `{name, value}[]\|null` | optional, `Assist/spamCheck` only (ignored elsewhere): at most 100, `name` at most 100 characters, `value` at most 2,000 |
+| `headers` | `{name, value}[]\|null` | optional, `Assist/spamCheck` only (ignored elsewhere): at most 100, `name` at most 100 characters, `value` at most 2,000, or 16,000 for `Authentication-Results`, `Received` and `X-Spam-Status`. A value longer than that is left out, never cut: the server can not tell a cut value from a whole one |
 | `inJunk` | `Boolean` | optional, `Assist/spamCheck` only: the mail is in the account's junk folder |
 
 Anything larger is `invalidArguments` naming the field; nothing is cut
