@@ -87,6 +87,13 @@ pub struct Facts {
     pub invoice_word: bool,
     /// Sent to the sender's own address (a note to oneself, a test).
     pub to_self: bool,
+    /// A notification of an app or social network about activity on the reader's account: new
+    /// followers, posts of people they follow, mentions, recaps ("recap@", "du hast neue …").
+    pub notification: bool,
+    /// A test mail: the subject is only "Test", "Testmail" or the like.
+    pub test_mail: bool,
+    /// Something says it is a shipment: a tracking number, a carrier, a shipping or pickup word.
+    pub shipment_evidence: bool,
 }
 
 /// Local parts of addresses that read no answers.
@@ -591,6 +598,12 @@ impl Facts {
         let pdf = mail.attachments.iter().any(|a| crate::detect::is_pdf(&a.name, &a.content_type));
         // Greetings and farewells sit at the start and the end of a text.
         let edges = edges(text);
+        let tracking = crate::detect::tracking(mail, subject, text).map(|(c, n)| (c.to_owned(), n));
+        let carrier = crate::detect::carrier_in(mail, subject, text).map(str::to_owned);
+        let shipment_evidence = tracking.is_some()
+            || carrier.is_some()
+            || crate::text::find_any(&both, crate::detect::SHIPPING_WORDS).is_some()
+            || crate::text::find_any(&both, PICKUP_WORDS).is_some();
         Facts {
             list_unsubscribe: header("list-unsubscribe").is_some(),
             bulk: header("list-id").is_some() || precedence_bulk || header("list-unsubscribe-post").is_some(),
@@ -618,8 +631,8 @@ impl Facts {
             known_sender: mail.known_sender,
             amounts: amounts(text),
             invoice_numbers: invoice_numbers(&both),
-            tracking: crate::detect::tracking(mail, subject, text).map(|(c, n)| (c.to_owned(), n)),
-            carrier: crate::detect::carrier_in(mail, subject, text).map(str::to_owned),
+            tracking,
+            carrier,
             dates: crate::detect::date(&both).into_iter().collect(),
             times: crate::detect::time(&both).into_iter().collect(),
             calendar: mail.calendar,
@@ -636,6 +649,9 @@ impl Facts {
                     name.ends_with(".pdf") && crate::text::find_any(&name, crate::detect::INVOICE_STEMS).is_some()
                 }),
             to_self: !mail.from.is_empty() && mail.to.contains(&mail.from),
+            notification: header("list-post").is_none() && notification(mail.from_local(), subject),
+            test_mail: TEST_SUBJECTS.contains(&subject.trim_matches(|c: char| !c.is_alphanumeric())),
+            shipment_evidence,
         }
     }
 
@@ -680,9 +696,83 @@ impl Facts {
         lines.push(format!("order word in the subject: {}", yes(self.order)));
         lines.push(format!("invoice word in the subject or an invoice PDF: {}", yes(self.invoice_word)));
         lines.push(format!("sent to the sender's own address: {}", yes(self.to_self)));
+        lines.push(format!(
+            "notification of an app or social network about activity (followers, posts, mentions): {}",
+            yes(self.notification)
+        ));
         lines.join("\n")
     }
 }
+
+/// Parts of a local part that send notifications about activity, not editions: `stories-recap`,
+/// `notification`, `follow-suggestions`. "alert" is not among them: job alerts are newsletters.
+const NOTIFICATION_LOCAL: &[&str] = &[
+    "notification",
+    "notifications",
+    "notify",
+    "notifier",
+    "recap",
+    "recaps",
+    "activity",
+    "suggestions",
+    "suggestion",
+    "reminder",
+    "reminders",
+    "friends",
+    "friendupdates",
+];
+
+/// What subjects of activity notifications say (folded).
+const NOTIFICATION_SUBJECTS: &[&str] = &[
+    "neue follower",
+    "neuen follower",
+    "new follower",
+    "haben vor kurzem",
+    "hat vor kurzem",
+    "hat etwas gepostet",
+    "haben etwas gepostet",
+    "hat dich erwahnt",
+    "hat dich erwähnt",
+    "hat dich markiert",
+    "mentioned you",
+    "tagged you",
+    "liked your",
+    "gefallt dein",
+    "gefällt dein",
+    "commented on",
+    "hat kommentiert",
+    "hat deinen beitrag",
+    "sent you a message",
+    "neue nachricht von",
+    "new message from",
+    "du hast neue",
+    "you have new",
+    "sieh dir an, was",
+    "see what's happening",
+    "see what you missed",
+    "was du verpasst hast",
+    "freundschaftsanfrage",
+    "friend request",
+    "wants to connect",
+    "mochte sich mit dir vernetzen",
+    "möchte sich mit dir vernetzen",
+    "du hast gerade",
+    "you just received",
+];
+
+/// Whether a mail from `local` with the folded `subject` is a notification about activity.
+fn notification(local: &str, subject: &str) -> bool {
+    let parts: Vec<&str> = local.split(['.', '-', '_', '+']).collect();
+    parts.iter().any(|part| NOTIFICATION_LOCAL.contains(part))
+        || NOTIFICATION_SUBJECTS.iter().any(|phrase| subject.contains(phrase))
+}
+
+/// Subjects of test mails, folded and without punctuation.
+const TEST_SUBJECTS: &[&str] =
+    &["test", "testmail", "test mail", "test-mail", "testing", "test 123", "probe", "testnachricht"];
+
+/// Words of a parcel waiting to be picked up.
+const PICKUP_WORDS: &[&str] = &["abholbereit", "abholung", "abholen", "pickup", "pick up", "ready for collection"];
 
 /// The first and the last 300 characters of folded text.
 fn edges(text: &str) -> String {

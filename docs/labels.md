@@ -132,7 +132,13 @@ the model gets them as they are and is told to rely on them:
   in the subject (password, sign-in, verify, terms …), a **casual** greeting ("Hi", "LG", "Cheers")
   and a **formal** one ("Sehr geehrte", "Kind regards");
 - an **order word** in the subject, an **invoice word** in the subject (or a PDF named like an
-  invoice), and whether the mail went **to the sender's own address**.
+  invoice), and whether the mail went **to the sender's own address**;
+- a **notification** of an app or social network about activity on the account: a sender like
+  `stories-recap@`, `notifications@`, `follow-suggestions@`, or a subject like "neue Follower",
+  "haben vor Kurzem etwas gepostet", "mentioned you", "du hast neue …" (not from a discussion list;
+  `alerts@` is not one, job alerts are newsletters);
+- a **test mail** (the subject is only "Test", "Testmail" …), and **shipment evidence**: a tracking
+  number, a carrier, a shipping or pickup word.
 
 A mail is a **mass mail** when it has List-Unsubscribe, is sent in bulk or comes from a marketing
 sender; it is **written by a person** when the sender type is `person` and it is no mass mail, not
@@ -319,7 +325,9 @@ to the sender's own address;
 confirmation (an order word in the subject) without an invoice word or number; `newsletter` and `advertising` a mass mail that is not to a
 discussion list; `account` no mail written by a person, and an account word in the subject or a
 one-time code (notices of apps and devices are no account mail); `shipping` no mail a person wrote
-from a freemail address; a bounce gets nothing. A
+from a freemail address, nor one without shipment evidence; `newsletter` no notification and
+`advertising` none unless it has two sales words; `invoice` an invoice word, number, amount or PDF;
+a bounce and a test mail get nothing. A
 model that says yes to more than two labels, or to two that exclude each other, is not believed
 at all. The model's candidates and the others are then [chosen](#how-a-label-is-chosen) together.
 
@@ -386,17 +394,18 @@ compares 0.21 (every label asked, every yes believed) with 0.22 (model in doubt;
 when an embeddings endpoint is given), see the test's docs for its variables. A local corpus of
 real mails (never in the repository) can be added with `UWUMAIL_REAL_CORPUS`.
 
-Measured for 0.22 on the synthetic corpus (precision / recall over all base labels; the model
-gemma-3-4b-it, embeddings nomic-embed-text-v1.5):
+Measured for 0.22 (precision / recall over all base labels; the model gemma-3-4b-it, embeddings
+nomic-embed-text-v1.5), on the synthetic corpus and on a local corpus of 508 real mails:
 
-| | precision | recall |
+| | synthetic | real |
 | --- | --- | --- |
-| 0.21 detectors, no model | 74.4 % | 33.2 % |
-| 0.22, no model | 97.8 % | 66.8 % |
-| 0.21, the model alone (every label asked, every yes believed) | 57.3 % | 83.7 % |
-| 0.22, the model only in doubt | 95.3 % | 79.7 % |
+| 0.21 detectors, no model | 74.4 % / 33.2 % | 37.8 % / 23.8 % |
+| 0.22, no model | 97.8 % / 66.8 % | 97.9 % / 59.2 % |
+| 0.21, the model alone (every label asked, every yes believed) | 56.9 % / 83.7 % | 23.5 % / 88.7 % |
+| 0.22, the model only in doubt | 95.9 % / 81.2 % | 95.8 % / 64.3 % |
 
-Most of what is left are phishing and spam mails, which go to Junk and get no labels in practice.
-On real mail, one person correcting each sender's wrong label once is what lifts the model's part
-the most (a single sender's notifications made most of its mistakes).
+On the synthetic corpus, most of what is left are phishing and spam mails, which go to Junk and get
+no labels in practice. On the real mails, what the facts rule out made the difference: the
+notifications of a social network (recaps, new followers) were 78 of the model's 96 wrong labels
+before the notification fact.
 

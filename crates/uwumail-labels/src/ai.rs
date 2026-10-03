@@ -85,7 +85,7 @@ pub fn ask_about(labels: &[Label<'_>], present: &[String], candidates: &[Decisio
 /// mass mail is never personal, an automatic notice never work, a mail sent to one person never a
 /// newsletter, a device's notice never account mail (the mistakes small models make most).
 pub fn ruled_out(base: Base, facts: &Facts) -> bool {
-    if facts.bounce {
+    if facts.bounce || facts.test_mail {
         return true;
     }
     match base {
@@ -97,14 +97,24 @@ pub fn ruled_out(base: Base, facts: &Facts) -> bool {
                 || matches!(facts.sender, crate::SenderKind::NoReply | crate::SenderKind::Marketing)
                 || (facts.sender == crate::SenderKind::Role && !facts.known_sender)
         }
-        Base::Newsletter | Base::Advertising => !facts.mass_mail() || facts.discussion_list,
+        // An app's notification about activity on the account is neither an edition nor an ad,
+        // unless it is plainly selling.
+        Base::Newsletter => !facts.mass_mail() || facts.discussion_list || facts.notification,
+        Base::Advertising => {
+            !facts.mass_mail() || facts.discussion_list || (facts.notification && facts.sales.len() < 2)
+        }
         // Notices of apps and devices (monitoring, smart home, reminders) are no account mail: it
         // names the account in the subject or brings a code.
         Base::Account => facts.written_by_person() || (facts.account.is_empty() && facts.code.is_none()),
-        // A neighbour writing about a parcel is no shipment.
-        Base::Shipping => facts.written_by_person() && facts.freemail,
-        // An order confirmation is no invoice unless it says it is one.
-        Base::Invoice => facts.order && !facts.invoice_word && facts.invoice_numbers.is_empty(),
+        // A neighbour writing about a parcel is no shipment, nor is a mail naming no tracking
+        // number, carrier, shipping or pickup word.
+        Base::Shipping => (facts.written_by_person() && facts.freemail) || !facts.shipment_evidence,
+        // An order confirmation is no invoice unless it says it is one, and an invoice names an
+        // invoice, a number, an amount or brings a PDF.
+        Base::Invoice => {
+            (facts.order && !facts.invoice_word && facts.invoice_numbers.is_empty())
+                || (!facts.invoice_word && facts.invoice_numbers.is_empty() && facts.amounts.is_empty() && !facts.pdf)
+        }
         Base::Appointment => false,
     }
 }
@@ -227,6 +237,39 @@ mod tests {
         assert_eq!(ask_about(&labels, &[], &[sure(1, 0.9)]), [4]);
         assert_eq!(ask_about(&labels, &["newsletter".into()], &[]), [4]);
         assert!(ask_about(&labels, &["newsletter".into(), "reisen".into()], &[]).is_empty());
+    }
+
+    #[test]
+    fn notifications_tests_and_mails_without_evidence_are_ruled_out() {
+        let recap = Mail::new(
+            "stories-recap@mail.social.example",
+            "lea und 3 weitere Personen haben vor Kurzem etwas gepostet",
+            "Sieh dir an, was los ist",
+            vec![],
+            false,
+            vec![],
+        );
+        let mut facts = Facts::of(&recap);
+        facts.list_unsubscribe = true;
+        assert!(facts.notification);
+        assert!(ruled_out(Base::Newsletter, &facts));
+        assert!(ruled_out(Base::Advertising, &facts));
+        let weekly = Mail::new("news@weekly.example", "Self-Host Weekly #42", "Die Neuigkeiten", vec![], false, vec![]);
+        let mut facts = Facts::of(&weekly);
+        facts.list_unsubscribe = true;
+        assert!(!facts.notification);
+        assert!(!ruled_out(Base::Newsletter, &facts));
+        // A plain test mail gets nothing.
+        let test = Mail::new("mia@firma.example", "Test", "test", vec![], false, vec![]);
+        assert!(Base::ALL.iter().all(|base| ruled_out(*base, &Facts::of(&test))));
+        // An invoice names something an invoice has; a shipment something a shipment has.
+        let iban =
+            Mail::new("no-reply@bank.example", "Deine IBAN wartet auf dich", "Jetzt loslegen", vec![], false, vec![]);
+        let facts = Facts::of(&iban);
+        assert!(ruled_out(Base::Invoice, &facts));
+        assert!(ruled_out(Base::Shipping, &facts));
+        let parcel = Mail::new("noreply@shop.example", "Dein Paket ist unterwegs", "Bald da", vec![], false, vec![]);
+        assert!(!ruled_out(Base::Shipping, &Facts::of(&parcel)));
     }
 
     #[test]

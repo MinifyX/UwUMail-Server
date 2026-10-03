@@ -157,7 +157,7 @@ const MONTHS: &[&str] = &[
     "dec",
 ];
 
-const SHIPPING_WORDS: &[&str] = &[
+pub(crate) const SHIPPING_WORDS: &[&str] = &[
     "versand",
     "versendet",
     "versandt",
@@ -473,7 +473,8 @@ fn runs(text: &str, keep: impl Fn(char) -> bool, letter_after: bool) -> Vec<(usi
 fn newsletter(view: &View<'_>) -> Option<Finding> {
     let mail = view.mail;
     let facts = &view.facts;
-    if !facts.list_unsubscribe || facts.discussion_list {
+    // Notifications about activity on an account (followers, posts, recaps) are no editions.
+    if !facts.list_unsubscribe || facts.discussion_list || facts.notification {
         return None;
     }
     // Shops send their invoices, shipments, invitations and account mail with List-Unsubscribe

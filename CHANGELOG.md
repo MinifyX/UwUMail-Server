@@ -24,7 +24,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   unsure. A lone yes is never a second label, a mass mail is never personal, and a model saying
   yes to everything is not believed. On a corpus of 234 invented mails, labels without a model
   went from 74 % to 98 % precision (recall 33 % → 67 %), and with gemma-3-4b from 57 % to 95 %
-  (recall 84 % → 80 %). A label taken off a sender's mail by hand is not put on that sender's
+  (recall 84 % → 81 %); on 508 real mails from 24 % to 96 % (recall 89 % → 64 %).
+  Notifications of apps and social networks (followers, recaps, mentions) are never newsletters or
+  promotions, a test mail gets no label, an invoice needs an invoice word, number, amount or PDF and
+  a shipment a tracking number, carrier or shipping word. A label taken off a sender's mail by hand is not put on that sender's
   mail by itself again, by the model neither.
 - **Similar mails** decide labels: with the new admin provider kinds *OpenAI embeddings*, *Ollama
   embeddings* and *OpenAI-compatible embeddings* by vectors of the person's labeled mails (one byte
