@@ -130,7 +130,8 @@ pub async fn run(
     smtp.provider_oauth().set_transport(Arc::new(uwumail_smtp::provider_oauth::EgressTransport(egress.clone())));
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
-    tasks.spawn(crate::migrate::run_migrations(store.clone(), egress.clone(), shutdown_rx.clone()));
+    tasks.spawn(crate::migrate::run_migrations(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
+    tasks.spawn(crate::moves::run_moves(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
     // Subscribed calendars, fetched again when their turn comes, the same way out as fetched mail.
     tasks.spawn(uwumail_dav::client::run_subscriptions(store.clone(), egress.clone(), shutdown_rx.clone()));
     let tls_report_egress = egress.clone();

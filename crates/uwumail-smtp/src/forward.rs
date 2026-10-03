@@ -35,6 +35,9 @@ pub(crate) struct Forwarder<'a> {
     pub account_id: Option<i64>,
     /// What is known about who sent the message.
     pub proof: Proof<'a>,
+    /// The message came in over SMTP here and carries this server's own headers on top; mail
+    /// submitted here does not (security review 0.22 R2-L2).
+    pub smtp_delivered: bool,
 }
 
 /// What the checks at the door proved about who sent a message. Mail submitted here, and mail
@@ -115,7 +118,7 @@ pub(crate) async fn send(
                     keywords: vec![],
                     received_at: None,
                 };
-                match ctx.store.ingest(request).await {
+                match ctx.store.ingest_marked(request, forwarder.smtp_delivered).await {
                     Ok(_) => reached = true,
                     Err(err) => {
                         tracing::warn!(%err, forwarder = %forwarder.name, to = %address, "forwarding to a local mailbox failed");

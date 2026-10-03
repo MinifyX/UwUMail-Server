@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (verify) with links to the service's own domain
+From: Fotobox <account@fotobox.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Bitte_best=C3=A4tige_deine_E-Mail-Adresse?=
+Date: Tue, 15 Sep 2026 18:24:00 +0000
+Message-ID: <229850702122.755@fotobox.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+danke für deine Registrierung. Bitte bestätige deine E-Mail-Adresse: https://fotobox.example/bestaetigen/96285282169868104393

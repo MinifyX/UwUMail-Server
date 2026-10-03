@@ -1,0 +1,23 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail in English
+From: Jack Reed <jack@home.test>
+To: Max Muster <max@uwu.example>
+Subject: Slides
+Date: Mon, 14 Sep 2026 21:50:00 +0000
+Message-ID: <105913163961.896@home.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hey,
+
+here are the slides from today's talk: https://share.example/s/532358
+
+Let me know what you think.
+Jack
+
+On Mon, 14 Sep 2026 at 09:12, Max Muster wrote:
+> Sounds good!

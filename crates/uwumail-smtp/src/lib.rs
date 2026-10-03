@@ -20,7 +20,9 @@ pub mod dnscheck;
 mod dsn;
 pub mod egress;
 pub mod fetch;
+
 mod fetched;
+pub mod footer;
 mod forward;
 mod headers;
 pub mod health;
@@ -62,6 +64,7 @@ use mail_auth::MessageAuthenticator;
 use tokio::sync::Semaphore;
 use uwumail_store::Store;
 
+pub use checks::related_domains;
 pub use client::{Connector, connect_directly};
 pub use client_slots::{ClientSlot, ClientSlots};
 pub use config::{
@@ -75,9 +78,12 @@ pub use fetched::Mailbox as FetchedMailbox;
 pub use headers::first_value as header_value;
 /// Every value of one header of a raw message, in order.
 pub use headers::values as header_values;
+/// Reading `Authentication-Results` the one way, for the strip of forged ones and the assistant.
+pub use headers::{AuthResultsParts, auth_results_parts, authserv_id, is_bidi_control, without_bidi};
 pub use inbound::{ListenerKind, Taken, deliver_fetched, serve, serve_stream};
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
+pub use spam::{Authentication, Score, phishing, score_offline};
 pub use spam::{FEEDS, Feed, feed, run_learning, run_list_updates};
 pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
@@ -391,6 +397,11 @@ impl Smtp {
     /// Whether people may forward mail to addresses on other servers.
     pub fn allow_external_forwarding(&self) -> bool {
         self.inner.live().smtp.allow_external_forwarding
+    }
+
+    /// The largest message this server takes (`smtp.max_message_size`), as set now.
+    pub fn max_message_size(&self) -> usize {
+        self.inner.live().smtp.max_message_size
     }
 
     /// The relay outgoing mail leaves through, if one is configured.

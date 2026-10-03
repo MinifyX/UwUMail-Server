@@ -573,7 +573,25 @@
       "bimiTitle": "ロゴの名前をもっと短く、特殊文字なしで入力してください。",
       "bimiBackground": "背景色は #rrggbb の形式にしてください。",
       "bimiCertificateInvalid": "PEM 形式の読み取れる証明書ではありません。",
-      "bimiCertificateNotBimi": "この証明書は BIMI 用の VMC でも CMC でもありません。"
+      "bimiCertificateNotBimi": "この証明書は BIMI 用の VMC でも CMC でもありません。",
+      "moveRows": "リストの一部の行を修正する必要があります。表を確認してください。",
+      "moveTooMany": "1つの移行は最大 2000 メールボックスです。",
+      "moveSingle": "単一移行は1つのメールボックスのみです。",
+      "moveFinished": "この移行は完了しています。",
+      "moveFinishing": "最終同期はすでに実行中です。",
+      "moveMailboxBusy": "このメールボックスはすでに別の移行中です。",
+      "moveOtherDomain": "このメールボックスは移行先ドメインにありません。",
+      "moveNotActive": "この移行は実行中ではありません。",
+      "moveNotPaused": "この移行は一時停止していません。",
+      "movesLimit": "同時に開ける移行は最大 20 件です。先に1件を完了または削除してください。",
+      "movePersonalBusy": "このメールボックスの持ち主が現在、自分でメールを移行しています（マイメールボックス → 移行）。完了するまで待つか、一時停止を依頼してください。",
+      "moveAdminBusy": "管理者が現在このメールボックスにメールを移行しています。その移行が完了してから再試行してください。",
+      "movePasswordNeeded": "旧メールボックスのパスワードは削除されました。続けるには入力してください。",
+      "moveChanged": "その間にリストの内容が変わりました（別のリクエストによる可能性があります）。リストを確認して、もう一度開始してください。",
+      "hostInvalid": "サーバー名が使えません。インターネット上のサーバーのみ使用できます。",
+      "urlInvalid": "使用できる https アドレスではありません。",
+      "domainMaskedOnly": "このドメインはマスクアドレス専用です。",
+      "noMailbox": "このアカウントにはメールボックスがありません。"
     }
   },
   "people": {
@@ -850,7 +868,6 @@
       "domainCreate": "{{actor}}がドメイン{{target}}を追加しました",
       "domainRemove": "{{actor}}がドメイン{{target}}を削除しました",
       "domainCatchAll": "{{actor}}が{{target}}のキャッチオールを変更しました",
-      "other": "{{actor}}：{{action}} {{target}}",
       "domainDkimPrepare": "{{actor}}が{{target}}の新しい DKIM 鍵を作成しました",
       "domainDkimActivate": "{{actor}}が{{target}}を新しい DKIM 鍵に切り替えました",
       "domainDkimRemove": "{{actor}}が{{target}}の古い DKIM 鍵を削除しました",
@@ -919,7 +936,19 @@
       "domainBimiLogoRemoved": "{{actor}} が {{target}} の BIMI ロゴを削除しました",
       "domainBimiCertificate": "{{actor}} が {{target}} の BIMI 証明書を追加しました",
       "domainBimiCertificateRemoved": "{{actor}} が {{target}} の BIMI 証明書を削除しました",
-      "microsoftResolve": "{{actor}} が {{target}} に対する Microsoft の拒否を解決済みにしました"
+      "microsoftResolve": "{{actor}} が {{target}} に対する Microsoft の拒否を解決済みにしました",
+      "moveCreate": "{{actor}} が {{target}} の移行を開始しました",
+      "moveAddMailboxes": "{{actor}} が {{target}} の移行にユーザーを追加しました",
+      "moveSettings": "{{actor}} が {{target}} の移行ペースを変更しました",
+      "movePause": "{{actor}} が {{target}} の移行を一時停止しました",
+      "moveResume": "{{actor}} が {{target}} の移行を再開しました",
+      "moveFinish": "{{actor}} が {{target}} の移行を完了しました",
+      "moveDelete": "{{actor}} が {{target}} の移行を削除しました",
+      "moveRetry": "{{actor}} が {{target}} の移行を再試行しました",
+      "movePauseMailbox": "{{actor}} が {{target}} の移行を一時停止しました",
+      "moveRemoveMailbox": "{{actor}} が {{target}} を移行から外しました",
+      "moveUpload": "{{actor}} が {{target}} の連絡先またはカレンダーをアップロードしました",
+      "other": "{{actor}}：{{action}} {{target}}"
     },
     "details": {
       "adminOn": "管理者になりました",
@@ -1220,6 +1249,29 @@
         "sts-webpki-invalid": "ポリシーの証明書が無効です"
       },
       "unauthenticated_other": "{{count}}件のレポートは、身元を証明できない送信者から届きました。その数値はでっち上げの可能性があります。"
+    },
+    "signature": {
+      "title": "会社の署名",
+      "explain": "このドメインのすべてのアドレスに共通の署名です。各自が変更できるテンプレートとして、または送信時にサーバーが追加する必須フッターとして使えます。",
+      "mode": "使い方",
+      "modes": {
+        "off": "オフ",
+        "template": "テンプレート",
+        "footer": "必須フッター"
+      },
+      "modeHint": {
+        "off": "各自が自分の署名を書きます。",
+        "template": "自分の署名がない人にはこれが使われます。各自が変更できます。",
+        "footer": "このドメインからのすべてのメールにサーバーが追加します。SMTP経由のメールアプリからの送信も対象です。"
+      },
+      "text": "テキスト",
+      "html": "HTML",
+      "htmlHint": "任意。書式付きメール用です。HTMLがない場合はテキストが使われます。",
+      "placeholders": "プレースホルダー：{{placeholders}}",
+      "footerNote": "署名または暗号化されたメール（S/MIME、PGP）には、署名が壊れるためフッターを追加しません。受信者にはフッターが付きますが、送信者の送信済みフォルダのコピーには表示されません。これは補助であり保証ではありません。一部のメール（例：フッターが既に引用されているもの）はフッターなしで送信されます。",
+      "footerEmpty": "必須フッターにはテキストが必要です。",
+      "save": "保存",
+      "saved": "会社の署名を保存しました"
     }
   },
   "groups": {
@@ -2184,8 +2236,8 @@
       "progress": "{{done}} / {{total}} 通 · {{size}}",
       "progressLabel": "引っ越しの進み具合",
       "folders": "フォルダー {{done}} / {{total}}",
-      "skipped": "{{count}} 通はすでにあったのでスキップしました",
-      "skipped_other": "{{count}} 通はすでにあったのでスキップしました",
+      "skipped": "{{count}} 通をスキップしました（すでにあったか、このサーバーの上限より大きいため）",
+      "skipped_other": "{{count}} 通をスキップしました（すでにあったか、このサーバーの上限より大きいため）",
       "done": "すべて届きました。",
       "doneAt": "{{date}} の時点で、あったものはすべてここにあります。"
     },
@@ -2196,6 +2248,7 @@
       "notPublic": "このサーバーから見る限り、以前のプロバイダーのサーバーはインターネット上にありません。",
       "noMailbox": "あなたのアカウントには、メールを移せるメールボックスがありません。",
       "stopped": "一時停止中です。いつでも続けられます。止まったところから再開します。",
+      "interrupted": "この移行中にサーバーが連続して何度も停止したため、一時停止しました。準備ができたら再開するか、管理者に相談してください。",
       "failed": "問題が発生しました。続けるともう一度試します。"
     },
     "actions": {
@@ -2264,7 +2317,7 @@
     },
     "signatures": {
       "title": "署名",
-      "intro": "メールアプリと Webメールは、送信元アドレスの署名を追加します。",
+      "intro": "ドメインを選び、そのドメインのすべてのアドレスに共通の署名を1つ書きます。メールアプリとWebメールは作成時に挿入します。",
       "loading": "アドレスを読み込み中…",
       "loadError": "アドレスを読み込めませんでした。",
       "empty": "送信に使えるアドレスはまだありません。",
@@ -2272,7 +2325,24 @@
       "html": "HTML の署名",
       "htmlHint": "任意。書式付きメールを書くアプリ向けです。",
       "save": "署名を保存",
-      "saved": "署名を保存しました"
+      "saved": "署名を保存しました",
+      "domain": "ドメイン",
+      "domainOption_other": "{{domain}}（{{count}}件のアドレス）",
+      "placeholders": "プレースホルダー：",
+      "appliesTo": "適用先",
+      "allDomains": "すべてのドメイン（今後追加されるものも）",
+      "replaces": "{{domains}} の個別の署名を置き換えます。",
+      "preview": "{{address}} のプレビュー",
+      "remove": "署名を削除",
+      "fromTemplate": "これは組織のテンプレートです。変更して自分の署名として保存できます。",
+      "fromAllDomains": "このドメインは「すべてのドメイン」の署名を使用しています。",
+      "companyFooter": "このドメインから送信すると、サーバーが次のフッターを自動的に追加します：",
+      "exceptions": "個別のアドレス用の別の署名（{{count}}）",
+      "ownSignature": "個別の署名",
+      "followsDomain": "ドメインの署名を使用",
+      "override": "このアドレス用の個別の署名",
+      "backToDomain": "ドメインの署名を使用",
+      "tooLarge": "署名が大きすぎます（最大256 KB）。"
     }
   },
   "forwardConfirm": {
@@ -2917,6 +2987,7 @@
       "emptyHint": "保留されたメッセージは、自然に届くか、あなたが判断するまでここで待機します。",
       "noSubject": "件名なし",
       "sentTo": "宛先：{{address}}",
+      "attempts_other": "配信試行 {{count}} 回、最終 {{last}}",
       "decide": {
         "deliver": "配信",
         "discard": "破棄",
@@ -3917,7 +3988,10 @@
       "priceLists_other": "料金を {{date}} に更新、{{count}} 件のモデルを把握しています。",
       "priceListsNone": "料金はまだ取得されていません。",
       "foreignMail": "他のアカウントのメールに AI を使う",
-      "foreignMailHint": "UwUMail アプリで、他のアカウント(Exchange、Gmail、IMAP)のメールにもアシスタントを使えるようにします。アプリがそのメールの本文をここへ送りますが、保存されるのは使用量だけです。許可したプロバイダーだけが使われます。"
+      "foreignMailHint": "UwUMail アプリで、他のアカウント(Exchange、Gmail、IMAP)のメールにもアシスタントを使えるようにします。アプリがそのメールの本文をここへ送りますが、保存されるのは使用量だけです。許可したプロバイダーだけが使われます。",
+      "embeddings": "埋め込み",
+      "embeddingsUse": "ラベル用の類似メール",
+      "smallModel": "このモデルのパラメータは約 {{size}}B しかなく、ラベルやスパムの判定精度が低くなります。おすすめ：{{recommended}}。"
     },
     "choices": {
       "title": "どの機能にどのプロバイダーを使うか",
@@ -4025,7 +4099,8 @@
         "featuresRequired": "機能を 1 つ以上選んでください。",
         "limitInvalid": "0 より大きい整数を入力するか、空欄にしてください。",
         "priceInvalid": "0 以上の料金を入力してください(例: 0.25)。",
-        "requestPriceInvalid": "0 から 100 までの料金を入力してください(例: 0.005)。"
+        "requestPriceInvalid": "0 から 100 までの料金を入力してください(例: 0.005)。",
+        "embeddingsModelRequired": "埋め込みモデルを指定してください。"
       },
       "price": "料金",
       "priceIntro": "100 万トークンあたりの米ドル価格で、コストの表示に使います。空欄なら公開されている料金表の価格を使います。",
@@ -4038,7 +4113,13 @@
       "showCostHint": "利用者は自分のリクエストのコストを確認できます。管理者には常に表示されます。",
       "requestPrice": "1 リクエストあたり(米ドル)",
       "foreignMail": "他のアカウントのメール",
-      "foreignMailHint": "「他のアカウントのメールに AI を使う」がオンのとき、利用者の他のアカウントのメールに使えます。"
+      "foreignMailHint": "「他のアカウントのメールに AI を使う」がオンのとき、利用者の他のアカウントのメールに使えます。",
+      "chatGroup": "チャットモデル",
+      "embeddingsGroup": "埋め込み（ラベル用の類似メール）",
+      "embeddingsTitle": "埋め込み：ラベル用の類似メール",
+      "embeddingsHelp": "埋め込みモデルはメールをベクトルに変換します。これにより自動ラベルは、すでにラベルが付いた類似メールを見つけ、チャットモデルに問い合わせずに多くのラベルを決められます。他の機能には使われず、高速モデルも不要です。",
+      "embeddingsStorage": "ベクトルはラベル付きのメールごとにコンパクトに保存され、メールまたはアカウントと一緒に削除されます。",
+      "embeddingsModelNeeded": "この種類では、サーバーが提供する埋め込みモデルを指定してください。"
     },
     "chatgpt": {
       "title": "ChatGPT サインイン",
@@ -4333,6 +4414,308 @@
         "noLogo": "証明書にロゴが含まれていません。",
         "unknownKind": "VMC や CMC ではないようです。"
       }
+    }
+  },
+  "moves": {
+    "title": "移行",
+    "intro": "ドメイン全体とその全員、または1つのメールボックスを別のサーバーから移します。メール、連絡先、カレンダーが対象です。完了するまで同期を続けます。",
+    "kind": {
+      "domain": "ドメイン移行",
+      "mailbox": "単一メールボックス"
+    },
+    "state": {
+      "active": "実行中",
+      "paused": "一時停止",
+      "finishing": "最終同期中",
+      "done": "完了"
+    },
+    "mailboxState": {
+      "queued": "待機中",
+      "running": "コピー中",
+      "paused": "一時停止",
+      "synced": "最新",
+      "done": "完了"
+    },
+    "progress": {
+      "label": "{{domain}} の移行の進み具合"
+    },
+    "list": {
+      "new": "新しい移行",
+      "from": "{{host}} から",
+      "summary": "メールボックス {{mailboxes}} 件 · {{total}} 通中 {{done}} 通",
+      "paused_other": "{{count}} 件一時停止",
+      "created": "{{date}} 開始",
+      "emptyTitle": "まだ移行はありません",
+      "emptyBody": "会社や家族をこのサーバーへ移しますか？ドメイン移行を始めると、ドメインとメールボックスがここに作られ、すべてがコピーされます。",
+      "own": "各自の古いメールボックスは「マイアカウント → 引っ越し」から本人でも移せます。"
+    },
+    "wizard": {
+      "back": "すべての移行",
+      "title": "新しい移行",
+      "intro": "4つのステップ：何を、どこから、誰を移すか、そして開始前の確認です。",
+      "whatTitle": "移行するもの",
+      "what": {
+        "domain": "ドメインの全員です。ドメインがまだなければここに作成され（DKIM 鍵付き）、メールボックスのない人には作成されます。",
+        "mailbox": "1つのメールボックスを、ここの既存のメールボックス（メールは統合されます）か新しいメールボックスへ移します。"
+      },
+      "domain": "ドメイン",
+      "domainHint": "メールボックスのあるドメインです。",
+      "domainNew": "このドメインはまだありません。開始時に DKIM 鍵付きで作成されます。その後「ドメイン」で DNS を確認してください。",
+      "domainUnknown": "先にこのドメインを追加するか、既存のドメインを選んでください。",
+      "targetLabel": "ここのメールボックス",
+      "targetExisting": "既存のメールボックス",
+      "targetNew": "新しいメールボックス",
+      "mailbox": "メールボックス",
+      "mailboxHint": "既存のメールは残ります。フォルダーは統合され、重複はしません。",
+      "choose": "選択…",
+      "newAddress": "新しいアドレス",
+      "newAddressHint": "本人にはパスワードを設定するリンクが渡されます。",
+      "sourceTitle": "旧サーバー",
+      "sourceExplain": "今メールがある場所です。移行の全員で共通ですが、行ごとに別のサーバーも指定できます。IMAP（TLS、ポート 993）で接続します。",
+      "imapHost": "IMAP サーバー",
+      "imapHostHint": "MX 切り替え後も旧サーバーを指し続ける名前が最適です。",
+      "port": "ポート",
+      "discover": "サーバーを探す",
+      "found": "{{host}} が見つかりました。ログインは最初の同期で確認します。",
+      "notFound": "このドメインでは応答がありませんでした。サーバーを手入力してください。",
+      "contacts": "連絡先も移す",
+      "calendars": "カレンダーも移す",
+      "davMode": "連絡先とカレンダー",
+      "davHost": "サーバー",
+      "davHostHint": "空欄なら IMAP サーバー。",
+      "davUrl": "CalDAV/CardDAV アドレス",
+      "pace": "ペース",
+      "peopleTitle": "ユーザー",
+      "peopleExplain": "1人1行：旧アドレスとそのログイン・パスワード、ここでのメールボックスの設定。新アドレスが空なら旧アドレスの名前をこのドメインで使います。エイリアスは IMAP では移せないのでここに入力してください。CSV からも入力できます。",
+      "oldMailboxTitle": "旧メールボックス",
+      "oldMailboxExplain": "旧アドレスとそのログイン・パスワードです。",
+      "checkTitle": "確認して開始",
+      "checkExplain": "確認では何も変更しません。作成されるものと修正が必要な行を示します。",
+      "check": "確認",
+      "start": "移行を開始",
+      "planDomain": "ドメイン {{domain}} を DKIM 鍵付きで作成します。",
+      "planRows": "新規メールボックス {{created}} 件、既存 {{filled}} 件に追加。",
+      "planPasswords": "すでにここでパスワードを持つ人のメールボックスにはリンクは不要です。",
+      "planProblems_other": "修正が必要な問題が {{count}} 件あります。表を確認してください。",
+      "planReady": "準備完了です。移行を開始できます。"
+    },
+    "davModes": {
+      "auto": "自動検出",
+      "autoHint": "アドレスから（既知のプロバイダー、DNS、/.well-known/）、次に IMAP サーバーで探します。",
+      "sogo": "mailcow / SOGo",
+      "sogoHint": "https://サーバー/SOGo/dav/",
+      "nextcloud": "Nextcloud",
+      "nextcloudHint": "https://サーバー/remote.php/dav/",
+      "icloud": "iCloud",
+      "icloudHint": "App 用パスワードが必要です。",
+      "gmx": "GMX",
+      "gmxHint": "二要素認証ではアプリパスワード。",
+      "webde": "WEB.DE",
+      "webdeHint": "アプリパスワードは1つの設定でのみ有効です。",
+      "custom": "アドレスを指定",
+      "customHint": "わかっている CalDAV/CardDAV アドレス。",
+      "none": "ファイルのみ",
+      "noneHint": "代わりにメールボックスごとに .vcf と .ics をアップロードします。"
+    },
+    "fields": {
+      "oldAddress": "旧アドレス",
+      "login": "旧ログイン",
+      "password": "旧パスワード",
+      "name": "名前",
+      "target": "ここのアドレス",
+      "quotaMb": "容量 (MB)",
+      "quota": "容量",
+      "aliases": "エイリアス",
+      "imapHost": "個別の IMAP サーバー",
+      "davUrl": "個別の CalDAV/CardDAV アドレス",
+      "line": "行"
+    },
+    "placeholders": {
+      "oldAddress": "name@example.com",
+      "login": "= 旧アドレス",
+      "password": "••••••",
+      "name": "表示名",
+      "target": "= 旧名前＋ドメイン",
+      "quotaMb": "無制限",
+      "aliases": "info@… sales@…",
+      "imapHost": "この人の IMAP サーバー（異なる場合）",
+      "davUrl": "https://… CalDAV/CardDAV（見つからない場合）"
+    },
+    "rows": {
+      "actions": "操作",
+      "add": "行を追加",
+      "remove": "行を削除",
+      "servers": "この行の個別サーバー"
+    },
+    "problems": {
+      "addressInvalid": "有効なアドレスではありません",
+      "passwordMissing": "未入力",
+      "targetInvalid": "このドメインのアドレスではありません",
+      "targetTaken": "他の人が使用中です",
+      "duplicate": "重複しています",
+      "quotaInvalid": "サイズではありません",
+      "aliasInvalid": "有効なアドレスではありません（最大 20）",
+      "aliasTaken": "他の人が使用中です",
+      "aliasDomain": "ここにないドメインです",
+      "mailboxBusy": "このメールボックスは別の移行中です",
+      "noMailbox": "このアカウントにはメールボックスがありません",
+      "loginInvalid": "使用できません",
+      "hostInvalid": "使用できないサーバー名です（公開サーバーのみ）",
+      "urlInvalid": "https アドレスではありません",
+      "tooManyRows": "1つの移行で扱える行数を超えています",
+      "tooLarge": "テキストが長すぎます",
+      "quoteOpen": "引用符が閉じていません",
+      "invalid": "無効です"
+    },
+    "csv": {
+      "title": "CSV リストを取り込む",
+      "explain": "表計算ソフトの書き出しを貼り付けるかアップロードします（区切りは ; か , かタブ）。見出し行があれば列名（旧アドレス、ログイン、パスワード、名前、新アドレス、容量、エイリアス）で判別し、なければ「旧アドレス; パスワード; 名前; 新アドレス; 容量; エイリアス; ログイン」の順です。",
+      "paste": "CSV テキスト",
+      "read": "表に取り込む",
+      "file": "ファイルをアップロード",
+      "result_other": "{{count}} 行を読み込みました（区切り {{delimiter}}）。",
+      "withHeader": "見出し行あり。",
+      "withoutHeader": "見出し行なし。",
+      "line": "{{line}} 行目:"
+    },
+    "detail": {
+      "title": "{{domain}} の移行",
+      "overview": "進み具合",
+      "messages": "{{total}} 通中 {{done}} 通（{{size}}）",
+      "skipped_other": "{{count}} 通をスキップ（既存またはサイズ超過）",
+      "davCounts": "連絡先 {{contacts}} 件、予定 {{events}} 件",
+      "source": "{{host}} から",
+      "noDav": "メールのみ",
+      "mailboxes_other": "メールボックス {{count}} 件"
+    },
+    "mailbox": {
+      "from": "{{address}} から（ログイン {{login}}）",
+      "created": "新規メールボックス",
+      "filled": "既存メールボックスに追加",
+      "lastRound": "最終同期",
+      "progress": "{{address}} の進み具合",
+      "messages": "{{total}} 通中 {{done}} 通（{{size}}）",
+      "folders": "{{total}} フォルダー中 {{done}}",
+      "next": "次回同期 {{date}}",
+      "aliases": "エイリアス: {{aliases}}",
+      "quotaWarning": "旧メールボックスには {{source}} あり、こちら（{{quota}}）に収まりません。容量を増やさないと、いっぱいになった時点で移行が一時停止します。",
+      "davError": "連絡先とカレンダーは移せませんでした：{{reason}}。代わりにファイルでアップロードしてください。",
+      "newLogin": "旧サーバーのログイン",
+      "newPassword": "新しいパスワード"
+    },
+    "errors": {
+      "quotaExceeded": "こちらのメールボックスがいっぱいです。空きを作るか容量を増やしてから再試行してください。止まったところから続きます。",
+      "loginRefused": "旧サーバーがログインを拒否しました。正しいログインまたはパスワード（多くはアプリパスワード）を入力して再試行してください。",
+      "unreachable": "旧サーバーに接続できませんでした。後で再試行してください。",
+      "notPublic": "このサーバーから見る限り、旧サーバーはインターネット上にありません。ローカルネットワーク内のサーバーはここでは使えません。コマンドラインのインポートを使ってください。",
+      "noMailbox": "このアカウントにはメールを移すメールボックスがありません。",
+      "stopped": "手動で一時停止中です。いつでも再開できます。",
+      "accountDeleted": "このアカウントはゴミ箱に移動されたため、移行は停止され旧パスワードは削除されました。アカウントを復元し、パスワードを再入力して再試行してください。",
+      "interrupted": "このメールボックスの処理中にサーバーが連続して何度も停止したため、一時停止しました。サーバーログを確認してから再開してください。",
+      "failed": "問題が発生しました。再試行してください。"
+    },
+    "davErrors": {
+      "wrongPassword": "旧サーバーがログインを拒否しました",
+      "providerNotFound": "カレンダーもアドレス帳も見つかりませんでした",
+      "providerUnreachable": "サーバーに接続できませんでした",
+      "providerError": "サーバーがエラーを返しました",
+      "feedTooLarge": "大きすぎました",
+      "feedNotFound": "コレクションがなくなっていました",
+      "redirectedElsewhere": "サーバーがログインを別の場所へ転送しました",
+      "googleUseIcs": "Google はファイルとしてのみ提供します",
+      "providerNoDav": "このプロバイダーには CalDAV/CardDAV がありません",
+      "urlNotAllowed": "そのアドレスは使えません",
+      "failed": "保存できませんでした"
+    },
+    "actions": {
+      "pauseAll": "すべて一時停止",
+      "resumeAll": "再開",
+      "pause": "一時停止",
+      "retry": "再試行",
+      "syncNow": "今すぐ同期",
+      "changeLogin": "ログインを変更…",
+      "upload": {
+        "addressbook": ".vcf",
+        "calendar": ".ics"
+      },
+      "removeMailbox": "{{address}} を移行から外す",
+      "removeConfirm": "{{address}} を移行から外しますか？旧パスワードは削除されます。メールボックスとコピー済みの内容は残ります。",
+      "delete": "移行を削除",
+      "deleteConfirm": "{{domain}} の移行を削除しますか？旧パスワードはすべて削除されます。メールボックスとメールは残ります。"
+    },
+    "add": {
+      "button": "ユーザーを追加",
+      "title": "この移行にユーザーを追加",
+      "save": "追加して開始"
+    },
+    "settings": {
+      "title": "ペース",
+      "parallel": "同時に処理するメールボックス",
+      "parallelHint": "小さい値ほど旧サーバーに優しくなります（1〜8）。",
+      "syncMinutes": "同期の間隔（分）",
+      "syncMinutesHint": "最初のコピー後、移行を完了するまで（5〜1440）。",
+      "save": "保存"
+    },
+    "finish": {
+      "title": "切り替えて完了",
+      "explain": "完了するまで、旧サーバーに届く新着メールは引き続き移されます。{{domain}} の MX レコードを {{hostname}} に向け、メールがここに届くのを待ってから完了してください。各メールボックスで最終同期が行われ、旧パスワードは消去されます。",
+      "checkMx": "MX を確認",
+      "mx": {
+        "ok": "MX はここを指しています",
+        "warning": "MX: 要確認",
+        "missing": "MX なし",
+        "wrong": "MX は別の場所を指しています",
+        "error": "MX を確認できません"
+      },
+      "mxFound": "検出: {{found}}。",
+      "mxNone": "MX レコードが見つかりません。",
+      "mxReady": "メールはここに届いています。旧サーバーに新着がなくなったら完了できます。",
+      "mxWait": "まず MX レコードを {{hostname}} に向けてください。反映には数時間かかることがあります。",
+      "button": "移行を完了",
+      "running": "最終同期中です。完了したメールボックスの旧パスワードは消去済みです。",
+      "skip": "最終同期なしで完了",
+      "confirmTitle": "移行を完了しますか？",
+      "confirmLast": "各メールボックスで最終同期を行い、その後旧メールボックスのパスワードを消去します。以後は何も取得しません。",
+      "confirmSkip": "最終同期なしで、旧パスワードを今すぐ消去します。旧サーバーがもうない場合や最終同期が成功しない場合に使ってください。",
+      "confirmMx": "MX がここを指していることはまだ確認できていません。",
+      "done": "完了しました。旧パスワードは消去済みです。",
+      "doneAt": "{{date}} に完了。旧パスワードは消去済みです。"
+    },
+    "links": {
+      "title": "パスワード設定リンク",
+      "explain_other": "まだパスワードのない人が {{count}} 人います。設定用リンクを渡してください。各リンクは 7 日間有効です。",
+      "none": "全員がすでにパスワードを持っています。リンクは不要です。",
+      "make": "リンクを作成",
+      "again": "リンクを作り直す",
+      "made_other": "リンクを {{count}} 件作成しました。",
+      "once": "リンクは今だけ表示されます。作り直すとこれらは無効になります。",
+      "csv": "CSV をダウンロード",
+      "print": "一覧を印刷",
+      "printTitle": "{{domain}} のパスワード設定リンク",
+      "printIntro": "リンクを開いてパスワードを設定し、その後アドレスでサインインしてください。各リンクは1回限り、7日間有効です。",
+      "mailbox": "メールボックス",
+      "name": "名前",
+      "oldAddress": "旧アドレス",
+      "link": "リンク",
+      "expires": "有効期限",
+      "copy": "{{address}} のリンクをコピー",
+      "skipped": {
+        "hasPassword": "パスワード設定済みのためリンク不要",
+        "disabled": "無効化されています",
+        "directory": "ディレクトリでサインインします"
+      }
+    },
+    "toasts": {
+      "started": "移行を開始しました。最初のメールボックスをコピーしています。",
+      "paused": "移行を一時停止しました。",
+      "resumed": "移行を再開しました。",
+      "saved": "保存しました。",
+      "queued": "再度キューに入れました。",
+      "removed": "移行から外しました。",
+      "added": "追加しました。次にコピーされます。",
+      "finishing": "完了処理中：最終同期を実行しています。",
+      "deleted": "移行を削除しました。",
+      "uploaded_other": "{{count}} 件を取り込みました。"
     }
   }
 }

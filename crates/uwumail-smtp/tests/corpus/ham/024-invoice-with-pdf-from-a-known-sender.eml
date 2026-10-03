@@ -1,0 +1,31 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: invoice with PDF from a known sender
+From: Streamly <billing@streamly.example>
+To: Max Muster <max@uwu.example>
+Subject: Your subscription has been renewed
+Date: Mon, 14 Sep 2026 07:36:00 +0000
+Message-ID: <353751906014.778@streamly.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-4018568630"
+
+--mix-4018568630
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hello Max,
+
+thank you for your payment of 35.40 EUR. Your receipt #6227889 is attached.
+You can manage your plan at https://streamly.example/account
+
+Best regards,
+Streamly
+--mix-4018568630
+Content-Type: application/pdf; name="receipt_6227889.pdf"
+Content-Disposition: attachment; filename="receipt_6227889.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKdHJhaWxlciA8PCAvUm9vdCAxIDAgUiA+PgolJUVPRgo=
+--mix-4018568630--

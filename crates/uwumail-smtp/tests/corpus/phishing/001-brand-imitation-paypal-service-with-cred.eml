@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand imitation (PayPal Service) with credential request
+From: PayPal Service <service@konto-hilfe.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Ihr_Konto_wurde_eingeschr=C3=A4nkt?=
+Date: Wed, 16 Sep 2026 01:27:00 +0000
+Message-ID: <929420562984.168@konto-hilfe.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Sehr geehrter Kunde,</p><p>Ihr Konto wurde gesperrt. Bitte bestätigen Sie Ihre Daten innerhalb von 24 Stunden, sonst wird es dauerhaft geschlossen.</p><p><a href="https://konto-check.example/login">Jetzt bestätigen</a></p>

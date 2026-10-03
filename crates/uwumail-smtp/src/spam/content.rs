@@ -8,7 +8,7 @@ use sha2::Sha256;
 use uwumail_store::mime_limits::parse_message;
 
 use super::links::{self, Link, Target};
-use super::{Hit, attachments, bayes, html};
+use super::{Hit, attachments, bayes, html, phishing};
 
 /// Messages larger than this are not read for content; the rules about the sending server still apply.
 pub(crate) const MAX_MESSAGE: usize = 25 * 1024 * 1024;
@@ -111,7 +111,6 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
     let Some(message) = parse_message(raw) else { return Examination::default() };
     let mut hits = Vec::new();
     headers(&message, now, &mut hits);
-    from_name(&message, &mut hits);
 
     let body = read_body(&message);
     if body.needless_base64 {
@@ -124,19 +123,37 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
         add(&mut hits, "HIDDEN_TEXT", 1.0, Some(format!("{} characters", body.hidden_chars)));
     }
 
-    for link in &body.links {
-        match (&link.target, link.text.as_deref().and_then(links::named_in_text)) {
-            (Target::Domain(domain), Some(named)) if !dmarc_passed && !links::same_site(&named, domain) => {
-                add(&mut hits, "PHISHING_LINK_TEXT", 3.0, Some(format!("{named} -> {domain}")));
-            }
-            (Target::Ip(ip), Some(named)) if !dmarc_passed => {
-                add(&mut hits, "PHISHING_LINK_TEXT", 3.0, Some(format!("{named} -> {ip}")));
-            }
-            _ => {}
+    let text = visible_text(&message);
+    let from = message.from().and_then(|from| from.first());
+    let seen = phishing::Read {
+        from_name: from.and_then(|from| from.name.as_deref()).map(str::to_owned),
+        from_address: from.and_then(|from| from.address.as_deref()).map(str::to_owned),
+        reply_to: message
+            .reply_to()
+            .and_then(|reply| reply.first())
+            .and_then(|reply| reply.address.as_deref())
+            .map(str::to_owned),
+        subject: message.subject().unwrap_or_default().chars().take(MAX_SUBJECT).collect(),
+        text: text.chars().take(64 * 1024).collect(),
+        links: body.links.iter().take(200).map(phishing::SeenLink::of).collect(),
+        mailing_list: message.header("List-Id").is_some() || message.header("List-Post").is_some(),
+    };
+    for finding in phishing::check(&phishing::Input { from_authenticated: dmarc_passed, ..seen.input() }) {
+        // A link text naming some third site is what newsletters with tracking links do all the
+        // time; from a sender DMARC vouches for it is no trick. A brand's address on a link to
+        // somewhere else always is.
+        let softened = dmarc_passed && finding.rule == "PHISHING_LINK_TEXT";
+        if finding.points > 0.0 && !softened {
+            add(&mut hits, finding.rule, finding.points, Some(finding.detail));
         }
+    }
+    for link in &body.links {
         match &link.target {
             Target::Ip(ip) => add(&mut hits, "LINK_TO_IP", 1.5, Some(ip.to_string())),
-            Target::Domain(domain) if links::is_lookalike(domain) => {
+            // The same trick, said more precisely by the brand check.
+            Target::Domain(domain)
+                if links::is_lookalike(domain) && !hits.iter().any(|hit| hit.rule == "LOOKALIKE_BRAND_LINK") =>
+            {
                 add(&mut hits, "LOOKALIKE_LINK", 3.0, Some(domain.clone()));
             }
             Target::Domain(_) => {}
@@ -176,7 +193,7 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
         link_domains: links::domains_to_look_up(&body.links),
         tokens,
         subject,
-        text: visible_text(&message),
+        text,
         urls,
         link_hosts,
         files,
@@ -233,21 +250,6 @@ fn headers(message: &Message<'_>, now: i64, hits: &mut Vec<Hit>) {
         if letters >= 10 && !subject.chars().any(char::is_lowercase) {
             add(hits, "SUBJECT_ALL_CAPS", 1.5, None);
         }
-    }
-}
-
-/// A display name showing an address of another site than the one the mail comes from, like
-/// "service@bank.example" <someone@elsewhere.example>.
-fn from_name(message: &Message<'_>, hits: &mut Vec<Hit>) {
-    let Some(from) = message.from().and_then(|from| from.first()) else { return };
-    let (Some(name), Some(address)) = (from.name.as_deref(), from.address.as_deref()) else { return };
-    let Some((_, actual)) = address.rsplit_once('@') else { return };
-    let shown = name
-        .split(|c: char| c.is_whitespace() || "<>()[]\"',;:".contains(c))
-        .filter_map(|word| word.rsplit_once('@').map(|(_, domain)| domain.trim_end_matches('.')))
-        .find(|domain| domain.contains('.') && !links::same_site(domain, actual));
-    if shown.is_some() {
-        add(hits, "FROM_NAME_SPOOFS_ADDRESS", 3.0, Some(format!("{name} <{address}>")));
     }
 }
 
@@ -319,6 +321,8 @@ TVo=
     #[test]
     fn a_real_newsletter_trips_nothing_and_its_tracking_links_only_count_without_dmarc() {
         assert!(rules(&newsletter(), true).is_empty(), "{:?}", rules(&newsletter(), true));
+        // Its tracking links show the shop's own address, which is no trick when DMARC vouches for
+        // the shop; without that, anybody could have written the From (security review SPAM-3).
         assert_eq!(rules(&newsletter(), false), ["PHISHING_LINK_TEXT"]);
         let found = examine(newsletter().as_bytes(), now(), true, None);
         assert_eq!(found.link_domains, ["shop.example", "click.mailer.example"]);
@@ -335,10 +339,11 @@ TVo=
         assert_eq!(
             rules(&raw, false),
             [
+                "CREDENTIAL_REQUEST",
                 "FROM_NAME_SPOOFS_ADDRESS",
                 "HTML_ONLY",
                 "LINK_TO_IP",
-                "LOOKALIKE_LINK",
+                "LOOKALIKE_BRAND_LINK",
                 "MISSING_DATE",
                 "MISSING_MESSAGE_ID",
                 "PHISHING_LINK_TEXT",

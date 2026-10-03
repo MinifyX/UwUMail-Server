@@ -1,0 +1,15 @@
+X-Corpus-Class: phishing
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: brand imitation (ING Kundenservice) with credential request
+From: ING Kundenservice <kundenservice@ing-sicherheitscenter.example>
+To: Max Muster <max@uwu.example>
+Subject: Ihr Konto wird gesperrt
+Date: Mon, 14 Sep 2026 00:26:00 +0000
+Message-ID: <279435961611.387@ing-sicherheitscenter.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Sehr geehrter Kunde,</p><p>Ihr Konto wird gesperrt, wenn Sie Ihre Daten nicht bestätigen.</p><p><a href="https://ing-sicherheitscenter.example/daten">Jetzt bestätigen</a></p>

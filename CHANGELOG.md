@@ -3,6 +3,277 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.0
+
+**Webmail 0.22.0** (bundled): base labels with an overlap warning and an earlier description you can
+forget, the facts and reasons behind the AI spam check, time ranges kept in found dates, and domain
+signatures with a domain picker, "Gilt für" including all domains, placeholders and a note on the
+company footer.
+
+### Added
+
+- **Eight base labels for everyone**: Rechnung, Versand, Termin, Newsletter, Konto & Sicherheit,
+  Persönlich, Arbeit/Geschäftlich and Werbung (Invoice, Shipping, Appointment, Newsletter,
+  Account & security, Personal, Work & business, Promotions in English), each with a fixed,
+  non-overlapping definition and examples, switched on or off one by one (`auto`). A label of the
+  same meaning someone had already (`Rechnungen`, `Termine` …) becomes the base label; own labels
+  stay.
+- **At most a main label and a second one, and none when in doubt.** Every way that puts labels on
+  now says how sure it is; a main label needs 0.8, a second one 0.88, and base labels that exclude
+  each other (personal and newsletter, say) never go on together. Four new detectors (account,
+  personal, work, advertising) and stricter old ones; facts read from every mail (sender type,
+  List-Unsubscribe, amounts, invoice and tracking numbers, codes, greetings …) decide with them.
+- **The model only in doubt, held to the facts.** The label worker decides with rules, detectors,
+  learned senders, similar mails and the classifier first and asks the model only about the labels
+  they leave open, with the facts, hints and the person's corrections; it answers yes, no or
+  unsure. A lone yes is never a second label, a mass mail is never personal, and a model saying
+  yes to everything is not believed. On a corpus of 234 invented mails, labels without a model
+  went from 74 % to 98 % precision (recall 33 % → 67 %), and with gemma-3-4b from 57 % to 95 %
+  (recall 84 % → 81 %); on 508 real mails from 24 % to 96 % (recall 89 % → 64 %).
+  Notifications of apps and social networks (followers, recaps, mentions) are never newsletters or
+  promotions, a test mail gets no label, an invoice needs an invoice word, number, amount or PDF and
+  a shipment a tracking number, carrier or shipping word. A label taken off a sender's mail by hand is not put on that sender's
+  mail by itself again, by the model neither.
+- **Similar mails** decide labels: with the new admin provider kinds *OpenAI embeddings*, *Ollama
+  embeddings* and *OpenAI-compatible embeddings* by vectors of the person's labeled mails (one byte
+  per dimension, deleted with the mail), without one by their words.
+- **Corrections teach more**: taking a label off a sender's mail by hand keeps it off that sender's
+  mail, and hand-labelings are shown to the model as examples (sender domain, subject, start of
+  the text; the newest few per label).
+- **Overlap warning**: `AssistLabel/checkOverlap` tells which labels a new or changed label would
+  overlap with (same name, the meaning of a base label, largely the same words); the webmail warns
+  while a label is written.
+- **Small-model hint**: the portal warns for chat models below 7 billion parameters and recommends
+  Qwen3-8B, Qwen3-14B or gemma-3-12b-it; docs/llm.md has a llama.cpp setup for chat and embeddings.
+- **Moving a whole domain, by the admin** (Admin → People → Moves): a wizard makes the domain
+  (with DKIM) and the mailboxes if they are missing, takes the people as a table or a CSV list
+  (`;` or `,`, with or without header, errors by line) with old login, password, name, address
+  here, quota and aliases, and copies mail over IMAP (folders and special-use folders merged,
+  nothing twice by Message-ID, flags and dates kept) and contacts and calendars over
+  CalDAV/CardDAV (autodiscovery, presets for mailcow/SOGo, Nextcloud, iCloud, GMX and WEB.DE,
+  `.vcf`/`.ics` upload per mailbox, Kolab-style IMAP contact and calendar folders). Progress per
+  mailbox and overall, readable errors, retry with a new login, pause/continue, a small
+  configurable number of mailboxes at once, and moves go on after a restart.
+- **Delta sync until the MX switch:** mailboxes keep syncing on a schedule until the admin
+  finishes the move (with an MX check); the last round runs, then the old passwords (sealed until
+  then) are wiped.
+- **Password links for a moved domain:** one invite link per new mailbox (7 days), with copy
+  buttons, CSV download and a printable overview; mailboxes that already have a password get
+  none, and the list says so.
+- **Single mailbox moves by the admin** in the same wizard, into an existing mailbox or a new one;
+  personal moves under My account → Moving share the copying code and the progress.
+- **Signatures per domain.** Pick a domain and write one signature for all your addresses there,
+  apply it to several or all domains, and give single addresses their own only where needed
+  (portal and webmail). Placeholders `{name}`, `{adresse}`/`{address}` and `{domain}` are filled per
+  address. JMAP `Identity/get` returns the effective signature, so every mail program keeps
+  working; new extension `urn:uwumail:jmap:signatures` (docs/signatures.md,
+  docs/jmap-signatures.md). Where all addresses of a domain had the same signature, the update
+  makes it the domain's.
+- **Company signature per domain** for admins: as a template people without their own get, or as
+  a mandatory footer the server appends on sending, through JMAP and SMTP submission alike, before
+  DKIM signing. Only the body text parts are rewritten; signed or encrypted mail (S/MIME, PGP) is
+  left alone and a footer already there is not added twice.
+- **AI spam check: facts decide, the AI explains.** The server first weighs what it knows
+  (authentication, its spam filter, your history with the sender, the new phishing checks) into a
+  score; the score sets which verdicts are possible, and the model may only choose among them.
+  Every reason must quote the mail or cite one of the facts; reasons it makes up are dropped and
+  counted. The confidence now comes mostly from the facts. `Assist/spamCheck` returns the weighing
+  (`facts`), `reasonDetails` and `droppedReasons`; webmail 0.22.0 shows them. Against a small local
+  model (gemma-3-4b) on half the corpus, phishing called phishing rose from 54 % to 71 % and spam
+  from 50 % to 70 %, with no wanted mail called spam (before: 2 phishing mails called
+  legitimate); on real wanted mail of strangers, 1 of 40 was called spam instead of 3.
+- **Phishing checks without the network.** Look-alike, homoglyph and punycode domains of about 50
+  brands (and, in the AI spam check, of your contacts' domains), a display name showing another
+  address or domain, a brand's name in the display name or subject of mail from elsewhere, link
+  text naming a brand while the link leads elsewhere, a request for login data with links off the
+  sender's site, and a Reply-To to another site. New rules in docs/spam-filter.md.
+- **A spam corpus for CI.** 195 made-up German and English mails (wanted mail, spam, phishing, all
+  with reserved domains) and a test that fails when more than 1 % of the wanted mail would go to
+  Junk or less than 70 % of the phishing would.
+
+### Changed
+
+- **Fewer false positives.** On the corpus, phishing that goes to Junk by the rules alone rose
+  from 26 % to 77 % while wanted mail stays out of Junk and is no longer greylisted (7 before).
+  User names with dots in link texts are no longer taken for domains, which greylisted many
+  social-network notifications. The Bayes filter adds at most +3.5 to mail DMARC vouches for
+  that trips nothing else (it alone put authenticated receipts and newsletters into Junk), unless
+  your own marks make it 99 % sure.
+
+### Security
+
+- **Company footer: no text can become a MIME boundary** (review SIG-1). A rewritten part whose
+  text has a line starting with `--` is written as quoted-printable with every leading `-` of an
+  encoded line (soft line breaks too) as `=2D` (R2-SIG-1), and a message that would not keep its
+  MIME structure and the content of every other part goes out without the footer, so no part
+  appears after the virus scan. With several `From` addresses, the first footer of their domains
+  applies.
+- **The size limit counts the footer** (SIG-4): a message that only fits without the company
+  footer is refused at submission (`tooLarge`), also for undo send and send later.
+- **Submission refuses a malformed header block** (SIG-6), as inbound mail already did: a `Bcc`
+  below a line that is no header field went out to every recipient.
+- **SignatureSettings/set writes each domain and identity once** (SIG-2): duplicate domain keys
+  (`*`/` *`, `Example.ORG`/`example.org`) count once, the last wins; an account has at most 2000
+  identities.
+- **Moves keep mail filed in "Kalender" or "Contacts" folders** (review MOV-1): only messages that
+  are nothing but a contact or calendar object, of a kind the move takes, become contacts or
+  events; everything else, and every object whose import fails, is copied as mail.
+- **Password links CSV without formulas** (MOV-2): cells starting with `=`, `+`, `-`, `@`, tab or
+  CR get a leading `'`.
+- **A refused move leaves nothing behind** (MOV-3): limits and busy mailboxes are checked before a
+  domain, mailbox or alias is made, and what was made is taken back when the move fails.
+- **One move per mailbox at a time** (MOV-4): an admin's move and the person's own move exclude
+  each other; a trashed account's move entries stop and lose their old passwords; the move page
+  reads only its own people and polls every 5 s instead of 3 s.
+- docs/signatures.md: the footer is best effort, not a compliance guarantee, the Sent copy has no
+  footer, and clients must sanitise signature HTML (SIG-3, SIG-5).
+- **Imports cannot fill the memory** (review M-1): moves, personal moves and fetched mailboxes ask
+  for `RFC822.SIZE` first and fetch small messages in portions of about 16 MiB and large ones
+  alone; a fetch may take only a little more than the sizes given; all imports share a 512 MiB
+  budget of fetched mail; message bodies are moved out of the answer instead of copied. A message
+  larger than `smtp.max_message_size` is skipped and counted with the skipped ones. A move the
+  server went down during at three starts in a row is paused as `interrupted` instead of crashing
+  it again (migration 0075).
+- **An understated size skips one message, not the whole import** (review MFIX-M1): a body larger
+  than its `RFC822.SIZE` allows (Exchange only estimates it) is read past instead of failing the
+  portion, fetched again on its own with room for `smtp.max_message_size`, and skipped (UID in the
+  log) if it still does not fit, so fetched mailboxes and moves keep going past it.
+- **One import holds no more than the room it counted** (review MFIX2-H1): a portion ends at the
+  first message it read past, which comes again alone and the rest after it; a body larger than
+  `smtp.max_message_size` is let go at once; answers for UIDs that were not asked for, or twice,
+  are left out; only literals of at most 64 MiB are kept (larger ones are only read past); a
+  request above the 512 MiB budget is an error instead of a smaller permit.
+- **Submission removes `X-UwUMail-Label`** a sender wrote, as inbound delivery already did.
+- docs/moving.md and docs/signatures.md list the known limitations the review left as they are.
+- **Regional bank names only under their own endings (SPAM-1).** `sparkasse-…` and `volksbank-…`
+  count as the bank's own domain only under `.de` and `.at`; `sparkasse-login.com` and the like are
+  imitations again, and such a domain never vouches for a link that shows `sparkasse.de`.
+- **Tracking links only for authenticated senders (SPAM-3).** A link whose text shows the sender's
+  own site and leads elsewhere is a harmless tracking link only when DMARC vouches for the From
+  domain; from a spoofable domain it counts as `PHISHING_LINK_TEXT` (+3) again, in the filter and
+  in the AI spam check.
+- **Phishing checks stay cheap on hostile headers (SPAM-4).** The display name (256 characters),
+  subject and text are capped inside the checks, host names longer than DNS allows are skipped,
+  brand names are split into words once, at most 2,000 contact domains are compared, and the AI
+  spam check parses the mail and runs the checks off the async runtime.
+- **Word statistics held back only for proven senders (SPAM-2).** The +3.5 limit for authenticated,
+  otherwise spotless mail now holds only for a sender with a good history or while the server's
+  Bayes is less than 99 % sure, and never for a sender whose mail mostly went to Junk; a throwaway
+  domain with its own DMARC no longer slips into the inbox on clean content.
+- **Waiting messages cannot be taken over by a guessed Message-ID (SPAM-5).** A retry only joins a
+  waiting entry with the same Message-ID when envelope sender and From match too, an arriving
+  message only removes waiting entries by Message-ID from the same envelope sender, and retries
+  keep an entry at most twice the waiting time from its first attempt.
+- **AI spam check reasons must really cite (SPAM-6).** A fact counts only when the reason's
+  `evidence` is just that fact's number and the reason is about the fact's topic; a fact number in
+  the reason text proves nothing, and reasons naming a phone number or address that is neither in
+  the mail nor in the facts are dropped.
+- **No verdicts from the sender (client review C-1, server side).** `X-Spam-Status`/`X-Spam-Score`
+  a message brings are removed even when the filter did not look, and submitted mail loses
+  `Authentication-Results` in this server's name and spam verdicts before local delivery. The AI
+  spam check and the label facts read only the block this server wrote on top (its own `Received`
+  up to the next one); for another account's mail only what stands above the first `Received`,
+  without counting a good filter score, and "suspicious" is always allowed there.
+- **Embeddings only with consent (LABELS22-M1).** Mail goes to the admin's embeddings provider only
+  while AI labels are on on the server and for the person, the person may use the assistant, and
+  their chosen labels model is one of the server's (not a personal or local one). Mail in Junk or
+  Trash is never embedded and no similar mail.
+- **Known senders by an index, exactly, and only when authenticated (LABELS22-M2, -L1).** Delivery no
+  longer reads every vCard of the recipient's address books for every message: a new index of card
+  addresses (migration 0072, filled once at start) is kept with every card write. A sender counts
+  as known only by exactly a card's address (not a prefix of one) and only when authentication
+  backs the From address.
+- **An adopted label keeps your own description (LABELS22-L2).** A label of yours that becomes a
+  base label because of its name keeps the description you had written as `previousDescription`
+  (migration 0073, shown in `AssistLabel/get`); the model gets it as a hint next to the definition.
+- **Correction examples without codes, and gone with AI labels (LABELS22-L3).** Examples kept from
+  hand-labelings mask runs of four digits or more and web addresses, are only sent while AI labels
+  are on, and are deleted when AI labels are switched off.
+- **Neighbour search off the async runtime (LABELS22-L4).** Comparing a mail with the person's
+  examples (words or vectors) runs on a blocking thread, the mail's words are made a set once, and
+  `AssistLabel/apply` runs one call at a time per person.
+- **Authenticated means aligned, in the AI paths too (R2-M1).** The AI spam check and the AI labels
+  call a From authenticated only when DMARC passed, or — without a DMARC policy — a DKIM signature
+  or SPF pass belongs to the From domain, a parent or a subdomain of it, as the SMTP checks decide
+  it. A pass for the sender's other domain, or a DMARC failure, no longer makes a contact "known"
+  or a lookalike link a tracking link. `Authentication-Results` is read with comments and quoted
+  strings handled, so a quoted envelope sender cannot inject a result.
+- **Regional bank prefixes hide nothing (R2-L1).** A `sparkasse-…`/`volksbank-…` domain under
+  `.de`/`.at` counts as the bank's own only when the From is authenticated, and never vouches for a
+  request for a login or data: `CREDENTIAL_REQUEST` fires even for a freshly registered domain with
+  its own DMARC.
+- **Verdicts only in mail delivered here (R2-L2).** Mail stored by IMAP APPEND or JMAP import can
+  carry a forged copy of this server's header block; the AI spam check and the AI labels now read
+  that block only in mail this server's SMTP delivery stored (migration 0074 `smtp_delivered`;
+  copies keep the mark, mail stored before the update counts as delivered).
+- **Reasons and examples, tightened (R2 info).** A number an AI spam reason names must stand within
+  one number of the mail, and a reason calling the sender verified needs authentication behind it.
+  Correction examples also mask codes of letters and digits (`AB7-K2X`), and a mail with a one-time
+  code keeps no example.
+- **An extreme date from the model can no longer stop the server (final review DATES-H1).** Event
+  extraction ignores start and end dates outside 1970–2200 before doing any date arithmetic, so a
+  model answer (or a personal provider) naming the year 262142 no longer overflows and aborts.
+- **`Authentication-Results` read whole and one way (R3-L1, R3-L2, client C4-1).** The parser is
+  shared by the strip of forged results and the assistant (`uwumail_smtp::auth_results_parts`,
+  `authserv_id`), reads every part however many DKIM results come first, and never keeps a word or
+  part a limit cut: a signer `victim.example.<own domain>` can no longer read as the victim's. A
+  stored message cut for parsing inside its header block leaves the cut header out.
+- **Warnings stay warnings, praise stays praise (R3-L3, R4-L1).** "Unverified", "not trustworthy",
+  "isn’t trustworthy", "doesn't seem genuine", "kein verifizierter Absender" and other negated
+  praise no longer count as calling the sender verified, so the AI spam check keeps such reasons. A
+  negation counts only right before the praise in its own clause: "No red flags: verified sender",
+  "no doubt trustworthy" or "nicht nur ein verifizierter Absender" are still praise and dropped when
+  the From is not authenticated.
+- **Trace headers read strictly everywhere (R4 I-2, I-4, I-6).** `Authentication-Results` words end
+  only at ASCII whitespace, fetched mail reads the provider's results with the same parser, and
+  `Assist/spamCheck` takes `Authentication-Results`, `Received` and `X-Spam-Status` values up to
+  16,000 characters (apps leave out longer ones, never cut them).
+- **Another server's results believed only when well formed (R5 L-1, client C6-2, C6-3).** For
+  fetched mail and the AI spam check of another account, an `Authentication-Results` with an
+  unclosed comment or quote or a stray `)` counts as no result: a provider that echoes a sender's
+  parenthesis into a comment could otherwise let the sender add `dmarc=pass` or a `client-ip`. A
+  method named twice keeps its worse result, a failed DKIM result that names no signer outweighs a
+  pass, and a client address named twice counts as none. Only ASCII whitespace is trimmed from
+  domains and at header folds, and a domain with a Unicode space in it is none. The AI spam check
+  also reads "Phishing? No… verified sender" and "no less trustworthy" as praise.
+- **No direction tricks on the spam card (webmail review WF-2).** Phishing details, the facts' details,
+  the model's reasons and their quotes come without Unicode bidi controls.
+- **An adopted label's earlier description can be forgotten (webmail review WF-1).**
+  `AssistLabel/set` takes `previousDescription: null`; the model gets no hint from it from then on.
+- **A forged colleague is no known sender (final client review).** The AI spam check counts the
+  reader's history with an address in full only when authentication backs the From, not at all when
+  DMARC failed or the results leave the From unaligned, and at half weight, at most 1.5 in all, when
+  the mail carries no results. Gift-card and urgent-transfer cues stay on unless the sender is both
+  known and authenticated, so CEO fraud from a forged address can come out as spam or phishing.
+- **Amounts found in one pass (final client review X-1).** Thousands of rejected copies of an amount
+  before the real one no longer make label facts take seconds; facts are made once per mail and off
+  the async runtime.
+- **Known limitations documented.** Three low-impact remainders are written up in `docs/spam-filter.md`, "Known
+  limitations (security review)": sender-balanced comment echoes, client addresses written only in comments, and the
+  non-atomic `ifInState` check on domain signatures.
+- **No startup rewrite of every mail (R3 I-2).** Migration 0074 now adds `smtp_delivered` with a
+  default instead of updating every row. Correction examples mask digits of any script.
+- Low findings of the review that were left as they are are listed under "Known limitations
+  (security review)" in `docs/spam-filter.md`, `docs/labels.md`, `docs/moving.md` and `docs/signatures.md`.
+
+### Fixed
+
+- **Appointments keep their times.** "Samstag 03.10.26, zwischen 10:00 und 12:00" becomes
+  10:00–12:00 instead of an all-day event. The webmail's date finder knows "zwischen … und",
+  "10.00–12.00", "halb drei", "nachmittags", "c.t.", parcel time windows and date ranges with
+  "zwischen", and offers fewer false ones (login and pickup timestamps, billing periods, phone
+  numbers, "Auftrag … vom"); titles and places no longer read "Betrag", "Datum" or "Dorf". "Check
+  with AI" keeps a time range, is told to set all-day only when the mail gives no time, and its
+  answer never replaces a found time with a whole day (or the other way round). The server turns
+  an all-day answer with a time of day into a timed event and counts an all-day end as the last day.
+- **Wartende Nachrichten: retries of one message are one entry.** A greylisted sender that comes
+  back several times no longer fills the list with copies; the entry shows how often it tried and
+  when it last did. Once the message arrives, every waiting copy disappears, and a retry of a
+  message already delivered or discarded by hand no longer comes back onto the list.
+- **Push no longer reports a change with an older state.** A change notification handled late
+  read changes written meanwhile and sent them with the older state (JMAP push and web push); it now
+  reads only up to its own state.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with
@@ -79,7 +350,6 @@ existing providers; the switch decides).
   Providers that hold the model to the answer's shape (OpenAI, llama.cpp, Ollama …) now also get
   the keys in that order (they had them sorted, `fits` first) and one verdict per label, so a small
   model no longer stops after the first label or proposes new labels before judging the old ones.
-
 
 **Webmail 0.21.0** (bundled): sidebar, list and reader can be resized by dragging (per device,
 double-click resets) and the reader fills its pane; labels get their own sidebar section with unread

@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Info <contact96@offers4u.test>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Abnehmen_ohne_Di=C3=A4t?=
+Message-ID: <276990092477.494@offers4u.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+TWl0IHVuc2VyZW0gV3VuZGVybWl0dGVsIHZlcmxpZXJlbiBTaWUgMTAgS2lsbyBpbiAxNCBUYWdl
+bi4gTnVyIGhldXRlIDcwICUgUmFiYXR0OiBodHRwczovL2t1cnouZXhhbXBsZS81OTc1Mw==

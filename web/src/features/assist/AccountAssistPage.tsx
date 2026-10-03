@@ -20,6 +20,7 @@ import {
   formatCost,
   formatDay,
   hasCosts,
+  personalKinds,
   usageSum,
   type AccountAssistView,
   type AccountUsageView,
@@ -193,7 +194,7 @@ function ProvidersCard({ view }: { view: AccountAssistView }) {
   });
   const dialogProps = {
     mode: "account" as const,
-    kinds: view.kinds,
+    kinds: personalKinds(view.kinds),
     basePath: `${ACCOUNT_ASSIST}/providers`,
     queryKey: assistKey,
     privateAllowed: view.mayUsePrivateAddresses,

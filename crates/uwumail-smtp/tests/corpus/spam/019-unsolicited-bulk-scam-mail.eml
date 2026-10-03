@@ -1,0 +1,15 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Gewinnspiel-Team <info61@offers4u.test>
+To: Max Muster <max@uwu.example>
+Subject: Lose 15 kg in 2 weeks
+Date: Tue, 15 Sep 2026 22:16:00 +0000
+Message-ID: <109954786889.775@offers4u.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Doctors hate this one trick! Burn fat while you sleep. Order today and get 2 bottles free: https://kurz.example/70295

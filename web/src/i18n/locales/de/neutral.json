@@ -585,7 +585,25 @@
       "bimiTitle": "Gib bitte einen kürzeren Namen für das Logo ein, ohne Sonderzeichen.",
       "bimiBackground": "Die Hintergrundfarbe muss so aussehen: #rrggbb.",
       "bimiCertificateInvalid": "Das ist kein lesbares Zertifikat im PEM-Format.",
-      "bimiCertificateNotBimi": "Das Zertifikat ist kein VMC oder CMC für BIMI."
+      "bimiCertificateNotBimi": "Das Zertifikat ist kein VMC oder CMC für BIMI.",
+      "moveRows": "Einige Zeilen der Liste müssen korrigiert werden; siehe Tabelle.",
+      "moveTooMany": "Ein Umzug nimmt höchstens 2000 Postfächer.",
+      "moveSingle": "Ein Einzel-Umzug nimmt genau ein Postfach.",
+      "moveFinished": "Dieser Umzug ist abgeschlossen.",
+      "moveFinishing": "Der letzte Abgleich läuft schon.",
+      "moveMailboxBusy": "Dieses Postfach ist schon in einem anderen Umzug.",
+      "moveOtherDomain": "Dieses Postfach liegt nicht auf der Domain des Umzugs.",
+      "moveNotActive": "Dieser Umzug läuft gerade nicht.",
+      "moveNotPaused": "Dieser Umzug ist nicht pausiert.",
+      "movesLimit": "Höchstens 20 Umzüge können gleichzeitig offen sein. Schließ erst einen ab oder lösch ihn.",
+      "movePersonalBusy": "Die Person zieht gerade selbst Mails in dieses Postfach um (Mein Postfach → Umzug). Warte, bis das fertig ist, oder bitte sie, ihn zu pausieren.",
+      "moveAdminBusy": "Ein Admin zieht gerade Mails in dieses Postfach um. Versuch es noch mal, wenn dieser Umzug abgeschlossen ist.",
+      "movePasswordNeeded": "Das Passwort für das alte Postfach wurde gelöscht. Gib es ein, um weiterzumachen.",
+      "moveChanged": "An der Liste hat sich inzwischen etwas geändert, vielleicht durch eine andere Anfrage. Prüf die Liste und starte noch mal.",
+      "hostInvalid": "Der Servername ist nicht verwendbar. Nur Server im Internet gehen.",
+      "urlInvalid": "Die Adresse ist keine verwendbare https-Adresse.",
+      "domainMaskedOnly": "Diese Domain nimmt nur maskierte Adressen.",
+      "noMailbox": "Dieses Konto hat kein Postfach."
     }
   },
   "people": {
@@ -867,7 +885,6 @@
       "domainCreate": "{{actor}} hat die Domain {{target}} angelegt",
       "domainRemove": "{{actor}} hat die Domain {{target}} entfernt",
       "domainCatchAll": "{{actor}} hat die Sammeladresse von {{target}} geändert",
-      "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} hat neue DKIM-Schlüssel für {{target}} erzeugt",
       "domainDkimActivate": "{{actor}} hat {{target}} auf die neuen DKIM-Schlüssel umgestellt",
       "domainDkimRemove": "{{actor}} hat einen alten DKIM-Schlüssel von {{target}} entfernt",
@@ -936,7 +953,19 @@
       "domainBimiLogoRemoved": "{{actor}} hat das BIMI-Logo von {{target}} entfernt",
       "domainBimiCertificate": "{{actor}} hat ein BIMI-Zertifikat für {{target}} hinterlegt",
       "domainBimiCertificateRemoved": "{{actor}} hat das BIMI-Zertifikat von {{target}} entfernt",
-      "microsoftResolve": "{{actor}} hat die Ablehnung von {{target}} durch Microsoft als behoben markiert"
+      "microsoftResolve": "{{actor}} hat die Ablehnung von {{target}} durch Microsoft als behoben markiert",
+      "moveCreate": "{{actor}} hat einen Umzug von {{target}} gestartet",
+      "moveAddMailboxes": "{{actor}} hat Leute zum Umzug von {{target}} hinzugefügt",
+      "moveSettings": "{{actor}} hat das Tempo des Umzugs von {{target}} geändert",
+      "movePause": "{{actor}} hat den Umzug von {{target}} pausiert",
+      "moveResume": "{{actor}} hat den Umzug von {{target}} fortgesetzt",
+      "moveFinish": "{{actor}} hat den Umzug von {{target}} abgeschlossen",
+      "moveDelete": "{{actor}} hat den Umzug von {{target}} gelöscht",
+      "moveRetry": "{{actor}} hat den Umzug von {{target}} neu angestoßen",
+      "movePauseMailbox": "{{actor}} hat den Umzug von {{target}} pausiert",
+      "moveRemoveMailbox": "{{actor}} hat {{target}} aus dem Umzug genommen",
+      "moveUpload": "{{actor}} hat Kontakte oder Kalender für {{target}} hochgeladen",
+      "other": "{{actor}}: {{action}} {{target}}"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -1246,6 +1275,29 @@
       },
       "unauthenticated_one": "Ein Bericht kam von einem Absender, der sich nicht ausweisen konnte. Seine Zahlen könnten erfunden sein.",
       "unauthenticated_other": "{{count}} Berichte kamen von Absendern, die sich nicht ausweisen konnten. Ihre Zahlen könnten erfunden sein."
+    },
+    "signature": {
+      "title": "Firmen-Signatur",
+      "explain": "Eine Signatur für alle Adressen dieser Domain: als Vorlage, die jede Person anpassen kann, oder als Pflicht-Fußzeile, die der Server beim Senden anhängt.",
+      "mode": "Verwendung",
+      "modes": {
+        "off": "Aus",
+        "template": "Vorlage",
+        "footer": "Pflicht-Fußzeile"
+      },
+      "modeHint": {
+        "off": "Jede Person schreibt ihre Signatur selbst.",
+        "template": "Wer noch keine eigene Signatur hat, bekommt diese. Jede Person darf sie ändern.",
+        "footer": "Der Server hängt sie an jede Mail von dieser Domain an, auch aus Mail-Apps über SMTP."
+      },
+      "text": "Text",
+      "html": "HTML",
+      "htmlHint": "Optional, für formatierte Mails. Ohne HTML wird der Text verwendet.",
+      "placeholders": "Platzhalter: {{placeholders}}",
+      "footerNote": "Signierte oder verschlüsselte Mails (S/MIME, PGP) bekommen keine Fußzeile, sonst wäre die Signatur kaputt. Empfänger bekommen die Fußzeile, die Kopie im Ordner Gesendet des Absenders zeigt sie nicht. Das ist eine Hilfe, keine Garantie: manche Mails (z. B. mit bereits zitierter Fußzeile) gehen ohne sie raus.",
+      "footerEmpty": "Eine Pflicht-Fußzeile braucht einen Text.",
+      "save": "Speichern",
+      "saved": "Firmen-Signatur gespeichert"
     }
   },
   "groups": {
@@ -2236,8 +2288,8 @@
       "progress": "{{done}} von {{total}} Mails · {{size}}",
       "progressLabel": "Wie weit der Umzug ist",
       "folders": "Ordner {{done}} von {{total}}",
-      "skipped": "{{count}} Mail war schon da und wurde ausgelassen",
-      "skipped_other": "{{count}} Mails waren schon da und wurden ausgelassen",
+      "skipped": "{{count}} Mail wurde ausgelassen: Sie war schon da oder ist größer, als dieser Server annimmt",
+      "skipped_other": "{{count}} Mails wurden ausgelassen: Sie waren schon da oder sind größer, als dieser Server annimmt",
       "done": "Alles ist da.",
       "doneAt": "Alles, was dort war, ist hier, Stand {{date}}."
     },
@@ -2248,6 +2300,7 @@
       "notPublic": "Der Server des alten Anbieters ist nicht im Internet, soweit dieser Server das sehen kann.",
       "noMailbox": "Dein Konto hat kein Postfach, in das Mails umziehen könnten.",
       "stopped": "Pausiert. Mach weiter, wann du willst; es geht dort weiter, wo es aufgehört hat.",
+      "interrupted": "Der Server ist während dieses Umzugs mehrmals hintereinander ausgefallen, daher wurde er pausiert. Setze ihn fort, wenn du bereit bist, oder frag deinen Admin.",
       "failed": "Etwas ist schiefgegangen. Mach weiter, um es noch mal zu versuchen."
     },
     "actions": {
@@ -2317,7 +2370,7 @@
     },
     "signatures": {
       "title": "Signaturen",
-      "intro": "Mail-Apps und die Webmail fügen die Signatur der Adresse ein, von der du sendest.",
+      "intro": "Wähle eine Domain und schreib eine Signatur für alle deine Adressen dort. Mail-Apps und die Webmail fügen sie beim Schreiben ein.",
       "loading": "Adressen werden geladen …",
       "loadError": "Die Adressen konnten nicht geladen werden.",
       "empty": "Es gibt noch keine Adresse, von der du senden kannst.",
@@ -2325,7 +2378,25 @@
       "html": "Signatur als HTML",
       "htmlHint": "Optional, für Apps, die formatierte Mails schreiben.",
       "save": "Signatur speichern",
-      "saved": "Signatur gespeichert"
+      "saved": "Signatur gespeichert",
+      "domain": "Domain",
+      "domainOption_one": "{{domain}} (1 Adresse)",
+      "domainOption_other": "{{domain}} ({{count}} Adressen)",
+      "placeholders": "Platzhalter:",
+      "appliesTo": "Gilt für",
+      "allDomains": "Alle Domains (auch künftige)",
+      "replaces": "Ersetzt die eigenen Signaturen von {{domains}}.",
+      "preview": "Vorschau für {{address}}",
+      "remove": "Signatur entfernen",
+      "fromTemplate": "Das ist die Vorlage deiner Organisation. Du kannst sie anpassen und als deine eigene speichern.",
+      "fromAllDomains": "Diese Domain nutzt deine Signatur für alle Domains.",
+      "companyFooter": "Beim Senden hängt der Server von dieser Domain aus automatisch diese Fußzeile an:",
+      "exceptions": "Abweichende Signatur für einzelne Adressen ({{count}})",
+      "ownSignature": "Eigene Signatur",
+      "followsDomain": "Nutzt die Domain-Signatur",
+      "override": "Eigene Signatur für diese Adresse",
+      "backToDomain": "Domain-Signatur verwenden",
+      "tooLarge": "Die Signatur ist zu groß (höchstens 256 KB)."
     }
   },
   "forwardConfirm": {
@@ -2974,6 +3045,8 @@
       "emptyHint": "Zurückgestellte Nachrichten stehen hier, bis sie von selbst ankommen oder du entscheidest.",
       "noSubject": "Kein Betreff",
       "sentTo": "An {{address}}",
+      "attempts_one": "{{count}} Zustellversuch, zuletzt {{last}}",
+      "attempts_other": "{{count}} Zustellversuche, zuletzt {{last}}",
       "decide": {
         "deliver": "Zustellen",
         "discard": "Verwerfen",
@@ -3999,7 +4072,10 @@
       "priceLists_other": "Preise aktualisiert {{date}}, {{count}} Modelle bekannt.",
       "priceListsNone": "Die Preise wurden noch nicht abgerufen.",
       "foreignMail": "KI für Mail aus anderen Konten",
-      "foreignMailHint": "Nutzer dürfen den Assistenten in der UwUMail-App für die Mail ihrer anderen Konten (Exchange, Gmail, IMAP) verwenden. Die App schickt dazu den Text dieser Mail hierher; gespeichert wird davon nur die Nutzung. Es werden nur Anbieter verwendet, die das erlauben."
+      "foreignMailHint": "Nutzer dürfen den Assistenten in der UwUMail-App für die Mail ihrer anderen Konten (Exchange, Gmail, IMAP) verwenden. Die App schickt dazu den Text dieser Mail hierher; gespeichert wird davon nur die Nutzung. Es werden nur Anbieter verwendet, die das erlauben.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Ähnliche Mails für Labels",
+      "smallModel": "Dieses Modell hat nur etwa {{size}} Milliarden Parameter; Labels und Spam werden damit schlecht beurteilt. Empfohlen: {{recommended}}."
     },
     "choices": {
       "title": "Welcher Anbieter wofür",
@@ -4109,7 +4185,8 @@
         "featuresRequired": "Wähle mindestens eine Funktion.",
         "limitInvalid": "Eine ganze Zahl über null, oder leer.",
         "priceInvalid": "Gib einen Preis ab 0 ein, zum Beispiel 0,25.",
-        "requestPriceInvalid": "Gib einen Preis von 0 bis 100 ein, zum Beispiel 0,005."
+        "requestPriceInvalid": "Gib einen Preis von 0 bis 100 ein, zum Beispiel 0,005.",
+        "embeddingsModelRequired": "Gib das Embeddings-Modell an."
       },
       "price": "Preis",
       "priceIntro": "US-Dollar pro Million Tokens, um Kosten anzuzeigen. Leer übernimmt den Preis aus öffentlichen Preislisten.",
@@ -4122,7 +4199,13 @@
       "showCostHint": "Sie sehen dann, was ihre Anfragen kosten. Du siehst es immer.",
       "requestPrice": "Pro Anfrage, US-Dollar",
       "foreignMail": "Mail aus anderen Konten",
-      "foreignMailHint": "Darf für die Mail anderer Konten der Nutzer verwendet werden, wenn „KI für Mail aus anderen Konten“ an ist."
+      "foreignMailHint": "Darf für die Mail anderer Konten der Nutzer verwendet werden, wenn „KI für Mail aus anderen Konten“ an ist.",
+      "chatGroup": "Chat-Modelle",
+      "embeddingsGroup": "Embeddings (ähnliche Mails für Labels)",
+      "embeddingsTitle": "Embeddings: ähnliche Mails für Labels",
+      "embeddingsHelp": "Ein Embeddings-Modell macht aus Mails Vektoren. Damit finden die automatischen Labels ähnliche Mails, die schon ein Label haben, und können viele Labels entscheiden, ohne das Chat-Modell zu fragen. Für andere Funktionen wird es nicht genutzt und braucht kein schnelles Modell.",
+      "embeddingsStorage": "Die Vektoren werden kompakt pro gelabelter Mail gespeichert und mit der Mail oder dem Konto gelöscht.",
+      "embeddingsModelNeeded": "Gib bei dieser Art das Embeddings-Modell an, das der Server anbietet."
     },
     "chatgpt": {
       "title": "ChatGPT-Anmeldung",
@@ -4419,6 +4502,316 @@
         "noLogo": "Das Zertifikat enthält kein Logo.",
         "unknownKind": "Das sieht nicht nach einem VMC oder CMC aus."
       }
+    }
+  },
+  "moves": {
+    "title": "Umzüge",
+    "intro": "Hol eine ganze Domain mit allen Leuten oder ein einzelnes Postfach von einem anderen Server her: Mails, Kontakte und Kalender. Es wird weiter abgeglichen, bis du den Umzug abschließt.",
+    "kind": {
+      "domain": "Domain-Umzug",
+      "mailbox": "Einzelnes Postfach"
+    },
+    "state": {
+      "active": "Läuft",
+      "paused": "Pausiert",
+      "finishing": "Letzter Abgleich",
+      "done": "Abgeschlossen"
+    },
+    "mailboxState": {
+      "queued": "Wartet",
+      "running": "Kopiert",
+      "paused": "Pausiert",
+      "synced": "Aktuell",
+      "done": "Fertig"
+    },
+    "progress": {
+      "label": "Fortschritt des Umzugs von {{domain}}"
+    },
+    "list": {
+      "new": "Neuer Umzug",
+      "from": "von {{host}}",
+      "summary": "{{mailboxes}} Postfächer · {{done}} von {{total}} Mails",
+      "paused_one": "{{count}} pausiert",
+      "paused_other": "{{count}} pausiert",
+      "created": "gestartet {{date}}",
+      "emptyTitle": "Noch keine Umzüge",
+      "emptyBody": "Ziehst du eine Firma oder Familie auf diesen Server um? Starte einen Domain-Umzug: Domain und Postfächer werden hier angelegt, dann wird alles herübergeholt.",
+      "own": "Alle können ihr eigenes altes Postfach auch selbst umziehen, unter Mein Konto → Umzug."
+    },
+    "wizard": {
+      "back": "Alle Umzüge",
+      "title": "Neuer Umzug",
+      "intro": "Vier Schritte: was umzieht, woher, wer, und eine Prüfung vor dem Start.",
+      "whatTitle": "Was zieht um",
+      "what": {
+        "domain": "Alle Leute einer Domain. Die Domain wird hier angelegt, falls es sie noch nicht gibt (mit DKIM-Schlüsseln), und ein Postfach für alle, die noch keins haben.",
+        "mailbox": "Ein Postfach in ein Postfach hier: eins, das es schon gibt (die Mails werden zusammengeführt), oder ein neues."
+      },
+      "domain": "Domain",
+      "domainHint": "Die Domain, auf der die Postfächer liegen.",
+      "domainNew": "Diese Domain gibt es hier noch nicht: Sie wird beim Start angelegt, mit DKIM-Schlüsseln. Prüf danach ihr DNS unter Domains.",
+      "domainUnknown": "Leg diese Domain zuerst an oder wähl eine, die es hier gibt.",
+      "targetLabel": "Postfach hier",
+      "targetExisting": "Vorhandenes Postfach",
+      "targetNew": "Neues Postfach",
+      "mailbox": "Postfach",
+      "mailboxHint": "Seine Mails bleiben; Ordner werden zusammengeführt, nichts kommt doppelt.",
+      "choose": "Auswählen …",
+      "newAddress": "Neue Adresse",
+      "newAddressHint": "Die Person bekommt einen Link, um ein Passwort zu wählen.",
+      "sourceTitle": "Alter Server",
+      "sourceExplain": "Wo die Mails jetzt liegen. Alle im Umzug teilen ihn; eine Zeile kann einen eigenen nennen. Verbunden wird über IMAP mit TLS (Port 993).",
+      "imapHost": "IMAP-Server",
+      "imapHostHint": "Am besten ein Name, der auch nach der MX-Umstellung noch auf den alten Server zeigt.",
+      "port": "Port",
+      "discover": "Server suchen",
+      "found": "{{host}} gefunden. Die Anmeldungen prüft die erste Runde.",
+      "notFound": "Für diese Domain hat nichts geantwortet; trag den Server selbst ein.",
+      "contacts": "Kontakte mitnehmen",
+      "calendars": "Kalender mitnehmen",
+      "davMode": "Kontakte und Kalender",
+      "davHost": "Server",
+      "davHostHint": "Leer: der IMAP-Server.",
+      "davUrl": "CalDAV/CardDAV-Adresse",
+      "pace": "Tempo",
+      "peopleTitle": "Leute",
+      "peopleExplain": "Eine Zeile pro Person: die alte Adresse mit Login und Passwort und wie das Postfach hier aussehen soll. Ohne neue Adresse gilt der Name der alten auf dieser Domain. Aliase kommen nicht über IMAP mit, trag sie hier ein. Oder füll die Tabelle aus einer CSV-Liste.",
+      "oldMailboxTitle": "Altes Postfach",
+      "oldMailboxExplain": "Die alte Adresse mit Login und Passwort.",
+      "checkTitle": "Prüfen und starten",
+      "checkExplain": "Die Prüfung ändert nichts; sie sagt, was angelegt würde und welche Zeilen du noch korrigieren musst.",
+      "check": "Prüfen",
+      "start": "Umzug starten",
+      "planDomain": "Die Domain {{domain}} wird angelegt, mit DKIM-Schlüsseln.",
+      "planRows": "{{created}} neue Postfächer, {{filled}} vorhandene werden befüllt.",
+      "planPasswords": "Postfächer, deren Leute hier schon ein Passwort haben, bekommen keinen Link.",
+      "planProblems_one": "{{count}} Problem zu beheben, siehe Tabelle.",
+      "planProblems_other": "{{count}} Probleme zu beheben, siehe Tabelle.",
+      "planReady": "Alles bereit: Der Umzug kann starten."
+    },
+    "davModes": {
+      "auto": "Automatisch finden",
+      "autoHint": "Aus der Adresse (bekannte Anbieter, DNS, /.well-known/), dann beim IMAP-Server.",
+      "sogo": "mailcow / SOGo",
+      "sogoHint": "https://server/SOGo/dav/",
+      "nextcloud": "Nextcloud",
+      "nextcloudHint": "https://server/remote.php/dav/",
+      "icloud": "iCloud",
+      "icloudHint": "Braucht App-spezifische Passwörter.",
+      "gmx": "GMX",
+      "gmxHint": "Mit Zwei-Faktor-Anmeldung App-Passwörter.",
+      "webde": "WEB.DE",
+      "webdeHint": "Ein App-Passwort gilt nur für eine Einrichtung.",
+      "custom": "Eigene Adresse",
+      "customHint": "Eine CalDAV/CardDAV-Adresse, die du kennst.",
+      "none": "Nur Dateien",
+      "noneHint": "Lade stattdessen pro Postfach .vcf- und .ics-Dateien hoch."
+    },
+    "fields": {
+      "oldAddress": "Alte Adresse",
+      "login": "Alter Login",
+      "password": "Altes Passwort",
+      "name": "Name",
+      "target": "Adresse hier",
+      "quotaMb": "Kontingent (MB)",
+      "quota": "Kontingent",
+      "aliases": "Aliase",
+      "imapHost": "Eigener IMAP-Server",
+      "davUrl": "Eigene CalDAV/CardDAV-Adresse",
+      "line": "Zeile"
+    },
+    "placeholders": {
+      "oldAddress": "name@example.com",
+      "login": "= alte Adresse",
+      "password": "••••••",
+      "name": "Anzeigename",
+      "target": "= alter Name auf der Domain",
+      "quotaMb": "unbegrenzt",
+      "aliases": "info@… vertrieb@…",
+      "imapHost": "IMAP-Server dieser Person, falls anders",
+      "davUrl": "https://… CalDAV/CardDAV, falls nicht gefunden"
+    },
+    "rows": {
+      "actions": "Aktionen",
+      "add": "Zeile hinzufügen",
+      "remove": "Zeile entfernen",
+      "servers": "Eigene Server für diese Zeile"
+    },
+    "problems": {
+      "addressInvalid": "keine gültige Adresse",
+      "passwordMissing": "fehlt",
+      "targetInvalid": "keine Adresse auf dieser Domain",
+      "targetTaken": "schon von jemand anderem belegt",
+      "duplicate": "kommt doppelt vor",
+      "quotaInvalid": "keine Größe",
+      "aliasInvalid": "keine gültigen Adressen (höchstens 20)",
+      "aliasTaken": "schon von jemand anderem belegt",
+      "aliasDomain": "auf einer Domain, die es hier nicht gibt",
+      "mailboxBusy": "dieses Postfach ist schon in einem anderen Umzug",
+      "noMailbox": "dieses Konto hat kein Postfach",
+      "loginInvalid": "nicht verwendbar",
+      "hostInvalid": "kein verwendbarer Servername (nur öffentliche Server)",
+      "urlInvalid": "keine https-Adresse",
+      "tooManyRows": "mehr Zeilen, als ein Umzug nimmt",
+      "tooLarge": "der Text ist zu lang",
+      "quoteOpen": "ein Anführungszeichen ist nicht geschlossen",
+      "invalid": "ungültig"
+    },
+    "csv": {
+      "title": "CSV-Liste importieren",
+      "explain": "Füg ein oder lade hoch, was deine Tabellenkalkulation exportiert, getrennt durch ; oder , (oder Tabs). Mit Kopfzeile werden die Spalten an ihren Namen erkannt (alte Adresse, Login, Passwort, Name, neue Adresse, Quota, Aliase); ohne gilt diese Reihenfolge: alte Adresse; Passwort; Name; neue Adresse; Quota; Aliase; Login.",
+      "paste": "CSV-Text",
+      "read": "In die Tabelle übernehmen",
+      "file": "Datei hochladen",
+      "result_one": "{{count}} Zeile gelesen (Trennzeichen {{delimiter}}).",
+      "result_other": "{{count}} Zeilen gelesen (Trennzeichen {{delimiter}}).",
+      "withHeader": "Mit Kopfzeile.",
+      "withoutHeader": "Ohne Kopfzeile.",
+      "line": "Zeile {{line}}:"
+    },
+    "detail": {
+      "title": "Umzug von {{domain}}",
+      "overview": "Fortschritt",
+      "messages": "{{done}} von {{total}} Mails ({{size}})",
+      "skipped_one": "{{count}} ausgelassen (schon da oder zu groß)",
+      "skipped_other": "{{count}} ausgelassen (schon da oder zu groß)",
+      "davCounts": "{{contacts}} Kontakte, {{events}} Kalendereinträge",
+      "source": "Von {{host}}",
+      "noDav": "nur Mails",
+      "mailboxes_one": "{{count}} Postfach",
+      "mailboxes_other": "{{count}} Postfächer"
+    },
+    "mailbox": {
+      "from": "von {{address}} (Login {{login}})",
+      "created": "neues Postfach",
+      "filled": "vorhandenes Postfach, befüllt",
+      "lastRound": "letzter Abgleich",
+      "progress": "Fortschritt von {{address}}",
+      "messages": "{{done}} von {{total}} Mails ({{size}})",
+      "folders": "{{done}} von {{total}} Ordnern",
+      "next": "nächster Abgleich {{date}}",
+      "aliases": "Aliase: {{aliases}}",
+      "quotaWarning": "Das alte Postfach enthält {{source}}, mehr als in dieses passt ({{quota}}). Erhöh das Kontingent, sonst pausiert der Umzug, wenn es voll ist.",
+      "davError": "Kontakte und Kalender kamen nicht mit: {{reason}}. Lade sie stattdessen als Datei hoch.",
+      "newLogin": "Login beim alten Server",
+      "newPassword": "Neues Passwort"
+    },
+    "errors": {
+      "quotaExceeded": "Das Postfach hier ist voll. Schaff Platz oder erhöh das Kontingent, dann versuch es noch mal: Es geht dort weiter, wo es aufgehört hat.",
+      "loginRefused": "Der alte Server hat die Anmeldung abgelehnt. Gib den richtigen Login oder das richtige Passwort ein (oft ein App-Passwort) und versuch es noch mal.",
+      "unreachable": "Der alte Server war nicht erreichbar. Versuch es später noch mal.",
+      "notPublic": "Der alte Server ist nicht im Internet, soweit dieser Server das sehen kann. Server im lokalen Netz gehen hier nicht; nimm dafür den Import auf der Kommandozeile.",
+      "noMailbox": "Dieses Konto hat kein Postfach, in das Mails umziehen könnten.",
+      "stopped": "Von Hand pausiert. Mach weiter, wann du willst.",
+      "accountDeleted": "Dieses Konto liegt im Papierkorb, daher wurde der Umzug gestoppt und das alte Passwort gelöscht. Stell das Konto wieder her, gib das Passwort erneut ein und versuch es noch mal.",
+      "interrupted": "Der Server ist während dieses Postfachs mehrmals hintereinander ausgefallen, daher wurde es pausiert. Prüfe das Server-Log und setze dann fort.",
+      "failed": "Etwas ist schiefgegangen. Versuch es noch mal."
+    },
+    "davErrors": {
+      "wrongPassword": "der alte Server hat die Anmeldung abgelehnt",
+      "providerNotFound": "es wurden keine Kalender oder Adressbücher gefunden",
+      "providerUnreachable": "der Server war nicht erreichbar",
+      "providerError": "der Server hat mit einem Fehler geantwortet",
+      "feedTooLarge": "es war zu groß",
+      "feedNotFound": "eine Sammlung war nicht mehr da",
+      "redirectedElsewhere": "der Server hat die Anmeldung woandershin geschickt",
+      "googleUseIcs": "Google gibt sie nur als Datei heraus",
+      "providerNoDav": "dieser Anbieter hat kein CalDAV/CardDAV",
+      "urlNotAllowed": "die Adresse ist nicht erlaubt",
+      "failed": "sie konnten nicht gespeichert werden"
+    },
+    "actions": {
+      "pauseAll": "Alle pausieren",
+      "resumeAll": "Weitermachen",
+      "pause": "Pausieren",
+      "retry": "Erneut versuchen",
+      "syncNow": "Jetzt abgleichen",
+      "changeLogin": "Login ändern …",
+      "upload": {
+        "addressbook": ".vcf",
+        "calendar": ".ics"
+      },
+      "removeMailbox": "{{address}} aus dem Umzug nehmen",
+      "removeConfirm": "{{address}} aus dem Umzug nehmen? Das alte Passwort wird vergessen; Postfach und alles Kopierte bleiben.",
+      "delete": "Umzug löschen",
+      "deleteConfirm": "Den Umzug von {{domain}} löschen? Alle alten Passwörter darin werden vergessen. Die Postfächer und ihre Mails bleiben."
+    },
+    "add": {
+      "button": "Leute hinzufügen",
+      "title": "Weitere Leute für diesen Umzug",
+      "save": "Hinzufügen und starten"
+    },
+    "settings": {
+      "title": "Tempo",
+      "parallel": "Postfächer gleichzeitig",
+      "parallelHint": "Kleine Zahlen schonen den alten Server (1 bis 8).",
+      "syncMinutes": "Minuten zwischen Abgleichen",
+      "syncMinutesHint": "Nach der ersten Kopie, bis du den Umzug abschließt (5 bis 1440).",
+      "save": "Speichern"
+    },
+    "finish": {
+      "title": "Umstellen und abschließen",
+      "explain": "Bis du abschließt, kommen neue Mails vom alten Server weiter herüber. Stell die MX-Einträge von {{domain}} auf {{hostname}} um, warte, bis die Mails hier ankommen, und schließ dann ab: Für jedes Postfach läuft ein letzter Abgleich, danach werden die alten Passwörter gelöscht.",
+      "checkMx": "MX prüfen",
+      "mx": {
+        "ok": "MX zeigt hierher",
+        "warning": "MX: prüfen",
+        "missing": "Kein MX",
+        "wrong": "MX zeigt woandershin",
+        "error": "MX nicht ermittelbar"
+      },
+      "mxFound": "Gefunden: {{found}}.",
+      "mxNone": "Keine MX-Einträge gefunden.",
+      "mxReady": "Mails kommen hier an: Du kannst abschließen, sobald beim alten Server nichts Neues mehr ankommt.",
+      "mxWait": "Stell zuerst die MX-Einträge auf {{hostname}} um; bis das überall ankommt, kann es ein paar Stunden dauern.",
+      "button": "Umzug abschließen",
+      "running": "Der letzte Abgleich läuft. Bei Postfächern, die durch sind, ist das alte Passwort gelöscht.",
+      "skip": "Ohne letzten Abgleich abschließen",
+      "confirmTitle": "Umzug abschließen?",
+      "confirmLast": "Jedes Postfach bekommt einen letzten Abgleich; danach werden die Passwörter der alten Postfächer gelöscht und von dort wird nichts mehr geholt.",
+      "confirmSkip": "Die alten Passwörter werden jetzt gelöscht, ohne letzten Abgleich. Nimm das, wenn der alte Server weg ist oder der letzte Abgleich nicht klappen kann.",
+      "confirmMx": "Die MX-Prüfung hat noch nicht bestätigt, dass die Einträge hierher zeigen.",
+      "done": "Abgeschlossen. Die alten Passwörter sind gelöscht.",
+      "doneAt": "Abgeschlossen am {{date}}. Die alten Passwörter sind gelöscht."
+    },
+    "links": {
+      "title": "Passwort-Links",
+      "explain_one": "{{count}} Person hier hat noch kein Passwort. Gib ihr einen Link, um eins zu wählen; jeder gilt 7 Tage.",
+      "explain_other": "{{count}} Leute hier haben noch kein Passwort. Gib ihnen einen Link, um eins zu wählen; jeder gilt 7 Tage.",
+      "none": "Alle hier haben schon ein Passwort; es braucht keine Links.",
+      "make": "Links erzeugen",
+      "again": "Neue Links erzeugen",
+      "made_one": "{{count}} Link erzeugt.",
+      "made_other": "{{count}} Links erzeugt.",
+      "once": "Die Links werden nur jetzt angezeigt; neue zu erzeugen ersetzt diese.",
+      "csv": "CSV herunterladen",
+      "print": "Übersicht drucken",
+      "printTitle": "Passwort-Links für {{domain}}",
+      "printIntro": "Öffne deinen Link und wähl ein Passwort; danach meldest du dich mit deiner Adresse an. Jeder Link gilt einmal und 7 Tage lang.",
+      "mailbox": "Postfach",
+      "name": "Name",
+      "oldAddress": "Alte Adresse",
+      "link": "Link",
+      "expires": "Gültig bis",
+      "copy": "Link für {{address}} kopieren",
+      "skipped": {
+        "hasPassword": "hat schon ein Passwort, kein Link nötig",
+        "disabled": "ist gesperrt",
+        "directory": "meldet sich beim Verzeichnis an"
+      }
+    },
+    "toasts": {
+      "started": "Der Umzug läuft. Die ersten Postfächer werden jetzt kopiert.",
+      "paused": "Umzug pausiert.",
+      "resumed": "Der Umzug geht weiter.",
+      "saved": "Gespeichert.",
+      "queued": "Wieder eingereiht.",
+      "removed": "Aus dem Umzug genommen.",
+      "added": "Hinzugefügt; sie werden als Nächstes kopiert.",
+      "finishing": "Wird abgeschlossen: Der letzte Abgleich läuft.",
+      "deleted": "Umzug gelöscht.",
+      "uploaded_one": "{{count}} Eintrag importiert.",
+      "uploaded_other": "{{count}} Einträge importiert."
     }
   }
 }

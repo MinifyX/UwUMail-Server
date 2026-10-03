@@ -17,6 +17,9 @@ regexes = [
   '''^ein-langes-passwort-123$''',
   '''^0123456789abcdef0123$''',
   '''^scrape-me-gently-0123456789$''',
+  # Old mailbox passwords in the tests of the admin's moves.
+  '''^altes-umzug-passwort$''',
+  '''^neues-passwort$''',
   # The API key of the fake AI provider in the assistant's tests.
   '''^sk-test-abcdefgh1234$''',
   # A made-up sign-in flow id in the portal's tests.

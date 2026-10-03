@@ -394,15 +394,24 @@ mod tests {
         )
         .await;
         assert_eq!(counts(&store, subject).await, (0, 1));
+        // The Bayes filter learns it as spam, for the server and for the person.
+        let learned = |jobs: Vec<crate::BayesJob>| -> Vec<(Option<i64>, bool)> {
+            jobs.into_iter().map(|job| (job.account_id, job.spam)).collect()
+        };
+        assert_eq!(learned(store.bayes_jobs(100).await.unwrap()), [(None, true), (Some(account_id), true)]);
         // Emptying Junk into the Trash is tidying up, not "Not spam".
         apply(&store, account_id, change(KeywordsChange::Keep, MailboxesChange::Replace(vec![trash]))).await;
         assert_eq!(counts(&store, subject).await, (0, 1));
+        assert_eq!(store.bayes_jobs(100).await.unwrap().len(), 2, "nothing new to learn");
         // Back into Junk: it already counts as junk.
         apply(&store, account_id, change(KeywordsChange::Keep, MailboxesChange::Replace(vec![junk]))).await;
         assert_eq!(counts(&store, subject).await, (0, 1));
         // "Not spam" by moving it out of Junk, as any mail app can.
         apply(&store, account_id, change(KeywordsChange::Keep, MailboxesChange::Replace(vec![inbox]))).await;
         assert_eq!(counts(&store, subject).await, (1, 0));
+        // Learned again the other way, which unlearns the spam when the jobs run.
+        let jobs = learned(store.bayes_jobs(100).await.unwrap());
+        assert_eq!(jobs[jobs.len() - 2..], [(None, false), (Some(account_id), false)]);
         // And by the keyword alone, which it already is.
         apply(
             &store,

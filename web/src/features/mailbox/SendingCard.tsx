@@ -1,14 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send } from "lucide-react";
 import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Field, Select } from "@/components/ui/Field";
 import { useSession } from "@/features/session/session";
 import { useT } from "@/i18n";
-import { api, type IdentityInfo } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
-import { SignatureForm } from "./SignatureForm";
+import { DomainSignatures } from "./DomainSignatures";
 
 /** The choices of the undo window, in seconds; the server applies it to every message sent over JMAP. */
 export const UNDO_CHOICES = ["0", "5", "10", "20", "30"] as const;
@@ -59,13 +59,9 @@ function UndoSetting() {
   );
 }
 
-/** How mail leaves: the undo window, and the signature of each address. */
+/** How mail leaves: the undo window, and the signatures per domain. */
 export function SendingCard() {
   const { t } = useT();
-  const identities = useQuery({
-    queryKey: identitiesKey,
-    queryFn: () => api<IdentityInfo[]>("/api/account/identities"),
-  });
 
   return (
     <Card
@@ -82,15 +78,7 @@ export function SendingCard() {
         <div className="flex flex-col gap-3">
           <h3 className="text-sm font-bold">{t("mailbox.signatures.title")}</h3>
           <p className="text-sm text-muted">{t("mailbox.signatures.intro")}</p>
-          {identities.isPending && <p className="text-sm text-muted">{t("mailbox.signatures.loading")}</p>}
-          {identities.isError && <p className="text-sm text-danger">{t("mailbox.signatures.loadError")}</p>}
-          {identities.data?.length === 0 && <p className="text-sm text-muted">{t("mailbox.signatures.empty")}</p>}
-          {identities.data?.map((identity) => (
-            <SignatureForm
-              key={`${identity.id}:${identity.textSignature}:${identity.htmlSignature}`}
-              identity={identity}
-            />
-          ))}
+          <DomainSignatures />
         </div>
       </div>
     </Card>

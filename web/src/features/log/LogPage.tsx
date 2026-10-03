@@ -14,6 +14,17 @@ import { dayKey, formatBytes, formatDate, formatDateTime, formatTime } from "@/l
 const PAGE = 50;
 
 const KNOWN_ACTIONS = new Set([
+  "moveCreate",
+  "moveAddMailboxes",
+  "moveSettings",
+  "movePause",
+  "moveResume",
+  "moveFinish",
+  "moveDelete",
+  "moveRetry",
+  "movePauseMailbox",
+  "moveRemoveMailbox",
+  "moveUpload",
   "brandLogo",
   "brandLogoRemoved",
   "accountCreate",

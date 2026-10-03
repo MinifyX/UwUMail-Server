@@ -70,6 +70,15 @@ pub enum AuthResult {
 }
 
 impl AuthResult {
+    /// How bad a result is: a failure outweighs anything else, and a pass nothing.
+    fn badness(self) -> u8 {
+        match self {
+            AuthResult::Pass => 0,
+            AuthResult::Other => 1,
+            AuthResult::Fail => 2,
+        }
+    }
+
     fn parse(value: &str) -> AuthResult {
         match value.trim().to_ascii_lowercase().as_str() {
             "pass" => AuthResult::Pass,
@@ -109,14 +118,6 @@ pub struct Provenance {
     pub addressed: bool,
 }
 
-/// `name=value` pairs of one segment of an `Authentication-Results` header.
-fn parts(segment: &str) -> impl Iterator<Item = (&str, &str)> {
-    segment.split_whitespace().filter_map(|part| {
-        let (name, value) = part.trim_end_matches(';').split_once('=')?;
-        Some((name.trim(), value.trim()))
-    })
-}
-
 /// The provider's own `Authentication-Results`, or nothing.
 ///
 /// Only trusted when it carries the provider's name *and* stands above the provider's own trace:
@@ -132,38 +133,64 @@ fn attested(raw: &[u8], authserv: &str) -> Option<Attested> {
     if !header.name.eq_ignore_ascii_case("Authentication-Results") {
         return None;
     }
+    // Read with the parser of our own results (security review 0.22 R4 I-6): a quoted
+    // `smtp.mailfrom` with a `;` or a comment with a `client-ip=` adds no result of its own.
     let value = header.value();
-    let (id, results) = value.split_once(';')?;
-    let id = id.split_whitespace().next().unwrap_or_default().trim().to_ascii_lowercase();
+    if !value.contains(';') {
+        return None;
+    }
+    let id = headers::authserv_id(&value)?.to_ascii_lowercase();
     if !(id == authserv || id.ends_with(&format!(".{authserv}"))) {
         return None;
     }
 
+    // A method named twice keeps its worse result, a client address named twice counts as none, and
+    // an unbalanced comment or quote makes the whole header untrusted: a provider that echoes a
+    // sender's `)` into a comment would otherwise let the sender add results of its own (security
+    // review 0.22 R5 L-1).
     let mut found = Attested::default();
-    for segment in results.split(';') {
-        let mut pairs = parts(segment);
+    let (mut ips, mut dkim_unattributed_fail) = (0usize, false);
+    let mut parts = headers::auth_results_parts(&value);
+    for part in parts.by_ref().skip(1) {
+        let mut pairs = part.iter().filter_map(|word| word.split_once('='));
         let Some((method, result)) = pairs.next() else { continue };
         let result = AuthResult::parse(result);
+        let worse = |known: Option<AuthResult>| known.is_none_or(|known| result.badness() > known.badness());
+        let properties: Vec<(&str, &str)> = pairs.collect();
         match method.to_ascii_lowercase().as_str() {
-            "spf" => found.spf = Some(result),
-            // Several signatures can be reported; one that holds is enough.
+            "spf" if worse(found.spf) => found.spf = Some(result),
+            "dmarc" if worse(found.dmarc) => found.dmarc = Some(result),
+            // Several signatures can be reported; one that holds is enough, unless a failed one
+            // names no signer and so can not be told apart from it.
             "dkim" => {
+                let signed = properties.iter().any(|(name, value)| {
+                    ["header.d", "header.i"].iter().any(|key| name.eq_ignore_ascii_case(key)) && !value.is_empty()
+                });
+                if result == AuthResult::Fail && !signed {
+                    dkim_unattributed_fail = true;
+                }
                 if found.dkim != Some(AuthResult::Pass) {
                     found.dkim = Some(result);
                 }
             }
-            "dmarc" => found.dmarc = Some(result),
             _ => {}
         }
-        for (name, value) in pairs {
+        for (name, value) in properties {
             match name.to_ascii_lowercase().as_str() {
                 "client-ip" | "smtp.remote-ip" | "sender-ip" => {
-                    found.client_ip = value.trim_matches('"').parse().ok();
+                    ips += 1;
+                    found.client_ip = if ips == 1 { value.parse().ok() } else { None };
                 }
-                "smtp.helo" | "helo" => found.helo = Some(value.trim_matches('"').to_owned()),
+                "smtp.helo" | "helo" if found.helo.is_none() => found.helo = Some(value.to_owned()),
                 _ => {}
             }
         }
+    }
+    if !parts.well_formed() {
+        return None;
+    }
+    if dkim_unattributed_fail {
+        found.dkim = Some(AuthResult::Fail);
     }
     Some(found)
 }
@@ -312,6 +339,57 @@ mod tests {
         // The same header under somebody else's name says nothing at all.
         let forged = message("Authentication-Results: mx.somewhere.example; spf=pass; dmarc=pass");
         assert_eq!(read(&mailbox(), false, &forged).attested, None);
+    }
+
+    /// Security review 0.22 R4 I-6: read like our own results, quotes and comments included.
+    #[test]
+    fn quotes_and_comments_add_no_result() {
+        let raw = message(
+            "Authentication-Results: mx.icloud.example (\"x;\" client-ip=192.0.2.1); \
+             spf=fail smtp.mailfrom=\"a;dmarc=pass\"@attacker.example (client-ip=203.0.113.50) client-ip=198.51.100.7; \
+             dmarc=fail",
+        );
+        let found = attested(&raw, "icloud.example").unwrap();
+        assert_eq!(found.spf, Some(AuthResult::Fail));
+        assert_eq!(found.dmarc, Some(AuthResult::Fail));
+        assert_eq!(found.client_ip, Some("198.51.100.7".parse().unwrap()));
+        let quoted_last =
+            message("Authentication-Results: mx.icloud.example; spf=pass smtp.mailfrom=\"x;dmarc=pass\"@a.example");
+        assert_eq!(attested(&quoted_last, "icloud.example").unwrap().dmarc, None);
+        assert_eq!(attested(&message("Authentication-Results: mx.icloud.example"), "icloud.example"), None);
+    }
+
+    /// Security review 0.22 R5 L-1: a sender's `)` echoed into a provider's comment.
+    #[test]
+    fn an_echoed_parenthesis_makes_the_header_untrusted() {
+        // Unbalanced: the rest is read outside the comment, and the real `dmarc=fail` is swallowed.
+        for header in [
+            "mx.icloud.example; spf=fail (domain of \"a)b;dkim=pass;client-ip=203.0.113.50\"@shop.example) smtp.mailfrom=shop.example; dmarc=fail",
+            "mx.icloud.example; spf=fail (domain of \"a(b\"@shop.example) smtp.mailfrom=shop.example; dmarc=fail",
+            "mx.icloud.example; spf=fail smtp.mailfrom=\"open@shop.example; dmarc=fail",
+        ] {
+            let raw = message(&format!("Authentication-Results: {header}"));
+            assert_eq!(attested(&raw, "icloud.example"), None, "{header}");
+            let provenance = read(&mailbox(), false, &raw);
+            assert!(provenance.checkable_client().is_none(), "{header}");
+        }
+        // Balanced again by the sender: the worse result wins, and two client addresses are none.
+        let raw = message(
+            "Authentication-Results: mx.icloud.example; spf=fail (domain of \"a);dmarc=pass;dkim=pass;spf=pass client-ip=203.0.113.50;x=(\"@shop.example) \
+             smtp.mailfrom=shop.example client-ip=198.51.100.7; dkim=fail; dmarc=fail",
+        );
+        let found = attested(&raw, "icloud.example").unwrap();
+        assert_eq!(found.spf, Some(AuthResult::Fail));
+        assert_eq!(found.dmarc, Some(AuthResult::Fail));
+        assert_eq!(found.dkim, Some(AuthResult::Fail), "a fail without a signer outweighs the pass");
+        assert_eq!(found.client_ip, None);
+        // Different signers may pass and fail side by side.
+        let raw = message(
+            "Authentication-Results: mx.icloud.example; dkim=fail header.d=old.example; dkim=pass header.d=shop.example; spf=pass client-ip=203.0.113.9",
+        );
+        let found = attested(&raw, "icloud.example").unwrap();
+        assert_eq!(found.dkim, Some(AuthResult::Pass));
+        assert_eq!(found.client_ip, Some("203.0.113.9".parse().unwrap()));
     }
 
     #[test]

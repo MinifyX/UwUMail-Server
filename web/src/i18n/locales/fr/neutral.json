@@ -596,7 +596,25 @@
       "bimiTitle": "Saisissez un nom plus court pour le logo, sans caractères spéciaux.",
       "bimiBackground": "La couleur de fond doit ressembler à #rrggbb.",
       "bimiCertificateInvalid": "Ce n'est pas un certificat lisible au format PEM.",
-      "bimiCertificateNotBimi": "Ce certificat n'est pas un VMC ni un CMC pour BIMI."
+      "bimiCertificateNotBimi": "Ce certificat n'est pas un VMC ni un CMC pour BIMI.",
+      "moveRows": "Certaines lignes de la liste sont à corriger ; voir le tableau.",
+      "moveTooMany": "Une migration accepte au plus 2000 boîtes.",
+      "moveSingle": "Une migration unique ne prend qu'une seule boîte.",
+      "moveFinished": "Cette migration est terminée.",
+      "moveFinishing": "Le dernier passage est déjà en cours.",
+      "moveMailboxBusy": "Cette boîte est déjà dans une autre migration.",
+      "moveOtherDomain": "Cette boîte n'est pas sur le domaine de la migration.",
+      "moveNotActive": "Cette migration n'est pas en cours.",
+      "moveNotPaused": "Cette migration n'est pas en pause.",
+      "movesLimit": "Au plus 20 migrations peuvent être ouvertes à la fois. Terminez-en ou supprimez-en une d'abord.",
+      "movePersonalBusy": "Le titulaire de cette boîte y déménage lui-même du courrier en ce moment (Ma boîte → Déménagement). Attends que ce soit terminé ou demande-lui de le mettre en pause.",
+      "moveAdminBusy": "Un administrateur déménage du courrier dans cette boîte en ce moment. Réessaie une fois ce déménagement terminé.",
+      "movePasswordNeeded": "Le mot de passe de l'ancienne boîte a été supprimé. Saisis-le pour continuer.",
+      "moveChanged": "Quelque chose a changé dans la liste entre-temps, peut-être par une autre requête. Vérifie la liste et recommence.",
+      "hostInvalid": "Le nom de serveur est inutilisable. Seuls les serveurs sur Internet sont acceptés.",
+      "urlInvalid": "L'adresse n'est pas une adresse https utilisable.",
+      "domainMaskedOnly": "Ce domaine n'accepte que des adresses masquées.",
+      "noMailbox": "Ce compte n'a pas de boîte."
     }
   },
   "people": {
@@ -883,7 +901,6 @@
       "domainCreate": "{{actor}} a ajouté le domaine {{target}}",
       "domainRemove": "{{actor}} a supprimé le domaine {{target}}",
       "domainCatchAll": "{{actor}} a modifié le catch-all de {{target}}",
-      "other": "{{actor}} : {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} a créé de nouvelles clés DKIM pour {{target}}",
       "domainDkimActivate": "{{actor}} a basculé {{target}} sur les nouvelles clés DKIM",
       "domainDkimRemove": "{{actor}} a supprimé une ancienne clé DKIM de {{target}}",
@@ -952,7 +969,19 @@
       "domainBimiLogoRemoved": "{{actor}} a supprimé le logo BIMI de {{target}}",
       "domainBimiCertificate": "{{actor}} a ajouté un certificat BIMI pour {{target}}",
       "domainBimiCertificateRemoved": "{{actor}} a supprimé le certificat BIMI de {{target}}",
-      "microsoftResolve": "{{actor}} a marqué comme résolu le refus de {{target}} par Microsoft"
+      "microsoftResolve": "{{actor}} a marqué comme résolu le refus de {{target}} par Microsoft",
+      "moveCreate": "{{actor}} a lancé une migration de {{target}}",
+      "moveAddMailboxes": "{{actor}} a ajouté des personnes à la migration de {{target}}",
+      "moveSettings": "{{actor}} a changé le rythme de la migration de {{target}}",
+      "movePause": "{{actor}} a mis en pause la migration de {{target}}",
+      "moveResume": "{{actor}} a repris la migration de {{target}}",
+      "moveFinish": "{{actor}} a terminé la migration de {{target}}",
+      "moveDelete": "{{actor}} a supprimé la migration de {{target}}",
+      "moveRetry": "{{actor}} a relancé la migration de {{target}}",
+      "movePauseMailbox": "{{actor}} a mis en pause la migration de {{target}}",
+      "moveRemoveMailbox": "{{actor}} a retiré {{target}} de sa migration",
+      "moveUpload": "{{actor}} a téléversé des contacts ou agendas pour {{target}}",
+      "other": "{{actor}} : {{action}} {{target}}"
     },
     "details": {
       "adminOn": "est maintenant admin",
@@ -1271,6 +1300,29 @@
       "unauthenticated_one": "Un rapport provenait d'un expéditeur qui n'a pas pu prouver son identité. Ses chiffres pourraient être inventés.",
       "unauthenticated_many": "{{count}} rapports provenaient d'expéditeurs qui n'ont pas pu prouver leur identité. Leurs chiffres pourraient être inventés.",
       "unauthenticated_other": "{{count}} rapports provenaient d'expéditeurs qui n'ont pas pu prouver leur identité. Leurs chiffres pourraient être inventés."
+    },
+    "signature": {
+      "title": "Signature d'entreprise",
+      "explain": "Une signature pour toutes les adresses de ce domaine : comme modèle que chacun peut adapter, ou comme pied de page obligatoire ajouté par le serveur à l'envoi.",
+      "mode": "Utilisation",
+      "modes": {
+        "off": "Désactivée",
+        "template": "Modèle",
+        "footer": "Pied de page obligatoire"
+      },
+      "modeHint": {
+        "off": "Chacun rédige sa propre signature.",
+        "template": "Les personnes sans signature propre reçoivent celle-ci. Chacun peut la modifier.",
+        "footer": "Le serveur l'ajoute à chaque message de ce domaine, y compris depuis les applications via SMTP."
+      },
+      "text": "Texte",
+      "html": "HTML",
+      "htmlHint": "Facultatif, pour les messages mis en forme. Sans HTML, le texte est utilisé.",
+      "placeholders": "Variables : {{placeholders}}",
+      "footerNote": "Les messages signés ou chiffrés (S/MIME, PGP) ne reçoivent pas de pied de page, sinon la signature serait invalide. Les destinataires reçoivent le pied de page, la copie dans les Envoyés de l'expéditeur ne l'affiche pas. C'est une aide, pas une garantie : certains messages (p. ex. avec le pied de page déjà cité) partent sans.",
+      "footerEmpty": "Un pied de page obligatoire nécessite un texte.",
+      "save": "Enregistrer",
+      "saved": "Signature d'entreprise enregistrée"
     }
   },
   "groups": {
@@ -2286,8 +2338,8 @@
       "progress": "{{done}} sur {{total}} messages · {{size}}",
       "progressLabel": "Avancement du déménagement",
       "folders": "dossier {{done}} sur {{total}}",
-      "skipped": "{{count}} message était déjà là et a été ignoré",
-      "skipped_other": "{{count}} messages étaient déjà là et ont été ignorés",
+      "skipped": "{{count}} message a été ignoré : il était déjà là ou dépasse la taille acceptée par ce serveur",
+      "skipped_other": "{{count}} messages ont été ignorés : ils étaient déjà là ou dépassent la taille acceptée par ce serveur",
       "done": "Tout est là.",
       "doneAt": "Tout ce qui s'y trouvait est ici, au {{date}}."
     },
@@ -2298,6 +2350,7 @@
       "notPublic": "Le serveur de l'ancien fournisseur n'est pas sur Internet, pour autant que ce serveur puisse en juger.",
       "noMailbox": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver.",
       "stopped": "En pause. Continuez quand vous voulez ; cela reprend là où cela s'est arrêté.",
+      "interrupted": "Le serveur s'est arrêté plusieurs fois de suite pendant ce déménagement, il a donc été mis en pause. Reprenez-le quand vous voulez, ou demandez à votre admin.",
       "failed": "Quelque chose s'est mal passé. Continuez pour réessayer."
     },
     "actions": {
@@ -2368,7 +2421,7 @@
     },
     "signatures": {
       "title": "Signatures",
-      "intro": "Les applications de messagerie et le webmail ajoutent la signature de l’adresse d’envoi.",
+      "intro": "Choisissez un domaine et rédigez une seule signature pour toutes vos adresses de ce domaine. Les applications de messagerie et le webmail l'insèrent lors de la rédaction.",
       "loading": "Chargement des adresses …",
       "loadError": "Impossible de charger les adresses.",
       "empty": "Il n’y a encore aucune adresse d’envoi.",
@@ -2376,7 +2429,26 @@
       "html": "Signature en HTML",
       "htmlHint": "Facultatif, pour les applications qui écrivent des messages mis en forme.",
       "save": "Enregistrer la signature",
-      "saved": "Signature enregistrée"
+      "saved": "Signature enregistrée",
+      "domain": "Domaine",
+      "domainOption_one": "{{domain}} (1 adresse)",
+      "domainOption_many": "{{domain}} ({{count}} adresses)",
+      "domainOption_other": "{{domain}} ({{count}} adresses)",
+      "placeholders": "Variables :",
+      "appliesTo": "S'applique à",
+      "allDomains": "Tous les domaines (y compris futurs)",
+      "replaces": "Remplace les signatures propres de {{domains}}.",
+      "preview": "Aperçu pour {{address}}",
+      "remove": "Supprimer la signature",
+      "fromTemplate": "Voici le modèle de votre organisation. Vous pouvez l'adapter et l'enregistrer comme le vôtre.",
+      "fromAllDomains": "Ce domaine utilise votre signature pour tous les domaines.",
+      "companyFooter": "À l'envoi depuis ce domaine, le serveur ajoute automatiquement ce pied de page :",
+      "exceptions": "Signature différente pour certaines adresses ({{count}})",
+      "ownSignature": "Signature propre",
+      "followsDomain": "Utilise la signature du domaine",
+      "override": "Signature propre pour cette adresse",
+      "backToDomain": "Utiliser la signature du domaine",
+      "tooLarge": "La signature est trop volumineuse (256 Ko au maximum)."
     }
   },
   "forwardConfirm": {
@@ -3029,6 +3101,9 @@
       "emptyHint": "Les messages retardés attendent ici jusqu'à ce qu'ils arrivent d'eux-mêmes ou que vous en décidiez.",
       "noSubject": "Sans objet",
       "sentTo": "À {{address}}",
+      "attempts_one": "{{count}} tentative de remise, dernière le {{last}}",
+      "attempts_many": "{{count}} tentatives de remise, dernière le {{last}}",
+      "attempts_other": "{{count}} tentatives de remise, dernière le {{last}}",
       "decide": {
         "deliver": "Distribuer",
         "discard": "Jeter",
@@ -4079,7 +4154,10 @@
       "priceLists_other": "Prix mis à jour le {{date}}, {{count}} modèles connus.",
       "priceListsNone": "Les prix n'ont pas encore été récupérés.",
       "foreignMail": "IA pour le courrier d'autres comptes",
-      "foreignMailHint": "Les utilisateurs peuvent se servir de l'assistant dans l'app UwUMail pour le courrier de leurs autres comptes (Exchange, Gmail, IMAP). L'app envoie alors le texte de ce courrier ici ; seul l'usage en est conservé. Seuls les fournisseurs qui l'autorisent sont utilisés."
+      "foreignMailHint": "Les utilisateurs peuvent se servir de l'assistant dans l'app UwUMail pour le courrier de leurs autres comptes (Exchange, Gmail, IMAP). L'app envoie alors le texte de ce courrier ici ; seul l'usage en est conservé. Seuls les fournisseurs qui l'autorisent sont utilisés.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Mails similaires pour les libellés",
+      "smallModel": "Ce modèle n'a qu'environ {{size}} milliards de paramètres ; les libellés et le spam sont mal évalués. Recommandés : {{recommended}}."
     },
     "choices": {
       "title": "Quel fournisseur pour quoi",
@@ -4191,7 +4269,8 @@
         "featuresRequired": "Choisissez au moins une fonction.",
         "limitInvalid": "Un nombre entier supérieur à zéro, ou vide.",
         "priceInvalid": "Saisissez un prix de 0 ou plus, par exemple 0,25.",
-        "requestPriceInvalid": "Saisissez un prix de 0 à 100, par exemple 0,005."
+        "requestPriceInvalid": "Saisissez un prix de 0 à 100, par exemple 0,005.",
+        "embeddingsModelRequired": "Indique le modèle d'embeddings."
       },
       "price": "Prix",
       "priceIntro": "En dollars US par million de tokens, pour afficher les coûts. Vide : le prix vient des listes de prix publiques.",
@@ -4204,7 +4283,13 @@
       "showCostHint": "Elles voient alors ce que coûtent leurs requêtes. Vous le voyez toujours.",
       "requestPrice": "Par requête, en dollars US",
       "foreignMail": "Courrier d'autres comptes",
-      "foreignMailHint": "Peut servir pour le courrier des autres comptes des utilisateurs quand « IA pour le courrier d'autres comptes » est activé."
+      "foreignMailHint": "Peut servir pour le courrier des autres comptes des utilisateurs quand « IA pour le courrier d'autres comptes » est activé.",
+      "chatGroup": "Modèles de chat",
+      "embeddingsGroup": "Embeddings (mails similaires pour les libellés)",
+      "embeddingsTitle": "Embeddings : mails similaires pour les libellés",
+      "embeddingsHelp": "Un modèle d'embeddings transforme les mails en vecteurs. Grâce à eux, les libellés automatiques trouvent des mails similaires qui ont déjà un libellé et peuvent décider de nombreux libellés sans interroger le modèle de chat. Il ne sert à aucune autre fonction et n'a pas besoin de modèle rapide.",
+      "embeddingsStorage": "Les vecteurs sont stockés de façon compacte pour chaque mail libellé et supprimés avec le mail ou le compte.",
+      "embeddingsModelNeeded": "Pour ce type, indique le modèle d'embeddings proposé par le serveur."
     },
     "chatgpt": {
       "title": "Connexion ChatGPT",
@@ -4503,6 +4588,324 @@
         "noLogo": "Le certificat ne contient pas de logo.",
         "unknownKind": "Cela ne ressemble pas à un VMC ni à un CMC."
       }
+    }
+  },
+  "moves": {
+    "title": "Migrations",
+    "intro": "Faites venir un domaine entier avec toutes ses personnes, ou une seule boîte, depuis un autre serveur : messages, contacts et agendas. La copie continue jusqu'à ce que vous terminiez.",
+    "kind": {
+      "domain": "Migration de domaine",
+      "mailbox": "Boîte unique"
+    },
+    "state": {
+      "active": "En cours",
+      "paused": "En pause",
+      "finishing": "Dernier passage",
+      "done": "Terminée"
+    },
+    "mailboxState": {
+      "queued": "En attente",
+      "running": "Copie",
+      "paused": "En pause",
+      "synced": "À jour",
+      "done": "Terminé"
+    },
+    "progress": {
+      "label": "Progression de la migration de {{domain}}"
+    },
+    "list": {
+      "new": "Nouvelle migration",
+      "from": "depuis {{host}}",
+      "summary": "{{mailboxes}} boîtes · {{done}} sur {{total}} messages",
+      "paused_one": "{{count}} en pause",
+      "paused_many": "{{count}} en pause",
+      "paused_other": "{{count}} en pause",
+      "created": "lancée le {{date}}",
+      "emptyTitle": "Aucune migration pour l'instant",
+      "emptyBody": "Vous migrez une entreprise ou une famille vers ce serveur ? Lancez une migration de domaine : le domaine et les boîtes sont créés ici, puis tout est copié.",
+      "own": "Chacun peut aussi déplacer sa propre ancienne boîte dans Mon compte → Déménagement."
+    },
+    "wizard": {
+      "back": "Toutes les migrations",
+      "title": "Nouvelle migration",
+      "intro": "Quatre étapes : ce qui migre, d'où, qui, et une vérification avant le départ.",
+      "whatTitle": "Ce qui migre",
+      "what": {
+        "domain": "Toutes les personnes d'un domaine. Le domaine est créé ici s'il n'existe pas encore (avec ses clés DKIM), ainsi qu'une boîte pour chaque personne qui n'en a pas.",
+        "mailbox": "Une boîte vers une boîte ici : une qui existe déjà (les messages sont fusionnés) ou une nouvelle."
+      },
+      "domain": "Domaine",
+      "domainHint": "Le domaine des boîtes.",
+      "domainNew": "Ce domaine n'existe pas encore ici : il sera créé au départ, avec ses clés DKIM. Vérifiez ensuite son DNS dans Domaines.",
+      "domainUnknown": "Ajoutez d'abord ce domaine, ou choisissez-en un qui existe ici.",
+      "targetLabel": "Boîte ici",
+      "targetExisting": "Boîte existante",
+      "targetNew": "Nouvelle boîte",
+      "mailbox": "Boîte",
+      "mailboxHint": "Ses messages restent ; les dossiers sont fusionnés, rien n'arrive en double.",
+      "choose": "Choisir…",
+      "newAddress": "Nouvelle adresse",
+      "newAddressHint": "La personne reçoit un lien pour choisir un mot de passe.",
+      "sourceTitle": "Ancien serveur",
+      "sourceExplain": "Là où se trouvent les messages aujourd'hui. Toute la migration le partage ; une ligne peut en indiquer un autre. La connexion se fait en IMAP avec TLS (port 993).",
+      "imapHost": "Serveur IMAP",
+      "imapHostHint": "De préférence un nom qui pointe encore vers l'ancien serveur après le changement de MX.",
+      "port": "Port",
+      "discover": "Trouver le serveur",
+      "found": "{{host}} trouvé. Le premier passage vérifie les connexions.",
+      "notFound": "Rien n'a répondu pour ce domaine ; saisissez le serveur vous-même.",
+      "contacts": "Emporter les contacts",
+      "calendars": "Emporter les agendas",
+      "davMode": "Contacts et agendas",
+      "davHost": "Serveur",
+      "davHostHint": "Vide : le serveur IMAP.",
+      "davUrl": "Adresse CalDAV/CardDAV",
+      "pace": "Rythme",
+      "peopleTitle": "Personnes",
+      "peopleExplain": "Une ligne par personne : l'ancienne adresse avec son identifiant et son mot de passe, et la boîte souhaitée ici. Sans nouvelle adresse, le nom de l'ancienne sur ce domaine est utilisé. Les alias ne passent pas par IMAP : saisissez-les ici. Ou remplissez le tableau depuis une liste CSV.",
+      "oldMailboxTitle": "Ancienne boîte",
+      "oldMailboxExplain": "L'ancienne adresse avec son identifiant et son mot de passe.",
+      "checkTitle": "Vérifier et lancer",
+      "checkExplain": "La vérification ne change rien ; elle indique ce qui serait créé et quelles lignes corriger.",
+      "check": "Vérifier",
+      "start": "Lancer la migration",
+      "planDomain": "Le domaine {{domain}} sera créé, avec ses clés DKIM.",
+      "planRows": "{{created}} nouvelles boîtes, {{filled}} boîtes existantes complétées.",
+      "planPasswords": "Les boîtes dont les personnes ont déjà un mot de passe ici ne reçoivent pas de lien.",
+      "planProblems_one": "{{count}} problème à corriger, voir le tableau.",
+      "planProblems_many": "{{count}} problèmes à corriger, voir le tableau.",
+      "planProblems_other": "{{count}} problèmes à corriger, voir le tableau.",
+      "planReady": "Tout est prêt : la migration peut commencer."
+    },
+    "davModes": {
+      "auto": "Trouver automatiquement",
+      "autoHint": "Depuis l'adresse (fournisseurs connus, DNS, /.well-known/), puis sur le serveur IMAP.",
+      "sogo": "mailcow / SOGo",
+      "sogoHint": "https://serveur/SOGo/dav/",
+      "nextcloud": "Nextcloud",
+      "nextcloudHint": "https://serveur/remote.php/dav/",
+      "icloud": "iCloud",
+      "icloudHint": "Nécessite des mots de passe d'application.",
+      "gmx": "GMX",
+      "gmxHint": "Avec l'authentification à deux facteurs, des mots de passe d'application.",
+      "webde": "WEB.DE",
+      "webdeHint": "Un mot de passe d'application ne vaut que pour une configuration.",
+      "custom": "Adresse personnalisée",
+      "customHint": "Une adresse CalDAV/CardDAV que vous connaissez.",
+      "none": "Fichiers seulement",
+      "noneHint": "Téléversez plutôt des fichiers .vcf et .ics par boîte."
+    },
+    "fields": {
+      "oldAddress": "Ancienne adresse",
+      "login": "Ancien identifiant",
+      "password": "Ancien mot de passe",
+      "name": "Nom",
+      "target": "Adresse ici",
+      "quotaMb": "Quota (Mo)",
+      "quota": "Quota",
+      "aliases": "Alias",
+      "imapHost": "Serveur IMAP propre",
+      "davUrl": "Adresse CalDAV/CardDAV propre",
+      "line": "Ligne"
+    },
+    "placeholders": {
+      "oldAddress": "nom@example.com",
+      "login": "= ancienne adresse",
+      "password": "••••••",
+      "name": "Nom affiché",
+      "target": "= ancien nom sur le domaine",
+      "quotaMb": "illimité",
+      "aliases": "info@… ventes@…",
+      "imapHost": "Serveur IMAP de cette personne, s'il diffère",
+      "davUrl": "https://… CalDAV/CardDAV, si introuvable"
+    },
+    "rows": {
+      "actions": "Actions",
+      "add": "Ajouter une ligne",
+      "remove": "Supprimer la ligne",
+      "servers": "Serveurs propres pour cette ligne"
+    },
+    "problems": {
+      "addressInvalid": "adresse non valide",
+      "passwordMissing": "manquant",
+      "targetInvalid": "pas une adresse de ce domaine",
+      "targetTaken": "déjà utilisée par quelqu'un d'autre",
+      "duplicate": "apparaît deux fois",
+      "quotaInvalid": "pas une taille",
+      "aliasInvalid": "adresses non valides (20 au plus)",
+      "aliasTaken": "déjà utilisée par quelqu'un d'autre",
+      "aliasDomain": "sur un domaine absent d'ici",
+      "mailboxBusy": "cette boîte est déjà dans une autre migration",
+      "noMailbox": "ce compte n'a pas de boîte",
+      "loginInvalid": "inutilisable",
+      "hostInvalid": "nom de serveur inutilisable (serveurs publics uniquement)",
+      "urlInvalid": "pas une adresse https",
+      "tooManyRows": "plus de lignes qu'une migration n'en accepte",
+      "tooLarge": "le texte est trop long",
+      "quoteOpen": "un guillemet n'est pas fermé",
+      "invalid": "non valide"
+    },
+    "csv": {
+      "title": "Importer une liste CSV",
+      "explain": "Collez ou téléversez l'export de votre tableur, séparé par ; ou , (ou des tabulations). Avec une ligne d'en-tête, les colonnes sont reconnues par leur nom (ancienne adresse, identifiant, mot de passe, nom, nouvelle adresse, quota, alias) ; sans en-tête, l'ordre est : ancienne adresse ; mot de passe ; nom ; nouvelle adresse ; quota ; alias ; identifiant.",
+      "paste": "Texte CSV",
+      "read": "Charger dans le tableau",
+      "file": "Téléverser un fichier",
+      "result_one": "{{count}} ligne lue (séparateur {{delimiter}}).",
+      "result_many": "{{count}} lignes lues (séparateur {{delimiter}}).",
+      "result_other": "{{count}} lignes lues (séparateur {{delimiter}}).",
+      "withHeader": "Avec ligne d'en-tête.",
+      "withoutHeader": "Sans ligne d'en-tête.",
+      "line": "Ligne {{line}} :"
+    },
+    "detail": {
+      "title": "Migration de {{domain}}",
+      "overview": "Progression",
+      "messages": "{{done}} sur {{total}} messages ({{size}})",
+      "skipped_one": "{{count}} ignoré (déjà là ou trop grand)",
+      "skipped_many": "{{count}} ignorés (déjà là ou trop grands)",
+      "skipped_other": "{{count}} ignorés (déjà là ou trop grands)",
+      "davCounts": "{{contacts}} contacts, {{events}} entrées d'agenda",
+      "source": "Depuis {{host}}",
+      "noDav": "messages seulement",
+      "mailboxes_one": "{{count}} boîte",
+      "mailboxes_many": "{{count}} boîtes",
+      "mailboxes_other": "{{count}} boîtes"
+    },
+    "mailbox": {
+      "from": "depuis {{address}} (identifiant {{login}})",
+      "created": "nouvelle boîte",
+      "filled": "boîte existante, complétée",
+      "lastRound": "dernier passage",
+      "progress": "Progression de {{address}}",
+      "messages": "{{done}} sur {{total}} messages ({{size}})",
+      "folders": "{{done}} sur {{total}} dossiers",
+      "next": "prochain passage {{date}}",
+      "aliases": "Alias : {{aliases}}",
+      "quotaWarning": "L'ancienne boîte contient {{source}}, plus que celle-ci ne peut en recevoir ({{quota}}). Augmentez son quota, sinon la migration se met en pause quand elle est pleine.",
+      "davError": "Les contacts et agendas ne sont pas venus : {{reason}}. Téléversez-les plutôt en fichiers.",
+      "newLogin": "Identifiant sur l'ancien serveur",
+      "newPassword": "Nouveau mot de passe"
+    },
+    "errors": {
+      "quotaExceeded": "La boîte ici est pleine. Libérez de la place ou augmentez son quota, puis réessayez : la copie reprend là où elle s'est arrêtée.",
+      "loginRefused": "L'ancien serveur a refusé la connexion. Saisissez le bon identifiant ou mot de passe (souvent un mot de passe d'application) et réessayez.",
+      "unreachable": "L'ancien serveur était injoignable. Réessayez plus tard.",
+      "notPublic": "L'ancien serveur n'est pas sur Internet, pour autant que ce serveur puisse le voir. Les serveurs du réseau local ne peuvent pas être utilisés ici ; utilisez l'import en ligne de commande.",
+      "noMailbox": "Ce compte n'a pas de boîte où déplacer les messages.",
+      "stopped": "Mis en pause à la main. Reprenez quand vous voulez.",
+      "accountDeleted": "Ce compte est dans la corbeille : le déménagement s'est arrêté et l'ancien mot de passe a été supprimé. Restaure le compte, saisis à nouveau le mot de passe et réessaie.",
+      "interrupted": "Le serveur s'est arrêté plusieurs fois de suite pendant cette boîte, elle a donc été mise en pause. Consultez le journal du serveur, puis reprenez.",
+      "failed": "Un problème est survenu. Réessayez."
+    },
+    "davErrors": {
+      "wrongPassword": "l'ancien serveur a refusé la connexion",
+      "providerNotFound": "aucun agenda ni carnet d'adresses trouvé",
+      "providerUnreachable": "le serveur était injoignable",
+      "providerError": "le serveur a répondu par une erreur",
+      "feedTooLarge": "c'était trop volumineux",
+      "feedNotFound": "une collection avait disparu",
+      "redirectedElsewhere": "le serveur a renvoyé la connexion ailleurs",
+      "googleUseIcs": "Google ne les fournit que sous forme de fichiers",
+      "providerNoDav": "ce fournisseur n'a pas de CalDAV/CardDAV",
+      "urlNotAllowed": "l'adresse n'est pas autorisée",
+      "failed": "ils n'ont pas pu être enregistrés"
+    },
+    "actions": {
+      "pauseAll": "Tout mettre en pause",
+      "resumeAll": "Reprendre",
+      "pause": "Pause",
+      "retry": "Réessayer",
+      "syncNow": "Synchroniser",
+      "changeLogin": "Changer l'identifiant…",
+      "upload": {
+        "addressbook": ".vcf",
+        "calendar": ".ics"
+      },
+      "removeMailbox": "Retirer {{address}} de la migration",
+      "removeConfirm": "Retirer {{address}} de la migration ? Son ancien mot de passe est oublié ; la boîte et ce qui a été copié restent.",
+      "delete": "Supprimer la migration",
+      "deleteConfirm": "Supprimer la migration de {{domain}} ? Tous les anciens mots de passe sont oubliés. Les boîtes et leurs messages restent."
+    },
+    "add": {
+      "button": "Ajouter des personnes",
+      "title": "D'autres personnes pour cette migration",
+      "save": "Ajouter et lancer"
+    },
+    "settings": {
+      "title": "Rythme",
+      "parallel": "Boîtes en même temps",
+      "parallelHint": "Les petits nombres ménagent l'ancien serveur (1 à 8).",
+      "syncMinutes": "Minutes entre les passages",
+      "syncMinutesHint": "Après la première copie, jusqu'à la fin de la migration (5 à 1440).",
+      "save": "Enregistrer"
+    },
+    "finish": {
+      "title": "Basculer et terminer",
+      "explain": "Tant que vous n'avez pas terminé, les nouveaux messages de l'ancien serveur continuent d'arriver. Pointez les enregistrements MX de {{domain}} vers {{hostname}}, attendez que le courrier arrive ici, puis terminez : un dernier passage a lieu pour chaque boîte et les anciens mots de passe sont effacés.",
+      "checkMx": "Vérifier le MX",
+      "mx": {
+        "ok": "Le MX pointe ici",
+        "warning": "MX : à vérifier",
+        "missing": "Pas de MX",
+        "wrong": "Le MX pointe ailleurs",
+        "error": "MX indéterminé"
+      },
+      "mxFound": "Trouvé : {{found}}.",
+      "mxNone": "Aucun enregistrement MX trouvé.",
+      "mxReady": "Le courrier arrive ici : vous pouvez terminer dès que l'ancien serveur ne reçoit plus rien.",
+      "mxWait": "Pointez d'abord les MX vers {{hostname}} ; le changement peut mettre quelques heures à se propager.",
+      "button": "Terminer la migration",
+      "running": "Le dernier passage est en cours. Les boîtes terminées ont leur ancien mot de passe effacé.",
+      "skip": "Terminer sans dernier passage",
+      "confirmTitle": "Terminer la migration ?",
+      "confirmLast": "Chaque boîte a droit à un dernier passage ; ensuite, les mots de passe des anciennes boîtes sont effacés et plus rien n'est récupéré.",
+      "confirmSkip": "Les anciens mots de passe sont effacés maintenant, sans dernier passage. À utiliser si l'ancien serveur a disparu ou si le dernier passage ne peut pas réussir.",
+      "confirmMx": "La vérification MX n'a pas encore confirmé que les enregistrements pointent ici.",
+      "done": "Terminée. Les anciens mots de passe sont effacés.",
+      "doneAt": "Terminée le {{date}}. Les anciens mots de passe sont effacés."
+    },
+    "links": {
+      "title": "Liens de mot de passe",
+      "explain_one": "{{count}} personne n'a pas encore de mot de passe ici. Donnez-lui un lien pour en choisir un ; chaque lien vaut 7 jours.",
+      "explain_many": "{{count}} personnes n'ont pas encore de mot de passe ici. Donnez-leur un lien pour en choisir un ; chaque lien vaut 7 jours.",
+      "explain_other": "{{count}} personnes n'ont pas encore de mot de passe ici. Donnez-leur un lien pour en choisir un ; chaque lien vaut 7 jours.",
+      "none": "Tout le monde a déjà un mot de passe ici ; aucun lien n'est nécessaire.",
+      "make": "Créer les liens",
+      "again": "Créer de nouveaux liens",
+      "made_one": "{{count}} lien créé.",
+      "made_many": "{{count}} liens créés.",
+      "made_other": "{{count}} liens créés.",
+      "once": "Les liens ne sont affichés que maintenant ; en créer de nouveaux remplace ceux-ci.",
+      "csv": "Télécharger le CSV",
+      "print": "Imprimer le récapitulatif",
+      "printTitle": "Liens de mot de passe pour {{domain}}",
+      "printIntro": "Ouvrez votre lien et choisissez un mot de passe ; connectez-vous ensuite avec votre adresse. Chaque lien sert une fois et vaut 7 jours.",
+      "mailbox": "Boîte",
+      "name": "Nom",
+      "oldAddress": "Ancienne adresse",
+      "link": "Lien",
+      "expires": "Valable jusqu'au",
+      "copy": "Copier le lien pour {{address}}",
+      "skipped": {
+        "hasPassword": "a déjà un mot de passe, pas de lien nécessaire",
+        "disabled": "est désactivé",
+        "directory": "se connecte via l'annuaire"
+      }
+    },
+    "toasts": {
+      "started": "La migration a commencé. Les premières boîtes sont copiées.",
+      "paused": "Migration en pause.",
+      "resumed": "La migration reprend.",
+      "saved": "Enregistré.",
+      "queued": "Remis en file.",
+      "removed": "Retiré de la migration.",
+      "added": "Ajoutés ; ils seront copiés ensuite.",
+      "finishing": "Finalisation : le dernier passage est en cours.",
+      "deleted": "Migration supprimée.",
+      "uploaded_one": "{{count}} entrée importée.",
+      "uploaded_many": "{{count}} entrées importées.",
+      "uploaded_other": "{{count}} entrées importées."
     }
   }
 }

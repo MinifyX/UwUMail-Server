@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: automated notification
+From: CI <ci@builds.example>
+To: Max Muster <max@uwu.example>
+Subject: Build failed: main #8615
+Date: Sun, 13 Sep 2026 12:06:00 +0000
+Message-ID: <818745312579.217@builds.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Build #8615 of project uwu failed.
+See the log at https://builds.example/uwu/8615
+

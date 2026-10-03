@@ -1,0 +1,18 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (reset) with links to the service's own domain
+From: Fotobox <account@fotobox.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Passwort_zur=C3=BCcksetzen?=
+Date: Mon, 14 Sep 2026 08:04:00 +0000
+Message-ID: <862425697361.851@fotobox.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+du hast angefordert, dein Passwort zurückzusetzen. Das geht hier: https://fotobox.example/reset/4931814515433335
+Der Link gilt 30 Minuten. Warst du das nicht, ignoriere diese Mail.

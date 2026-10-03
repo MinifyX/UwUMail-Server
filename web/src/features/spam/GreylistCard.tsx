@@ -43,6 +43,14 @@ function Waiting({
           {hold.subject ?? <em className="not-italic opacity-70">{t("spam.greylist.noSubject")}</em>}
         </span>
         <span className="text-[12px] text-muted">{t("spam.greylist.sentTo", { address: hold.address })}</span>
+        {hold.attempts > 1 && (
+          <span className="text-[12px] text-muted">
+            {t("spam.greylist.attempts", {
+              count: hold.attempts,
+              last: formatDateTime(hold.lastAt, i18n.language),
+            })}
+          </span>
+        )}
       </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="primary" icon={Check} busy={busy} onClick={() => onDecide("deliver")}>

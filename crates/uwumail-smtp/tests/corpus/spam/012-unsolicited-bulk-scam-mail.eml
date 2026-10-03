@@ -1,0 +1,13 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Support <news19@rich-fast.example>
+To: Max Muster <max@uwu.example>
+Subject: Hot singles in your area
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<a href="http://rich-fast.example/go/863374"><img src="http://rich-fast.example/banner.png" width="600" height="400"></a>

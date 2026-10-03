@@ -5,9 +5,11 @@
 use std::collections::{BTreeSet, HashMap};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use uwumail_labels::{BACKGROUND_CANDIDATES, BACKGROUND_DAYS, MAX_EXAMPLES, Model};
+use uwumail_labels::{BACKGROUND_CANDIDATES, BACKGROUND_DAYS, Base, MAX_EXAMPLES, Model};
 
-use crate::assist::{LABEL_COLUMNS, LabelCounts, label_row};
+use crate::assist::{
+    AssistLabelWrite, LABEL_COLUMNS, LabelCounts, bump_prefs, insert_label, label_changed, label_row, name_taken,
+};
 use crate::db::{get_setting, next_modseq, record_change};
 use crate::{AssistLabel, Result, Store, now};
 
@@ -29,6 +31,151 @@ pub struct LabelTraining {
 #[derive(Debug, Clone, Default)]
 pub struct LabelSetup {
     pub labels: Vec<AssistLabel>,
+}
+
+/// Which set of base labels a person has had made. A later set raises it: with more labels (see
+/// `Base::since`) or new definitions, which replace the stored ones the server wrote.
+pub const BASE_LABELS_VERSION: i64 = 1;
+
+/// A correction of the person's, as the model is shown it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LabelShot {
+    pub label_id: i64,
+    pub positive: bool,
+    pub sender_domain: String,
+    pub subject: String,
+    pub snippet: String,
+}
+
+/// An example with an embedding, for the nearest neighbours.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LabelVector {
+    pub email_id: i64,
+    /// The labels the example has; none for an ordinary mail.
+    pub labels: Vec<i64>,
+    pub vector: Vec<u8>,
+}
+
+/// An example's tokens and labels, for the nearest neighbours by tokens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LabelTokens {
+    pub email_id: i64,
+    pub labels: Vec<i64>,
+    pub tokens: Vec<i64>,
+}
+
+/// An example whose mail is not in Junk or Trash: what is there is no example of anything the
+/// person wants labeled, and it is not sent to an embeddings provider either (security review 0.22
+/// LABELS22-M1). For a query over `label_examples x`.
+const NOT_IN_JUNK_OR_TRASH: &str =
+    "NOT EXISTS (SELECT 1 FROM email_mailboxes em JOIN mailboxes m ON m.id = em.mailbox_id
+                 WHERE em.email_id = x.email_id AND m.role IN ('junk', 'trash'))";
+
+/// The language base labels are named in: the person's own choice, or `fallback`.
+fn base_language(conn: &Connection, account_id: i64, fallback: &str) -> Result<String> {
+    let preferences: Option<String> =
+        conn.query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0)).optional()?;
+    let chosen = preferences
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|value| value.get("language").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .map(|code| code.split(['-', '_']).next().unwrap_or_default().to_ascii_lowercase())
+        .filter(|code| matches!(code.as_str(), "de" | "en" | "fr" | "nl" | "ja" | "zh"));
+    Ok(chosen.unwrap_or_else(|| fallback.to_owned()))
+}
+
+/// Makes the base label `base` for an account, or adopts a label of the same name that is no base
+/// label yet. Answers its id.
+pub(crate) fn make_base_label(tx: &Transaction<'_>, account_id: i64, base: Base, language: &str) -> Result<i64> {
+    let text = base.text(language);
+    let mut stmt = tx.prepare(
+        "SELECT id, name, detector, description FROM assist_labels WHERE account_id = ?1 AND base IS NULL ORDER BY id",
+    )?;
+    let own: Vec<(i64, String, Option<String>, String)> = stmt
+        .query_map([account_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?
+        .collect::<Result<_, _>>()?;
+    drop(stmt);
+    if let Some((id, _, detector, description)) = own.iter().find(|(_, name, _, _)| Base::named(name) == Some(base)) {
+        // Adopted: name, keyword and color stay; the definition is the base label's, and a detector
+        // of its own is kept unless it is the base label's anyway. A description the person wrote
+        // themselves is kept aside, not lost (security review 0.22 LABELS22-L2).
+        let detector = detector.clone().filter(|detector| detector != base.detector().as_str());
+        let written = description.trim();
+        let own_words = (!written.is_empty()
+            && ["de", "en"].iter().all(|language| base.text(language).description != written))
+        .then(|| written.to_owned());
+        tx.execute(
+            "UPDATE assist_labels SET base = ?2, description = ?3, detector = ?4, base_written = ?3,
+                 base_language = ?5, previous_description = coalesce(?6, previous_description)
+             WHERE id = ?1",
+            params![id, base.as_str(), text.description, detector, language, own_words],
+        )?;
+        return Ok(*id);
+    }
+    let mut name = text.name.to_owned();
+    let mut n = 1;
+    while name_taken(tx, account_id, &name, 0)? {
+        n += 1;
+        name = format!("{} {n}", text.name);
+    }
+    let write = AssistLabelWrite {
+        name,
+        description: text.description.to_owned(),
+        color: Some(base.color().to_owned()),
+        rules: None,
+        detector: None,
+        learn_senders: true,
+        classifier: true,
+        auto: true,
+    };
+    let id = insert_label(tx, account_id, &write, Some(base.as_str()))?;
+    tx.execute(
+        "UPDATE assist_labels SET base_written = description, base_language = ?2 WHERE id = ?1",
+        params![id, language],
+    )?;
+    Ok(id)
+}
+
+/// Brings an account's base labels from set `seen` to `version`: makes those that came after
+/// `seen` (a deleted one stays deleted), and gives those whose definition is still the one the
+/// server wrote the current wording, in the language it was written in. Answers the changed
+/// labels, each with "created" or "updated".
+fn upgrade_base_labels(
+    tx: &Transaction<'_>,
+    account_id: i64,
+    seen: i64,
+    language: &str,
+) -> Result<Vec<(i64, &'static str)>> {
+    let mut changed = Vec::new();
+    for base in Base::ALL {
+        let found: Option<(i64, String, Option<String>, Option<String>)> = tx
+            .query_row(
+                "SELECT id, description, base_written, base_language FROM assist_labels
+                 WHERE account_id = ?1 AND base = ?2",
+                params![account_id, base.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        match found {
+            Some((id, description, written, written_in)) => {
+                if written.as_deref() != Some(description.as_str()) {
+                    continue;
+                }
+                let language = written_in.as_deref().unwrap_or(language);
+                let current = base.text(language).description;
+                if current != description {
+                    tx.execute(
+                        "UPDATE assist_labels SET description = ?2, base_written = ?2, base_language = ?3
+                         WHERE id = ?1",
+                        params![id, current, language],
+                    )?;
+                    changed.push((id, "updated"));
+                }
+            }
+            None if base.since() > seen => changed.push((make_base_label(tx, account_id, base, language)?, "created")),
+            None => {}
+        }
+    }
+    Ok(changed)
 }
 
 /// The first From address of an email, lower case.
@@ -77,8 +224,7 @@ pub(crate) fn learn_by_hand(
         .unwrap_or_else(|_| "[]".into());
     let mut stmt = tx.prepare_cached(
         "SELECT id, keyword, learn_senders, classifier FROM assist_labels
-         WHERE account_id = ?1 AND keyword IN (SELECT value FROM json_each(?2))
-           AND NOT EXISTS (SELECT 1 FROM assist_prefs p WHERE p.account_id = ?1 AND p.non_ai_labels = 0)",
+         WHERE account_id = ?1 AND keyword IN (SELECT value FROM json_each(?2))",
     )?;
     let labels: Vec<(i64, String, bool, bool)> = stmt
         .query_map(params![account_id, keywords], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?
@@ -89,15 +235,32 @@ pub(crate) fn learn_by_hand(
     }
     let from = from_address(tx, email_id)?;
     let from = if from.chars().count() > MAX_SENDER_CHARS { String::new() } else { from };
+    // Corrections are kept for the model only while it labels; senders and the classifier learn
+    // while labels without a model are on.
+    let (shots, learn): (bool, bool) = tx
+        .query_row("SELECT auto_labels, non_ai_labels FROM assist_prefs WHERE account_id = ?1", [account_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()?
+        .unwrap_or((false, true));
+    if !shots && !learn {
+        return Ok(false);
+    }
     let now = now();
     let mut queued = false;
     for (label_id, keyword, learn_senders, classifier) in labels {
         let positive = changed.iter().any(|(changed, on)| **changed == keyword && *on);
+        if shots {
+            keep_shot(tx, account_id, email_id, label_id, positive, &from)?;
+        }
+        if !learn {
+            continue;
+        }
         if learn_senders && !from.is_empty() {
             if positive {
                 learn_sender(tx, account_id, label_id, &from)?;
             } else {
-                tx.execute("DELETE FROM label_senders WHERE label_id = ?1 AND address = ?2", params![label_id, from])?;
+                unlearn_sender(tx, account_id, label_id, &from)?;
             }
         }
         if !classifier {
@@ -139,29 +302,170 @@ pub(crate) fn teaches_in_share(conn: &Connection, account_id: i64) -> rusqlite::
         .unwrap_or(false))
 }
 
-/// Counts one more hand-labeling of `from` for a label; a new sender beyond
-/// [`MAX_SENDERS_PER_LABEL`] takes the place of the least counted one.
+/// Counts one more hand-labeling of `from` for a label (a sender it was taken off before starts
+/// again at one); a new sender beyond [`MAX_SENDERS_PER_LABEL`] takes the place of the least
+/// counted one.
 fn learn_sender(tx: &Transaction<'_>, account_id: i64, label_id: i64, from: &str) -> Result<()> {
     let known = tx.execute(
-        "UPDATE label_senders SET count = count + 1 WHERE label_id = ?1 AND address = ?2",
+        "UPDATE label_senders SET count = CASE WHEN count < 0 THEN 1 ELSE count + 1 END
+         WHERE label_id = ?1 AND address = ?2",
         params![label_id, from],
     )?;
     if known > 0 {
         return Ok(());
     }
+    make_room(tx, label_id)?;
+    tx.execute(
+        "INSERT INTO label_senders (account_id, label_id, address, count) VALUES (?1, ?2, ?3, 1)",
+        params![account_id, label_id, from],
+    )?;
+    Ok(())
+}
+
+/// The label was taken off mail of `from` by hand: it no longer goes on their mail by itself, except
+/// by the label's rules (count -1), until it is put on their mail by hand again.
+fn unlearn_sender(tx: &Transaction<'_>, account_id: i64, label_id: i64, from: &str) -> Result<()> {
+    let known = tx
+        .execute("UPDATE label_senders SET count = -1 WHERE label_id = ?1 AND address = ?2", params![label_id, from])?;
+    if known > 0 {
+        return Ok(());
+    }
+    make_room(tx, label_id)?;
+    tx.execute(
+        "INSERT INTO label_senders (account_id, label_id, address, count) VALUES (?1, ?2, ?3, -1)",
+        params![account_id, label_id, from],
+    )?;
+    Ok(())
+}
+
+/// Corrections kept per label: put on, and taken off.
+pub const MAX_SHOTS_POSITIVE: i64 = 4;
+pub const MAX_SHOTS_NEGATIVE: i64 = 3;
+const SHOT_SUBJECT_CHARS: usize = 120;
+const SHOT_SNIPPET_CHARS: usize = 200;
+
+/// A text for a correction example with what could be a code, a number of an account or a link
+/// taken out: runs of four digits or more (spaces and hyphens inside a run count with it) become
+/// `#`, and web addresses `[link]` (security review 0.22 LABELS22-L3). What kind of mail it was
+/// stays readable.
+fn masked(text: &str) -> String {
+    let words: Vec<String> = text
+        .split_whitespace()
+        .map(|word| {
+            let lower = word.to_lowercase();
+            if lower.contains("://") || lower.starts_with("www.") {
+                "[link]".to_owned()
+            } else if mixed_code(word) {
+                // Letters and digits mixed, like a voucher or reference (`AB7-K2X`): the
+                // characters go, the shape stays (security review 0.22 R2, I-3).
+                word.chars().map(|c| if c.is_alphanumeric() { '#' } else { c }).collect()
+            } else {
+                word.to_owned()
+            }
+        })
+        .collect();
+    let text = words.join(" ");
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while at < chars.len() {
+        if !chars[at].is_numeric() {
+            out.push(chars[at]);
+            at += 1;
+            continue;
+        }
+        // A run: digits, with single spaces or hyphens between them.
+        let mut end = at;
+        let mut digits = 0;
+        while end < chars.len() {
+            if chars[end].is_numeric() {
+                digits += 1;
+                end += 1;
+            } else if matches!(chars[end], ' ' | '-') && chars.get(end + 1).is_some_and(|c| c.is_numeric()) {
+                end += 1;
+            } else {
+                break;
+            }
+        }
+        for c in &chars[at..end] {
+            out.push(if digits >= 4 && c.is_numeric() { '#' } else { *c });
+        }
+        at = end;
+    }
+    out
+}
+
+/// A word of four letters and digits or more that has both, like a code (`AB7-K2X`, `X9F2Q`),
+/// not a short name like `MP3` or `A4`.
+fn mixed_code(word: &str) -> bool {
+    let alphanumeric = word.chars().filter(|c| c.is_alphanumeric()).count();
+    alphanumeric >= 4 && word.chars().any(|c| c.is_numeric()) && word.chars().any(char::is_alphabetic)
+}
+
+fn cut(text: &str, max: usize) -> String {
+    let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    match text.char_indices().nth(max) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text,
+    }
+}
+
+/// Keeps a hand-labeling as an example for the model: the sender's domain (never the address), the
+/// subject and the start of the preview, cut short. The newest few per label and direction stay.
+fn keep_shot(
+    tx: &Transaction<'_>,
+    account_id: i64,
+    email_id: i64,
+    label_id: i64,
+    positive: bool,
+    from: &str,
+) -> Result<()> {
+    let found: Option<(String, String)> = tx
+        .query_row("SELECT subject, preview FROM emails WHERE id = ?1", [email_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()?;
+    let Some((subject, preview)) = found else { return Ok(()) };
+    // A mail with a one-time code is no example worth keeping a piece of (R2, I-3).
+    if uwumail_labels::has_one_time_code(&format!("{subject}\n{preview}")) {
+        return Ok(());
+    }
+    let domain = from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+    tx.execute(
+        "INSERT INTO label_shots (account_id, label_id, email_id, positive, sender_domain, subject, snippet, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT (label_id, email_id) DO UPDATE SET positive = ?4, created_at = ?8",
+        params![
+            account_id,
+            label_id,
+            email_id,
+            positive,
+            cut(domain, 100),
+            cut(&masked(&subject), SHOT_SUBJECT_CHARS),
+            cut(&masked(&preview), SHOT_SNIPPET_CHARS),
+            now()
+        ],
+    )?;
+    let keep = if positive { MAX_SHOTS_POSITIVE } else { MAX_SHOTS_NEGATIVE };
+    tx.execute(
+        "DELETE FROM label_shots WHERE label_id = ?1 AND positive = ?2 AND id NOT IN (
+             SELECT id FROM label_shots WHERE label_id = ?1 AND positive = ?2 ORDER BY created_at DESC, id DESC LIMIT ?3)",
+        params![label_id, positive, keep],
+    )?;
+    Ok(())
+}
+
+/// Below [`MAX_SENDERS_PER_LABEL`], room for one more sender: the least counted ones go.
+fn make_room(tx: &Transaction<'_>, label_id: i64) -> Result<()> {
     let senders: i64 =
         tx.query_row("SELECT COUNT(*) FROM label_senders WHERE label_id = ?1", [label_id], |row| row.get(0))?;
     if senders >= MAX_SENDERS_PER_LABEL {
         tx.execute(
             "DELETE FROM label_senders WHERE label_id = ?1 AND address IN (
-                 SELECT address FROM label_senders WHERE label_id = ?1 ORDER BY count, address LIMIT ?2)",
+                 SELECT address FROM label_senders WHERE label_id = ?1 ORDER BY abs(count), address LIMIT ?2)",
             params![label_id, senders - MAX_SENDERS_PER_LABEL + 1],
         )?;
     }
-    tx.execute(
-        "INSERT INTO label_senders (account_id, label_id, address, count) VALUES (?1, ?2, ?3, 1)",
-        params![account_id, label_id, from],
-    )?;
     Ok(())
 }
 
@@ -291,6 +595,249 @@ fn count_labels(conn: &Connection, account_id: i64) -> Result<HashMap<i64, Label
 }
 
 impl Store {
+    /// Gives an account the base labels it does not have yet (docs/labels.md, "Base labels"), once:
+    /// a label of the same name is adopted, the others are made, named in the person's language or
+    /// `fallback_language`. A base label deleted later stays deleted. Answers whether anything was
+    /// made; cheap when the account has them already.
+    pub async fn ensure_base_labels(&self, account_id: i64, fallback_language: &str) -> Result<bool> {
+        self.ensure_base_labels_at(account_id, fallback_language, BASE_LABELS_VERSION).await
+    }
+
+    /// [`Store::ensure_base_labels`] as if the current set were `version` (for tests of upgrades).
+    #[doc(hidden)]
+    pub async fn ensure_base_labels_at(&self, account_id: i64, fallback_language: &str, version: i64) -> Result<bool> {
+        let done: bool = self
+            .read(move |conn| {
+                Ok(conn
+                    .query_row(
+                        "SELECT base_labels >= ?2 FROM assist_prefs WHERE account_id = ?1",
+                        params![account_id, version],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or(false))
+            })
+            .await?;
+        if done {
+            return Ok(false);
+        }
+        let fallback = fallback_language.to_owned();
+        let modseq = self
+            .write(move |tx| {
+                let exists: bool =
+                    tx.query_row("SELECT EXISTS (SELECT 1 FROM accounts WHERE id = ?1)", [account_id], |row| {
+                        row.get(0)
+                    })?;
+                if !exists {
+                    return Ok(None);
+                }
+                let seen: i64 = tx
+                    .query_row("SELECT base_labels FROM assist_prefs WHERE account_id = ?1", [account_id], |row| {
+                        row.get(0)
+                    })
+                    .optional()?
+                    .unwrap_or(0);
+                if seen >= version {
+                    return Ok(None);
+                }
+                let language = base_language(tx, account_id, &fallback)?;
+                let changed = upgrade_base_labels(tx, account_id, seen, &language)?;
+                bump_prefs(tx, account_id)?;
+                tx.execute(
+                    "UPDATE assist_prefs SET base_labels = ?2 WHERE account_id = ?1",
+                    params![account_id, version],
+                )?;
+                let mut modseq = None;
+                for (id, change) in changed {
+                    modseq = Some(label_changed(tx, account_id, id, change)?);
+                }
+                Ok(modseq)
+            })
+            .await?;
+        if let Some(modseq) = modseq {
+            self.notify_change(account_id, modseq);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Makes one base label again (after it was deleted), named in the person's language or
+    /// `fallback_language`, or answers the one there is.
+    pub async fn create_base_label(
+        &self,
+        account_id: i64,
+        base: Base,
+        fallback_language: &str,
+    ) -> Result<crate::AssistLabel> {
+        let fallback = fallback_language.to_owned();
+        let (label, modseq) = self
+            .write(move |tx| {
+                let found: Option<i64> = tx
+                    .query_row(
+                        "SELECT id FROM assist_labels WHERE account_id = ?1 AND base = ?2",
+                        params![account_id, base.as_str()],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let (id, modseq) = match found {
+                    Some(id) => (id, None),
+                    None => {
+                        let language = base_language(tx, account_id, &fallback)?;
+                        let id = make_base_label(tx, account_id, base, &language)?;
+                        bump_prefs(tx, account_id)?;
+                        (id, Some(label_changed(tx, account_id, id, "created")?))
+                    }
+                };
+                let label =
+                    tx.query_row(&format!("SELECT {LABEL_COLUMNS} FROM assist_labels WHERE id = ?1"), [id], label_row)?;
+                Ok((label, modseq))
+            })
+            .await?;
+        if let Some(modseq) = modseq {
+            self.notify_change(account_id, modseq);
+        }
+        Ok(label)
+    }
+
+    /// Whether the person knows `address` (lower case): it is exactly an address of a card in one of
+    /// their address books, or they wrote to it (among their 2,000 newest sent mails). One index
+    /// lookup for the cards (migration 0072), so cheap enough for every delivery (security review
+    /// 0.22 LABELS22-M2, -L1).
+    pub async fn knows_sender(&self, account_id: i64, address: String) -> Result<bool> {
+        let address = address.trim().to_lowercase().replace('"', "");
+        if address.is_empty() || address.chars().count() > MAX_SENDER_CHARS {
+            return Ok(false);
+        }
+        self.read(move |conn| {
+            Ok(conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM contact_emails WHERE account_id = ?1 AND email = ?2)
+                     OR EXISTS (SELECT 1 FROM (SELECT e.to_addr, e.cc_addr FROM mailboxes m
+                                               JOIN email_mailboxes em ON em.mailbox_id = m.id
+                                               JOIN emails e ON e.id = em.email_id
+                                               WHERE m.account_id = ?1 AND m.role = 'sent'
+                                               ORDER BY e.id DESC LIMIT 2000)
+                                WHERE instr(lower(to_addr || cc_addr), ?3) > 0)",
+                params![account_id, address, format!("\"{address}\"")],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+    }
+
+    /// The person's corrections for the model, newest first.
+    pub async fn label_shots(&self, account_id: i64) -> Result<Vec<LabelShot>> {
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT label_id, positive, sender_domain, subject, snippet FROM label_shots
+                 WHERE account_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 200",
+            )?;
+            let rows = stmt.query_map([account_id], |row| {
+                Ok(LabelShot {
+                    label_id: row.get(0)?,
+                    positive: row.get(1)?,
+                    sender_domain: row.get(2)?,
+                    subject: row.get(3)?,
+                    snippet: row.get(4)?,
+                })
+            })?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
+    /// The account's examples with an embedding by `model`, with their labels.
+    pub async fn label_vectors(&self, account_id: i64, model: String) -> Result<Vec<LabelVector>> {
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT x.id, x.email_id, v.vector,
+                        (SELECT json_group_array(l.label_id) FROM label_example_labels l WHERE l.example_id = x.id)
+                 FROM label_vectors v JOIN label_examples x ON x.id = v.example_id
+                 WHERE v.account_id = ?1 AND v.model = ?2 AND {NOT_IN_JUNK_OR_TRASH}"
+            ))?;
+            let rows = stmt.query_map(params![account_id, model], |row| {
+                let labels: String = row.get(3)?;
+                Ok(LabelVector {
+                    email_id: row.get(1)?,
+                    vector: row.get(2)?,
+                    labels: serde_json::from_str(&labels).unwrap_or_default(),
+                })
+            })?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
+    /// The account's examples with their tokens and labels.
+    pub async fn label_token_sets(&self, account_id: i64) -> Result<Vec<LabelTokens>> {
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT x.email_id, x.tokens,
+                        (SELECT json_group_array(l.label_id) FROM label_example_labels l WHERE l.example_id = x.id)
+                 FROM label_examples x WHERE x.account_id = ?1 AND {NOT_IN_JUNK_OR_TRASH}"
+            ))?;
+            let rows = stmt.query_map([account_id], |row| {
+                let tokens: String = row.get(1)?;
+                let labels: String = row.get(2)?;
+                Ok(LabelTokens {
+                    email_id: row.get(0)?,
+                    tokens: example_tokens(&tokens),
+                    labels: serde_json::from_str(&labels).unwrap_or_default(),
+                })
+            })?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
+    /// Keeps the embedding of an email's example (when it is one), replacing one by another model.
+    pub async fn set_label_vector(
+        &self,
+        account_id: i64,
+        email_id: i64,
+        model: String,
+        vector: Vec<u8>,
+    ) -> Result<bool> {
+        self.write(move |tx| {
+            let example: Option<i64> = tx
+                .query_row(
+                    "SELECT id FROM label_examples WHERE account_id = ?1 AND email_id = ?2",
+                    params![account_id, email_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(example) = example else { return Ok(false) };
+            tx.execute(
+                "INSERT INTO label_vectors (example_id, account_id, model, vector) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (example_id) DO UPDATE SET model = ?3, vector = ?4",
+                params![example, account_id, model, vector],
+            )?;
+            Ok(true)
+        })
+        .await
+    }
+
+    /// Examples whose email is still there but that have no embedding by `model` yet, newest first.
+    pub async fn label_examples_without_vector(
+        &self,
+        account_id: i64,
+        model: String,
+        limit: usize,
+    ) -> Result<Vec<i64>> {
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT x.email_id FROM label_examples x
+                 WHERE x.account_id = ?1
+                   AND EXISTS (SELECT 1 FROM emails e WHERE e.id = x.email_id AND e.account_id = ?1)
+                   AND NOT EXISTS (SELECT 1 FROM label_vectors v WHERE v.example_id = x.id AND v.model = ?2)
+                   AND {NOT_IN_JUNK_OR_TRASH}
+                 ORDER BY x.id DESC LIMIT ?3"
+            ))?;
+            let rows = stmt.query_map(params![account_id, model, limit as i64], |row| row.get(0))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
     /// Whether labels were learned from by hand in a change just written: wakes the worker.
     pub(crate) fn labels_learned(&self) {
         self.inner.assist_wakeup.notify_one();
@@ -587,6 +1134,15 @@ mod tests {
     use super::*;
     use crate::test_support::store;
 
+    /// Security review 0.22 R3 I-5: digits of any script are masked like ASCII ones.
+    #[test]
+    fn masking_covers_unicode_digits_and_mixed_codes() {
+        assert_eq!(masked("Kunde ４８２９１３ heute"), "Kunde ###### heute");
+        assert_eq!(masked("رقم ٤٨٢٩١٣"), "رقم ######");
+        assert_eq!(masked("Code AB７-K2X für MP3"), "Code ###-### für MP3");
+        assert_eq!(masked("Tag 12, Seite 3"), "Tag 12, Seite 3");
+    }
+
     /// The counts start from the account's own folders, never from the keyword index that holds
     /// every account's mail (security audit 0.21.0 LABELS-M2).
     #[tokio::test]
@@ -602,5 +1158,132 @@ mod tests {
             .unwrap();
         assert!(!plan.iter().any(|step| step.contains("email_keywords_keyword")), "{plan:#?}");
         assert!(plan.iter().any(|step| step.contains("SCAN m") || step.contains("SEARCH m")), "{plan:#?}");
+    }
+
+    /// Security review 0.22 LABELS22-M2/-L1: a sender is known by exactly a card's address, from the
+    /// index kept with every write of a card, not by a prefix of one; a deleted card is forgotten.
+    #[tokio::test]
+    async fn a_sender_is_known_by_exactly_a_cards_address() {
+        use crate::dav::{DavKind, DavPrecondition, DavWrite, NewDavCollection};
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "mini@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let mini = store.create_account(account).await.unwrap().id;
+        let book = NewDavCollection { slug: "contacts".into(), display_name: "Kontakte".into(), ..Default::default() };
+        let book = store.dav_collections(mini, DavKind::Addressbook, book).await.unwrap()[0].clone();
+        let card = "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:anna\r\nFN:Anna\r\nEMAIL:Anna@Example.com\r\n\
+                    PHOTO:data:image/png;base64,iVBORw0KGgo=\r\nEND:VCARD\r\n";
+        let write = DavWrite {
+            name: "anna.vcf".into(),
+            content: card.into(),
+            uid: "anna".into(),
+            component: "VCARD".into(),
+            starts_at: None,
+            ends_at: None,
+        };
+        store.dav_put(mini, book.id, write, DavPrecondition::default()).await.unwrap();
+
+        assert!(store.knows_sender(mini, "anna@example.com".into()).await.unwrap());
+        assert!(store.knows_sender(mini, " ANNA@example.com ".into()).await.unwrap());
+        assert!(!store.knows_sender(mini, "anna@example.co".into()).await.unwrap(), "a prefix is somebody else");
+        assert!(!store.knows_sender(mini, "nna@example.com".into()).await.unwrap());
+        assert!(!store.knows_sender(mini, "lisa@example.com".into()).await.unwrap());
+
+        // The query is one index lookup, not a scan of every card.
+        let plan: Vec<String> = store
+            .read(|conn| {
+                let mut stmt = conn.prepare(
+                    "EXPLAIN QUERY PLAN SELECT 1 FROM contact_emails WHERE account_id = 1 AND email = 'a@example.com'",
+                )?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(3))?;
+                Ok(rows.collect::<Result<_, _>>()?)
+            })
+            .await
+            .unwrap();
+        assert!(plan.iter().any(|step| step.contains("contact_emails_account")), "{plan:#?}");
+
+        store.dav_delete(mini, book.id, "anna.vcf", None).await.unwrap();
+        assert!(!store.knows_sender(mini, "anna@example.com".into()).await.unwrap(), "gone with the card");
+    }
+
+    /// A later set of base labels gives the definitions the server wrote the new wording, keeps one
+    /// that was changed, and makes no deleted base label again.
+    #[tokio::test]
+    async fn a_later_set_updates_unedited_definitions_only() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "leni@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let leni = store.create_account(account).await.unwrap().id;
+        assert!(store.ensure_base_labels(leni, "de").await.unwrap());
+        let labels = store.assist_labels(leni).await.unwrap();
+        let id = |base: Base| labels.iter().find(|l| l.base.as_deref() == Some(base.as_str())).unwrap().id;
+        let (invoice, work, shipping) = (id(Base::Invoice), id(Base::Work), id(Base::Shipping));
+        // As if an older set had written other words; one was changed afterwards; one is deleted.
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "UPDATE assist_labels SET description = 'alt', base_written = 'alt' WHERE id = ?1",
+                    [invoice],
+                )?;
+                tx.execute(
+                    "UPDATE assist_labels SET description = 'eigene Worte', base_written = 'alt' WHERE id = ?1",
+                    [work],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        store.delete_assist_label(leni, shipping).await.unwrap();
+        assert!(!store.ensure_base_labels(leni, "de").await.unwrap(), "the same set changes nothing");
+
+        assert!(store.ensure_base_labels_at(leni, "en", BASE_LABELS_VERSION + 1).await.unwrap());
+        let labels = store.assist_labels(leni).await.unwrap();
+        let description = |id: i64| labels.iter().find(|l| l.id == id).unwrap().description.clone();
+        assert_eq!(description(invoice), Base::Invoice.text("de").description, "in the language it was written in");
+        assert_eq!(description(work), "eigene Worte");
+        assert!(!labels.iter().any(|l| l.base.as_deref() == Some("shipping")), "deleted stays deleted");
+    }
+
+    /// Security review 0.22 LABELS22-L2: a label of the person's that becomes a base label because
+    /// of its name keeps the description they had written, aside; an empty one or the base text
+    /// itself is nothing to keep.
+    #[tokio::test]
+    async fn an_adopted_label_keeps_the_persons_own_description() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "leni@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let leni = store.create_account(account).await.unwrap().id;
+        let own = "Alles vom Steuerberater und vom Finanzamt";
+        let invoice = store.create_assist_label(leni, "Rechnung".into(), own.into(), None).await.unwrap().id;
+        let news = store.create_assist_label(leni, "Newsletter".into(), String::new(), None).await.unwrap().id;
+        store.ensure_base_labels(leni, "de").await.unwrap();
+        let labels = store.assist_labels(leni).await.unwrap();
+        let label = |id: i64| labels.iter().find(|l| l.id == id).unwrap().clone();
+        assert_eq!(label(invoice).base.as_deref(), Some("invoice"));
+        assert_eq!(label(invoice).description, Base::Invoice.text("de").description);
+        assert_eq!(label(invoice).previous_description.as_deref(), Some(own), "kept, not lost");
+        assert_eq!(label(news).base.as_deref(), Some("newsletter"));
+        assert_eq!(label(news).previous_description, None, "nothing written, nothing kept");
     }
 }

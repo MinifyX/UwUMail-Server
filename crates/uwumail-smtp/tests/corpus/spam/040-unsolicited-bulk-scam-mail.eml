@@ -1,0 +1,25 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Info <offer93@promo-mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Your invoice is attached
+Date: Sun, 13 Sep 2026 23:21:00 +0000
+Message-ID: <656216552929.873@promo-mail.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-2027699625"
+
+--mix-2027699625
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Please see the attached invoice and pay within 3 days.
+--mix-2027699625
+Content-Type: application/octet-stream; name="Rechnung.exe"
+Content-Disposition: attachment; filename="Rechnung.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAGNvcnB1cw==
+--mix-2027699625--

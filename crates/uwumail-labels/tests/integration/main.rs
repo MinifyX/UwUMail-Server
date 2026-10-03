@@ -1,6 +1,7 @@
 //! Realistic German and English mail for the detectors, the rules and the classifier.
 
 mod classifier;
+mod corpus;
 mod detectors;
 mod rules;
 

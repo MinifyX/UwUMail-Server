@@ -190,7 +190,7 @@ export function PortalShell({ session, children }: { session: Session; children:
       to: "/admin/people",
       label: t("nav.directory"),
       icon: Users,
-      also: ["/admin/domains", "/admin/reports"],
+      also: ["/admin/domains", "/admin/moves", "/admin/reports"],
     },
     { to: "/admin/queue", label: t("nav.queue"), icon: Send },
     { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },

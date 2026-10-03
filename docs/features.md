@@ -65,6 +65,11 @@ has room for, with links to the guides.
   per website, made in the portal, the webmail, the apps or a password manager,
   on your own domains or on domains kept only for them
   ([jmap-masked-email.md](jmap-masked-email.md)).
+- **Signatures per domain.** One signature for all your addresses of a domain
+  (or of every domain), single addresses may differ, placeholders like `{name}`
+  are filled per address; admins set a company signature per domain as a
+  template or as a mandatory footer the server appends on sending, also for
+  IMAP/SMTP mail programs ([signatures.md](signatures.md)).
 
 ## Moving in
 

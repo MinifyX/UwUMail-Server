@@ -553,6 +553,13 @@ async fn settle_sending(ctx: &Context, settled: &mut Settings, address: &str, pa
     settled.smtp = None;
 }
 
+/// What is worth trying for an address, best first, without logging in anywhere and without
+/// asking Mozilla's database: a suggestion for a form the admin still checks (a domain move, where
+/// nobody's password is at hand yet).
+pub async fn suggest(smtp: &Smtp, dns: Option<&DnsChecker>, address: &str) -> Vec<Settings> {
+    candidates(&smtp.inner, dns, address, false).await
+}
+
 /// Finds out how a provider's mailbox is reached, and proves it by logging in.
 ///
 /// `use_database` asks Mozilla's collection as well, which means telling it the domain.

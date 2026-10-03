@@ -585,7 +585,25 @@
       "bimiTitle": "Vul een kortere naam voor het logo in, zonder speciale tekens.",
       "bimiBackground": "De achtergrondkleur moet eruitzien als #rrggbb.",
       "bimiCertificateInvalid": "Dat is geen leesbaar certificaat in PEM-formaat.",
-      "bimiCertificateNotBimi": "Dat certificaat is geen VMC of CMC voor BIMI."
+      "bimiCertificateNotBimi": "Dat certificaat is geen VMC of CMC voor BIMI.",
+      "moveRows": "Sommige rijen van de lijst moeten worden verbeterd; zie de tabel.",
+      "moveTooMany": "Eén verhuizing neemt hoogstens 2000 mailboxen.",
+      "moveSingle": "Een enkele verhuizing neemt precies één mailbox.",
+      "moveFinished": "Deze verhuizing is afgerond.",
+      "moveFinishing": "De laatste ronde loopt al.",
+      "moveMailboxBusy": "Deze mailbox zit al in een andere verhuizing.",
+      "moveOtherDomain": "Deze mailbox staat niet op het domein van de verhuizing.",
+      "moveNotActive": "Deze verhuizing loopt niet.",
+      "moveNotPaused": "Deze verhuizing is niet gepauzeerd.",
+      "movesLimit": "Hoogstens 20 verhuizingen kunnen tegelijk open zijn. Rond er eerst een af of verwijder er een.",
+      "movePersonalBusy": "De eigenaar verhuist zelf net mail naar deze mailbox (Mijn mailbox → Verhuizen). Wacht tot dat klaar is, of vraag om het te pauzeren.",
+      "moveAdminBusy": "Een beheerder verhuist net mail naar deze mailbox. Probeer het opnieuw als die verhuizing klaar is.",
+      "movePasswordNeeded": "Het wachtwoord van de oude mailbox is verwijderd. Vul het in om verder te gaan.",
+      "moveChanged": "Er is intussen iets in de lijst veranderd, misschien door een ander verzoek. Controleer de lijst en begin opnieuw.",
+      "hostInvalid": "De servernaam is niet bruikbaar. Alleen servers op internet kunnen.",
+      "urlInvalid": "Het adres is geen bruikbaar https-adres.",
+      "domainMaskedOnly": "Dit domein neemt alleen gemaskeerde adressen.",
+      "noMailbox": "Dit account heeft geen mailbox."
     }
   },
   "people": {
@@ -867,7 +885,6 @@
       "domainCreate": "{{actor}} heeft het domein {{target}} toegevoegd",
       "domainRemove": "{{actor}} heeft het domein {{target}} verwijderd",
       "domainCatchAll": "{{actor}} heeft de catch-all van {{target}} gewijzigd",
-      "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} heeft nieuwe DKIM-sleutels voor {{target}} gemaakt",
       "domainDkimActivate": "{{actor}} heeft {{target}} overgezet op de nieuwe DKIM-sleutels",
       "domainDkimRemove": "{{actor}} heeft een oude DKIM-sleutel van {{target}} verwijderd",
@@ -936,7 +953,19 @@
       "domainBimiLogoRemoved": "{{actor}} heeft het BIMI-logo van {{target}} verwijderd",
       "domainBimiCertificate": "{{actor}} heeft een BIMI-certificaat voor {{target}} toegevoegd",
       "domainBimiCertificateRemoved": "{{actor}} heeft het BIMI-certificaat van {{target}} verwijderd",
-      "microsoftResolve": "{{actor}} heeft de weigering van {{target}} door Microsoft als opgelost gemarkeerd"
+      "microsoftResolve": "{{actor}} heeft de weigering van {{target}} door Microsoft als opgelost gemarkeerd",
+      "moveCreate": "{{actor}} heeft een verhuizing van {{target}} gestart",
+      "moveAddMailboxes": "{{actor}} heeft mensen aan de verhuizing van {{target}} toegevoegd",
+      "moveSettings": "{{actor}} heeft het tempo van de verhuizing van {{target}} gewijzigd",
+      "movePause": "{{actor}} heeft de verhuizing van {{target}} gepauzeerd",
+      "moveResume": "{{actor}} heeft de verhuizing van {{target}} hervat",
+      "moveFinish": "{{actor}} heeft de verhuizing van {{target}} afgerond",
+      "moveDelete": "{{actor}} heeft de verhuizing van {{target}} verwijderd",
+      "moveRetry": "{{actor}} heeft de verhuizing van {{target}} opnieuw gestart",
+      "movePauseMailbox": "{{actor}} heeft de verhuizing van {{target}} gepauzeerd",
+      "moveRemoveMailbox": "{{actor}} heeft {{target}} uit de verhuizing gehaald",
+      "moveUpload": "{{actor}} heeft contacten of agenda's voor {{target}} geüpload",
+      "other": "{{actor}}: {{action}} {{target}}"
     },
     "details": {
       "adminOn": "is nu beheerder",
@@ -1246,6 +1275,29 @@
       },
       "unauthenticated_one": "Eén rapport kwam van een afzender die niet kon bewijzen wie hij is. De cijfers kunnen verzonnen zijn.",
       "unauthenticated_other": "{{count}} rapporten kwamen van afzenders die niet konden bewijzen wie ze zijn. De cijfers kunnen verzonnen zijn."
+    },
+    "signature": {
+      "title": "Bedrijfshandtekening",
+      "explain": "Eén handtekening voor alle adressen van dit domein: als sjabloon dat iedereen mag aanpassen, of als verplichte voettekst die de server bij verzenden toevoegt.",
+      "mode": "Gebruik",
+      "modes": {
+        "off": "Uit",
+        "template": "Sjabloon",
+        "footer": "Verplichte voettekst"
+      },
+      "modeHint": {
+        "off": "Iedereen schrijft zelf een handtekening.",
+        "template": "Wie nog geen eigen handtekening heeft, krijgt deze. Iedereen mag hem aanpassen.",
+        "footer": "De server voegt hem toe aan elk bericht van dit domein, ook vanuit mail-apps via SMTP."
+      },
+      "text": "Tekst",
+      "html": "HTML",
+      "htmlHint": "Optioneel, voor opgemaakte mail. Zonder HTML wordt de tekst gebruikt.",
+      "placeholders": "Plaatshouders: {{placeholders}}",
+      "footerNote": "Ondertekende of versleutelde mail (S/MIME, PGP) krijgt geen voettekst, anders klopt de handtekening niet meer. Ontvangers krijgen de voettekst, de kopie in Verzonden van de afzender toont hem niet. Dit is een hulpmiddel, geen garantie: sommige berichten (bijv. met een al geciteerde voettekst) gaan zonder weg.",
+      "footerEmpty": "Een verplichte voettekst heeft tekst nodig.",
+      "save": "Opslaan",
+      "saved": "Bedrijfshandtekening opgeslagen"
     }
   },
   "groups": {
@@ -2236,8 +2288,8 @@
       "progress": "{{done}} van {{total}} berichten · {{size}}",
       "progressLabel": "Hoe ver de verhuizing is",
       "folders": "map {{done}} van {{total}}",
-      "skipped": "{{count}} bericht was er al en is overgeslagen",
-      "skipped_other": "{{count}} berichten waren er al en zijn overgeslagen",
+      "skipped": "{{count}} bericht is overgeslagen: het was er al of is groter dan deze server aanneemt",
+      "skipped_other": "{{count}} berichten zijn overgeslagen: ze waren er al of zijn groter dan deze server aanneemt",
       "done": "Alles is er.",
       "doneAt": "Alles wat daar was, is hier, stand {{date}}."
     },
@@ -2248,6 +2300,7 @@
       "notPublic": "De server van de oude provider staat niet op internet, voor zover deze server kan zien.",
       "noMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
       "stopped": "Gepauzeerd. Ga verder wanneer je wilt; het gaat verder waar het stopte.",
+      "interrupted": "De server stopte meerdere keren achter elkaar tijdens deze verhuizing, dus die is gepauzeerd. Ga verder wanneer je klaar bent, of vraag je beheerder.",
       "failed": "Er ging iets mis. Ga verder om het opnieuw te proberen."
     },
     "actions": {
@@ -2317,7 +2370,7 @@
     },
     "signatures": {
       "title": "Handtekeningen",
-      "intro": "Mail-apps en de webmail voegen de handtekening toe van het adres waarmee je verstuurt.",
+      "intro": "Kies een domein en schrijf één handtekening voor al je adressen daar. Mail-apps en de webmail voegen hem in tijdens het schrijven.",
       "loading": "Adressen laden …",
       "loadError": "De adressen konden niet worden geladen.",
       "empty": "Er is nog geen adres om vanaf te versturen.",
@@ -2325,7 +2378,25 @@
       "html": "Handtekening als HTML",
       "htmlHint": "Optioneel, voor apps die opgemaakte mail schrijven.",
       "save": "Handtekening opslaan",
-      "saved": "Handtekening opgeslagen"
+      "saved": "Handtekening opgeslagen",
+      "domain": "Domein",
+      "domainOption_one": "{{domain}} (1 adres)",
+      "domainOption_other": "{{domain}} ({{count}} adressen)",
+      "placeholders": "Plaatshouders:",
+      "appliesTo": "Geldt voor",
+      "allDomains": "Alle domeinen (ook toekomstige)",
+      "replaces": "Vervangt de eigen handtekeningen van {{domains}}.",
+      "preview": "Voorbeeld voor {{address}}",
+      "remove": "Handtekening verwijderen",
+      "fromTemplate": "Dit is het sjabloon van je organisatie. Je kunt het aanpassen en als je eigen opslaan.",
+      "fromAllDomains": "Dit domein gebruikt je handtekening voor alle domeinen.",
+      "companyFooter": "Bij verzenden vanaf dit domein voegt de server automatisch deze voettekst toe:",
+      "exceptions": "Afwijkende handtekening voor afzonderlijke adressen ({{count}})",
+      "ownSignature": "Eigen handtekening",
+      "followsDomain": "Gebruikt de domeinhandtekening",
+      "override": "Eigen handtekening voor dit adres",
+      "backToDomain": "Domeinhandtekening gebruiken",
+      "tooLarge": "De handtekening is te groot (maximaal 256 KB)."
     }
   },
   "forwardConfirm": {
@@ -2974,6 +3045,8 @@
       "emptyHint": "Vertraagde berichten wachten hier tot ze vanzelf aankomen of tot jij erover beslist.",
       "noSubject": "Geen onderwerp",
       "sentTo": "Aan {{address}}",
+      "attempts_one": "{{count}} bezorgpoging, laatste op {{last}}",
+      "attempts_other": "{{count}} bezorgpogingen, laatste op {{last}}",
       "decide": {
         "deliver": "Afleveren",
         "discard": "Weggooien",
@@ -3999,7 +4072,10 @@
       "priceLists_other": "Prijzen bijgewerkt {{date}}, {{count}} modellen bekend.",
       "priceListsNone": "De prijzen zijn nog niet opgehaald.",
       "foreignMail": "AI voor mail uit andere accounts",
-      "foreignMailHint": "Mensen mogen de assistent in de UwUMail-app gebruiken voor de mail van hun andere accounts (Exchange, Gmail, IMAP). De app stuurt dan de tekst van die mail hierheen; alleen het gebruik wordt bewaard. Alleen providers die het toestaan worden gebruikt."
+      "foreignMailHint": "Mensen mogen de assistent in de UwUMail-app gebruiken voor de mail van hun andere accounts (Exchange, Gmail, IMAP). De app stuurt dan de tekst van die mail hierheen; alleen het gebruik wordt bewaard. Alleen providers die het toestaan worden gebruikt.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Vergelijkbare mails voor labels",
+      "smallModel": "Dit model heeft maar ongeveer {{size}} miljard parameters; labels en spam worden slecht beoordeeld. Aanbevolen: {{recommended}}."
     },
     "choices": {
       "title": "Welke provider waarvoor",
@@ -4109,7 +4185,8 @@
         "featuresRequired": "Kies minstens één functie.",
         "limitInvalid": "Een heel getal boven nul, of leeg.",
         "priceInvalid": "Vul een prijs van 0 of meer in, zoals 0,25.",
-        "requestPriceInvalid": "Vul een prijs van 0 tot 100 in, zoals 0,005."
+        "requestPriceInvalid": "Vul een prijs van 0 tot 100 in, zoals 0,005.",
+        "embeddingsModelRequired": "Geef het embeddingsmodel op."
       },
       "price": "Prijs",
       "priceIntro": "Amerikaanse dollar per miljoen tokens, om kosten te tonen. Leeg neemt de prijs uit openbare prijslijsten.",
@@ -4122,7 +4199,13 @@
       "showCostHint": "Zij zien dan wat hun verzoeken kosten. Jij ziet het altijd.",
       "requestPrice": "Per verzoek, Amerikaanse dollar",
       "foreignMail": "Mail uit andere accounts",
-      "foreignMailHint": "Mag gebruikt worden voor de mail van andere accounts van mensen als \"AI voor mail uit andere accounts\" aan staat."
+      "foreignMailHint": "Mag gebruikt worden voor de mail van andere accounts van mensen als \"AI voor mail uit andere accounts\" aan staat.",
+      "chatGroup": "Chatmodellen",
+      "embeddingsGroup": "Embeddings (vergelijkbare mails voor labels)",
+      "embeddingsTitle": "Embeddings: vergelijkbare mails voor labels",
+      "embeddingsHelp": "Een embeddingsmodel zet mails om in vectoren. Daarmee vinden automatische labels vergelijkbare mails die al een label hebben en kunnen ze veel labels kiezen zonder het chatmodel te vragen. Het dient geen andere functie en heeft geen snel model nodig.",
+      "embeddingsStorage": "De vectoren worden compact per gelabelde mail opgeslagen en samen met de mail of het account verwijderd.",
+      "embeddingsModelNeeded": "Geef bij dit type het embeddingsmodel op dat de server aanbiedt."
     },
     "chatgpt": {
       "title": "ChatGPT-aanmelding",
@@ -4419,6 +4502,316 @@
         "noLogo": "Het certificaat bevat geen logo.",
         "unknownKind": "Dit lijkt geen VMC of CMC."
       }
+    }
+  },
+  "moves": {
+    "title": "Verhuizingen",
+    "intro": "Haal een heel domein met iedereen erop, of één mailbox, over van een andere server: mail, contacten en agenda's. Er wordt bijgewerkt tot je de verhuizing afrondt.",
+    "kind": {
+      "domain": "Domeinverhuizing",
+      "mailbox": "Eén mailbox"
+    },
+    "state": {
+      "active": "Bezig",
+      "paused": "Gepauzeerd",
+      "finishing": "Laatste ronde",
+      "done": "Afgerond"
+    },
+    "mailboxState": {
+      "queued": "Wacht",
+      "running": "Kopieert",
+      "paused": "Gepauzeerd",
+      "synced": "Bijgewerkt",
+      "done": "Klaar"
+    },
+    "progress": {
+      "label": "Voortgang van de verhuizing van {{domain}}"
+    },
+    "list": {
+      "new": "Nieuwe verhuizing",
+      "from": "van {{host}}",
+      "summary": "{{mailboxes}} mailboxen · {{done}} van {{total}} berichten",
+      "paused_one": "{{count}} gepauzeerd",
+      "paused_other": "{{count}} gepauzeerd",
+      "created": "gestart {{date}}",
+      "emptyTitle": "Nog geen verhuizingen",
+      "emptyBody": "Verhuis je een bedrijf of gezin naar deze server? Start een domeinverhuizing: het domein en de mailboxen worden hier aangemaakt, daarna wordt alles overgehaald.",
+      "own": "Iedereen kan zijn eigen oude mailbox ook zelf verhuizen, onder Mijn account → Verhuizen."
+    },
+    "wizard": {
+      "back": "Alle verhuizingen",
+      "title": "Nieuwe verhuizing",
+      "intro": "Vier stappen: wat verhuist, waarvandaan, wie, en een controle voor de start.",
+      "whatTitle": "Wat verhuist",
+      "what": {
+        "domain": "Iedereen van een domein. Het domein wordt hier aangemaakt als het er nog niet is (met DKIM-sleutels), en een mailbox voor iedereen die er nog geen heeft.",
+        "mailbox": "Eén mailbox naar een mailbox hier: een bestaande (de mail wordt samengevoegd) of een nieuwe."
+      },
+      "domain": "Domein",
+      "domainHint": "Het domein waarop de mailboxen staan.",
+      "domainNew": "Dit domein bestaat hier nog niet: het wordt bij de start aangemaakt, met DKIM-sleutels. Controleer daarna de DNS onder Domeinen.",
+      "domainUnknown": "Voeg dit domein eerst toe, of kies er een die hier bestaat.",
+      "targetLabel": "Mailbox hier",
+      "targetExisting": "Bestaande mailbox",
+      "targetNew": "Nieuwe mailbox",
+      "mailbox": "Mailbox",
+      "mailboxHint": "De mail blijft; mappen worden samengevoegd, niets komt dubbel.",
+      "choose": "Kiezen…",
+      "newAddress": "Nieuw adres",
+      "newAddressHint": "De persoon krijgt een link om een wachtwoord te kiezen.",
+      "sourceTitle": "Oude server",
+      "sourceExplain": "Waar de mail nu staat. Iedereen in de verhuizing deelt hem; een rij kan een eigen server noemen. Er wordt verbonden via IMAP met TLS (poort 993).",
+      "imapHost": "IMAP-server",
+      "imapHostHint": "Bij voorkeur een naam die na de MX-omschakeling nog naar de oude server wijst.",
+      "port": "Poort",
+      "discover": "Server zoeken",
+      "found": "{{host}} gevonden. De eerste ronde controleert de aanmeldingen.",
+      "notFound": "Niets antwoordde voor dit domein; vul de server zelf in.",
+      "contacts": "Contacten meenemen",
+      "calendars": "Agenda's meenemen",
+      "davMode": "Contacten en agenda's",
+      "davHost": "Server",
+      "davHostHint": "Leeg: de IMAP-server.",
+      "davUrl": "CalDAV/CardDAV-adres",
+      "pace": "Tempo",
+      "peopleTitle": "Mensen",
+      "peopleExplain": "Eén rij per persoon: het oude adres met login en wachtwoord, en hoe de mailbox hier moet zijn. Zonder nieuw adres wordt de naam van het oude op dit domein gebruikt. Aliassen komen niet via IMAP mee, vul ze hier in. Of vul de tabel vanuit een CSV-lijst.",
+      "oldMailboxTitle": "Oude mailbox",
+      "oldMailboxExplain": "Het oude adres met login en wachtwoord.",
+      "checkTitle": "Controleren en starten",
+      "checkExplain": "De controle verandert niets; ze zegt wat er aangemaakt zou worden en welke rijen je moet verbeteren.",
+      "check": "Controleren",
+      "start": "Verhuizing starten",
+      "planDomain": "Het domein {{domain}} wordt aangemaakt, met DKIM-sleutels.",
+      "planRows": "{{created}} nieuwe mailboxen, {{filled}} bestaande worden gevuld.",
+      "planPasswords": "Mailboxen waarvan de mensen hier al een wachtwoord hebben, krijgen geen link.",
+      "planProblems_one": "{{count}} probleem op te lossen, zie de tabel.",
+      "planProblems_other": "{{count}} problemen op te lossen, zie de tabel.",
+      "planReady": "Alles klaar: de verhuizing kan starten."
+    },
+    "davModes": {
+      "auto": "Automatisch vinden",
+      "autoHint": "Vanuit het adres (bekende providers, DNS, /.well-known/), daarna bij de IMAP-server.",
+      "sogo": "mailcow / SOGo",
+      "sogoHint": "https://server/SOGo/dav/",
+      "nextcloud": "Nextcloud",
+      "nextcloudHint": "https://server/remote.php/dav/",
+      "icloud": "iCloud",
+      "icloudHint": "Vereist app-specifieke wachtwoorden.",
+      "gmx": "GMX",
+      "gmxHint": "Met tweestapsverificatie app-wachtwoorden.",
+      "webde": "WEB.DE",
+      "webdeHint": "Een app-wachtwoord geldt maar voor één configuratie.",
+      "custom": "Eigen adres",
+      "customHint": "Een CalDAV/CardDAV-adres dat je kent.",
+      "none": "Alleen bestanden",
+      "noneHint": "Upload in plaats daarvan per mailbox .vcf- en .ics-bestanden."
+    },
+    "fields": {
+      "oldAddress": "Oud adres",
+      "login": "Oude login",
+      "password": "Oud wachtwoord",
+      "name": "Naam",
+      "target": "Adres hier",
+      "quotaMb": "Quotum (MB)",
+      "quota": "Quotum",
+      "aliases": "Aliassen",
+      "imapHost": "Eigen IMAP-server",
+      "davUrl": "Eigen CalDAV/CardDAV-adres",
+      "line": "Regel"
+    },
+    "placeholders": {
+      "oldAddress": "naam@example.com",
+      "login": "= oud adres",
+      "password": "••••••",
+      "name": "Weergavenaam",
+      "target": "= oude naam op het domein",
+      "quotaMb": "onbeperkt",
+      "aliases": "info@… verkoop@…",
+      "imapHost": "IMAP-server van deze persoon, als die anders is",
+      "davUrl": "https://… CalDAV/CardDAV, als niet gevonden"
+    },
+    "rows": {
+      "actions": "Acties",
+      "add": "Rij toevoegen",
+      "remove": "Rij verwijderen",
+      "servers": "Eigen servers voor deze rij"
+    },
+    "problems": {
+      "addressInvalid": "geen geldig adres",
+      "passwordMissing": "ontbreekt",
+      "targetInvalid": "geen adres op dit domein",
+      "targetTaken": "al in gebruik door iemand anders",
+      "duplicate": "komt dubbel voor",
+      "quotaInvalid": "geen grootte",
+      "aliasInvalid": "geen geldige adressen (hoogstens 20)",
+      "aliasTaken": "al in gebruik door iemand anders",
+      "aliasDomain": "op een domein dat hier niet bestaat",
+      "mailboxBusy": "deze mailbox zit al in een andere verhuizing",
+      "noMailbox": "dit account heeft geen mailbox",
+      "loginInvalid": "niet bruikbaar",
+      "hostInvalid": "geen bruikbare servernaam (alleen publieke servers)",
+      "urlInvalid": "geen https-adres",
+      "tooManyRows": "meer rijen dan één verhuizing aankan",
+      "tooLarge": "de tekst is te lang",
+      "quoteOpen": "een aanhalingsteken is niet gesloten",
+      "invalid": "ongeldig"
+    },
+    "csv": {
+      "title": "CSV-lijst importeren",
+      "explain": "Plak of upload wat je spreadsheet exporteert, gescheiden door ; of , (of tabs). Met een kopregel worden de kolommen aan hun naam herkend (oud adres, login, wachtwoord, naam, nieuw adres, quotum, aliassen); zonder geldt deze volgorde: oud adres; wachtwoord; naam; nieuw adres; quotum; aliassen; login.",
+      "paste": "CSV-tekst",
+      "read": "In de tabel zetten",
+      "file": "Bestand uploaden",
+      "result_one": "{{count}} rij gelezen (scheidingsteken {{delimiter}}).",
+      "result_other": "{{count}} rijen gelezen (scheidingsteken {{delimiter}}).",
+      "withHeader": "Met kopregel.",
+      "withoutHeader": "Zonder kopregel.",
+      "line": "Regel {{line}}:"
+    },
+    "detail": {
+      "title": "Verhuizing van {{domain}}",
+      "overview": "Voortgang",
+      "messages": "{{done}} van {{total}} berichten ({{size}})",
+      "skipped_one": "{{count}} overgeslagen (er al of te groot)",
+      "skipped_other": "{{count}} overgeslagen (er al of te groot)",
+      "davCounts": "{{contacts}} contacten, {{events}} agenda-items",
+      "source": "Van {{host}}",
+      "noDav": "alleen mail",
+      "mailboxes_one": "{{count}} mailbox",
+      "mailboxes_other": "{{count}} mailboxen"
+    },
+    "mailbox": {
+      "from": "van {{address}} (login {{login}})",
+      "created": "nieuwe mailbox",
+      "filled": "bestaande mailbox, gevuld",
+      "lastRound": "laatste ronde",
+      "progress": "Voortgang van {{address}}",
+      "messages": "{{done}} van {{total}} berichten ({{size}})",
+      "folders": "{{done}} van {{total}} mappen",
+      "next": "volgende ronde {{date}}",
+      "aliases": "Aliassen: {{aliases}}",
+      "quotaWarning": "De oude mailbox bevat {{source}}, meer dan in deze past ({{quota}}). Verhoog het quotum, anders pauzeert de verhuizing als hij vol is.",
+      "davError": "Contacten en agenda's kwamen niet mee: {{reason}}. Upload ze in plaats daarvan als bestand.",
+      "newLogin": "Login bij de oude server",
+      "newPassword": "Nieuw wachtwoord"
+    },
+    "errors": {
+      "quotaExceeded": "De mailbox hier is vol. Maak ruimte of verhoog het quotum en probeer het opnieuw: het gaat verder waar het stopte.",
+      "loginRefused": "De oude server weigerde de aanmelding. Voer de juiste login of het juiste wachtwoord in (vaak een app-wachtwoord) en probeer opnieuw.",
+      "unreachable": "De oude server was niet bereikbaar. Probeer het later opnieuw.",
+      "notPublic": "De oude server staat niet op internet, voor zover deze server kan zien. Servers in het lokale netwerk kunnen hier niet; gebruik de import op de opdrachtregel.",
+      "noMailbox": "Dit account heeft geen mailbox om mail naartoe te verhuizen.",
+      "stopped": "Handmatig gepauzeerd. Ga verder wanneer je wilt.",
+      "accountDeleted": "Dit account staat in de prullenbak, daarom is de verhuizing gestopt en het oude wachtwoord verwijderd. Zet het account terug, vul het wachtwoord opnieuw in en probeer opnieuw.",
+      "interrupted": "De server stopte meerdere keren achter elkaar tijdens deze mailbox, dus die is gepauzeerd. Bekijk het serverlog en ga daarna verder.",
+      "failed": "Er ging iets mis. Probeer het opnieuw."
+    },
+    "davErrors": {
+      "wrongPassword": "de oude server weigerde de aanmelding",
+      "providerNotFound": "er zijn geen agenda's of adresboeken gevonden",
+      "providerUnreachable": "de server was niet bereikbaar",
+      "providerError": "de server antwoordde met een fout",
+      "feedTooLarge": "het was te groot",
+      "feedNotFound": "een verzameling was weg",
+      "redirectedElsewhere": "de server stuurde de aanmelding elders heen",
+      "googleUseIcs": "Google geeft ze alleen als bestand",
+      "providerNoDav": "deze provider heeft geen CalDAV/CardDAV",
+      "urlNotAllowed": "het adres is niet toegestaan",
+      "failed": "ze konden niet worden opgeslagen"
+    },
+    "actions": {
+      "pauseAll": "Alles pauzeren",
+      "resumeAll": "Doorgaan",
+      "pause": "Pauzeren",
+      "retry": "Opnieuw",
+      "syncNow": "Nu bijwerken",
+      "changeLogin": "Login wijzigen…",
+      "upload": {
+        "addressbook": ".vcf",
+        "calendar": ".ics"
+      },
+      "removeMailbox": "{{address}} uit de verhuizing halen",
+      "removeConfirm": "{{address}} uit de verhuizing halen? Het oude wachtwoord wordt vergeten; de mailbox en wat gekopieerd is blijven.",
+      "delete": "Verhuizing verwijderen",
+      "deleteConfirm": "De verhuizing van {{domain}} verwijderen? Alle oude wachtwoorden worden vergeten. De mailboxen en hun mail blijven."
+    },
+    "add": {
+      "button": "Mensen toevoegen",
+      "title": "Meer mensen voor deze verhuizing",
+      "save": "Toevoegen en starten"
+    },
+    "settings": {
+      "title": "Tempo",
+      "parallel": "Mailboxen tegelijk",
+      "parallelHint": "Kleine getallen sparen de oude server (1 tot 8).",
+      "syncMinutes": "Minuten tussen rondes",
+      "syncMinutesHint": "Na de eerste kopie, tot je de verhuizing afrondt (5 tot 1440).",
+      "save": "Opslaan"
+    },
+    "finish": {
+      "title": "Omschakelen en afronden",
+      "explain": "Tot je afrondt, blijft nieuwe mail van de oude server overkomen. Zet de MX-records van {{domain}} op {{hostname}}, wacht tot de mail hier aankomt en rond dan af: voor elke mailbox volgt een laatste ronde, daarna worden de oude wachtwoorden gewist.",
+      "checkMx": "MX controleren",
+      "mx": {
+        "ok": "MX wijst hierheen",
+        "warning": "MX: controleren",
+        "missing": "Geen MX",
+        "wrong": "MX wijst elders heen",
+        "error": "MX niet te bepalen"
+      },
+      "mxFound": "Gevonden: {{found}}.",
+      "mxNone": "Geen MX-records gevonden.",
+      "mxReady": "Mail komt hier aan: je kunt afronden zodra de oude server niets nieuws meer krijgt.",
+      "mxWait": "Zet eerst de MX-records op {{hostname}}; het kan een paar uur duren voor dat overal zichtbaar is.",
+      "button": "Verhuizing afronden",
+      "running": "De laatste ronde loopt. Bij mailboxen die klaar zijn, is het oude wachtwoord gewist.",
+      "skip": "Afronden zonder laatste ronde",
+      "confirmTitle": "Verhuizing afronden?",
+      "confirmLast": "Elke mailbox krijgt een laatste ronde; daarna worden de wachtwoorden van de oude mailboxen gewist en wordt er niets meer opgehaald.",
+      "confirmSkip": "De oude wachtwoorden worden nu gewist, zonder laatste ronde. Gebruik dit als de oude server weg is of de laatste ronde niet kan lukken.",
+      "confirmMx": "De MX-controle heeft nog niet bevestigd dat de records hierheen wijzen.",
+      "done": "Afgerond. De oude wachtwoorden zijn gewist.",
+      "doneAt": "Afgerond op {{date}}. De oude wachtwoorden zijn gewist."
+    },
+    "links": {
+      "title": "Wachtwoordlinks",
+      "explain_one": "{{count}} persoon heeft hier nog geen wachtwoord. Geef een link om er een te kiezen; elke link werkt 7 dagen.",
+      "explain_other": "{{count}} mensen hebben hier nog geen wachtwoord. Geef een link om er een te kiezen; elke link werkt 7 dagen.",
+      "none": "Iedereen hier heeft al een wachtwoord; er zijn geen links nodig.",
+      "make": "Links maken",
+      "again": "Nieuwe links maken",
+      "made_one": "{{count}} link gemaakt.",
+      "made_other": "{{count}} links gemaakt.",
+      "once": "De links worden alleen nu getoond; nieuwe maken vervangt deze.",
+      "csv": "CSV downloaden",
+      "print": "Overzicht afdrukken",
+      "printTitle": "Wachtwoordlinks voor {{domain}}",
+      "printIntro": "Open je link en kies een wachtwoord; daarna meld je je aan met je adres. Elke link werkt één keer en 7 dagen lang.",
+      "mailbox": "Mailbox",
+      "name": "Naam",
+      "oldAddress": "Oud adres",
+      "link": "Link",
+      "expires": "Geldig tot",
+      "copy": "Link voor {{address}} kopiëren",
+      "skipped": {
+        "hasPassword": "heeft al een wachtwoord, geen link nodig",
+        "disabled": "is uitgeschakeld",
+        "directory": "meldt zich aan bij de directory"
+      }
+    },
+    "toasts": {
+      "started": "De verhuizing is gestart. De eerste mailboxen worden nu gekopieerd.",
+      "paused": "Verhuizing gepauzeerd.",
+      "resumed": "De verhuizing gaat verder.",
+      "saved": "Opgeslagen.",
+      "queued": "Opnieuw in de wachtrij.",
+      "removed": "Uit de verhuizing gehaald.",
+      "added": "Toegevoegd; ze worden hierna gekopieerd.",
+      "finishing": "Wordt afgerond: de laatste ronde loopt.",
+      "deleted": "Verhuizing verwijderd.",
+      "uploaded_one": "{{count}} item geïmporteerd.",
+      "uploaded_other": "{{count}} items geïmporteerd."
     }
   }
 }

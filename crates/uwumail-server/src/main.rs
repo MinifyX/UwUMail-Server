@@ -10,6 +10,7 @@ mod host;
 mod http;
 mod import;
 mod migrate;
+mod moves;
 mod restore;
 mod serve;
 mod settings;

@@ -1,0 +1,18 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: automated notification
+From: Cloudbox <noreply@cloudbox.example>
+To: Max Muster <max@uwu.example>
+Subject: Your storage is almost full
+Date: Mon, 14 Sep 2026 14:47:00 +0000
+Message-ID: <482179298487.795@cloudbox.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Max,
+
+you are using 95% of your storage. Manage it at https://cloudbox.example/storage
+

@@ -1,0 +1,25 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: authenticated marketing mail the reader wanted, with urgency words
+From: Pixel Supply <angebote@pixelsupply.example>
+To: Max Muster <max@uwu.example>
+Subject: Last chance: free shipping ends tonight!
+Date: Tue, 15 Sep 2026 16:43:00 +0000
+Message-ID: <823533531131.563@pixelsupply.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://pixelsupply.example/u/92911>
+Content-Type: multipart/alternative; boundary="alt-9680373150"
+
+--alt-9680373150
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Free shipping ends tonight. Don't miss it!
+--alt-9680373150
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<h1>Last chance!</h1><p><a href="https://pixelsupply.example/sale">Shop the sale</a></p>
+--alt-9680373150--

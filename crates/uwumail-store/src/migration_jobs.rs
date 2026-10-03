@@ -154,6 +154,15 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<MigrationJob> {
     })
 }
 
+/// An admin's move fills this mailbox: the person's own move waits until it is done, so two
+/// copies never run into one mailbox at once (security review 0.22 MOV-4).
+fn admin_busy() -> StoreError {
+    StoreError::Rule {
+        code: "moveAdminBusy",
+        message: "an admin is moving mail into this mailbox; try again when that move is finished".into(),
+    }
+}
+
 /// What another server said, short enough for a table and a page.
 fn shorten(value: &str) -> String {
     let value = value.trim();
@@ -235,6 +244,9 @@ impl Store {
                     code: "moveExists",
                     message: format!("{address} is being moved already"),
                 });
+            }
+            if crate::moves::admin_move_open(tx, new.account_id)? {
+                return Err(admin_busy());
             }
             let sealed = seal(tx, &new.password)?;
             tx.execute(
@@ -321,6 +333,8 @@ impl Store {
     pub async fn finish_migration_run(&self, id: i64, run: MigrationRun) -> Result<()> {
         let at = now();
         self.write(move |tx| {
+            // The run came to an end, so the server did not go down during it.
+            tx.execute("UPDATE migration_jobs SET interrupted = 0 WHERE id = ?1 AND state = 'running'", [id])?;
             match run {
                 MigrationRun::Continue => tx.execute(
                     "UPDATE migration_jobs SET state = 'queued' WHERE id = ?1 AND state = 'running'",
@@ -370,6 +384,9 @@ impl Store {
                     )?;
                 }
                 MigrationState::Paused => {}
+            }
+            if crate::moves::admin_move_open(tx, account_id)? {
+                return Err(admin_busy());
             }
             if let Some(password) = password.filter(|password| !password.is_empty()) {
                 let sealed = seal(tx, &password)?;
@@ -427,6 +444,24 @@ impl Store {
 
     /// Moves that were running when the server stopped go back in the queue; they continue where
     /// their folders stood.
+    /// [`Store::recover_interrupted_moves`] for personal moves: at the start of the server, a move
+    /// still marked running goes on, unless the server went down during it
+    /// [`crate::INTERRUPTIONS`] times in a row; then it is paused with `interrupted`.
+    pub async fn recover_interrupted_migrations(&self) -> Result<(usize, usize)> {
+        self.write(|tx| {
+            tx.execute("UPDATE migration_jobs SET interrupted = interrupted + 1 WHERE state = 'running'", [])?;
+            let paused = tx.execute(
+                "UPDATE migration_jobs SET state = 'paused', error = 'interrupted',
+                     error_detail = 'the server stopped during this move several times in a row', interrupted = 0
+                 WHERE state = 'running' AND interrupted >= ?1",
+                [crate::INTERRUPTIONS],
+            )?;
+            let queued = tx.execute("UPDATE migration_jobs SET state = 'queued' WHERE state = 'running'", [])?;
+            Ok((queued, paused))
+        })
+        .await
+    }
+
     pub async fn requeue_running_migrations(&self) -> Result<usize> {
         self.write(|tx| Ok(tx.execute("UPDATE migration_jobs SET state = 'queued' WHERE state = 'running'", [])?)).await
     }
@@ -577,6 +612,31 @@ mod tests {
             store.sync_migration_job(account_id, id, None).await,
             Err(StoreError::Rule { code: "moveRunning", .. })
         )
+    }
+
+    /// Security review 0.22 M-1: a move the server keeps going down on is paused at the third
+    /// start in a row that finds it running.
+    #[tokio::test]
+    async fn a_move_the_server_keeps_going_down_on_is_paused() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        let job = store.create_migration_job(new_job(mini, "mini@example.net")).await.unwrap();
+        store.take_migration_job().await.unwrap().unwrap();
+        assert_eq!(store.recover_interrupted_migrations().await.unwrap(), (1, 0));
+        // A run that ends forgets the crashes before it.
+        store.take_migration_job().await.unwrap().unwrap();
+        store.finish_migration_run(job.id, MigrationRun::Continue).await.unwrap();
+        for round in 1..=crate::INTERRUPTIONS {
+            assert_eq!(store.take_migration_job().await.unwrap().unwrap().id, job.id);
+            let expected = if round < crate::INTERRUPTIONS { (1, 0) } else { (0, 1) };
+            assert_eq!(store.recover_interrupted_migrations().await.unwrap(), expected, "start {round}");
+        }
+        let paused = store.migration_job(mini, job.id).await.unwrap().unwrap();
+        assert_eq!((paused.state, paused.error.as_str()), (MigrationState::Paused, "interrupted"));
+        // The person can go on with it.
+        let resumed = store.sync_migration_job(mini, job.id, None).await.unwrap();
+        assert_eq!(resumed.state, MigrationState::Queued);
     }
 
     #[tokio::test]

@@ -5,7 +5,7 @@ use mail_parser::MessageParser;
 use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, clamav, dkim, forward, headers, profile_pictures, random_id, vacation};
+use crate::{Smtp, clamav, dkim, footer, forward, headers, profile_pictures, random_id, vacation};
 
 pub struct Submission {
     pub account: Account,
@@ -61,6 +61,8 @@ pub enum SubmitError {
     TooManyRecipients,
     #[error("the message is larger than this server accepts")]
     TooLarge,
+    #[error("the message has a malformed header block")]
+    MalformedHeaders,
     #[error("the message contains {0}")]
     Virus(String),
     #[error("the message could not be queued: {0}")]
@@ -76,6 +78,12 @@ pub enum SubmitError {
 fn claimed_addresses(raw: &[u8]) -> Result<(Vec<String>, Vec<String>), SubmitError> {
     if headers::count(raw, "From") > 1 {
         return Err(SubmitError::NoFrom);
+    }
+    // A header block cut short by a line that is no field: what follows it (a `Bcc`, say) is a
+    // header to mail programs but not to `strip_bcc`, so it would go out to every recipient.
+    // Refused like inbound mail (security review 0.22 SIG-6).
+    if headers::header_block_fault(raw).is_some() {
+        return Err(SubmitError::MalformedHeaders);
     }
     if headers::count(raw, "Sender") > 1 {
         return Err(SubmitError::AmbiguousSender);
@@ -191,6 +199,12 @@ impl Smtp {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             }
         }
+        // The size limit holds for the message as it goes out, with the company footer in it
+        // (security review 0.22 SIG-4), so a held message is refused now and not when it is due.
+        let with_footer = self.with_company_footer(account, &from, raw, None).await;
+        if with_footer.len() > live.smtp.max_message_size {
+            return Err(SubmitError::TooLarge);
+        }
         Ok(())
     }
 
@@ -208,7 +222,17 @@ impl Smtp {
         let ctx = &self.inner;
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
-        let raw = headers::strip_faces(&raw);
+        // Labels are this server's to write too (security review 0.22 submission low).
+        let raw = headers::strip_label_headers(&headers::strip_faces(&raw));
+        // Verdicts are this server's to write. A local sender's own `Authentication-Results` in our
+        // name or `X-Spam-Status` would reach local recipients as if we had checked the mail
+        // (client review C-1, checked on the server).
+        let raw = headers::strip_spam_verdicts(&headers::strip_forged_auth_results(&raw, &ctx.hostname));
+        // The company footer goes in before anything is signed (docs/signatures.md).
+        let raw = self.with_company_footer(&account, &from, raw, Some(&id)).await;
+        if raw.len() > ctx.live().smtp.max_message_size {
+            return Err(SubmitError::TooLarge);
+        }
 
         let mut added = String::new().into_bytes();
         // The person's picture, when they asked for it and send from their own address; signed
@@ -334,6 +358,7 @@ impl Smtp {
                                 name: &address,
                                 account_id: Some(account.id),
                                 proof: forward::Proof::PROVEN,
+                                smtp_delivered: false,
                             };
                             forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
                             local_deliveries += 1;
@@ -390,6 +415,56 @@ impl Smtp {
         Ok(Submitted { id, queue_message_id, local_deliveries, remote_recipients })
     }
 
+    /// The message with the mandatory footer of the sender's domain, when its admin set one.
+    /// Placeholders are filled for the sender: the name in `From`, else the account's. Without an
+    /// `id` (only checking the size) nothing is logged.
+    /// With several `From` addresses, the first one whose domain has a footer counts, so a first
+    /// address on a domain without one does not leave it out (security review 0.22 R2-INFO-1).
+    async fn with_company_footer(
+        &self,
+        account: &Account,
+        from_all: &[String],
+        raw: Vec<u8>,
+        id: Option<&str>,
+    ) -> Vec<u8> {
+        let mut found = None;
+        for address in from_all {
+            let domain = address.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+            match self.inner.store.company_footer(domain).await {
+                Ok(Some(footer)) => {
+                    found = Some((footer, address.as_str(), domain));
+                    break;
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(id = id.unwrap_or_default(), %err, "reading the company footer failed");
+                    return raw;
+                }
+            }
+        }
+        let Some((footer, from, domain)) = found else { return raw };
+        let name = MessageParser::new()
+            .parse_headers(&raw)
+            .and_then(|message| {
+                message
+                    .from()
+                    .and_then(|from| from.first())
+                    .and_then(|address| address.name.as_deref().map(str::to_owned))
+            })
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| account.display_name.clone());
+        match footer::append(&raw, &footer.filled(&name, &from.to_ascii_lowercase())) {
+            footer::Footer::Added(with_footer) => with_footer,
+            footer::Footer::AlreadyThere => raw,
+            footer::Footer::Skipped(reason) => {
+                if let Some(id) = id {
+                    tracing::info!(%id, %domain, reason, "sent without the company footer");
+                }
+                raw
+            }
+        }
+    }
+
     /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the
     /// Trash, for a disabled masked address), a vacation reply and calendar invitations. The error
     /// is the answer for a bounce.
@@ -417,8 +492,12 @@ impl Smtp {
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder =
-                forward::Forwarder { name: &target.login, account_id: Some(target.id), proof: forward::Proof::PROVEN };
+            let forwarder = forward::Forwarder {
+                name: &target.login,
+                account_id: Some(target.id),
+                proof: forward::Proof::PROVEN,
+                smtp_delivered: false,
+            };
             forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
         }
         if !plan.keep_copy {
@@ -478,6 +557,15 @@ mod tests {
         .unwrap();
         assert_eq!(from, ["mini@a.test"]);
         assert!(claimed.contains(&"rf@a.test".to_string()) && claimed.contains(&"rs@a.test".to_string()));
+    }
+
+    #[test]
+    fn a_header_block_cut_short_is_refused() {
+        // What follows the malformed line would escape strip_bcc (security review 0.22 SIG-6).
+        let raw = b"From: mini@a.test\r\nbroken line\r\nBcc: secret@a.test\r\n\r\nhi\r\n";
+        assert!(matches!(err(raw), Some(SubmitError::MalformedHeaders)));
+        assert!(err(b"From: mini@a.test\r\nSubject: hi,\r\n folded\r\n\r\nhi\r\n").is_none());
+        assert!(err(b"From: mini@a.test\r\nSubject: only headers\r\n").is_none());
     }
 
     #[test]

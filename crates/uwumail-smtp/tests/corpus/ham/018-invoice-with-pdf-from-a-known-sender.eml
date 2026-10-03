@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: invoice with PDF from a known sender
+From: Hosting Nord GmbH <billing@hosting-nord.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Rechnung_5006108_=E2=80=93_Zahlung_dankend_erhalten?=
+Date: Tue, 15 Sep 2026 06:53:00 +0000
+Message-ID: <626958998687.257@hosting-nord.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-5906434917"
+
+--mix-5906434917
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Guten Tag Max Muster,
+
+anbei erhalten Sie Ihre Rechnung Nr. 5006108 über 279,06 EUR.
+Ihre Zahlung haben wir dankend erhalten. Es ist nichts weiter zu tun.
+
+Ihre Rechnungen finden Sie auch im Kundenportal: https://hosting-nord.example/portal
+
+Mit freundlichen Grüßen
+Hosting Nord GmbH
+--mix-5906434917
+Content-Type: application/pdf; name="Rechnung_5006108.pdf"
+Content-Disposition: attachment; filename="Rechnung_5006108.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKdHJhaWxlciA8PCAvUm9vdCAxIDAgUiA+PgolJUVPRgo=
+--mix-5906434917--

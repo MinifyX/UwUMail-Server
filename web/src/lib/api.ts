@@ -7,6 +7,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     detail: string,
+    /** What exactly is in the way, for the rules that say (such as the rows of a move). */
+    readonly blockers?: unknown,
   ) {
     super(detail);
     this.name = "ApiError";
@@ -43,10 +45,15 @@ export async function api<T>(path: string, options: { method?: string; body?: un
   if (response.status === 204) return undefined as T;
   const data: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const problem = (data ?? {}) as { code?: string; detail?: string };
+    const problem = (data ?? {}) as { code?: string; detail?: string; blockers?: unknown };
     // A body too big is turned away before the API sees it, so it comes without a code.
     const fallback = response.status === 413 ? "tooLarge" : "internal";
-    throw new ApiError(response.status, problem.code ?? fallback, problem.detail ?? response.statusText);
+    throw new ApiError(
+      response.status,
+      problem.code ?? fallback,
+      problem.detail ?? response.statusText,
+      problem.blockers,
+    );
   }
   return data as T;
 }
@@ -424,6 +431,8 @@ export interface DomainDetail extends Omit<DomainSummary, "dns"> {
   report: DomainReport | null;
   mtaSts: MtaStsView | null;
   setup: { hostname: string; relayHost: string | null; upstreamMx: boolean };
+  /** The company signature (docs/signatures.md); missing from older servers. */
+  signature?: { mode: "off" | "template" | "footer"; text: string; html: string };
 }
 
 export type MtaStsMode = "testing" | "enforce";
@@ -904,6 +913,183 @@ export interface MovingView {
   hasMailbox: boolean;
 }
 
+/** A move the admin runs: a whole domain or one mailbox from another server (docs/moving.md). */
+export type MoveKind = "domain" | "mailbox";
+export type MoveState = "active" | "paused" | "finishing" | "done";
+export type MoveMailboxState = "queued" | "running" | "paused" | "synced" | "done";
+export type DavMode = "auto" | "nextcloud" | "sogo" | "icloud" | "gmx" | "webde" | "custom" | "none";
+
+export interface MoveSummary {
+  mailboxes: number;
+  queued: number;
+  running: number;
+  paused: number;
+  synced: number;
+  done: number;
+  messagesDone: number;
+  messagesTotal: number;
+  messagesSkipped: number;
+  bytesDone: number;
+  contactsDone: number;
+  eventsDone: number;
+}
+
+export interface MoveInfo {
+  id: number;
+  kind: MoveKind;
+  domain: string;
+  imapHost: string;
+  imapPort: number;
+  davMode: DavMode;
+  davHost: string;
+  davUrl: string;
+  contacts: boolean;
+  calendars: boolean;
+  parallel: number;
+  syncMinutes: number;
+  state: MoveState;
+  createdAt: number;
+  finishRequestedAt: number | null;
+  finishedAt: number | null;
+  summary: MoveSummary;
+}
+
+export interface MoveMailboxInfo {
+  id: number;
+  moveId: number;
+  accountId: number;
+  /** The mailbox here. */
+  address: string;
+  displayName: string;
+  quotaBytes: number;
+  usedBytes: number;
+  oldAddress: string;
+  login: string;
+  imapHost: string;
+  imapPort: number;
+  davUrl: string;
+  createdAccount: boolean;
+  /** Whether the password of the old mailbox is still kept (until the move is finished). */
+  hasPassword: boolean;
+  /** Whether the person here chose a password already; then no link is needed. */
+  hasPortalPassword: boolean;
+  aliases: string[];
+  state: MoveMailboxState;
+  finalRound: boolean;
+  error: string;
+  errorDetail: string;
+  foldersDone: number;
+  foldersTotal: number;
+  messagesDone: number;
+  messagesTotal: number;
+  messagesSkipped: number;
+  bytesDone: number;
+  /** What the old mailbox holds, when its server said. */
+  sourceBytes: number | null;
+  contactsDone: number;
+  eventsDone: number;
+  davError: string;
+  rounds: number;
+  createdAt: number;
+  lastRunAt: number | null;
+  lastSyncedAt: number | null;
+  nextSyncAt: number | null;
+  finishedAt: number | null;
+}
+
+export interface MoveLimits {
+  maxMailboxes: number;
+  maxParallel: number;
+  defaultParallel: number;
+  minSyncMinutes: number;
+  maxSyncMinutes: number;
+  defaultSyncMinutes: number;
+  maxUploadBytes: number;
+}
+
+export interface MovesView {
+  moves: MoveInfo[];
+  limits: MoveLimits;
+}
+
+export interface MoveDetail {
+  move: MoveInfo;
+  mailboxes: MoveMailboxInfo[];
+  limits: MoveLimits;
+  hostname: string;
+}
+
+/** One person of a move as the table and the API have them. */
+export interface MoveRow {
+  oldAddress: string;
+  login: string;
+  password: string;
+  name: string;
+  target: string;
+  quotaBytes: number | null;
+  aliases: string[];
+  imapHost: string;
+  imapPort: number | null;
+  davUrl: string;
+}
+
+export interface MoveRowProblem {
+  /** The row's place in the list, from 0. */
+  row: number;
+  field: string;
+  code: string;
+}
+
+export interface MovePlan {
+  domainExists: boolean;
+  rows: { row: number; target: string; exists: boolean; hasPassword: boolean }[];
+  problems: MoveRowProblem[];
+}
+
+export interface MoveCsvRow {
+  line: number;
+  oldAddress: string;
+  login: string;
+  password: string;
+  name: string;
+  target: string;
+  quotaBytes: number | null;
+  aliases: string[];
+}
+
+export interface MoveCsvRead {
+  rows: MoveCsvRow[];
+  problems: { line: number; field: string; code: string }[];
+  delimiter: string;
+  header: boolean;
+}
+
+export interface MoveDiscovery {
+  imap: { host: string; port: number; source: string } | null;
+  davMode: DavMode;
+  domainHere: boolean;
+}
+
+export interface MoveLink {
+  mailboxId: number;
+  address: string;
+  name: string;
+  oldAddress: string;
+  path: string;
+  expiresAt: number;
+}
+
+export interface MoveLinks {
+  links: MoveLink[];
+  skipped: { mailboxId: number; address: string; reason: "hasPassword" | "disabled" | "directory" }[];
+  hostname: string;
+}
+
+export interface MoveMxCheck {
+  check: { status: CheckStatus; found: string[]; expected: string; note: string | null };
+  hostname: string;
+}
+
 export interface BackupSnapshot {
   name: string;
   createdAt: number;
@@ -946,6 +1132,10 @@ export interface GreylistHold {
   size: number;
   /** When it is given up on, if nobody decided and the sender never returns. */
   expiresAt: number;
+  /** How often the sender tried so far; retries of one message are one entry. */
+  attempts: number;
+  /** When the sender last tried. */
+  lastAt: number;
 }
 
 export interface GreylistView {

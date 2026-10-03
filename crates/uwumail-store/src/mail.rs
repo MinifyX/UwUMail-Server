@@ -206,6 +206,27 @@ impl Store {
     /// Stores a message in a mailbox of an account: blob, metadata, thread, search
     /// index and change log. Fails with [`StoreError::QuotaExceeded`] when the account is full.
     pub async fn ingest(&self, request: IngestRequest) -> Result<IngestedEmail> {
+        self.ingest_marked(request, false).await
+    }
+
+    /// Whether this server's SMTP delivery stored an email (see [`Store::ingest_marked`]); false for
+    /// one that does not exist.
+    pub async fn smtp_delivered(&self, email_id: i64) -> Result<bool> {
+        self.read(move |conn| {
+            Ok(conn
+                .query_row("SELECT smtp_delivered FROM emails WHERE id = ?1", [email_id], |row| row.get(0))
+                .optional()?
+                .unwrap_or(false))
+        })
+        .await
+    }
+
+    /// [`Store::ingest`], saying whether this server's SMTP delivery stores the message
+    /// (`smtp_delivered`): only then are the verdicts in the headers it wrote on top read later.
+    /// Delivery, the greylist's release and local forwarding of delivered mail pass true; a copy
+    /// passes the original's mark; everything else (IMAP APPEND, JMAP import) false (security
+    /// review 0.22 R2-L2).
+    pub async fn ingest_marked(&self, request: IngestRequest, smtp_delivered: bool) -> Result<IngestedEmail> {
         let IngestRequest { account_id, raw, mailboxes, keywords, received_at } = request;
         // Every way in (JMAP create, import and copy, IMAP APPEND and COPY, delivery, fetching,
         // moving, restoring) stores keywords here, so this is where a bad one is stopped
@@ -274,8 +295,8 @@ impl Store {
                 tx.execute(
                     "INSERT INTO emails (account_id, thread_id, blob_hash, size, received_at, sent_at, message_id,
                          in_reply_to, refs, subject, from_addr, sender_addr, to_addr, cc_addr, bcc_addr, reply_to_addr,
-                         preview, has_attachment, created_modseq, updated_modseq)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)",
+                         preview, has_attachment, created_modseq, updated_modseq, smtp_delivered)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20)",
                     params![
                         account_id,
                         thread_id,
@@ -296,6 +317,7 @@ impl Store {
                         meta.preview,
                         meta.has_attachment,
                         modseq,
+                        smtp_delivered,
                     ],
                 )?;
                 let email_id = tx.last_insert_rowid();
@@ -509,6 +531,21 @@ mod tests {
         assert_eq!(listed.len(), 3);
         assert_eq!(store.blob(&first.blob).await.unwrap(), message("root@x", "", "Katzenfutter", "Thunfisch bitte"));
         assert_eq!(store.account_by_id(id).await.unwrap().unwrap().used_bytes, first.size + reply.size + other.size);
+    }
+
+    /// Security review 0.22 R2-L2: only what SMTP delivery stores is marked as delivered here.
+    #[tokio::test]
+    async fn only_smtp_delivery_marks_mail_as_delivered_here() {
+        let (store, _dir) = store().await;
+        let id = account(&store).await;
+        let appended = store.ingest(inbox(id, message("a@x", "", "Appended", "x"))).await.unwrap();
+        let delivered = store.ingest_marked(inbox(id, message("d@x", "", "Delivered", "x")), true).await.unwrap();
+        assert!(!store.smtp_delivered(appended.id).await.unwrap());
+        assert!(store.smtp_delivered(delivered.id).await.unwrap());
+        assert!(!store.smtp_delivered(delivered.id + 100).await.unwrap(), "no such email");
+        let records = store.emails_by_ids(id, vec![appended.id, delivered.id]).await.unwrap();
+        let marks: Vec<(i64, bool)> = records.iter().map(|record| (record.id, record.smtp_delivered)).collect();
+        assert!(marks.contains(&(appended.id, false)) && marks.contains(&(delivered.id, true)), "{marks:?}");
     }
 
     /// Every way a message is stored ends here, so this is where a message too deeply nested to

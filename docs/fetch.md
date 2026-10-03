@@ -406,6 +406,19 @@ own.
 | Message names remembered | 30 days |
 | Sign-ins on their way | 3 per person; Microsoft's code is good for 15 minutes, Google's way back for 10 |
 
+## Known limitations (security review)
+
+- Messages are fetched by `RFC822.SIZE` within the 512 MiB budget all imports share; the size answers and the copies made while storing a message are outside it.
+- A message larger than a fetch takes is left at the provider and stepped over; its UID is only in the server log.
+- Fetched mailboxes have no crash counter like moves do: a message that brings the server down would be fetched again after the restart.
+- Once messages too large to fetch are stepped over, a lower UID the provider left out of its answer ("did not hand this message out", logged) is not asked for again.
+- A message announced at more than 128 MiB, or one that does not arrive within two minutes, still fails the whole portion, and the folder stays at it until it is gone at the provider. Reading past a message whose size was understated costs its transfer once more.
+- A provider answer with two bodies for one message, one of them too large, counts as too large and is fetched again on its own.
+- Answers for UIDs that were not asked for are ignored.
+- Only the first answer per message counts: a provider that sends a flags-only answer before the one with the body makes that message be skipped (logged).
+- A body that fills the remaining room of a fetch exactly leaves none for the lines after it; that fetch then fails at the same message on every run.
+- The `UID SEARCH` answer is not sorted; a provider that lists UIDs out of order can leave a lower one behind the last fetched UID.
+
 ## What is not there yet
 
 * **STARTTLS on port 143.** Fetching is over TLS from the first byte, which is

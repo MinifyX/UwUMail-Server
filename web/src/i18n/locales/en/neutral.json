@@ -585,7 +585,25 @@
       "bimiTitle": "Please enter a shorter name for the logo, without special characters.",
       "bimiBackground": "The background colour has to look like #rrggbb.",
       "bimiCertificateInvalid": "That is not a readable certificate in PEM format.",
-      "bimiCertificateNotBimi": "That certificate is not a VMC or CMC for BIMI."
+      "bimiCertificateNotBimi": "That certificate is not a VMC or CMC for BIMI.",
+      "moveRows": "Some rows of the list need fixing; see the table.",
+      "moveTooMany": "One move takes at most 2000 mailboxes.",
+      "moveSingle": "A single mailbox move takes exactly one mailbox.",
+      "moveFinished": "This move is finished.",
+      "moveFinishing": "The last round is running already.",
+      "moveMailboxBusy": "This mailbox is in another move already.",
+      "moveOtherDomain": "This mailbox is not on the move's domain.",
+      "moveNotActive": "This move is not copying.",
+      "moveNotPaused": "This move is not paused.",
+      "movesLimit": "At most 20 moves can be open at once. Finish or delete one first.",
+      "movePersonalBusy": "The owner of this mailbox is moving mail into it themselves right now (My mailbox → Move). Wait until that is done, or ask them to pause it.",
+      "moveAdminBusy": "An admin is moving mail into this mailbox right now. Try again once that move is finished.",
+      "movePasswordNeeded": "The password for the old mailbox was deleted. Enter it to go on.",
+      "moveChanged": "Something in the list changed meanwhile, perhaps through another request. Check the list and start again.",
+      "hostInvalid": "The server name is not usable. Only servers on the internet can be used.",
+      "urlInvalid": "The address is not a usable https address.",
+      "domainMaskedOnly": "This domain takes masked addresses only.",
+      "noMailbox": "This account has no mailbox."
     }
   },
   "people": {
@@ -867,7 +885,6 @@
       "domainCreate": "{{actor}} added the domain {{target}}",
       "domainRemove": "{{actor}} removed the domain {{target}}",
       "domainCatchAll": "{{actor}} changed the catch-all of {{target}}",
-      "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} created new DKIM keys for {{target}}",
       "domainDkimActivate": "{{actor}} switched {{target}} to the new DKIM keys",
       "domainDkimRemove": "{{actor}} removed an old DKIM key of {{target}}",
@@ -936,7 +953,19 @@
       "domainBimiLogoRemoved": "{{actor}} removed the BIMI logo of {{target}}",
       "domainBimiCertificate": "{{actor}} added a BIMI certificate for {{target}}",
       "domainBimiCertificateRemoved": "{{actor}} removed the BIMI certificate of {{target}}",
-      "microsoftResolve": "{{actor}} marked Microsoft's refusal of {{target}} as fixed"
+      "microsoftResolve": "{{actor}} marked Microsoft's refusal of {{target}} as fixed",
+      "moveCreate": "{{actor}} started a move of {{target}}",
+      "moveAddMailboxes": "{{actor}} added people to the move of {{target}}",
+      "moveSettings": "{{actor}} changed the pace of the move of {{target}}",
+      "movePause": "{{actor}} paused the move of {{target}}",
+      "moveResume": "{{actor}} resumed the move of {{target}}",
+      "moveFinish": "{{actor}} finished the move of {{target}}",
+      "moveDelete": "{{actor}} deleted the move of {{target}}",
+      "moveRetry": "{{actor}} retried the move of {{target}}",
+      "movePauseMailbox": "{{actor}} paused the move of {{target}}",
+      "moveRemoveMailbox": "{{actor}} took {{target}} out of its move",
+      "moveUpload": "{{actor}} uploaded contacts or calendars for {{target}}",
+      "other": "{{actor}}: {{action}} {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -1246,6 +1275,29 @@
       },
       "unauthenticated_one": "One report came from a sender that could not prove who it is. Its numbers could be made up.",
       "unauthenticated_other": "{{count}} reports came from senders that could not prove who they are. Their numbers could be made up."
+    },
+    "signature": {
+      "title": "Company signature",
+      "explain": "One signature for all addresses of this domain: as a template everyone may change, or as a mandatory footer the server adds when sending.",
+      "mode": "Use",
+      "modes": {
+        "off": "Off",
+        "template": "Template",
+        "footer": "Mandatory footer"
+      },
+      "modeHint": {
+        "off": "Everyone writes their own signature.",
+        "template": "People without a signature of their own get this one. Everyone may change it.",
+        "footer": "The server adds it to every message from this domain, also from mail apps over SMTP."
+      },
+      "text": "Text",
+      "html": "HTML",
+      "htmlHint": "Optional, for formatted mail. Without HTML the text is used.",
+      "placeholders": "Placeholders: {{placeholders}}",
+      "footerNote": "Signed or encrypted mail (S/MIME, PGP) gets no footer, as it would break the signature. Recipients get the footer, the sender's copy in Sent does not show it. Best effort, not a compliance guarantee: some messages (e.g. with the footer already quoted) go out without it.",
+      "footerEmpty": "A mandatory footer needs a text.",
+      "save": "Save",
+      "saved": "Company signature saved"
     }
   },
   "groups": {
@@ -2236,8 +2288,8 @@
       "progress": "{{done}} of {{total}} messages · {{size}}",
       "progressLabel": "How far the move got",
       "folders": "folder {{done}} of {{total}}",
-      "skipped": "{{count}} message was here already and was left out",
-      "skipped_other": "{{count}} messages were here already and were left out",
+      "skipped": "{{count}} message was left out: it was here already or is larger than this server takes",
+      "skipped_other": "{{count}} messages were left out: they were here already or are larger than this server takes",
       "done": "Everything is here.",
       "doneAt": "Everything that was there is here, as of {{date}}."
     },
@@ -2248,6 +2300,7 @@
       "notPublic": "The old provider's server is not on the internet, as far as this server can tell.",
       "noMailbox": "Your account has no mailbox that mail could move into.",
       "stopped": "Paused. Continue whenever you like; it goes on where it stopped.",
+      "interrupted": "The server stopped during this move several times in a row, so it was paused. Continue it when you are ready, or ask your admin.",
       "failed": "Something went wrong. Continue to try again."
     },
     "actions": {
@@ -2317,7 +2370,7 @@
     },
     "signatures": {
       "title": "Signatures",
-      "intro": "Mail apps and the webmail add the signature of the address you send from.",
+      "intro": "Pick a domain and write one signature for all your addresses there. Mail apps and the webmail insert it as you write.",
       "loading": "Loading addresses …",
       "loadError": "The addresses could not be loaded.",
       "empty": "There is no address to send from yet.",
@@ -2325,7 +2378,25 @@
       "html": "Signature as HTML",
       "htmlHint": "Optional, for apps that write formatted mail.",
       "save": "Save signature",
-      "saved": "Signature saved"
+      "saved": "Signature saved",
+      "domain": "Domain",
+      "domainOption_one": "{{domain}} (1 address)",
+      "domainOption_other": "{{domain}} ({{count}} addresses)",
+      "placeholders": "Placeholders:",
+      "appliesTo": "Applies to",
+      "allDomains": "All domains (including future ones)",
+      "replaces": "Replaces the own signatures of {{domains}}.",
+      "preview": "Preview for {{address}}",
+      "remove": "Remove signature",
+      "fromTemplate": "This is your organisation's template. You can change it and save it as your own.",
+      "fromAllDomains": "This domain uses your signature for all domains.",
+      "companyFooter": "When you send from this domain, the server adds this footer automatically:",
+      "exceptions": "Different signature for single addresses ({{count}})",
+      "ownSignature": "Own signature",
+      "followsDomain": "Uses the domain signature",
+      "override": "Own signature for this address",
+      "backToDomain": "Use the domain signature",
+      "tooLarge": "The signature is too large (256 KB at most)."
     }
   },
   "forwardConfirm": {
@@ -2974,6 +3045,8 @@
       "emptyHint": "Delayed messages wait here until they arrive by themselves or you decide about them.",
       "noSubject": "No subject",
       "sentTo": "To {{address}}",
+      "attempts_one": "{{count}} delivery attempt, last at {{last}}",
+      "attempts_other": "{{count}} delivery attempts, last at {{last}}",
       "decide": {
         "deliver": "Deliver",
         "discard": "Discard",
@@ -3999,7 +4072,10 @@
       "priceLists_other": "Prices updated {{date}}, {{count}} models known.",
       "priceListsNone": "Prices have not been fetched yet.",
       "foreignMail": "AI for mail from other accounts",
-      "foreignMailHint": "People may use the assistant in the UwUMail app for the mail of their other accounts (Exchange, Gmail, IMAP). The app then sends that mail's text here; nothing of it is kept but the usage. Only providers that allow it are used."
+      "foreignMailHint": "People may use the assistant in the UwUMail app for the mail of their other accounts (Exchange, Gmail, IMAP). The app then sends that mail's text here; nothing of it is kept but the usage. Only providers that allow it are used.",
+      "embeddings": "Embeddings",
+      "embeddingsUse": "Similar mails for labels",
+      "smallModel": "This model has only about {{size}} billion parameters; labels and spam are judged poorly. Recommended: {{recommended}}."
     },
     "choices": {
       "title": "Which provider for what",
@@ -4109,7 +4185,8 @@
         "featuresRequired": "Pick at least one feature.",
         "limitInvalid": "A whole number above zero, or empty.",
         "priceInvalid": "Enter a price of 0 or more, like 0.25.",
-        "requestPriceInvalid": "Enter a price from 0 to 100, like 0.005."
+        "requestPriceInvalid": "Enter a price from 0 to 100, like 0.005.",
+        "embeddingsModelRequired": "Name the embeddings model."
       },
       "price": "Price",
       "priceIntro": "US dollars per million tokens, for showing costs. Empty takes the price from public price lists.",
@@ -4122,7 +4199,13 @@
       "showCostHint": "They then see what their requests cost. You always see it.",
       "requestPrice": "Per request, US dollars",
       "foreignMail": "Mail from other accounts",
-      "foreignMailHint": "May be used for the mail of people's other accounts when \"AI for mail from other accounts\" is on."
+      "foreignMailHint": "May be used for the mail of people's other accounts when \"AI for mail from other accounts\" is on.",
+      "chatGroup": "Chat models",
+      "embeddingsGroup": "Embeddings (similar mails for labels)",
+      "embeddingsTitle": "Embeddings: similar mails for labels",
+      "embeddingsHelp": "An embeddings model turns mails into vectors. With them, auto-labels find similar mails that already have a label and can decide many labels without asking the chat model. It serves no other feature and needs no fast model.",
+      "embeddingsStorage": "The vectors are stored compactly for each labelled mail and are deleted together with the mail or the account.",
+      "embeddingsModelNeeded": "For this kind, name the embeddings model the server offers."
     },
     "chatgpt": {
       "title": "ChatGPT login",
@@ -4419,6 +4502,316 @@
         "noLogo": "The certificate does not carry a logo.",
         "unknownKind": "This does not look like a VMC or CMC."
       }
+    }
+  },
+  "moves": {
+    "title": "Moves",
+    "intro": "Bring a whole domain with everyone on it, or one mailbox, over from another server: mail, contacts and calendars. It keeps copying until you finish it.",
+    "kind": {
+      "domain": "Domain move",
+      "mailbox": "Single mailbox"
+    },
+    "state": {
+      "active": "Copying",
+      "paused": "Paused",
+      "finishing": "Last round",
+      "done": "Finished"
+    },
+    "mailboxState": {
+      "queued": "Waiting",
+      "running": "Copying",
+      "paused": "Paused",
+      "synced": "Up to date",
+      "done": "Finished"
+    },
+    "progress": {
+      "label": "Progress of the move of {{domain}}"
+    },
+    "list": {
+      "new": "New move",
+      "from": "from {{host}}",
+      "summary": "{{mailboxes}} mailboxes · {{done}} of {{total}} messages",
+      "paused_one": "{{count}} paused",
+      "paused_other": "{{count}} paused",
+      "created": "started {{date}}",
+      "emptyTitle": "No moves yet",
+      "emptyBody": "Moving a company or a family to this server? Start a domain move: the domain and the mailboxes are made here, then everything is copied over.",
+      "own": "Everyone can also move their own old mailbox under My account → Moving."
+    },
+    "wizard": {
+      "back": "All moves",
+      "title": "New move",
+      "intro": "Four steps: what moves, from where, who, and a check before it starts.",
+      "whatTitle": "What moves",
+      "what": {
+        "domain": "Everyone of a domain. The domain is made here if it is not yet (with DKIM keys), and a mailbox for everyone who has none.",
+        "mailbox": "One mailbox into a mailbox here: one that is there already (its mail is merged) or a new one."
+      },
+      "domain": "Domain",
+      "domainHint": "The domain the mailboxes are on.",
+      "domainNew": "This domain is not here yet: it is made when the move starts, with DKIM keys. Check its DNS afterwards under Domains.",
+      "domainUnknown": "Add this domain first, or choose one that is here.",
+      "targetLabel": "Mailbox here",
+      "targetExisting": "Existing mailbox",
+      "targetNew": "New mailbox",
+      "mailbox": "Mailbox",
+      "mailboxHint": "Its mail stays; folders are merged and nothing comes twice.",
+      "choose": "Choose …",
+      "newAddress": "New address",
+      "newAddressHint": "Its person gets a link to choose a password.",
+      "sourceTitle": "Old server",
+      "sourceExplain": "Where the mail is now. Everyone of the move shares it; a row can name its own. The server connects over IMAP with TLS (port 993).",
+      "imapHost": "IMAP server",
+      "imapHostHint": "Best a name that keeps pointing to the old server after the MX switch.",
+      "port": "Port",
+      "discover": "Find server",
+      "found": "Found {{host}}. The first round checks the logins.",
+      "notFound": "Nothing answered for this domain; enter the server yourself.",
+      "contacts": "Bring contacts along",
+      "calendars": "Bring calendars along",
+      "davMode": "Contacts and calendars",
+      "davHost": "Server",
+      "davHostHint": "The IMAP server when left empty.",
+      "davUrl": "CalDAV/CardDAV address",
+      "pace": "Pace",
+      "peopleTitle": "People",
+      "peopleExplain": "One row per person: the old address with its login and password, and how the mailbox here should be. Without a new address, the old one's name on this domain is used. Aliases cannot come over IMAP, so enter them here. Or fill the table from a CSV list.",
+      "oldMailboxTitle": "Old mailbox",
+      "oldMailboxExplain": "The old address with its login and password.",
+      "checkTitle": "Check and start",
+      "checkExplain": "The check changes nothing; it says what would be made and which rows need fixing.",
+      "check": "Check",
+      "start": "Start move",
+      "planDomain": "The domain {{domain}} is made, with DKIM keys.",
+      "planRows": "{{created}} new mailboxes, {{filled}} existing ones filled.",
+      "planPasswords": "Mailboxes whose people have a password here already get no link.",
+      "planProblems_one": "{{count}} problem to fix, see the table.",
+      "planProblems_other": "{{count}} problems to fix, see the table.",
+      "planReady": "All set: the move can start."
+    },
+    "davModes": {
+      "auto": "Find automatically",
+      "autoHint": "From the address (known providers, DNS, /.well-known/), then at the IMAP server.",
+      "sogo": "mailcow / SOGo",
+      "sogoHint": "https://server/SOGo/dav/",
+      "nextcloud": "Nextcloud",
+      "nextcloudHint": "https://server/remote.php/dav/",
+      "icloud": "iCloud",
+      "icloudHint": "Needs app-specific passwords.",
+      "gmx": "GMX",
+      "gmxHint": "With two-factor authentication, app passwords.",
+      "webde": "WEB.DE",
+      "webdeHint": "An app password works for one setup only.",
+      "custom": "Own address",
+      "customHint": "A CalDAV/CardDAV address you know.",
+      "none": "Files only",
+      "noneHint": "Upload .vcf and .ics files per mailbox instead."
+    },
+    "fields": {
+      "oldAddress": "Old address",
+      "login": "Old login",
+      "password": "Old password",
+      "name": "Name",
+      "target": "Address here",
+      "quotaMb": "Quota (MB)",
+      "quota": "Quota",
+      "aliases": "Aliases",
+      "imapHost": "Own IMAP server",
+      "davUrl": "Own CalDAV/CardDAV address",
+      "line": "Line"
+    },
+    "placeholders": {
+      "oldAddress": "name@example.com",
+      "login": "= old address",
+      "password": "••••••",
+      "name": "Display name",
+      "target": "= old name on the domain",
+      "quotaMb": "unlimited",
+      "aliases": "info@… sales@…",
+      "imapHost": "IMAP server of this person, if different",
+      "davUrl": "https://… CalDAV/CardDAV, if not found"
+    },
+    "rows": {
+      "actions": "Actions",
+      "add": "Add row",
+      "remove": "Remove row",
+      "servers": "Own servers for this row"
+    },
+    "problems": {
+      "addressInvalid": "not a valid address",
+      "passwordMissing": "missing",
+      "targetInvalid": "not an address on this domain",
+      "targetTaken": "already used by someone else",
+      "duplicate": "appears twice",
+      "quotaInvalid": "not a size",
+      "aliasInvalid": "not valid addresses (at most 20)",
+      "aliasTaken": "already used by someone else",
+      "aliasDomain": "on a domain that is not here",
+      "mailboxBusy": "this mailbox is in another move",
+      "noMailbox": "this account has no mailbox",
+      "loginInvalid": "not usable",
+      "hostInvalid": "not a usable server name (public servers only)",
+      "urlInvalid": "not an https address",
+      "tooManyRows": "more rows than one move takes",
+      "tooLarge": "the text is too long",
+      "quoteOpen": "a quote is not closed",
+      "invalid": "not valid"
+    },
+    "csv": {
+      "title": "Import a CSV list",
+      "explain": "Paste or upload what your spreadsheet exports, separated by ; or , (or tabs). With a header line the columns are found by their names (old address, login, password, name, new address, quota, aliases); without one they go in this order: old address; password; name; new address; quota; aliases; login.",
+      "paste": "CSV text",
+      "read": "Read into the table",
+      "file": "Upload file",
+      "result_one": "{{count}} row read (delimiter {{delimiter}}).",
+      "result_other": "{{count}} rows read (delimiter {{delimiter}}).",
+      "withHeader": "With header line.",
+      "withoutHeader": "Without header line.",
+      "line": "Line {{line}}:"
+    },
+    "detail": {
+      "title": "Move of {{domain}}",
+      "overview": "Progress",
+      "messages": "{{done}} of {{total}} messages ({{size}})",
+      "skipped_one": "{{count}} left out (here already or too large)",
+      "skipped_other": "{{count}} left out (here already or too large)",
+      "davCounts": "{{contacts}} contacts, {{events}} calendar entries",
+      "source": "From {{host}}",
+      "noDav": "mail only",
+      "mailboxes_one": "{{count}} mailbox",
+      "mailboxes_other": "{{count}} mailboxes"
+    },
+    "mailbox": {
+      "from": "from {{address}} (login {{login}})",
+      "created": "new mailbox",
+      "filled": "existing mailbox, filled",
+      "lastRound": "last round",
+      "progress": "Progress of {{address}}",
+      "messages": "{{done}} of {{total}} messages ({{size}})",
+      "folders": "{{done}} of {{total}} folders",
+      "next": "next round {{date}}",
+      "aliases": "Aliases: {{aliases}}",
+      "quotaWarning": "The old mailbox holds {{source}}, more than fits into this one ({{quota}}). Raise its quota, or the move pauses when it is full.",
+      "davError": "Contacts and calendars did not come: {{reason}}. Upload them as files instead.",
+      "newLogin": "Login at the old server",
+      "newPassword": "New password"
+    },
+    "errors": {
+      "quotaExceeded": "The mailbox here is full. Make room or raise its quota, then retry: it goes on where it stopped.",
+      "loginRefused": "The old server refused the login. Enter the right login or password (often an app password) and retry.",
+      "unreachable": "The old server could not be reached. Retry later.",
+      "notPublic": "The old server is not on the internet as far as this server can see. Servers in the local network cannot be used here; use the command line import instead.",
+      "noMailbox": "This account has no mailbox to move mail into.",
+      "stopped": "Paused by hand. Retry whenever you like.",
+      "accountDeleted": "This account was moved to the trash, so the move stopped and the old password was deleted. After restoring the account, enter the password again and retry.",
+      "interrupted": "The server stopped during this mailbox several times in a row, so it was paused. Check the server log, then continue.",
+      "failed": "Something went wrong. Retry to try again."
+    },
+    "davErrors": {
+      "wrongPassword": "the old server refused the login",
+      "providerNotFound": "no calendars or address books were found",
+      "providerUnreachable": "the server could not be reached",
+      "providerError": "the server answered with an error",
+      "feedTooLarge": "it was too large",
+      "feedNotFound": "a collection was gone",
+      "redirectedElsewhere": "the server sent the login elsewhere",
+      "googleUseIcs": "Google hands them out as files only",
+      "providerNoDav": "this provider has no CalDAV/CardDAV",
+      "urlNotAllowed": "the address is not allowed",
+      "failed": "they could not be stored"
+    },
+    "actions": {
+      "pauseAll": "Pause all",
+      "resumeAll": "Continue",
+      "pause": "Pause",
+      "retry": "Retry",
+      "syncNow": "Sync now",
+      "changeLogin": "Change login …",
+      "upload": {
+        "addressbook": ".vcf",
+        "calendar": ".ics"
+      },
+      "removeMailbox": "Take {{address}} out of the move",
+      "removeConfirm": "Take {{address}} out of the move? Its old password is forgotten; the mailbox and what came stay.",
+      "delete": "Delete move",
+      "deleteConfirm": "Delete the move of {{domain}}? All old passwords in it are forgotten. The mailboxes and their mail stay."
+    },
+    "add": {
+      "button": "Add people",
+      "title": "More people for this move",
+      "save": "Add and start"
+    },
+    "settings": {
+      "title": "Pace",
+      "parallel": "Mailboxes at once",
+      "parallelHint": "Small numbers spare the old server (1 to 8).",
+      "syncMinutes": "Minutes between rounds",
+      "syncMinutesHint": "After the first copy, until you finish the move (5 to 1440).",
+      "save": "Save"
+    },
+    "finish": {
+      "title": "Switch and finish",
+      "explain": "Until you finish, new mail at the old server keeps coming over. Point the MX records of {{domain}} to {{hostname}}, wait until mail arrives here, then finish: a last round runs for every mailbox and the old passwords are wiped.",
+      "checkMx": "Check MX",
+      "mx": {
+        "ok": "MX points here",
+        "warning": "MX: check",
+        "missing": "No MX",
+        "wrong": "MX points elsewhere",
+        "error": "MX not found out"
+      },
+      "mxFound": "Found: {{found}}.",
+      "mxNone": "No MX records found.",
+      "mxReady": "Mail comes here: you can finish once the old server gets nothing new.",
+      "mxWait": "Point the MX records to {{hostname}} first; the change can take a few hours to be seen everywhere.",
+      "button": "Finish move",
+      "running": "The last round runs. Mailboxes that are through have their old password wiped.",
+      "skip": "Finish without last round",
+      "confirmTitle": "Finish the move?",
+      "confirmLast": "Every mailbox gets one last round; after it, the passwords of the old mailboxes are wiped and nothing is fetched from there any more.",
+      "confirmSkip": "The old passwords are wiped now, without a last round. Use this when the old server is gone or the last round cannot succeed.",
+      "confirmMx": "The MX check did not say the records point here yet.",
+      "done": "Finished. The old passwords are wiped.",
+      "doneAt": "Finished {{date}}. The old passwords are wiped."
+    },
+    "links": {
+      "title": "Password links",
+      "explain_one": "{{count}} person here has no password yet. Hand out a link to choose one; each works for 7 days.",
+      "explain_other": "{{count}} people here have no password yet. Hand out a link to choose one; each works for 7 days.",
+      "none": "Everyone here has a password already; no links are needed.",
+      "make": "Make links",
+      "again": "Make new links",
+      "made_one": "{{count}} link made.",
+      "made_other": "{{count}} links made.",
+      "once": "The links are shown only now; making new ones replaces these.",
+      "csv": "Download CSV",
+      "print": "Print overview",
+      "printTitle": "Password links for {{domain}}",
+      "printIntro": "Open your link and choose a password; after that, sign in with your address. Each link works once and for 7 days.",
+      "mailbox": "Mailbox",
+      "name": "Name",
+      "oldAddress": "Old address",
+      "link": "Link",
+      "expires": "Valid until",
+      "copy": "Copy link for {{address}}",
+      "skipped": {
+        "hasPassword": "has a password already, no link needed",
+        "disabled": "is disabled",
+        "directory": "signs in at the directory"
+      }
+    },
+    "toasts": {
+      "started": "The move started. The first mailboxes are copied now.",
+      "paused": "Move paused.",
+      "resumed": "The move goes on.",
+      "saved": "Saved.",
+      "queued": "Queued again.",
+      "removed": "Taken out of the move.",
+      "added": "Added; they are copied next.",
+      "finishing": "Finishing: the last round runs.",
+      "deleted": "Move deleted.",
+      "uploaded_one": "{{count}} entry imported.",
+      "uploaded_other": "{{count}} entries imported."
     }
   }
 }

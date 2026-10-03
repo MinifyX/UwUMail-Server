@@ -52,6 +52,7 @@ mod masked_domains;
 mod microsoft;
 mod migration_jobs;
 pub mod mime_limits;
+mod moves;
 mod mutate;
 mod oauth;
 mod objects;
@@ -71,6 +72,7 @@ mod sender_lists;
 mod shared_mailboxes;
 mod sharing;
 mod sieve;
+mod signatures;
 mod spam;
 mod spam_log;
 mod stats;
@@ -86,6 +88,10 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{Notify, broadcast};
+
+/// After this many starts of the server that found a move still running (cut off by a crash), it
+/// is paused with `interrupted` instead of started again (security review 0.22 M-1).
+pub const INTERRUPTIONS: i64 = 3;
 
 pub use acl::{ALL_RIGHTS, AclEntry, ShareLevel, SharePerson, SharedMailbox, has_rights, normalize_rights};
 pub use address::{EmailAddress, normalize_address, normalize_domain};
@@ -154,7 +160,7 @@ pub use groups::{GROUP_MAX_MEMBERS, Group, GroupDelivery, GroupMember, GroupUpda
 pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
-pub use labels::{LabelSetup, LabelTraining};
+pub use labels::{BASE_LABELS_VERSION, LabelSetup, LabelShot, LabelTokens, LabelTraining, LabelVector};
 pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
 pub use mail::{
     EmailSummary, IngestRequest, IngestedEmail, MAX_KEYWORDS_PER_EMAIL, Mailbox, MailboxRole, MailboxTarget,
@@ -167,6 +173,11 @@ pub use masked_domains::{
 pub use microsoft::{MICROSOFT_RESOLVE_AFTER_SECS, MicrosoftIssue, MicrosoftRefusal};
 pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
+};
+pub use moves::{
+    DEFAULT_MOVE_PARALLEL, DEFAULT_MOVE_SYNC_MINUTES, DavMode, MAX_MOVE_MAILBOXES, MAX_MOVE_PARALLEL,
+    MAX_MOVE_SYNC_MINUTES, MAX_OPEN_MOVES, MIN_MOVE_SYNC_MINUTES, Move, MoveKind, MoveMailbox, MoveMailboxState,
+    MoveSettings, MoveState, MoveSummary, MoveTurn, NewMove, NewMoveMailbox, check_server_name, check_server_url,
 };
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange, valid_keyword};
 pub use oauth::{
@@ -214,6 +225,11 @@ pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, S
 pub use sieve::{
     SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
     validate_sieve_name,
+};
+pub use signatures::{
+    CompanySignature, CompanySignatureMode, DomainSignatureInfo, IdentitySignatureInfo, MAX_SIGNATURE_CHANGES,
+    PLACEHOLDERS as SIGNATURE_PLACEHOLDERS, SIGNATURE_ALL_DOMAINS, SignatureChanges, SignatureOverview,
+    SignatureSource, SignatureText, escape_html, fill_placeholders,
 };
 pub use spam::{
     GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation, SPAM_LIMIT_RANGE,

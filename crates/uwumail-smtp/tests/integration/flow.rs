@@ -226,6 +226,130 @@ async fn submitted_mail_reaches_local_and_remote_people_with_dkim() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_company_footer_is_added_before_signing_for_smtp_clients_too() {
+    use lettre::message::MultiPart;
+    use uwumail_store::{CompanySignature, CompanySignatureMode};
+    let b = start("b.test", &["nyu"], &[]).await;
+    let a = start("a.test", &["mini"], &[("b.test", b.mx)]).await;
+    let keys = uwumail_smtp::dkim::ensure_domain_keys(a.smtp.store(), "a.test").await.unwrap();
+    for key in &keys {
+        let (name, value) = key.dns_record();
+        b.smtp.dns_cache().pin_txt(&name, &value).unwrap();
+    }
+    for name in ["a.test", "mx.a.test", "_dmarc.a.test"] {
+        b.smtp.dns_cache().pin_no_txt(name);
+    }
+    let footer = CompanySignature {
+        mode: CompanySignatureMode::Footer,
+        text: "A-Test GmbH · {name}".into(),
+        html: "<p>A-Test GmbH &middot; {name}</p>".into(),
+    };
+    a.smtp.store().set_domain_signature("a.test", footer).await.unwrap();
+
+    let message = Message::builder()
+        .from("Mini & Co <mini@a.test>".parse::<LettreMailbox>().unwrap())
+        .to("nyu@b.test".parse::<LettreMailbox>().unwrap())
+        .subject("Mit Fusszeile")
+        .multipart(MultiPart::alternative_plain_html("Hallo Nyu".to_owned(), "<p>Hallo Nyu</p>".to_owned()))
+        .unwrap();
+    a.mailer("mini@a.test", PASSWORD, false).send(message).await.unwrap();
+
+    let remote = b.wait_for_inbox("nyu@b.test", 1).await;
+    let raw = b.raw(&remote[0]).await;
+    assert_eq!(raw.matches("dkim=pass").count(), 2, "the footer went in before signing: {raw}");
+    let parsed = mail_parser::MessageParser::new().parse(raw.as_bytes()).unwrap();
+    let text = parsed.body_text(0).unwrap();
+    assert!(text.contains("Hallo Nyu") && text.contains("A-Test GmbH · Mini & Co"), "{text}");
+    let html = parsed.body_html(0).unwrap();
+    assert!(html.contains("<p>A-Test GmbH &middot; Mini &amp; Co</p>"), "the name is escaped in HTML: {html}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bcc_after_a_malformed_header_line_is_never_sent() {
+    use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
+    let a = start("a.test", &["mini", "ami", "leni"], &[]).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let submit = |raw: &str| Submission {
+        account: account.clone(),
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test"), SubmissionRecipient::new("leni@a.test")],
+        raw: raw.as_bytes().to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    // A broken mail program writes a line that is no header field; the Bcc below it would stay in
+    // the message every recipient gets (security review 0.22 SIG-6).
+    let broken = "From: mini@a.test\r\nTo: ami@a.test\r\nnot a header line\r\nBcc: leni@a.test\r\nSubject: Heimlich\r\n\r\nHi\r\n";
+    assert!(matches!(a.smtp.check_submission(&submit(broken)).await, Err(SubmitError::MalformedHeaders)));
+    assert!(matches!(a.smtp.submit(submit(broken)).await, Err(SubmitError::MalformedHeaders)));
+    // The same with a sane header block goes out, and the Bcc is gone for everyone.
+    let sane = broken.replace("not a header line\r\n", "");
+    a.smtp.submit(submit(&sane)).await.unwrap();
+    for login in ["ami@a.test", "leni@a.test"] {
+        let inbox = a.wait_for_inbox(login, 1).await;
+        assert_eq!(inbox.len(), 1, "only the sane message arrived");
+        let raw = a.raw(&inbox[0]).await;
+        assert!(!raw.contains("Bcc:"), "{raw}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_size_limit_holds_with_the_company_footer_in() {
+    use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
+    use uwumail_store::{CompanySignature, CompanySignatureMode};
+    let config = SmtpConfig { max_message_size: 4096, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "ami"], &[], config).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let submit = || Submission {
+        account: account.clone(),
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test")],
+        raw: format!("From: mini@a.test\r\nTo: ami@a.test\r\nSubject: Fast voll\r\n\r\n{}\r\n", "x".repeat(3000))
+            .into_bytes(),
+        env_id: None,
+        trace: None,
+    };
+    let footer = CompanySignature { mode: CompanySignatureMode::Footer, text: "F".repeat(2000), html: String::new() };
+    a.smtp.store().set_domain_signature("a.test", footer).await.unwrap();
+    // Small enough alone, too large with the footer (security review 0.22 SIG-4): refused at once.
+    assert!(matches!(a.smtp.check_submission(&submit()).await, Err(SubmitError::TooLarge)));
+    assert!(matches!(a.smtp.submit(submit()).await, Err(SubmitError::TooLarge)));
+    let small =
+        CompanySignature { mode: CompanySignatureMode::Footer, text: "A-Test GmbH".into(), html: String::new() };
+    a.smtp.store().set_domain_signature("a.test", small).await.unwrap();
+    a.smtp.submit(submit()).await.unwrap();
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
+    assert!(a.raw(&inbox[0]).await.contains("A-Test GmbH"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_from_address_brings_its_domain_s_footer() {
+    use uwumail_smtp::{Submission, SubmissionRecipient};
+    use uwumail_store::{CompanySignature, CompanySignatureMode};
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    a.smtp.store().create_domain("b.test").await.unwrap();
+    a.smtp.store().add_alias("mini@b.test", "mini@a.test").await.unwrap();
+    let footer =
+        CompanySignature { mode: CompanySignatureMode::Footer, text: "A-Test GmbH".into(), html: String::new() };
+    a.smtp.store().set_domain_signature("a.test", footer).await.unwrap();
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    // The first address is on a domain without a footer (security review 0.22 R2-INFO-1).
+    let submission = Submission {
+        account,
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test")],
+        raw:
+            b"From: mini@b.test, mini@a.test\r\nSender: mini@a.test\r\nTo: ami@a.test\r\nSubject: Zwei\r\n\r\nHallo\r\n"
+                .to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    a.smtp.submit(submission).await.unwrap();
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
+    assert!(a.raw(&inbox[0]).await.contains("A-Test GmbH"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn implicit_tls_submission_works() {
     let a = start("a.test", &["mini", "ami"], &[]).await;
     a.mailer("mini@a.test", PASSWORD, true).send(mail("mini@a.test", &["ami@a.test"], "Über 465")).await.unwrap();
@@ -303,6 +427,7 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     let reply = session
         .command(
             "Authentication-Results: mx.a.test; dkim=pass header.d=bank.example\r\n\
+             X-Spam-Status: No, score=-50.0 required=5.0 tests=none\r\n\
              From: someone@elsewhere.test\r\nSubject: Echt jetzt\r\n\r\nHallo\r\n.",
         )
         .await;
@@ -311,8 +436,35 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
 
     let inbox = a.wait_for_inbox("mini@a.test", 1).await;
     let raw = a.raw(&inbox[0]).await;
+    // Marked as delivered here, so the block on top is read as this server's (R2-L2).
+    assert!(a.smtp.store().smtp_delivered(inbox[0].id).await.unwrap());
     assert!(!raw.contains("header.d=bank.example"), "{raw}");
     assert!(raw.contains("Authentication-Results: mx.a.test"), "{raw}");
+    // The sender's own spam verdict never stays, whether the filter looked or not (client C-1).
+    assert!(!raw.contains("score=-50"), "{raw}");
+}
+
+/// Client review C-1, checked on the server: a local sender cannot hand local recipients a
+/// verdict in this server's name.
+#[tokio::test(flavor = "multi_thread")]
+async fn submitted_mail_cannot_bring_our_verdicts() {
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    let written = "Authentication-Results: mx.a.test; spf=pass; dkim=pass; dmarc=pass\r\n\
+                   Authentication-Results: elsewhere.test; spf=pass\r\n\
+                   X-Spam-Status: No, score=-50.0 required=5.0 tests=none\r\nX-Spam-Score: -50.0\r\n\
+                   X-UwUMail-Label: $label-wichtig\r\n\
+                   From: ami@a.test\r\nTo: mini@a.test\r\nSubject: Alles sicher\r\n\r\nHallo\r\n";
+    let envelope =
+        lettre::address::Envelope::new(Some("ami@a.test".parse().unwrap()), vec!["mini@a.test".parse().unwrap()])
+            .unwrap();
+    a.mailer("ami@a.test", PASSWORD, false).send_raw(&envelope, written.as_bytes()).await.unwrap();
+    let inbox = a.wait_for_inbox("mini@a.test", 1).await;
+    let raw = a.raw(&inbox[0]).await;
+    assert!(!a.smtp.store().smtp_delivered(inbox[0].id).await.unwrap(), "submitted, not delivered over SMTP");
+    assert!(!raw.contains("mx.a.test; spf=pass"), "{raw}");
+    assert!(!raw.contains("score=-50") && !raw.contains("X-Spam-Score: -50"), "{raw}");
+    assert!(raw.contains("Authentication-Results: elsewhere.test"), "another server's claim is left as it is");
+    assert!(!raw.contains("X-UwUMail-Label"), "labels are this server's to write: {raw}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1526,7 +1678,8 @@ async fn delivered_mail_is_queued_for_labels_but_junk_is_not() {
     assert!(store.due_label_jobs(10).await.unwrap().is_empty(), "not switched on");
 
     store.set_assist_prefs(account.id, Default::default(), true).await.unwrap();
-    store.create_assist_label(account.id, "Newsletter".into(), "Werbung und Newsletter".into(), None).await.unwrap();
+    // The base labels came with the first mail; an own label besides them.
+    store.create_assist_label(account.id, "Reisen".into(), "Flüge und Hotels".into(), None).await.unwrap();
     let flagged = String::from_utf8(fetched_message(None, "X-Spam-Flag: YES\r\n")).unwrap().replace("<one@", "<two@");
     assert_eq!(take(true, flagged.into_bytes()).await, uwumail_smtp::Taken::Kept);
     assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);

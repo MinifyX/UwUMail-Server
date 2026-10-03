@@ -260,6 +260,13 @@ pub(crate) fn destroy_one(tx: &Transaction<'_>, batch: &mut Batch, email_id: i64
     let modseq = batch.modseq(tx)?;
     let mailboxes = email_mailboxes(tx, email_id)?;
     tx.execute("DELETE FROM emails WHERE id = ?1", [email_id])?;
+    // What labels keep of the mail's content goes with it; its hashed tokens stay learned.
+    tx.execute(
+        "DELETE FROM label_vectors WHERE example_id IN
+             (SELECT id FROM label_examples WHERE account_id = ?1 AND email_id = ?2)",
+        params![account_id, email_id],
+    )?;
+    tx.execute("DELETE FROM label_shots WHERE account_id = ?1 AND email_id = ?2", params![account_id, email_id])?;
     tx.execute("UPDATE accounts SET used_bytes = max(0, used_bytes - ?1) WHERE id = ?2", params![size, account_id])?;
     record_change(tx, account_id, modseq, "Email", email_id, "destroyed")?;
     for mailbox in mailboxes {

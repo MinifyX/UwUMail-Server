@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: invoice with PDF from a known sender
+From: Versicherung Sonnenschein <kundenservice@versicherung.example>
+To: Max Muster <max@uwu.example>
+Subject: Beitragsrechnung 5197795
+Date: Tue, 15 Sep 2026 10:27:00 +0000
+Message-ID: <822355738844.981@versicherung.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-1620750439"
+
+--mix-1620750439
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Guten Tag Max Muster,
+
+anbei erhalten Sie Ihre Rechnung Nr. 5197795 über 445,34 EUR.
+Der Betrag wird am 25.09.2026 von Ihrem Konto abgebucht.
+
+Ihre Rechnungen finden Sie auch im Kundenportal: https://versicherung.example/portal
+
+Mit freundlichen Grüßen
+Versicherung Sonnenschein
+--mix-1620750439
+Content-Type: application/pdf; name="Rechnung_5197795.pdf"
+Content-Disposition: attachment; filename="Rechnung_5197795.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKdHJhaWxlciA8PCAvUm9vdCAxIDAgUiA+PgolJUVPRgo=
+--mix-1620750439--

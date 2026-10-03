@@ -1,0 +1,30 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: job application with PDF attachment from an unknown person
+From: Ben Richter <ben.richter@post.example>
+To: Max Muster <max@uwu.example>
+Subject: Bewerbung als Werkstudent
+Date: Sun, 13 Sep 2026 22:19:00 +0000
+Message-ID: <469255571254.246@post.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-0941118845"
+
+--mix-0941118845
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Sehr geehrte Damen und Herren,
+
+hiermit bewerbe ich mich um die ausgeschriebene Stelle. Meine Unterlagen finden Sie im Anhang.
+
+Mit freundlichen Grüßen
+Ben Richter
+--mix-0941118845
+Content-Type: application/pdf; name="Bewerbung.pdf"
+Content-Disposition: attachment; filename="Bewerbung.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKdHJhaWxlciA8PCAvUm9vdCAxIDAgUiA+PgolJUVPRgo=
+--mix-0941118845--

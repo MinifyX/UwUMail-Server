@@ -19,6 +19,7 @@ mod ldap;
 mod loki;
 mod mailbox;
 mod microsoft_bimi;
+mod moves;
 mod moving;
 mod oauth;
 mod oidc;

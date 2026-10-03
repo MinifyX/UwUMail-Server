@@ -76,8 +76,16 @@ fn it_waits_for_examples_and_then_is_sure_only_of_similar_mail() {
         model.probability(&hashes(&message(&["From: x@example.net", "Subject: Hi"], "Ganz etwas anderes."))).unwrap();
     assert!(unrelated < 0.5, "{unrelated}");
 
-    let labels =
-        [Label { id: 9, keyword: "verein", rules: None, detector: None, learn_senders: true, classifier: true }];
+    let labels = [Label {
+        id: 9,
+        keyword: "verein",
+        rules: None,
+        detector: None,
+        learn_senders: true,
+        classifier: true,
+        base: None,
+        auto: true,
+    }];
     let mut knowledge = Knowledge::default();
     knowledge.models.insert(9, model.clone());
     let decisions = decide(&labels, &club(99), &[], &knowledge, &hashes(&club(99)));

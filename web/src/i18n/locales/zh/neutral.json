@@ -573,7 +573,25 @@
       "bimiTitle": "请为徽标输入更短的名称，不要包含特殊字符。",
       "bimiBackground": "背景颜色必须是 #rrggbb 的格式。",
       "bimiCertificateInvalid": "这不是可读取的 PEM 格式证书。",
-      "bimiCertificateNotBimi": "该证书不是用于 BIMI 的 VMC 或 CMC。"
+      "bimiCertificateNotBimi": "该证书不是用于 BIMI 的 VMC 或 CMC。",
+      "moveRows": "列表中有些行需要修正，请查看表格。",
+      "moveTooMany": "单次迁移最多 2000 个邮箱。",
+      "moveSingle": "单个邮箱迁移只能包含一个邮箱。",
+      "moveFinished": "此迁移已完成。",
+      "moveFinishing": "最后一轮已在进行。",
+      "moveMailboxBusy": "该邮箱已在另一个迁移中。",
+      "moveOtherDomain": "该邮箱不在迁移的域名上。",
+      "moveNotActive": "此迁移未在进行。",
+      "moveNotPaused": "此迁移未暂停。",
+      "movesLimit": "最多同时进行 20 个迁移。请先完成或删除一个。",
+      "movePersonalBusy": "该邮箱的所有者正在自行迁移邮件（我的邮箱 → 迁移）。请等待完成，或请其暂停。",
+      "moveAdminBusy": "管理员正在向此邮箱迁移邮件。请在该迁移完成后重试。",
+      "movePasswordNeeded": "旧邮箱的密码已被删除。请输入密码以继续。",
+      "moveChanged": "列表在此期间发生了变化，可能是另一个请求所致。请检查列表后重新开始。",
+      "hostInvalid": "服务器名称不可用。只能使用互联网上的服务器。",
+      "urlInvalid": "该地址不是可用的 https 地址。",
+      "domainMaskedOnly": "该域名仅用于隐藏地址。",
+      "noMailbox": "该账户没有邮箱。"
     }
   },
   "people": {
@@ -850,7 +868,6 @@
       "domainCreate": "{{actor}} 添加了域名 {{target}}",
       "domainRemove": "{{actor}} 移除了域名 {{target}}",
       "domainCatchAll": "{{actor}} 更改了 {{target}} 的全收设置",
-      "other": "{{actor}}：{{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} 为 {{target}} 创建了新的 DKIM 密钥",
       "domainDkimActivate": "{{actor}} 将 {{target}} 切换到新的 DKIM 密钥",
       "domainDkimRemove": "{{actor}} 移除了 {{target}} 的一个旧 DKIM 密钥",
@@ -919,7 +936,19 @@
       "domainBimiLogoRemoved": "{{actor}} 移除了 {{target}} 的 BIMI 徽标",
       "domainBimiCertificate": "{{actor}} 为 {{target}} 添加了 BIMI 证书",
       "domainBimiCertificateRemoved": "{{actor}} 移除了 {{target}} 的 BIMI 证书",
-      "microsoftResolve": "{{actor}} 将 Microsoft 对 {{target}} 的拒收标记为已解决"
+      "microsoftResolve": "{{actor}} 将 Microsoft 对 {{target}} 的拒收标记为已解决",
+      "moveCreate": "{{actor}} 开始了 {{target}} 的迁移",
+      "moveAddMailboxes": "{{actor}} 为 {{target}} 的迁移添加了人员",
+      "moveSettings": "{{actor}} 更改了 {{target}} 迁移的节奏",
+      "movePause": "{{actor}} 暂停了 {{target}} 的迁移",
+      "moveResume": "{{actor}} 继续了 {{target}} 的迁移",
+      "moveFinish": "{{actor}} 完成了 {{target}} 的迁移",
+      "moveDelete": "{{actor}} 删除了 {{target}} 的迁移",
+      "moveRetry": "{{actor}} 重试了 {{target}} 的迁移",
+      "movePauseMailbox": "{{actor}} 暂停了 {{target}} 的迁移",
+      "moveRemoveMailbox": "{{actor}} 将 {{target}} 移出了迁移",
+      "moveUpload": "{{actor}} 为 {{target}} 上传了联系人或日历",
+      "other": "{{actor}}：{{action}} {{target}}"
     },
     "details": {
       "adminOn": "现在是管理员",
@@ -1220,6 +1249,29 @@
         "sts-webpki-invalid": "策略证书无效"
       },
       "unauthenticated_other": "有 {{count}} 份报告来自无法证明自身身份的发送方。其中的数据可能是捏造的。"
+    },
+    "signature": {
+      "title": "公司签名",
+      "explain": "此域名所有地址共用的签名：可作为每个人都能修改的模板，或作为服务器在发送时添加的强制页脚。",
+      "mode": "用法",
+      "modes": {
+        "off": "关闭",
+        "template": "模板",
+        "footer": "强制页脚"
+      },
+      "modeHint": {
+        "off": "每个人自己写签名。",
+        "template": "没有自己签名的人会使用此签名，每个人都可以修改。",
+        "footer": "服务器会把它添加到此域名发出的每封邮件，包括通过 SMTP 使用邮件应用发送的邮件。"
+      },
+      "text": "文本",
+      "html": "HTML",
+      "htmlHint": "可选，用于格式化邮件。没有 HTML 时使用文本。",
+      "placeholders": "占位符：{{placeholders}}",
+      "footerNote": "已签名或加密的邮件（S/MIME、PGP）不会添加页脚，否则签名会失效。收件人会收到页脚，发件人“已发送”中的副本不显示页脚。这只是辅助功能而非合规保证：部分邮件（例如已引用页脚的邮件）会不带页脚发出。",
+      "footerEmpty": "强制页脚需要文本。",
+      "save": "保存",
+      "saved": "公司签名已保存"
     }
   },
   "groups": {
@@ -2184,8 +2236,8 @@
       "progress": "{{done}} / {{total}} 封邮件 · {{size}}",
       "progressLabel": "搬家进度",
       "folders": "文件夹 {{done}} / {{total}}",
-      "skipped": "{{count}} 封邮件已经存在，已跳过",
-      "skipped_other": "{{count}} 封邮件已经存在，已跳过",
+      "skipped": "已跳过 {{count}} 封邮件：已经存在或超过此服务器允许的大小",
+      "skipped_other": "已跳过 {{count}} 封邮件：已经存在或超过此服务器允许的大小",
       "done": "全部到齐了。",
       "doneAt": "截至 {{date}}，原来的内容已全部在这里。"
     },
@@ -2196,6 +2248,7 @@
       "notPublic": "据本服务器判断，原服务商的服务器不在互联网上。",
       "noMailbox": "你的账户没有可以接收邮件的邮箱。",
       "stopped": "已暂停。随时可以继续，会从停下的地方接着进行。",
+      "interrupted": "服务器在此迁移期间连续多次停止，因此已暂停。准备好后继续，或联系管理员。",
       "failed": "出了点问题。点击继续以重试。"
     },
     "actions": {
@@ -2264,7 +2317,7 @@
     },
     "signatures": {
       "title": "签名",
-      "intro": "邮件应用和网页邮箱会添加你所用发件地址的签名。",
+      "intro": "选择一个域名，为你在该域名下的所有地址写一个签名。邮件应用和网页邮箱会在撰写时插入它。",
       "loading": "正在加载地址…",
       "loadError": "无法加载地址。",
       "empty": "还没有可用于发送的地址。",
@@ -2272,7 +2325,24 @@
       "html": "HTML 签名",
       "htmlHint": "可选，供撰写格式化邮件的应用使用。",
       "save": "保存签名",
-      "saved": "签名已保存"
+      "saved": "签名已保存",
+      "domain": "域名",
+      "domainOption_other": "{{domain}}（{{count}} 个地址）",
+      "placeholders": "占位符：",
+      "appliesTo": "适用于",
+      "allDomains": "所有域名（包括以后的）",
+      "replaces": "将替换 {{domains}} 的单独签名。",
+      "preview": "{{address}} 的预览",
+      "remove": "删除签名",
+      "fromTemplate": "这是你所在组织的模板。你可以修改它并保存为自己的签名。",
+      "fromAllDomains": "此域名使用你的“所有域名”签名。",
+      "companyFooter": "从此域名发送时，服务器会自动添加以下页脚：",
+      "exceptions": "单个地址的不同签名（{{count}}）",
+      "ownSignature": "单独签名",
+      "followsDomain": "使用域名签名",
+      "override": "为此地址设置单独签名",
+      "backToDomain": "使用域名签名",
+      "tooLarge": "签名太大（最多 256 KB）。"
     }
   },
   "forwardConfirm": {
@@ -2917,6 +2987,7 @@
       "emptyHint": "被延迟的邮件会在这里等待，直到它们自行到达或由你作出决定。",
       "noSubject": "无主题",
       "sentTo": "发给 {{address}}",
+      "attempts_other": "投递尝试 {{count}} 次，最近一次 {{last}}",
       "decide": {
         "deliver": "投递",
         "discard": "丢弃",
@@ -3917,7 +3988,10 @@
       "priceLists_other": "价格已于 {{date}} 更新,已知 {{count}} 个模型。",
       "priceListsNone": "尚未获取价格。",
       "foreignMail": "为其他账户的邮件使用 AI",
-      "foreignMailHint": "允许用户在 UwUMail 应用中为其其他账户(Exchange、Gmail、IMAP)的邮件使用助手。应用会把该邮件的文本发送到这里;除用量外不保存任何内容。只使用允许此项的提供商。"
+      "foreignMailHint": "允许用户在 UwUMail 应用中为其其他账户(Exchange、Gmail、IMAP)的邮件使用助手。应用会把该邮件的文本发送到这里;除用量外不保存任何内容。只使用允许此项的提供商。",
+      "embeddings": "嵌入",
+      "embeddingsUse": "用于标签的相似邮件",
+      "smallModel": "此模型只有约 {{size}}B 参数，判断标签和垃圾邮件的效果较差。推荐：{{recommended}}。"
     },
     "choices": {
       "title": "哪个功能用哪个服务商",
@@ -4025,7 +4099,8 @@
         "featuresRequired": "请至少选择一个功能。",
         "limitInvalid": "请输入大于零的整数，或留空。",
         "priceInvalid": "请输入 0 或更大的价格,例如 0.25。",
-        "requestPriceInvalid": "请输入 0 到 100 之间的价格,例如 0.005。"
+        "requestPriceInvalid": "请输入 0 到 100 之间的价格,例如 0.005。",
+        "embeddingsModelRequired": "请填写嵌入模型。"
       },
       "price": "价格",
       "priceIntro": "每百万 token 的美元价格,用于显示费用。留空则使用公开价格表中的价格。",
@@ -4038,7 +4113,13 @@
       "showCostHint": "他们将看到自己请求的费用。你始终可以看到。",
       "requestPrice": "每次请求,美元",
       "foreignMail": "其他账户的邮件",
-      "foreignMailHint": "开启“为其他账户的邮件使用 AI”后,可用于用户其他账户的邮件。"
+      "foreignMailHint": "开启“为其他账户的邮件使用 AI”后,可用于用户其他账户的邮件。",
+      "chatGroup": "聊天模型",
+      "embeddingsGroup": "嵌入（用于标签的相似邮件）",
+      "embeddingsTitle": "嵌入：用于标签的相似邮件",
+      "embeddingsHelp": "嵌入模型会把邮件转换为向量。借助这些向量，自动标签可以找到已有标签的相似邮件，无需询问聊天模型就能决定许多标签。它不用于其他功能，也不需要快速模型。",
+      "embeddingsStorage": "向量按每封已加标签的邮件紧凑存储，并随邮件或账户一起删除。",
+      "embeddingsModelNeeded": "此类型需要填写服务器提供的嵌入模型。"
     },
     "chatgpt": {
       "title": "ChatGPT 登录",
@@ -4333,6 +4414,308 @@
         "noLogo": "证书中不含徽标。",
         "unknownKind": "这看起来不是 VMC 或 CMC。"
       }
+    }
+  },
+  "moves": {
+    "title": "迁移",
+    "intro": "从另一台服务器迁来整个域名及其所有人，或单个邮箱：邮件、联系人和日历。在你完成之前会持续同步。",
+    "kind": {
+      "domain": "域名迁移",
+      "mailbox": "单个邮箱"
+    },
+    "state": {
+      "active": "进行中",
+      "paused": "已暂停",
+      "finishing": "最后一轮",
+      "done": "已完成"
+    },
+    "mailboxState": {
+      "queued": "等待中",
+      "running": "复制中",
+      "paused": "已暂停",
+      "synced": "已同步",
+      "done": "已完成"
+    },
+    "progress": {
+      "label": "{{domain}} 迁移进度"
+    },
+    "list": {
+      "new": "新建迁移",
+      "from": "来自 {{host}}",
+      "summary": "{{mailboxes}} 个邮箱 · {{done}}/{{total}} 封邮件",
+      "paused_other": "{{count}} 个已暂停",
+      "created": "开始于 {{date}}",
+      "emptyTitle": "还没有迁移",
+      "emptyBody": "要把公司或家庭迁到这台服务器？开始一次域名迁移：先在这里创建域名和邮箱，再把所有内容复制过来。",
+      "own": "每个人也可以在“我的账户 → 搬家”中自行迁移自己的旧邮箱。"
+    },
+    "wizard": {
+      "back": "所有迁移",
+      "title": "新建迁移",
+      "intro": "四步：迁移什么、从哪里、谁，以及开始前的检查。",
+      "whatTitle": "迁移内容",
+      "what": {
+        "domain": "某个域名下的所有人。若域名尚不存在会在这里创建（含 DKIM 密钥），没有邮箱的人也会创建邮箱。",
+        "mailbox": "将一个邮箱迁入这里的邮箱：已有邮箱（邮件会合并）或新邮箱。"
+      },
+      "domain": "域名",
+      "domainHint": "邮箱所在的域名。",
+      "domainNew": "这里还没有这个域名：开始时会创建并生成 DKIM 密钥。之后请在“域名”中检查其 DNS。",
+      "domainUnknown": "请先添加该域名，或选择这里已有的域名。",
+      "targetLabel": "这里的邮箱",
+      "targetExisting": "已有邮箱",
+      "targetNew": "新邮箱",
+      "mailbox": "邮箱",
+      "mailboxHint": "原有邮件保留；文件夹会合并，不会重复。",
+      "choose": "请选择…",
+      "newAddress": "新地址",
+      "newAddressHint": "此人会收到设置密码的链接。",
+      "sourceTitle": "旧服务器",
+      "sourceExplain": "邮件现在所在的位置。整个迁移共用，单行也可指定自己的服务器。通过带 TLS 的 IMAP（端口 993）连接。",
+      "imapHost": "IMAP 服务器",
+      "imapHostHint": "最好使用在切换 MX 后仍指向旧服务器的名称。",
+      "port": "端口",
+      "discover": "查找服务器",
+      "found": "找到 {{host}}。首轮同步会验证登录。",
+      "notFound": "该域名没有响应，请手动填写服务器。",
+      "contacts": "一并迁移联系人",
+      "calendars": "一并迁移日历",
+      "davMode": "联系人和日历",
+      "davHost": "服务器",
+      "davHostHint": "留空则为 IMAP 服务器。",
+      "davUrl": "CalDAV/CardDAV 地址",
+      "pace": "节奏",
+      "peopleTitle": "人员",
+      "peopleExplain": "每人一行：旧地址及其登录名和密码，以及这里的邮箱设置。不填新地址则使用旧地址的名称加本域名。别名无法通过 IMAP 迁移，请在此填写。也可以从 CSV 列表填充表格。",
+      "oldMailboxTitle": "旧邮箱",
+      "oldMailboxExplain": "旧地址及其登录名和密码。",
+      "checkTitle": "检查并开始",
+      "checkExplain": "检查不会做任何改动；只会说明将创建什么以及哪些行需要修正。",
+      "check": "检查",
+      "start": "开始迁移",
+      "planDomain": "将创建域名 {{domain}} 并生成 DKIM 密钥。",
+      "planRows": "新邮箱 {{created}} 个，填充已有邮箱 {{filled}} 个。",
+      "planPasswords": "已在此设置密码的人的邮箱不会生成链接。",
+      "planProblems_other": "有 {{count}} 个问题需要修正，请查看表格。",
+      "planReady": "一切就绪：可以开始迁移。"
+    },
+    "davModes": {
+      "auto": "自动查找",
+      "autoHint": "先根据地址（已知服务商、DNS、/.well-known/），再到 IMAP 服务器查找。",
+      "sogo": "mailcow / SOGo",
+      "sogoHint": "https://服务器/SOGo/dav/",
+      "nextcloud": "Nextcloud",
+      "nextcloudHint": "https://服务器/remote.php/dav/",
+      "icloud": "iCloud",
+      "icloudHint": "需要应用专用密码。",
+      "gmx": "GMX",
+      "gmxHint": "启用两步验证时需应用专用密码。",
+      "webde": "WEB.DE",
+      "webdeHint": "一个应用专用密码只能用于一次配置。",
+      "custom": "自定义地址",
+      "customHint": "你已知的 CalDAV/CardDAV 地址。",
+      "none": "仅文件",
+      "noneHint": "改为按邮箱上传 .vcf 和 .ics 文件。"
+    },
+    "fields": {
+      "oldAddress": "旧地址",
+      "login": "旧登录名",
+      "password": "旧密码",
+      "name": "名称",
+      "target": "这里的地址",
+      "quotaMb": "配额 (MB)",
+      "quota": "配额",
+      "aliases": "别名",
+      "imapHost": "单独的 IMAP 服务器",
+      "davUrl": "单独的 CalDAV/CardDAV 地址",
+      "line": "行"
+    },
+    "placeholders": {
+      "oldAddress": "name@example.com",
+      "login": "= 旧地址",
+      "password": "••••••",
+      "name": "显示名称",
+      "target": "= 旧名称加域名",
+      "quotaMb": "不限",
+      "aliases": "info@… sales@…",
+      "imapHost": "此人的 IMAP 服务器（如不同）",
+      "davUrl": "https://… CalDAV/CardDAV（如未找到）"
+    },
+    "rows": {
+      "actions": "操作",
+      "add": "添加一行",
+      "remove": "删除此行",
+      "servers": "此行的单独服务器"
+    },
+    "problems": {
+      "addressInvalid": "不是有效地址",
+      "passwordMissing": "缺失",
+      "targetInvalid": "不是本域名的地址",
+      "targetTaken": "已被他人使用",
+      "duplicate": "重复出现",
+      "quotaInvalid": "不是有效大小",
+      "aliasInvalid": "不是有效地址（最多 20 个）",
+      "aliasTaken": "已被他人使用",
+      "aliasDomain": "所在域名不在这里",
+      "mailboxBusy": "该邮箱已在另一个迁移中",
+      "noMailbox": "该账户没有邮箱",
+      "loginInvalid": "不可用",
+      "hostInvalid": "服务器名称不可用（仅限公网服务器）",
+      "urlInvalid": "不是 https 地址",
+      "tooManyRows": "行数超出单次迁移上限",
+      "tooLarge": "文本过长",
+      "quoteOpen": "引号未闭合",
+      "invalid": "无效"
+    },
+    "csv": {
+      "title": "导入 CSV 列表",
+      "explain": "粘贴或上传电子表格导出的内容，用 ; 或 ,（或制表符）分隔。有标题行时按列名识别（旧地址、登录名、密码、名称、新地址、配额、别名）；没有时按此顺序：旧地址; 密码; 名称; 新地址; 配额; 别名; 登录名。",
+      "paste": "CSV 文本",
+      "read": "读入表格",
+      "file": "上传文件",
+      "result_other": "已读取 {{count}} 行（分隔符 {{delimiter}}）。",
+      "withHeader": "含标题行。",
+      "withoutHeader": "无标题行。",
+      "line": "第 {{line}} 行："
+    },
+    "detail": {
+      "title": "{{domain}} 的迁移",
+      "overview": "进度",
+      "messages": "{{done}}/{{total}} 封邮件（{{size}}）",
+      "skipped_other": "已跳过 {{count}} 封（已存在或过大）",
+      "davCounts": "{{contacts}} 位联系人，{{events}} 条日程",
+      "source": "来自 {{host}}",
+      "noDav": "仅邮件",
+      "mailboxes_other": "{{count}} 个邮箱"
+    },
+    "mailbox": {
+      "from": "来自 {{address}}（登录名 {{login}}）",
+      "created": "新邮箱",
+      "filled": "已有邮箱，已填充",
+      "lastRound": "最后一轮",
+      "progress": "{{address}} 的进度",
+      "messages": "{{done}}/{{total}} 封邮件（{{size}}）",
+      "folders": "{{done}}/{{total}} 个文件夹",
+      "next": "下一轮 {{date}}",
+      "aliases": "别名：{{aliases}}",
+      "quotaWarning": "旧邮箱有 {{source}}，超过此邮箱容量（{{quota}}）。请提高配额，否则邮箱满时迁移会暂停。",
+      "davError": "联系人和日历未能迁移：{{reason}}。请改为上传文件。",
+      "newLogin": "旧服务器登录名",
+      "newPassword": "新密码"
+    },
+    "errors": {
+      "quotaExceeded": "这里的邮箱已满。请腾出空间或提高配额后重试：会从中断处继续。",
+      "loginRefused": "旧服务器拒绝了登录。请输入正确的登录名或密码（通常是应用专用密码）后重试。",
+      "unreachable": "无法连接旧服务器。请稍后重试。",
+      "notPublic": "从本服务器看，旧服务器不在互联网上。这里不能使用局域网内的服务器，请改用命令行导入。",
+      "noMailbox": "该账户没有可迁入邮件的邮箱。",
+      "stopped": "已手动暂停。随时可以继续。",
+      "accountDeleted": "此账户已移至回收站，因此迁移已停止，旧密码已删除。恢复账户后，请重新输入密码并重试。",
+      "interrupted": "服务器在处理此邮箱时连续多次停止，因此已暂停。请检查服务器日志，然后继续。",
+      "failed": "出了点问题。请重试。"
+    },
+    "davErrors": {
+      "wrongPassword": "旧服务器拒绝了登录",
+      "providerNotFound": "未找到日历或通讯录",
+      "providerUnreachable": "无法连接服务器",
+      "providerError": "服务器返回了错误",
+      "feedTooLarge": "内容过大",
+      "feedNotFound": "某个集合已不存在",
+      "redirectedElsewhere": "服务器把登录转到了别处",
+      "googleUseIcs": "Google 只以文件形式提供",
+      "providerNoDav": "该服务商不支持 CalDAV/CardDAV",
+      "urlNotAllowed": "该地址不被允许",
+      "failed": "无法保存"
+    },
+    "actions": {
+      "pauseAll": "全部暂停",
+      "resumeAll": "继续",
+      "pause": "暂停",
+      "retry": "重试",
+      "syncNow": "立即同步",
+      "changeLogin": "更改登录…",
+      "upload": {
+        "addressbook": ".vcf",
+        "calendar": ".ics"
+      },
+      "removeMailbox": "将 {{address}} 移出迁移",
+      "removeConfirm": "将 {{address}} 移出迁移？旧密码会被删除；邮箱和已复制的内容保留。",
+      "delete": "删除迁移",
+      "deleteConfirm": "删除 {{domain}} 的迁移？其中所有旧密码都会被删除。邮箱及其邮件保留。"
+    },
+    "add": {
+      "button": "添加人员",
+      "title": "为此迁移添加更多人",
+      "save": "添加并开始"
+    },
+    "settings": {
+      "title": "节奏",
+      "parallel": "同时处理的邮箱数",
+      "parallelHint": "数值越小，对旧服务器压力越小（1 到 8）。",
+      "syncMinutes": "每轮间隔（分钟）",
+      "syncMinutesHint": "首次复制后，直到你完成迁移（5 到 1440）。",
+      "save": "保存"
+    },
+    "finish": {
+      "title": "切换并完成",
+      "explain": "在你完成之前，旧服务器上的新邮件会继续迁过来。把 {{domain}} 的 MX 记录指向 {{hostname}}，等邮件到达这里后再完成：每个邮箱会进行最后一轮同步，然后清除旧密码。",
+      "checkMx": "检查 MX",
+      "mx": {
+        "ok": "MX 已指向这里",
+        "warning": "MX：需检查",
+        "missing": "无 MX",
+        "wrong": "MX 指向别处",
+        "error": "无法确定 MX"
+      },
+      "mxFound": "找到：{{found}}。",
+      "mxNone": "未找到 MX 记录。",
+      "mxReady": "邮件已到达这里：旧服务器不再收到新邮件后即可完成。",
+      "mxWait": "请先把 MX 记录指向 {{hostname}}；生效可能需要几个小时。",
+      "button": "完成迁移",
+      "running": "最后一轮正在进行。已完成的邮箱的旧密码已清除。",
+      "skip": "不做最后一轮直接完成",
+      "confirmTitle": "完成迁移？",
+      "confirmLast": "每个邮箱会进行最后一轮同步；之后清除旧邮箱的密码，不再从那里获取任何内容。",
+      "confirmSkip": "现在就清除旧密码，不做最后一轮。适用于旧服务器已下线或最后一轮无法成功的情况。",
+      "confirmMx": "MX 检查尚未确认记录已指向这里。",
+      "done": "已完成。旧密码已清除。",
+      "doneAt": "完成于 {{date}}。旧密码已清除。"
+    },
+    "links": {
+      "title": "设置密码链接",
+      "explain_other": "这里有 {{count}} 人还没有密码。请发给他们设置密码的链接；每个链接 7 天内有效。",
+      "none": "这里的每个人都已有密码，无需链接。",
+      "make": "生成链接",
+      "again": "重新生成链接",
+      "made_other": "已生成 {{count}} 个链接。",
+      "once": "链接只在此刻显示；重新生成会替换它们。",
+      "csv": "下载 CSV",
+      "print": "打印概览",
+      "printTitle": "{{domain}} 的设置密码链接",
+      "printIntro": "打开你的链接并设置密码，之后用你的地址登录。每个链接只能用一次，7 天内有效。",
+      "mailbox": "邮箱",
+      "name": "名称",
+      "oldAddress": "旧地址",
+      "link": "链接",
+      "expires": "有效期至",
+      "copy": "复制 {{address}} 的链接",
+      "skipped": {
+        "hasPassword": "已有密码，无需链接",
+        "disabled": "已停用",
+        "directory": "通过目录登录"
+      }
+    },
+    "toasts": {
+      "started": "迁移已开始。正在复制第一批邮箱。",
+      "paused": "迁移已暂停。",
+      "resumed": "迁移继续。",
+      "saved": "已保存。",
+      "queued": "已重新排队。",
+      "removed": "已移出迁移。",
+      "added": "已添加，接下来会复制。",
+      "finishing": "正在完成：最后一轮进行中。",
+      "deleted": "迁移已删除。",
+      "uploaded_other": "已导入 {{count}} 条。"
     }
   }
 }

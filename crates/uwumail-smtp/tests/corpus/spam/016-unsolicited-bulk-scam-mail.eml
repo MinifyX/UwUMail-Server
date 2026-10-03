@@ -1,0 +1,16 @@
+X-Corpus-Class: spam
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: unknown
+X-Corpus-Note: unsolicited bulk / scam mail
+From: Mr. Edward Brown <contact4@promo-mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Business proposal
+Date: Mon, 14 Sep 2026 22:17:00 +0000
+Message-ID: <870991340970.930@promo-mail.example>
+MIME-Version: 1.0
+Reply-To: private.0418@mail.example
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Dear friend, I am a lawyer representing a late client who left 12.5 million USD. I need a foreign partner to transfer the funds. You will receive 40%.</p><div style="display:none">piano ipsum travel travel travel weather piano garden weather garden travel garden dolor garden lorem travel weather ipsum garden weather lorem ipsum weather garden dolor piano garden piano lorem garden dolor lorem ipsum ipsum travel garden dolor dolor piano lorem weather weather travel weather weather garden piano piano lorem garden lorem ipsum weather weather lorem piano lorem weather dolor weather</div>

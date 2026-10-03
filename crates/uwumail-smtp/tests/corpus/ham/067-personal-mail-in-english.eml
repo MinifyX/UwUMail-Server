@@ -1,0 +1,20 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: contact
+X-Corpus-Note: personal mail in English
+From: Leo Reed <leo@home.test>
+To: Max Muster <max@uwu.example>
+Subject: Slides
+Date: Mon, 14 Sep 2026 23:14:00 +0000
+Message-ID: <165961598878.773@home.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hey,
+
+here are the slides from today's talk: https://share.example/s/323008
+
+Let me know what you think.
+Leo

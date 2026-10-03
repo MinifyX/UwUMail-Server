@@ -1,0 +1,33 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=none dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: newsletter of Outdoor Nord with tracking links showing its own address
+From: Outdoor Nord <news@outdoor-nord.example>
+To: Max Muster <max@uwu.example>
+Subject: =?utf-8?q?Unsere_Empfehlungen_f=C3=BCr_dich?=
+Date: Tue, 15 Sep 2026 11:44:00 +0000
+Message-ID: <751702886005.953@outdoor-nord.example>
+MIME-Version: 1.0
+List-Unsubscribe: <https://outdoor-nord.example/abmelden?u=348870>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: multipart/alternative; boundary="alt-9164830250"
+
+--alt-9164830250
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+unsere neuen Produkte sind da. Alle Angebote: https://outdoor-nord.example/angebote
+
+Viele Grüße
+Outdoor Nord
+
+Abmelden: https://outdoor-nord.example/abmelden
+--alt-9164830250
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<div style="display:none">Die besten Angebote der Woche – jetzt entdecken.</div><p>Hallo Max,</p><p>unsere neuen Produkte sind da.</p><p><a href="https://click.mailer.example/t/2769415513">https://outdoor-nord.example/angebote</a></p><p><a href="https://click.mailer.example/t/2769415513x">Jetzt ansehen</a></p><p style="font-size:11px"><a href="https://outdoor-nord.example/abmelden">Abmelden</a></p>
+--alt-9164830250--

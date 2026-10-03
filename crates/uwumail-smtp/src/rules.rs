@@ -289,7 +289,7 @@ pub(crate) async fn deliver(
             Some(target) => {
                 let login = ctx.store.account_by_id(account_id).await.ok().flatten().map(|account| account.login);
                 let name = login.as_deref().unwrap_or(recipient);
-                let forwarder = forward::Forwarder { name, account_id: Some(account_id), proof };
+                let forwarder = forward::Forwarder { name, account_id: Some(account_id), proof, smtp_delivered: true };
                 // A redirect that reached nobody (a loop, a target that takes no mail, a queue that
                 // failed) must not take the message with it.
                 if forward::send(ctx, forwarder, recipient, envelope_from, message, &[target]).await {
@@ -353,7 +353,8 @@ pub(crate) async fn deliver(
             mailboxes.into_iter().map(MailboxTarget::Id).collect()
         };
         let request = IngestRequest { account_id, raw: message.to_vec(), mailboxes, keywords, received_at: None };
-        match ctx.store.ingest(request).await {
+        // Only SMTP delivery files through a person's rules here (security review 0.22 R2-L2).
+        match ctx.store.ingest_marked(request, true).await {
             Ok(email) => {
                 stored = true;
                 email_ids.push(email.id);

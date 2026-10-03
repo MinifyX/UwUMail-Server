@@ -33,13 +33,18 @@ pub struct EmailRecord {
     pub has_attachment: bool,
     pub keywords: Vec<String>,
     pub mailbox_ids: Vec<i64>,
+    /// This server's SMTP delivery stored it: the headers it wrote on top are its own (security
+    /// review 0.22 R2-L2). See [`Store::ingest_marked`].
+    #[serde(skip)]
+    pub smtp_delivered: bool,
 }
 
 pub(crate) const EMAIL_COLUMNS: &str = "e.id, e.thread_id, e.blob_hash, e.size, e.received_at, e.sent_at, e.message_id,
      e.in_reply_to, e.refs, e.subject, e.from_addr, e.sender_addr, e.to_addr, e.cc_addr, e.bcc_addr, e.reply_to_addr,
      e.preview, e.has_attachment,
      (SELECT json_group_array(keyword) FROM email_keywords WHERE email_id = e.id),
-     (SELECT json_group_array(mailbox_id) FROM email_mailboxes WHERE email_id = e.id)";
+     (SELECT json_group_array(mailbox_id) FROM email_mailboxes WHERE email_id = e.id),
+     e.smtp_delivered";
 
 fn json<T: serde::de::DeserializeOwned + Default>(row: &Row<'_>, index: usize) -> rusqlite::Result<T> {
     Ok(serde_json::from_str(&row.get::<_, String>(index)?).unwrap_or_default())
@@ -73,6 +78,7 @@ pub(crate) fn email_from_row(row: &Row<'_>) -> rusqlite::Result<EmailRecord> {
         has_attachment: row.get(17)?,
         keywords,
         mailbox_ids,
+        smtp_delivered: row.get(20)?,
     })
 }
 
@@ -136,10 +142,15 @@ impl Store {
     }
 
     /// Object kinds that changed after `since`.
-    pub async fn changed_kinds(&self, account_id: i64, since: i64) -> Result<Vec<String>> {
+    ///
+    /// Only changes up to `upto` count: a later one may already be written while an earlier
+    /// notification is handled, and reporting it under the earlier state would hand out a state
+    /// that is older than the change (it is reported with its own notification).
+    pub async fn changed_kinds(&self, account_id: i64, since: i64, upto: i64) -> Result<Vec<String>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare("SELECT DISTINCT kind FROM changes WHERE account_id = ?1 AND modseq > ?2")?;
-            let rows = stmt.query_map(params![account_id, since], |row| row.get(0))?;
+            let mut stmt = conn
+                .prepare("SELECT DISTINCT kind FROM changes WHERE account_id = ?1 AND modseq > ?2 AND modseq <= ?3")?;
+            let rows = stmt.query_map(params![account_id, since, upto], |row| row.get(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
         .await

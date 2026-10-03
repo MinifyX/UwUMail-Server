@@ -1,0 +1,25 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: known
+X-Corpus-Note: personal mail from a friend or relative
+From: =?utf-8?q?Sophie_Kr=C3=BCger?= <sophie.krueger@mail.example>
+To: Max Muster <max@uwu.example>
+Subject: Fotos
+Date: Sun, 13 Sep 2026 19:01:00 +0000
+Message-ID: <000964552762.954@mail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+anbei der Link zu den Fotos vom Urlaub: https://fotos.example/album/900392
+Sind ganz schön geworden!
+
+Liebe Grüße
+Sophie
+
+Am 14.09.2026 um 18:02 schrieb Max Muster:
+> Hallo, wie geht's?
+> Max

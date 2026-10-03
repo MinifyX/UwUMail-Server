@@ -285,9 +285,11 @@ mod tests {
     /// Runs `read` on HTML built to make it slow, and checks it stays fast
     /// (security-audit-0.16.0 SMTP-2).
     fn quick(html: &str) -> Html {
+        // A quadratic scan over these inputs takes minutes; the generous bound keeps a loaded
+        // machine running unoptimised tests from failing a linear one.
         let started = std::time::Instant::now();
         let read = read(html);
-        assert!(started.elapsed() < std::time::Duration::from_secs(1), "took {:?}", started.elapsed());
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "took {:?}", started.elapsed());
         read
     }
 

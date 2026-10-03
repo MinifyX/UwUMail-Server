@@ -62,6 +62,9 @@ pub struct KindInfo {
     pub experimental: bool,
     /// Only a person may add it for themselves, not the admin for everyone.
     pub personal_only: bool,
+    /// Makes embeddings (`/embeddings`) for similar mails instead of answering: only the admin
+    /// adds it, and it serves no feature by itself (docs/labels.md, "Similar mails").
+    pub embeddings: bool,
     #[serde(skip)]
     pub shape: Shape,
     #[serde(skip)]
@@ -85,6 +88,7 @@ pub const KINDS: &[KindInfo] = &[
         key_url: Some("https://platform.openai.com/api-keys"),
         experimental: false,
         personal_only: false,
+        embeddings: false,
         shape: Shape::Chat,
         flavor: ChatFlavor { max_completion_tokens: true, stream_usage: true },
         known_models: &[],
@@ -100,6 +104,7 @@ pub const KINDS: &[KindInfo] = &[
         key_url: Some("https://console.anthropic.com/settings/keys"),
         experimental: false,
         personal_only: false,
+        embeddings: false,
         shape: Shape::Anthropic,
         flavor: PLAIN,
         known_models: &[],
@@ -115,6 +120,7 @@ pub const KINDS: &[KindInfo] = &[
         key_url: Some("https://aistudio.google.com/apikey"),
         experimental: false,
         personal_only: false,
+        embeddings: false,
         shape: Shape::Chat,
         flavor: PLAIN,
         known_models: &[],
@@ -130,6 +136,7 @@ pub const KINDS: &[KindInfo] = &[
         key_url: Some("https://console.mistral.ai/api-keys"),
         experimental: false,
         personal_only: false,
+        embeddings: false,
         shape: Shape::Chat,
         flavor: PLAIN,
         known_models: &[],
@@ -145,6 +152,7 @@ pub const KINDS: &[KindInfo] = &[
         key_url: Some("https://openrouter.ai/settings/keys"),
         experimental: false,
         personal_only: false,
+        embeddings: false,
         shape: Shape::Chat,
         flavor: ChatFlavor { max_completion_tokens: false, stream_usage: true },
         known_models: &[],
@@ -160,6 +168,7 @@ pub const KINDS: &[KindInfo] = &[
         key_url: None,
         experimental: false,
         personal_only: false,
+        embeddings: false,
         shape: Shape::Chat,
         flavor: ChatFlavor { max_completion_tokens: false, stream_usage: true },
         known_models: &[],
@@ -175,6 +184,7 @@ pub const KINDS: &[KindInfo] = &[
         key_url: None,
         experimental: false,
         personal_only: false,
+        embeddings: false,
         shape: Shape::Chat,
         flavor: PLAIN,
         known_models: &[],
@@ -190,9 +200,58 @@ pub const KINDS: &[KindInfo] = &[
         key_url: None,
         experimental: true,
         personal_only: true,
+        embeddings: false,
         shape: Shape::Codex,
         flavor: PLAIN,
         known_models: &["gpt-5.1", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini"],
+    },
+    KindInfo {
+        kind: "openaiEmbeddings",
+        name: "OpenAI embeddings",
+        default_base_url: Some("https://api.openai.com/v1"),
+        base_url: BaseUrl::Optional,
+        key: Key::Required,
+        model: Some("text-embedding-3-small"),
+        fast_model: None,
+        key_url: Some("https://platform.openai.com/api-keys"),
+        experimental: false,
+        personal_only: false,
+        embeddings: true,
+        shape: Shape::Chat,
+        flavor: PLAIN,
+        known_models: &["text-embedding-3-small", "text-embedding-3-large"],
+    },
+    KindInfo {
+        kind: "ollamaEmbeddings",
+        name: "Ollama embeddings",
+        default_base_url: None,
+        base_url: BaseUrl::Required,
+        key: Key::None,
+        model: Some("nomic-embed-text"),
+        fast_model: None,
+        key_url: None,
+        experimental: false,
+        personal_only: false,
+        embeddings: true,
+        shape: Shape::Chat,
+        flavor: PLAIN,
+        known_models: &[],
+    },
+    KindInfo {
+        kind: "embeddingsCompatible",
+        name: "OpenAI-compatible embeddings",
+        default_base_url: None,
+        base_url: BaseUrl::Required,
+        key: Key::Optional,
+        model: None,
+        fast_model: None,
+        key_url: None,
+        experimental: false,
+        personal_only: false,
+        embeddings: true,
+        shape: Shape::Chat,
+        flavor: PLAIN,
+        known_models: &[],
     },
 ];
 
@@ -209,10 +268,60 @@ pub fn endpoint(info: &KindInfo, stored: Option<&str>) -> Option<String> {
         (BaseUrl::Required, None) => return None,
     };
     let base = base.trim_end_matches('/').to_owned();
-    if info.kind == "ollama" && !base.ends_with("/v1") {
+    if matches!(info.kind, "ollama" | "ollamaEmbeddings") && !base.ends_with("/v1") {
         return Some(format!("{base}/v1"));
     }
     Some(base)
+}
+
+/// What a model's name says about its size, for the admin's hint (docs/llm.md, "Choosing a
+/// model"): models below 7 billion parameters judge labels and spam poorly.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelHint {
+    /// Billions of parameters, as the name says (`gemma-3-4b-it` → 4).
+    pub billions: f64,
+    pub small: bool,
+    /// Models to use instead.
+    pub recommended: &'static [&'static str],
+}
+
+/// Smaller than this many billions of parameters is small.
+pub const SMALL_MODEL_BILLIONS: f64 = 7.0;
+pub const RECOMMENDED_MODELS: &[&str] = &["Qwen3-8B", "Qwen3-14B", "gemma-3-12b-it"];
+
+/// The size a model's name gives (`4b`, `1.5B`, `e2b`, `8x7b` counts as 7, `:3b`), and whether that
+/// is small. `None` when the name says nothing, like `gpt-5-mini`.
+pub fn model_hint(model: &str) -> Option<ModelHint> {
+    let lower = model.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut found: Option<f64> = None;
+    let mut index = 0;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_digit()
+            || (index > 0
+                && bytes[index - 1].is_ascii_alphanumeric()
+                && bytes[index - 1] != b'e'
+                && bytes[index - 1] != b'x')
+        {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && (bytes[index].is_ascii_digit() || bytes[index] == b'.') {
+            index += 1;
+        }
+        if bytes.get(index) == Some(&b'b')
+            && bytes.get(index + 1).is_none_or(|next| !next.is_ascii_alphabetic())
+            && let Ok(billions) = lower[start..index].parse::<f64>()
+            && billions > 0.0
+            && billions < 2000.0
+        {
+            found = Some(billions);
+        }
+    }
+    let billions = found?;
+    Some(ModelHint { billions, small: billions < SMALL_MODEL_BILLIONS, recommended: RECOMMENDED_MODELS })
 }
 
 #[cfg(test)]
@@ -236,5 +345,22 @@ mod tests {
         assert_eq!(endpoint(openai, Some("https://eu.api.openai.com/v1")).unwrap(), "https://eu.api.openai.com/v1");
         assert!(kind("chatgpt").unwrap().personal_only);
         assert!(kind("claude-subscription").is_none());
+        let embeddings = kind("ollamaEmbeddings").unwrap();
+        assert!(embeddings.embeddings);
+        assert_eq!(endpoint(embeddings, Some("http://192.0.2.10:11434")).unwrap(), "http://192.0.2.10:11434/v1");
+    }
+
+    #[test]
+    fn model_sizes() {
+        let billions = |model: &str| model_hint(model).map(|hint| (hint.billions, hint.small));
+        assert_eq!(billions("gemma-3-4b-it"), Some((4.0, true)));
+        assert_eq!(billions("gemma-3-4b-it-Q4_K_M.gguf"), Some((4.0, true)));
+        assert_eq!(billions("Qwen3-8B"), Some((8.0, false)));
+        assert_eq!(billions("qwen2.5:1.5b"), Some((1.5, true)));
+        assert_eq!(billions("llama3.1:70b-instruct"), Some((70.0, false)));
+        assert_eq!(billions("gemma-3n-e2b"), Some((2.0, true)));
+        assert_eq!(billions("gpt-5-mini"), None);
+        assert_eq!(billions("claude-haiku-4-5"), None);
+        assert_eq!(billions("gemma-3-12b-it"), Some((12.0, false)));
     }
 }

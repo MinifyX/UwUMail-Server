@@ -49,6 +49,7 @@ account others share with them):
   "maxLabelConditions": 10,
   "maxInstructionChars": 2000,
   "maxTextChars": 20000,
+  "baseLabels": ["invoice", "shipping", "appointment", "newsletter", "account", "personal", "work", "advertising"],
   "foreignMail": false
 }
 ```
@@ -61,6 +62,7 @@ account others share with them):
 | `maxProviders` | how many providers of their own one person may have |
 | `maxLabels` | how many labels one person may have |
 | `maxLabelConditions` | how many conditions the `rules` of one label may have |
+| `baseLabels` | the [base labels](#labels) this server knows, in their order (0.22); a client offers to make the deleted ones again, also when all were deleted |
 | `foreignMail` | the admin lets this person use the assistant for mail of **other** accounts (Exchange, Gmail, IMAP in the UwUMail app): the calls of [Foreign mail](#foreign-mail) accept mail content the client sends. `false` by default |
 | `maxInstructionChars` | longest `instruction` of `Assist/compose` |
 | `maxTextChars` | longest `text` of `Assist/compose`; mail content is cut to about this much too |
@@ -286,9 +288,13 @@ reader, dates, amounts).
 
 ## Assist/spamCheck
 
-A second opinion on a mail the person is unsure about. The server's own
-findings come along, so the client shows both, and the person decides with the
-usual "Spam" / "Not spam" actions.
+A second opinion on a mail the person is unsure about. Facts decide, the model
+explains: the server first weighs what it knows (authentication, its spam
+filter, the person's history with the sender and its own phishing checks) into
+a score, the score sets which verdicts are possible, and the model may only
+pick one of those and must back each reason with a quote from the mail or one
+of the facts. The server's findings come along, so the client shows both, and
+the person decides with the usual "Spam" / "Not spam" actions.
 
 | Argument | Type | |
 | --- | --- | --- |
@@ -302,16 +308,32 @@ usual "Spam" / "Not spam" actions.
   "emailId": "e42",
   "verdict": "phishing",
   "confidence": 0.9,
-  "reasons": ["Asks to confirm a password through a link", "The link leads to a different domain than the sender's"],
+  "reasons": ["Asks to confirm a password through a link", "The sender's domain imitates PayPal"],
+  "reasonDetails": [
+    { "text": "Asks to confirm a password through a link", "quote": "confirm your password", "fact": null },
+    { "text": "The sender's domain imitates PayPal", "quote": null, "fact": "F2" }
+  ],
+  "droppedReasons": 1,
   "modelVerdict": null,
+  "facts": {
+    "score": 9.5,
+    "band": "spam",
+    "evidence": [
+      { "code": "DMARC_FAIL", "tone": "bad", "weight": 2.0, "detail": "paypa1.example", "phishing": false },
+      { "code": "LOOKALIKE_BRAND_FROM", "tone": "bad", "weight": 4.0, "detail": "paypa1.example looks like PayPal", "phishing": true },
+      { "code": "FIRST_MAIL", "tone": "bad", "weight": 0.5, "detail": null, "phishing": false }
+    ],
+    "allowed": ["spam", "phishing"],
+    "defaultVerdict": "phishing"
+  },
   "signals": {
-    "authentication": { "spf": "fail", "dkim": "none", "dmarc": "fail", "fromDomain": "bank.example" },
+    "authentication": { "spf": "fail", "dkim": "none", "dmarc": "fail", "fromDomain": "paypa1.example" },
     "spamScore": 4.2,
     "spamThreshold": 5.0,
-    "tests": ["DMARC_FAIL", "LINK_MISMATCH"],
+    "tests": ["DMARC_FAIL", "LOOKALIKE_BRAND_FROM"],
     "inJunk": false,
     "sender": {
-      "address": "service@bank.example",
+      "address": "service@paypa1.example",
       "earlierMessages": 0,
       "earlierInJunk": 0,
       "writtenTo": 0,
@@ -326,18 +348,41 @@ usual "Spam" / "Not spam" actions.
 
 | Field | |
 | --- | --- |
-| `verdict` | `legitimate`, `suspicious`, `spam` or `phishing` |
-| `confidence` | 0 to 1, the model's own estimate |
-| `reasons` | at most six short sentences |
-| `modelVerdict` | `null`, or the model's own verdict (`spam` or `phishing`) when the server's facts clearly speak for the mail and `verdict` was lowered to `suspicious` (and `confidence` to at most 0.5): the sender wrote before with none of it in Junk, is in the address book or was written to; DMARC passed (without a DMARC result: DKIM and SPF); the spam filter gave 0 points or less; not in Junk. Never for mail of another account |
+| `verdict` | `legitimate`, `suspicious`, `spam` or `phishing`, always one of `facts.allowed` |
+| `confidence` | 0.3 to 0.97: 70 % how well the facts support the verdict, 30 % the model's own estimate; at most 0.6 when the verdict was moved |
+| `reasons` | at most six short sentences, only those the mail backs |
+| `reasonDetails` | the same reasons with what each rests on: `quote` (words that stand in the mail) or `fact` (`F1`, `F2`, … of the facts the model was given) |
+| `droppedReasons` | how many reasons the server left out: they cited nothing, quoted words that are not in the mail, or claimed what the facts contradict (a link in a mail without links, a failed check that passed, a stranger who wrote before) |
+| `modelVerdict` | `null`, or the model's own verdict when it was outside `facts.allowed` and `verdict` was moved to the nearest allowed one |
+| `facts.score` | the sum of the evidence weights; positive is towards spam |
+| `facts.band` | `clean` (score ≤ −2: only `legitimate`), `leaningClean` (< 1.5: `legitimate`, `suspicious`), `unclear` (< 4: any), `leaningSpam` (< 7: `suspicious`, `spam`, `phishing`), `spam` (≥ 7: `spam`, `phishing`). `phishing` is allowed only with a phishing finding of weight 1.5 or more; a clean mail with a phishing finding may still be `suspicious` |
+| `facts.evidence` | each fact: a stable `code` to translate (see below), `tone` (`good` or `bad`), `weight`, a technical `detail` (a domain, a count, a cue) and whether it is a phishing finding |
+| `facts.allowed`, `facts.defaultVerdict` | the verdicts the model could choose from, and the one the facts would give alone |
 | `signals.authentication` | SPF, DKIM and DMARC as this server's `Authentication-Results` recorded them (`pass`, `fail`, `softfail`, `neutral`, `none`, …), `null` each when the mail did not come from another server |
 | `signals.spamScore`, `spamThreshold`, `tests` | the server's spam filter: its points, the limit for Junk and the rules that counted (`X-Spam-Status`); `null` and `[]` when it did not look |
 | `signals.inJunk` | the mail is in Junk now |
 | `signals.sender` | the From address and this account's history with it: mails from it before this one, how many of them are in Junk, mails the person sent to it, whether it is in the address book, and when the first mail came (`UTCDate`) |
 
-The model sees the same signals as facts next to the mail, with what the
-spam filter's points and rules mean, and the mail itself as untrusted data. It
-gives its reasons before the verdict.
+Evidence codes: `FILTER_WANTED`, `FILTER_SOME_POINTS`, `FILTER_OVER_LIMIT`
+(the spam filter's points), `DMARC_PASS`, `DMARC_FAIL`, `SPF_DKIM_PASS`,
+`SPF_DKIM_FAIL`, `NO_AUTHENTICATION`, `WRITTEN_TO`, `IN_CONTACTS`,
+`KNOWN_SENDER`, `EARLIER_IN_JUNK`, `FIRST_MAIL`, `IN_JUNK`, `PAYMENT_REQUEST`
+and `URGENCY` (only for senders the person does not know), the phishing checks
+of the [spam filter](spam-filter.md#phishing-checks) (`LOOKALIKE_BRAND_FROM`,
+`LOOKALIKE_CONTACT_FROM`, `BRAND_LINK_TEXT`, …, against the brand list and the
+domains of the person's contacts) and the spam filter's phishing rules it
+already counted (`LINK_TO_IP`, `HTML_ATTACHMENT`, `MALWARE_LINK`, …). Trust from
+history counts half when the mail is not authenticated. Clients show codes they
+do not know as they are.
+
+The model sees the facts numbered, the allowed verdicts (its answer schema
+allows no others) and the mail as untrusted data. It gives its reasons, each
+with `evidence` (a quote or a fact number), before the verdict. A reason is
+kept only when its `evidence` is nothing but the number of an existing fact
+whose topic the reason is about (a fact number in the reason's own text counts
+for nothing), or a quote that stands in the mail. A reason that names a web
+address, mail address or phone number found neither in the mail nor in the
+facts is dropped. The reasons are still the model's wording.
 
 ## Assist/extractEvents
 
@@ -399,8 +444,11 @@ only decides whether the webmail calls it by itself when a mail opens. A
 
 ## Labels
 
-Labels are the person's own words for kinds of mail ("Rechnungen: invoices,
-receipts, payment confirmations"). A label is a JMAP keyword on the email, so
+Labels are kinds of mail: the eight **base labels** everyone has (Rechnung,
+Versand, Termin, Newsletter, Konto & Sicherheit, Persönlich,
+Arbeit/Geschäftlich, Werbung, in the person's language, each with a fixed
+definition; see [labels.md](labels.md#base-labels)) and the person's own, in
+their own words ("Reisen: flights, trains, hotels"). A label is a JMAP keyword on the email, so
 every client sees it: IMAP apps show it as a tag or keyword. Labels never
 move, delete or answer mail.
 
@@ -414,7 +462,7 @@ stay `AssistLabel/*`, as since 0.18.
 
 | Method | Needs |
 | --- | --- |
-| `AssistLabel/get`, `/set`, `/log`, `/undo` | the capability (own account) |
+| `AssistLabel/get`, `/set`, `/log`, `/undo`, `/checkOverlap` | the capability (own account) |
 | `AssistLabel/suggest`, `/apply` | the `autoLabels` feature (a provider), like any call to a model |
 
 ### AssistLabel
@@ -423,11 +471,14 @@ stay `AssistLabel/*`, as since 0.18.
 | --- | --- | --- |
 | `id` | `Id` | server-set, like `g3` |
 | `name` | `String` | 1 to 40 characters, unique per person (ignoring case) |
-| `description` | `String` | what belongs there, at most 300 characters; this is what the model reads |
+| `description` | `String` | what belongs there, at most 300 characters; this is what the model reads. A base label's is its definition, set by the server, may be longer and can't be changed |
 | `keyword` | `String` | server-set when created and never changed: the keyword on the emails, a lower-case ASCII form of the first name (`rechnungen`, `bestellungen-versand`), `label-<form>` when that form is a mark other programs act on (`junk`, `nonjunk`, `notjunk`, `phishing`, `seen`, `answered`, `flagged`, `deleted`, `draft`, `recent`, `forwarded`, `mdnsent`, `submitpending`, `submitted`), or `label-<n>` |
 | `color` | `String\|null` | `#rrggbb` or `null` |
 | `rules` | `Rules\|null` | conditions that put the label on new mail; `null` for none (default) |
-| `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter` or `shipping`; `null` for none (default) |
+| `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter`, `shipping`, `account`, `personal`, `work` or `advertising`; `null` for none (default). A base label uses its own detector without one |
+| `base` | `String\|null` | server-set: which base label it is (`invoice`, `shipping`, `appointment`, `newsletter`, `account`, `personal`, `work`, `advertising`), `null` for the person's own |
+| `previousDescription` | `String\|null` | server-set: for a label of the person's that became a base label because of its name, the description they had written before (given to the model as a hint); `null` otherwise. It can not be changed, only forgotten: `AssistLabel/set` takes `null` for it, and the model gets no hint from then on |
+| `auto` | `Boolean` | the label may be put on by itself (rules, detectors, learned senders, similar mails, classifier, the model); `false` keeps it for the person's hands (default `true`) |
 | `learnSenders` | `Boolean` | a sender whose mail the person gave this label by hand twice gets it on new mail (default `true`) |
 | `classifier` | `Boolean` | the label's classifier may put it on new mail once it has learned enough (default `true`) |
 | `totalEmails` | `Number` | server-set: emails of the account with the keyword, in any folder but those only in Junk or the Trash (the same as `Email/query` with `hasKeyword` and `inMailboxOtherThan` Junk and Trash) |
@@ -457,9 +508,14 @@ conditions; `value` is 1 to 200 characters after trimming, without control
 characters; `hasAttachment` takes only `"true"` or `"false"`. Rules with no
 conditions are stored as `null`.
 
-`AssistLabel/get` and `AssistLabel/set` are standard (`maxLabels` at most).
-`rules`, `detector`, `learnSenders` and `classifier` may be set on create and
-update; `totalEmails`, `unreadEmails` and `examples` are ignored in a patch when
+`AssistLabel/get` and `AssistLabel/set` are standard (`maxLabels` own labels
+at most; the base labels do not count). `AssistLabel/get` makes the base labels
+the first time, adopting a label of the same meaning (`Rechnungen`,
+`Invoices`, `Termine` …) instead of adding a second. `rules`, `detector`,
+`learnSenders`, `classifier` and `auto` may be set on create and update; a base
+label's `description` and `base` only sent back unchanged. A deleted base label
+is made again with `create: { "x": { "base": "invoice" } }` (only `auto` may
+come with it; when it is there, it is answered); `totalEmails`, `unreadEmails` and `examples` are ignored in a patch when
 they are unchanged and refused otherwise, like `id` and `keyword`. `SetError`
 `invalidProperties` names the property (`rules`, `detector`, …) and says why.
 Renaming a label keeps its keyword. Destroying one takes its keyword off every
@@ -475,33 +531,33 @@ client that shows counts fetches `AssistLabel/get` again then.
 ### Auto-labels
 
 Every mail delivered to the person (after the spam filter, not into Junk, not
-mail they sent themselves) gets labels in two steps:
+mail they sent themselves) gets **at most a main label and a second one**, and
+none when nothing is sure enough; labels with `auto` off are never put on by
+themselves. How each way decides, the confidences and thresholds are in
+[labels.md](labels.md#how-a-label-is-chosen).
 
 1. **Without a model**, during delivery and **before the person's Sieve
-   rules run** (with `nonAiLabels` on, the default): for each label, the
-   first of these that matches puts it on:
-   1. its `rules`,
-   2. its `detector`,
-   3. a learned sender (`learnSenders`): the From address got this label by
-      hand at least twice, and never had it taken off by hand since,
-   4. its classifier (`classifier`): a naive Bayes model of this person's
-      mail, once it has at least 15 examples with and 15 without the label and
-      is at least 99 % sure.
-
-   How each of these decides is in [labels.md](labels.md); it is cheap, and
-   delivery never waits long for it or fails because of it (after a second, or
-   on any error, the mail is simply stored without these labels).
-   The keywords go onto the stored mail directly. Sieve sees them: see
-   [sieve.md](sieve.md#labels).
+   rules run** (with `nonAiLabels` on, the default): the label's `rules`, its
+   detector (or its base label's), a learned sender (`learnSenders`: the From
+   address got this label by hand at least twice and never had it taken off by
+   hand since) and its classifier (`classifier`: a naive Bayes model of this
+   person's mail, once it has at least 15 examples with and 15 without the
+   label and is at least 99 % sure). It is cheap, and delivery never waits long
+   for it or fails because of it (after a second, or on any error, the mail is
+   simply stored without these labels). The keywords go onto the stored mail
+   directly. Sieve sees them: see [sieve.md](sieve.md#labels).
 2. **With the model** (with `AssistSettings.autoLabels` on and the `autoLabels`
-   feature): afterwards, in the background, the model judges only the labels
-   **not yet** on the mail (set by step 1 or by Sieve), each in turn (a
-   sentence why, then `fits` true or false, so the reason comes before the
-   decision), and adds the keywords of those that fit. The model never takes a
-   label off. Delivery never waits for it and never fails because of it: when
-   the provider is away or the quota is used up, the mail simply keeps what it
-   has (a job is tried three times over a few minutes, then dropped). Mail
-   older than a day in the queue is dropped as well.
+   feature): afterwards, in the background, the same ways again plus
+   **similar mails** (by an embeddings provider, else by words), and the model
+   only for the labels they leave in doubt. It gets the facts read from the
+   mail, hints and the person's corrections, gives a reason and then `fits`
+   `"yes"`, `"no"` or `"unsure"`; a lone yes is enough for a main label, never
+   for a second, the facts overrule it (a mass mail is never personal), and a
+   model saying yes to more than two labels is not believed. The model never
+   takes a label off. Delivery never waits for it and never fails because of
+   it: when the provider is away or the quota is used up, the mail simply keeps
+   what it has (a job is tried three times over a few minutes, then dropped).
+   Mail older than a day in the queue is dropped as well.
 
 Every label put on this way is logged ([`AssistLabel/log`](#assistlabellog)).
 
@@ -511,13 +567,36 @@ email or takes it off by hand — `Email/set`, IMAP `STORE`, or
 itself, and keywords set by Sieve at delivery, teach nothing):
 
 - putting it on counts the From address for the label; taking it off by hand
-  forgets that address for the label entirely;
+  marks that address so the label is not put on its mail by itself any more
+  (only the label's rules still do);
 - the mail becomes an example for the label's classifier (with the label when
   put on, without it when taken off). For each mail given a label by hand, one
   recent unlabeled mail from the inbox is learned as an example without any
   label, so the classifier knows what ordinary mail looks like.
 
+- with AI labels on, the change is kept as a correction the model sees next
+  time (the sender's domain, the subject and the start of the text, the
+  newest few per label).
+
 Learning happens in the background, a moment later; `examples` counts up then.
+
+### AssistLabel/checkOverlap
+
+`{ accountId, name, description?, id? }` tells which of the person's labels a
+label called `name` with `description` would overlap with, before it is
+created or changed (`id`, the label being changed, is left out). `name` at
+most 100 characters, `description` at most 2,000. It changes nothing and needs
+no provider. Response `{ accountId, overlaps: [{ id, name, base, kind, words
+}] }`:
+
+| `kind` | |
+| --- | --- |
+| `name` | the same name, or another name of the same base label |
+| `meaning` | words of the name or description are what a base label is about (`Handyrechnungen` → Rechnung) |
+| `words` | largely the same words as another label (`words` lists them, as stems) |
+
+Overlapping labels are what puts two labels on one thing or the wrong one of
+two; the webmail warns while a label is written, and saving stays possible.
 
 ### AssistLabel/log
 
@@ -533,22 +612,27 @@ first.
 
 | Field | |
 | --- | --- |
-| `source` | who put the label on: `ai`, `rule`, `sender`, `detector` or `classifier` (entries from before 0.21 are `ai`) |
+| `source` | who put the label on: `ai`, `rule`, `sender`, `detector`, `similar` or `classifier` (entries from before 0.21 are `ai`) |
 | `reason` | one sentence why: the model's own words for `ai`; for the others an English sentence made from `code` and `params` (like `Looks like an invoice: PDF attachment "Rechnung_4711.pdf"`) |
 | `code` | what the reason says, for a client to put in its own words: see below |
-| `params` | `Object`, the details `code` names |
+| `params` | `Object`, the details `code` names; entries of the label worker (0.22) add `confidence` (0 to 1) |
 | `providerName`, `model` | who chose the label for `ai` (`null` when unknown); `null` for the others |
 | `undone` | `true` once the person took the label off with `AssistLabel/undo` (or by removing the keyword) |
 
 | `code` | `source` | `params` |
 | --- | --- | --- |
-| `ai` | `ai` | `{}` |
+| `ai` | `ai` | `{}`, or `{ "supported": true\|false }`: whether another way hinted at the label too |
 | `rule` | `rule` | `{ "match": "all"\|"any", "conditions": [{ "field", "value" }] }`: the conditions that matched |
 | `sender` | `sender` | `{ "address": "leni@example.org", "count": 3 }`: how often the person gave this label to that sender's mail by hand |
-| `invoice` | `detector` | `{ "attachment": "Rechnung_4711.pdf" }` or `{ "word": "Rechnung", "amount": "49,90 €" }` (`amount` may be `null`) |
+| `invoice` | `detector` | `{ "attachment": "Rechnung_4711.pdf" }` or `{ "word": "Rechnung", "amount": "49,90 €" }` (`amount` may be `null`) or `{ "number": "RE-4711", "amount": "49,90 €" }` |
 | `appointment` | `detector` | `{ "calendar": true }` (an invitation or `.ics` in the mail) or `{ "word": "Terminbestätigung", "date": "06.10.2026", "time": "09:30" }` |
-| `newsletter` | `detector` | `{ "header": "List-Id" }` or `{ "header": "Precedence" }` or `{ "header": "List-Unsubscribe-Post" }`: what gave it away besides `List-Unsubscribe` |
-| `shipping` | `detector` | `{ "carrier": "DHL"\|"DPD"\|"Hermes"\|"UPS"\|"GLS"\|"Amazon"\|null, "tracking": "00340434161234567890"\|null }` |
+| `newsletter` | `detector` | `{ "header": "List-Id"\|"Precedence"\|"List-Unsubscribe-Post"\|"marketing sender", "word": "newsletter"\|null }`: what gave it away besides `List-Unsubscribe` |
+| `shipping` | `detector` | `{ "carrier": "DHL"\|"DPD"\|"Hermes"\|"UPS"\|"GLS"\|"Amazon"\|null, "tracking": "00340434161234567890"\|null }`, perhaps with `"word"` (an order word of the subject) |
+| `account` | `detector` | `{ "word": "passwort"\|null, "code": true\|false }` |
+| `personal` | `detector` | `{ "known": true\|false, "freemail": true }` |
+| `work` | `detector` | `{ "colleague": true\|false, "known": true\|false }` |
+| `advertising` | `detector` | `{ "words": ["rabatt", "gutschein"] }` |
+| `similar` | `similar` | `{ "neighbours": 5, "similarity": 0.912 }`: how many of the most alike labeled mails have the label, and how alike the best is |
 | `classifier` | `classifier` | `{ "probability": 0.994, "examples": 23 }` |
 
 New codes may come; a client that does not know one shows `reason`.
@@ -564,9 +648,13 @@ and the classifier learns the mail as one without it.
 
 `{ accountId, emailIds: [Id] }` (at most 20) asks the model now, for mail that
 arrived before auto-labels were on or while it was off. It needs the
-`autoLabels` feature, not the setting, judges only the labels not on the mail
-yet, and logs what it puts on as `ai`. Response `{ accountId, labeled: {
-emailId: [labelId] }, notFound: [ids] }`.
+`autoLabels` feature, not the setting, and decides as the label worker does
+(the cheap ways first, the model only in doubt, at most two labels); it logs
+each label with its source. Response `{ accountId, labeled: {
+emailId: [labelId] }, notFound: [ids] }`. One call runs at a time per person;
+another one meanwhile fails like a busy provider. With the person's setting
+off, similar mails are compared by their words (no embeddings) and no
+correction examples are sent.
 
 ### AssistLabel/suggest
 
@@ -808,7 +896,7 @@ A foreign mail:
 | `date` | `UTCDate\|null` | when it was sent; relative dates in the mail are read from it (now when `null`) |
 | `subject` | `String` | at most 998 characters |
 | `text` | `String` | the body as plain text (the client turns HTML into text), at most 200,000 characters. The server removes the quoted history and cuts it to size exactly as it does its own mail |
-| `headers` | `{name, value}[]\|null` | optional, `Assist/spamCheck` only (ignored elsewhere): at most 100, `name` at most 100 characters, `value` at most 2,000 |
+| `headers` | `{name, value}[]\|null` | optional, `Assist/spamCheck` only (ignored elsewhere): at most 100, `name` at most 100 characters, `value` at most 2,000, or 16,000 for `Authentication-Results`, `Received` and `X-Spam-Status`. A value longer than that is left out, never cut: the server can not tell a cut value from a whole one |
 | `inJunk` | `Boolean` | optional, `Assist/spamCheck` only: the mail is in the account's junk folder |
 
 Anything larger is `invalidArguments` naming the field; nothing is cut
@@ -820,9 +908,13 @@ to size.
 
 **Spam check.** `signals` are what the server can tell from the given
 headers: `authentication` from the topmost `Authentication-Results` of
-`headers`, whichever server wrote it (for own mail only this server's own
-counts); `spamScore`, `spamThreshold` and `tests` from `X-Spam-Status` if
-there is one; `inJunk` from the mail. `sender` is `null`: the server knows
+`headers` above the first `Received`, whichever server wrote it (a sender can
+write any header below that); `spamScore`, `spamThreshold` and `tests` from an
+`X-Spam-Status` above the first `Received`; `inJunk` from the mail. For own
+mail only the block this server wrote on top counts: its own `Received` line
+and the headers up to the next `Received`. A good word from another account's
+filter (a score of 0 or less) is not counted, and the model may always answer
+"suspicious" for another account's mail. `sender` is `null`: the server knows
 nothing about the history of another account. The model is told that these
 results come from the other provider.
 

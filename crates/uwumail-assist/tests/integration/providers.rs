@@ -7,7 +7,17 @@ use uwumail_assist::{AssistError, ComposeArgs, SpamArgs, StreamEvent, SummarizeA
 use crate::common::{INVOICE, Reply, chat, chat_stream, messages, messages_stream, rig};
 
 fn spam_json() -> String {
-    json!({ "verdict": "suspicious", "confidence": 0.7, "reasons": ["Unbekannter Absender"] }).to_string()
+    json!({
+        "verdict": "suspicious",
+        "confidence": 0.7,
+        "reasons": [
+            { "text": "Die Absender-Domain wurde nicht geprüft", "evidence": "F1" },
+            { "text": "Unbekannter Absender", "evidence": "F1" },
+            { "text": "Verlangt eine Zahlung über 42,00 EUR", "evidence": "42,00 EUR" },
+            { "text": "Droht mit Kontosperrung", "evidence": "Ihr Konto wird gesperrt" }
+        ]
+    })
+    .to_string()
 }
 
 #[tokio::test]
@@ -22,7 +32,12 @@ async fn chat_completions_answer_with_a_checked_verdict() {
         .await
         .unwrap();
     assert_eq!(result.verdict, "suspicious");
-    assert_eq!(result.reasons, ["Unbekannter Absender"]);
+    // A reason quoting what the mail does not say is dropped, and so is one citing a fact about
+    // something else (F1 is about authentication, not about the sender being known).
+    assert_eq!(result.reasons, ["Die Absender-Domain wurde nicht geprüft", "Verlangt eine Zahlung über 42,00 EUR"]);
+    assert_eq!(result.dropped_reasons, 2);
+    assert_eq!(result.reason_details[0].fact.as_deref(), Some("F1"));
+    assert_eq!(result.reason_details[1].quote.as_deref(), Some("42,00 EUR"));
     assert_eq!(result.effective.model, "small-model", "checks use the fast model");
     assert_eq!((result.usage.input_tokens, result.usage.output_tokens), (120, 30));
 
@@ -99,7 +114,7 @@ async fn anthropic_speaks_messages_and_structured_outputs() {
     assert_eq!(seen.headers["anthropic-version"], "2023-06-01");
     assert!(seen.headers.get("authorization").is_none());
     assert_eq!(seen.body["output_config"]["format"]["type"], "json_schema");
-    assert!(seen.body["system"].as_str().unwrap().contains("second opinion"));
+    assert!(seen.body["system"].as_str().unwrap().contains("spam or phishing"));
 
     // Streamed: the thinking is left out, the text comes through.
     rig.fake.push(Reply::Stream(messages_stream(&["Eine Rech", "nung über 42 EUR."]), 11));

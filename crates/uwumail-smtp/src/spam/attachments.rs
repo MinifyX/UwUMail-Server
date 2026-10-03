@@ -104,10 +104,8 @@ enum Kind {
     Other,
 }
 
-/// Characters that reverse how text is shown, e.g. to show `rechnung\u{202E}fdp.exe` as "rechnungexe.pdf".
-fn is_bidi_control(c: char) -> bool {
-    matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
-}
+// Characters that reverse how text is shown, e.g. to show `rechnung\u{202E}fdp.exe` as "rechnungexe.pdf".
+use crate::headers::is_bidi_control;
 
 /// A file name as it can be shown in a log: no direction tricks, no control characters, not too long.
 fn shown(name: &str) -> String {

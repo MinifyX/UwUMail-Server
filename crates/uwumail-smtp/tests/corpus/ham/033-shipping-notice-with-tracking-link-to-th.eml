@@ -1,0 +1,29 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=none dmarc=none
+X-Corpus-Sender: unknown
+X-Corpus-Note: shipping notice with tracking link to the carrier's own site
+From: Versand24 <status@versand.example>
+To: Max Muster <max@uwu.example>
+Subject: Zustellung verschoben
+Date: Sun, 13 Sep 2026 19:27:00 +0000
+Message-ID: <851259181024.686@versand.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-7035373556"
+
+--alt-7035373556
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max Muster,
+
+Ihre Sendung JJD49854031160814 ist unterwegs und kommt voraussichtlich morgen zwischen 10 und 14 Uhr.
+Sendungsverfolgung: https://versand.example/verfolgen/JJD49854031160814
+
+Ihr Versand24
+--alt-7035373556
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>Hallo Max Muster,</p><p>Ihre Sendung <b>JJD49854031160814</b> ist unterwegs.</p><p><a href="https://versand.example/verfolgen/JJD49854031160814">Sendung verfolgen</a></p>
+--alt-7035373556--

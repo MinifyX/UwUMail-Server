@@ -1,0 +1,17 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: de
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: legitimate account mail (login) with links to the service's own domain
+From: Fotobox <account@fotobox.example>
+To: Max Muster <max@uwu.example>
+Subject: Neue Anmeldung bei deinem Konto
+Date: Mon, 14 Sep 2026 09:56:00 +0000
+Message-ID: <631699320257.309@fotobox.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Max,
+
+wir haben eine neue Anmeldung bei deinem Konto bemerkt (Firefox, Berlin). Warst du das nicht, ändere dein Passwort unter https://fotobox.example/sicherheit

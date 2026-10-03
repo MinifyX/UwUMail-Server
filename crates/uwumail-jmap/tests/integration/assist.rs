@@ -418,6 +418,120 @@ async fn estimates_and_usage_carry_costs_in_the_currency_asked_for() {
     assert_eq!(summary["usage"]["reasoningTokens"], 0, "{summary}");
 }
 
+/// The base labels (docs/jmap-assist.md, "Base labels"): there without a mail, switched one by one,
+/// their definition fixed, made again after being deleted; a new label is checked for overlaps.
+#[tokio::test]
+async fn base_labels_are_switched_one_by_one_and_overlaps_are_told() {
+    let plain = server().await;
+    let assist = with_assist(&plain.store).await;
+    let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_assist(assist);
+    let server = Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir };
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    let responses = server.api_using(login, &USING, json!([["AssistLabel/get", { "accountId": account }, "g"]])).await;
+    let list = args(&responses, 0, "AssistLabel/get")["list"].as_array().unwrap().clone();
+    assert_eq!(list.len(), 8);
+    let find = |base: &str| list.iter().find(|label| label["base"] == base).unwrap().clone();
+    let invoice = find("invoice");
+    let personal = find("personal")["id"].as_str().unwrap().to_owned();
+    let invoice_id = invoice["id"].as_str().unwrap().to_owned();
+    assert_eq!(invoice["auto"], true);
+    assert!(invoice["description"].as_str().unwrap().len() > 50, "{invoice}");
+
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    (personal.clone()): { "auto": false, "name": "Privat" },
+                    (invoice_id.clone()): { "description": "Alles mit Geld" },
+                } }, "u"],
+                ["AssistLabel/checkOverlap", { "accountId": account, "name": "Handyrechnungen",
+                    "description": "Mobilfunk" }, "o"],
+                ["AssistLabel/checkOverlap", { "accountId": account, "name": "Reisen",
+                    "description": "Flüge, Hotels und Bahntickets" }, "none"],
+                ["AssistLabel/checkOverlap", { "accountId": account, "name": "x".repeat(101) }, "long"],
+                ["AssistLabel/set", { "accountId": account, "destroy": [invoice_id.clone()] }, "d"],
+                ["AssistLabel/set", { "accountId": account, "create": {
+                    "again": { "base": "invoice", "auto": false },
+                    "bad": { "base": "horoscope" },
+                    "mixed": { "base": "work", "name": "Job" }
+                } }, "c"],
+                ["AssistLabel/get", { "accountId": account }, "g"],
+            ]),
+        )
+        .await;
+    let updated = args(&responses, 0, "AssistLabel/set");
+    assert!(updated["updated"].get(&personal).is_some(), "{updated}");
+    assert_eq!(updated["notUpdated"][&invoice_id]["properties"], json!(["description"]));
+    let overlaps = args(&responses, 1, "AssistLabel/checkOverlap")["overlaps"].clone();
+    assert_eq!(overlaps[0]["id"], invoice_id.as_str(), "{overlaps}");
+    assert_eq!(overlaps[0]["kind"], "meaning");
+    assert_eq!(args(&responses, 2, "AssistLabel/checkOverlap")["overlaps"], json!([]));
+    assert_eq!(responses[3][1]["type"], "invalidArguments");
+    let created = args(&responses, 5, "AssistLabel/set");
+    assert!(created["created"]["again"]["id"].is_string(), "{created}");
+    assert_eq!(created["notCreated"]["bad"]["properties"], json!(["base"]));
+    assert_eq!(created["notCreated"]["mixed"]["properties"], json!(["name"]));
+    let list = args(&responses, 6, "AssistLabel/get")["list"].as_array().unwrap().clone();
+    let privat = list.iter().find(|label| label["id"] == personal.as_str()).unwrap();
+    assert_eq!((privat["name"].clone(), privat["auto"].clone()), (json!("Privat"), json!(false)));
+    let again = list.iter().find(|label| label["base"] == "invoice").unwrap();
+    assert_eq!(again["auto"], false);
+}
+
+/// Security review 0.22 webmail WF-1: the earlier description of an adopted label can be forgotten,
+/// and only forgotten.
+#[tokio::test]
+async fn an_adopted_labels_earlier_description_can_be_forgotten() {
+    let (server, _) = assisted().await;
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    let id = server.store.account(login).await.unwrap().unwrap().id;
+    let own = "Alles vom Steuerberater";
+    server.store.create_assist_label(id, "Rechnung".into(), own.into(), None).await.unwrap();
+    server.store.ensure_base_labels(id, "de").await.unwrap();
+    let responses = server.api_using(login, &USING, json!([["AssistLabel/get", { "accountId": account }, "g"]])).await;
+    let list = args(&responses, 0, "AssistLabel/get")["list"].as_array().unwrap().clone();
+    let invoice = list.iter().find(|label| label["base"] == "invoice").unwrap().clone();
+    assert_eq!(invoice["previousDescription"], own, "{invoice}");
+    let invoice_id = invoice["id"].as_str().unwrap().to_owned();
+
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    (invoice_id.clone()): { "previousDescription": "Etwas anderes" },
+                } }, "other"],
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    (invoice_id.clone()): { "previousDescription": own },
+                } }, "same"],
+                ["AssistLabel/set", { "accountId": account, "update": {
+                    (invoice_id.clone()): { "previousDescription": null },
+                } }, "forget"],
+                ["AssistLabel/get", { "accountId": account, "ids": [invoice_id.clone()] }, "g"],
+                ["AssistLabel/set", { "accountId": account, "create": {
+                    "new": { "name": "Reisen", "previousDescription": null },
+                } }, "create"],
+            ]),
+        )
+        .await;
+    let other = args(&responses, 0, "AssistLabel/set");
+    assert_eq!(other["notUpdated"][&invoice_id]["properties"], json!(["previousDescription"]), "{other}");
+    assert!(args(&responses, 1, "AssistLabel/set")["updated"].get(&invoice_id).is_some());
+    let forget = args(&responses, 2, "AssistLabel/set");
+    assert!(forget["updated"].get(&invoice_id).is_some(), "{forget}");
+    assert_ne!(forget["oldState"], forget["newState"]);
+    let label = &args(&responses, 3, "AssistLabel/get")["list"][0];
+    assert_eq!(label["previousDescription"], Value::Null, "{label}");
+    assert_eq!(label["base"], "invoice");
+    let created = args(&responses, 4, "AssistLabel/set");
+    assert_eq!(created["notCreated"]["new"]["properties"], json!(["previousDescription"]), "{created}");
+}
+
 /// Labels need no model: they are kept, counted and pushed without any provider; only what asks a
 /// model is unavailable (docs/jmap-assist.md, "Labels").
 #[tokio::test]
@@ -436,6 +550,7 @@ async fn labels_work_without_a_provider_and_carry_their_counts() {
         (capability["maxLabelConditions"].clone(), capability["foreignMail"].clone()),
         (json!(10), json!(false))
     );
+    assert_eq!(capability["baseLabels"].as_array().map(Vec::len), Some(8));
 
     let rules = json!({ "match": "any", "conditions": [{ "field": "from", "value": "@stadtwerke.example" }] });
     let responses = server
@@ -460,14 +575,19 @@ async fn labels_work_without_a_provider_and_carry_their_counts() {
     assert_eq!(created["notCreated"]["odd"]["properties"], json!(["detector"]));
     let id = created["created"]["r"]["id"].as_str().unwrap().to_owned();
     let got = args(&responses, 1, "AssistLabel/get");
-    let label = &got["list"][0];
+    let label = got["list"].as_array().unwrap().iter().find(|label| label["id"] == id).unwrap();
+    // "Rechnungen" became the base label for invoices, whose detector it then needs no more.
+    assert_eq!(label["base"], "invoice");
+    let bases: Vec<&str> = got["list"].as_array().unwrap().iter().filter_map(|label| label["base"].as_str()).collect();
+    assert_eq!(bases.len(), 8, "{got}");
+    assert_eq!(got["list"].as_array().unwrap().len(), 8);
     assert_eq!(
         label["rules"],
         json!({ "match": "any", "conditions": [{ "field": "from", "value": "@stadtwerke.example" }] })
     );
     assert_eq!(
         (label["detector"].clone(), label["learnSenders"].clone(), label["classifier"].clone()),
-        (json!("invoice"), json!(false), json!(true))
+        (Value::Null, json!(false), json!(true))
     );
     assert_eq!(
         (label["totalEmails"].clone(), label["unreadEmails"].clone(), label["examples"].clone()),
@@ -495,7 +615,8 @@ async fn labels_work_without_a_provider_and_carry_their_counts() {
         .await;
     let got = args(&responses, 1, "AssistLabel/get");
     assert_ne!(got["state"].as_str().unwrap(), before);
-    assert_eq!((got["list"][0]["totalEmails"].clone(), got["list"][0]["unreadEmails"].clone()), (json!(1), json!(1)));
+    let label = got["list"].as_array().unwrap().iter().find(|label| label["id"] == id).unwrap();
+    assert_eq!((label["totalEmails"].clone(), label["unreadEmails"].clone()), (json!(1), json!(1)));
     assert!(args(&responses, 2, "AssistLabel/set")["updated"].get(&id).is_some());
     assert_eq!(args(&responses, 3, "AssistLabel/set")["notUpdated"][&id]["properties"], json!(["totalEmails"]));
 

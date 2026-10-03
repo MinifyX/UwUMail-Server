@@ -1,0 +1,31 @@
+X-Corpus-Class: ham
+X-Corpus-Lang: en
+X-Corpus-Auth: spf=pass dkim=pass dmarc=pass
+X-Corpus-Sender: known
+X-Corpus-Note: invoice with PDF from a known sender
+From: Cloudbox <billing@cloudbox.example>
+To: Max Muster <max@uwu.example>
+Subject: Your receipt #9363453
+Date: Tue, 15 Sep 2026 23:56:00 +0000
+Message-ID: <763420156365.928@cloudbox.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-6718574044"
+
+--mix-6718574044
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hello Max,
+
+thank you for your payment of 8.85 EUR. Your receipt #9363453 is attached.
+You can manage your plan at https://cloudbox.example/account
+
+Best regards,
+Cloudbox
+--mix-6718574044
+Content-Type: application/pdf; name="receipt_9363453.pdf"
+Content-Disposition: attachment; filename="receipt_9363453.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKdHJhaWxlciA8PCAvUm9vdCAxIDAgUiA+PgolJUVPRgo=
+--mix-6718574044--

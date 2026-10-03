@@ -362,6 +362,83 @@ async fn ask(
     }
 }
 
+/// Texts sent in one embeddings request, at most.
+pub const MAX_EMBED_TEXTS: usize = 16;
+
+/// The embeddings of `texts` from an OpenAI-compatible `/embeddings` endpoint (OpenAI, Ollama,
+/// llama.cpp …), in their order, and the tokens the provider counted (0 when it does not say).
+pub async fn embed(target: &Target, texts: &[String]) -> Result<(Vec<Vec<f32>>, i64), ProviderError> {
+    if texts.is_empty() {
+        return Ok((Vec::new(), 0));
+    }
+    let texts = &texts[..texts.len().min(MAX_EMBED_TEXTS)];
+    let url = format!("{}/embeddings", target.base_url.trim_end_matches('/'));
+    let body = serde_json::json!({ "model": target.model, "input": texts });
+    let mut request = Request::post(url.as_str())
+        .header(CONTENT_TYPE, "application/json")
+        .header(USER_AGENT, AGENT)
+        .header(ACCEPT, "application/json");
+    if let Some(key) = target.key.as_deref().filter(|key| !key.is_empty()) {
+        request = request.header(AUTHORIZATION, format!("Bearer {key}"));
+    }
+    let request = request
+        .body(Full::new(Bytes::from(body.to_string())))
+        .map_err(|_| ProviderError::NotAllowed("the provider's address is not usable".into()))?;
+    let work = async {
+        let response = tokio::time::timeout(IDLE_TIMEOUT, target.client.send(request))
+            .await
+            .map_err(|_| ProviderError::Timeout)?
+            .map_err(egress_error)?;
+        let status = response.status().as_u16();
+        if !(200..300).contains(&status) {
+            let retry_after = response
+                .headers()
+                .get(RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.trim().parse::<u64>().ok());
+            let body = read_all(response.into_body(), 64 * 1024).await.unwrap_or_default();
+            return Err(status_error(status, retry_after, &body));
+        }
+        // 16 texts of 4,096 numbers as JSON fit well into this.
+        let body = read_all(response.into_body(), MAX_RESPONSE_BYTES * 8).await?;
+        let value: Value = serde_json::from_slice(&body).map_err(|_| ProviderError::Garbled("not JSON".into()))?;
+        parse_embeddings(&value, texts.len())
+    };
+    tokio::time::timeout(TOTAL_TIMEOUT, work).await.map_err(|_| ProviderError::Timeout)?
+}
+
+/// `{"data": [{"embedding": [...], "index": 0}], "usage": {"prompt_tokens": 9}}`.
+pub fn parse_embeddings(value: &Value, expected: usize) -> Result<(Vec<Vec<f32>>, i64), ProviderError> {
+    let garbled = |why: &str| ProviderError::Garbled(why.into());
+    let data = value.get("data").and_then(Value::as_array).ok_or_else(|| garbled("no data"))?;
+    if data.len() != expected {
+        return Err(garbled("not one embedding per text"));
+    }
+    let mut out: Vec<Option<Vec<f32>>> = vec![None; expected];
+    for (position, item) in data.iter().enumerate() {
+        let index = item.get("index").and_then(Value::as_u64).map_or(position, |i| i as usize);
+        let numbers = item.get("embedding").and_then(Value::as_array).ok_or_else(|| garbled("no embedding"))?;
+        if numbers.is_empty() || numbers.len() > uwumail_labels::similar::MAX_DIMENSIONS {
+            return Err(garbled("an embedding of an unusable size"));
+        }
+        let vector: Vec<f32> = numbers.iter().map(|n| n.as_f64().unwrap_or(f64::NAN) as f32).collect();
+        if vector.iter().any(|x| !x.is_finite()) {
+            return Err(garbled("an embedding with something else than numbers"));
+        }
+        let slot = out.get_mut(index).ok_or_else(|| garbled("an embedding for no text"))?;
+        *slot = Some(vector);
+    }
+    let vectors: Option<Vec<Vec<f32>>> = out.into_iter().collect();
+    let vectors = vectors.ok_or_else(|| garbled("an embedding is missing"))?;
+    let tokens = value
+        .get("usage")
+        .and_then(|usage| usage.get("prompt_tokens").or_else(|| usage.get("total_tokens")))
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        .max(0);
+    Ok((vectors, tokens))
+}
+
 fn auth_headers(target: &Target) -> Vec<(&'static str, String)> {
     let mut headers = Vec::new();
     match target.shape {
@@ -449,6 +526,25 @@ fn write_ordered(value: &Value, out: &mut String) {
         }
         scalar => out.push_str(&scalar.to_string()),
     }
+}
+
+/// The body of a plain chat completions request for `prompt`, its schema's keys in the order
+/// meant: for evaluation tools that ask a model directly, the way the server would.
+pub fn chat_request(model: &str, prompt: &Prompt) -> String {
+    let mut body = json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": prompt.system },
+            { "role": "user", "content": prompt.user }
+        ],
+        "stream": false,
+        "max_tokens": prompt.max_tokens,
+    });
+    if let Some((name, schema)) = &prompt.schema {
+        body["response_format"] =
+            json!({ "type": "json_schema", "json_schema": { "name": name, "strict": true, "schema": schema } });
+    }
+    ordered_json(&body)
 }
 
 fn request_body(target: &Target, prompt: &Prompt, stream: bool, with_schema: bool) -> (String, Value) {

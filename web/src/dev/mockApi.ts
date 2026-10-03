@@ -12,6 +12,7 @@
  */
 
 import type { Brand } from "@/state/brand";
+import type { SignatureChange } from "@/features/mailbox/signatures";
 import type {
   AccountMaskedPolicy,
   AccountSpamView,
@@ -111,7 +112,9 @@ import type {
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 import { assistMockRoutes } from "./mockAssist";
+import { moveMockRoutes } from "./mockMoves";
 import { ruleRoutes } from "./mockRules";
+import { mockChangeSignatures, mockSignatureOverview } from "./mockSignatures";
 
 const now = Math.floor(Date.now() / 1000);
 const GB = 1024 ** 3;
@@ -281,6 +284,7 @@ function newAppPassword(login: string, name: string): AppPasswordCreated {
 
 interface MockDomain {
   name: string;
+  signature?: DomainDetail["signature"];
   selfServiceAliases?: boolean;
   catchAll: string | null;
   createdAt: number;
@@ -561,6 +565,7 @@ const detail = (domain: MockDomain): DomainDetail => ({
   maskedInUse: mockMasked.filter((entry) => entry.state !== "deleted" && entry.email.endsWith(`@${domain.name}`))
     .length,
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
+  signature: domain.signature ?? { mode: "off", text: "", html: "" },
 });
 
 const mockSendAs: Record<string, string[]> = {};
@@ -1201,6 +1206,8 @@ const mockGreylist: GreylistHold[] = [
     score: 2.4,
     size: 18_400,
     expiresAt: now + 2 * 86_400,
+    attempts: 3,
+    lastAt: now - 60,
   },
   {
     id: 6,
@@ -1213,6 +1220,8 @@ const mockGreylist: GreylistHold[] = [
     score: 3.8,
     size: 64_200,
     expiresAt: now + 2 * 86_400 - 5400,
+    attempts: 1,
+    lastAt: now - 5400,
   },
 ];
 
@@ -2604,6 +2613,16 @@ const pictureMockRoutes: [string, RegExp, Handler][] = [
   ...pictureRoutes(/^\/api\/account\/(picture)$/, true, true),
   ...pictureRoutes(/^\/api\/admin\/people\/([^/]+)\/picture$/, false, false),
   ...pictureRoutes(/^\/api\/admin\/domains\/([^/]+)\/groups\/([^/]+)\/picture$/, false, false),
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/signature$/,
+    (body, [domain]) => {
+      const found = domains.find((d) => d.name === domain);
+      if (!found) return problem(404, "notFound");
+      found.signature = body as NonNullable<DomainDetail["signature"]>;
+      return [200, found.signature];
+    },
+  ],
   ["GET", /^\/api\/admin\/domains\/([^/]+)\/logo$/, (_, [domain]) => [200, domainLogoView(domain!)]],
   [
     "PUT",
@@ -2913,6 +2932,7 @@ const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
   ...pictureMockRoutes,
+  ...moveMockRoutes,
   ...microsoftMockRoutes,
   ...bimiMockRoutes,
   ...assistMockRoutes,
@@ -3989,6 +4009,8 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["GET", /^\/api\/account\/vacation$/, () => [200, mockVacation]],
   ["GET", /^\/api\/account\/identities$/, () => [200, mockIdentities]],
+  ["GET", /^\/api\/account\/signatures$/, () => [200, mockSignatureOverview()]],
+  ["PUT", /^\/api\/account\/signatures$/, (body) => [200, mockChangeSignatures(body as SignatureChange)]],
   [
     "PATCH",
     /^\/api\/account\/identities\/(\d+)$/,

@@ -410,7 +410,7 @@ impl WebPush {
         // Per account that follows: its StateChange, by the account id it names.
         let mut by_follower: HashMap<i64, Map<String, Value>> = HashMap::new();
         for (account_id, (since, modseq)) in accounts {
-            let Ok(kinds) = store.changed_kinds(account_id, since).await else { continue };
+            let Ok(kinds) = store.changed_kinds(account_id, since, modseq).await else { continue };
             if kinds.is_empty() {
                 continue;
             }

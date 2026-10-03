@@ -47,6 +47,20 @@ to the same person is not delayed again. Mail that scores below
 services arrive at once. Setting `greylist_score` to `junk_score` turns
 greylisting off.
 
+While a sender is asked to come back, the message waits under *Mein Konto →
+Spamfilter → Wartende Nachrichten* (`greylist_hold`). Retries of the same
+message are one entry with a count of attempts: the same bytes, or the same
+Message-ID from the same envelope sender with the same From (large senders
+retry from another machine, which writes another `Received` line). Retries keep
+an entry no longer than twice the waiting time from its first attempt. Once the
+message arrives by itself, every waiting entry of it disappears (by Message-ID
+only when the envelope sender is the same too); a retry of a message that was
+already delivered or discarded by hand does not show up again. Whether a retry
+is dropped because someone decided about it is still a question of the exact
+bytes only — a Message-ID is a line anyone can write. Entries that were already separate
+before 0.22 are not merged by the upgrade; they go once the message is
+delivered or after their waiting time.
+
 Refusing is off unless `reject_score` is set: any filter is wrong now and then,
 and Junk loses nothing while a refusal does.
 
@@ -136,6 +150,87 @@ name, or three under shared endings like `co.uk` or `github.io`, not the full
 public suffix list. The attachment endings are the ones the UwUMail apps ask
 about before opening a file.
 
+### Phishing checks
+
+Phishing pretends to be someone the reader trusts. These checks compare the
+sender, the display name, the links and the subject against a built-in list of
+about 50 brands that phishing likes to imitate (banks, payment services, parcel
+services, shops, streaming, mail and cloud providers, authorities) and, in the
+AI spam check, against the domains of the reader's contacts. They need no
+network.
+
+A domain imitates a brand when it is one letter away from the brand's name
+(`paypa1`, `amazom`), looks like it once confusable letters are mapped
+(`rn` for `m`, `0` for `o`, Cyrillic `а` for Latin `a`), decodes from punycode
+(`xn--…`) into such a name, or carries the name in one part of a hyphenated
+label (`netfllx-billing`). The brand's own domains and its country domains
+count as the brand itself. Regional names of Sparkassen and Volksbanken
+(`sparkasse-musterstadt.de`) count only under `.de` and `.at`; the same prefix
+under any other ending (`sparkasse-login.com`) is an imitation. A regional name
+never vouches for a link whose text shows the brand's main site.
+
+| Rule | Points | When |
+| --- | --- | --- |
+| `LOOKALIKE_BRAND_FROM` | +4.0 | the sender's domain imitates a brand |
+| `BRAND_IN_FROM_DOMAIN` | +2.0 | the sender's domain carries a brand's name without being the brand (`paypal-service.example`) |
+| `LOOKALIKE_CONTACT_FROM` | +4.0 | the sender's domain imitates the domain of one of the reader's contacts (AI spam check only) |
+| `FROM_NAME_SPOOFS_ADDRESS` | +3.0 | the display name shows an address of another site |
+| `FROM_NAME_SHOWS_DOMAIN` | +2.0 | the display name shows a domain of another site (not for mailing lists) |
+| `BRAND_IN_FROM_NAME` | +2.5 | the display name is a brand's ("PayPal Service") and the mail comes from elsewhere (not for mailing lists) |
+| `REPLY_TO_OTHER_SITE` | +0.5 | answers go to a different site than the sender's (not for mailing lists) |
+| `LOOKALIKE_BRAND_LINK` | +3.0 | a link leads to a domain that imitates a brand |
+| `BRAND_LINK_TEXT` | +3.0 | a link's text shows a brand's (or a contact's) address and the link leads elsewhere, whoever sent it |
+| `PHISHING_LINK_TEXT` | +3.0 | a link's text shows another site than the target, which is neither the sender's own (a tracking link) nor a brand's; not for mail DMARC vouches for |
+| `BRAND_IN_SUBJECT` | +1.5 | the subject names a brand together with a warning ("Konto gesperrt", "verify your account") and the mail is not from the brand |
+| `CREDENTIAL_REQUEST` | +2.0 | the mail asks to sign in, confirm or update data (German or English) and its links lead somewhere else than the sender's own site, or it claims a brand it does not come from |
+
+A newsletter whose link text shows its own shop while the link goes through a
+tracking service is not counted (`TRACKED_LINK_TEXT`, 0 points), but only when
+the From domain is authenticated (DMARC passed); otherwise anybody could have
+written that From, and the link counts as `PHISHING_LINK_TEXT`. A user name
+with dots ("lia.lunare") is not taken for a domain: only names with a known
+ending are.
+
+### How well it does
+
+`crates/uwumail-smtp/tests/corpus` holds 195 made-up mails in German and
+English (108 wanted, 40 spam, 47 phishing, all with reserved domains; see its
+README). A test in CI scores them with the message rules and the stated
+authentication results, without the network, and fails when more than 1 % of
+the wanted mail would go to Junk, more than 10 % would be greylisted, or less
+than 70 % of the phishing would go to Junk.
+
+| Rules alone, without reputation | 0.21 | 0.22 |
+| --- | --- | --- |
+| Wanted mail to Junk | 0 of 108 | 0 of 108 |
+| Wanted mail greylisted | 7 | 0 |
+| Phishing to Junk | 12 of 47 | 36 of 47 |
+| Phishing at least greylisted | 18 of 47 | 43 of 47 |
+| Spam at least greylisted | 24 of 40 | 25 of 40 |
+
+On a local sample of about 500 real mails (never committed), wanted mail
+greylisted by the message rules went from 41 to 2, mostly Instagram-style
+user names that were read as link domains, with none to Junk before or after.
+Spam that only a real network reveals (blocklists, reputation) and partner
+fraud from a look-alike of a contact are left to the blocklists and the AI
+spam check.
+
+The AI spam check ([jmap-assist](jmap-assist.md#assistspamcheck)) builds on
+these checks. An ignored test, `spam_eval` in `uwumail-assist`, runs the 0.21
+and 0.22 ways against a model of your choice (`UWUMAIL_EVAL_LLM`); against
+gemma-3-4b on half the corpus:
+
+| Called right | 0.21 | 0.22 |
+| --- | --- | --- |
+| Wanted mail called legitimate | 50 of 54 | 51 of 54 |
+| Wanted mail called spam or phishing | 0 | 0 |
+| Phishing called spam or phishing | 13 of 24 | 17 of 24 |
+| Phishing called legitimate | 2 | 0 |
+| Spam called spam or phishing | 10 of 20 | 14 of 20 |
+
+The rest is "suspicious". Reasons the mail did not back were dropped in 41
+of 717.
+
 ### Unanswered questions and reputation
 
 A question that could not be answered is worth nothing in either direction:
@@ -188,7 +283,16 @@ from wanted mail the other, and tokens seen only a few times count little. The
 | `BAYES_SPAM` | up to +5.0 | the chance is 80 % or more, +5.0 at 100 % |
 | `BAYES_HAM` | down to −3.0 | the chance is 20 % or less, −3.0 at 0 % |
 
-In between it gives no points. The sender reputation and the clear cases below
+In between it gives no points. For a message DMARC vouches for that collects
+at most 1 point otherwise, it adds at most +3.5: word statistics tell one
+newsletter from another well, but not a newsletter someone wants from one they
+do not, and at full strength they put authenticated, otherwise spotless
+receipts and newsletters into Junk on real mail. Such a message is greylisted
+at most. Since DMARC costs a spammer nothing on a fresh domain, the limit only
+holds for a sender with a known good history (at most a tenth junk), or while
+the server's statistics are less than 99 % sure; it never holds for a sender
+whose mail mostly went to Junk. The reputation is read before the limit is set. A person's own knowledge goes past that limit when it is 99 % sure,
+so someone who keeps moving one newsletter to Junk gets it there. The sender reputation and the clear cases below
 look at a message's points without the learned rules (these two and the
 reputation rules), so what was learned never feeds on itself.
 
@@ -445,6 +549,11 @@ X-Spam-Score: 7.0
 X-Spam-Status: Yes, score=7.0 required=5.0 tests=DMARC_FAIL,SPF_FAIL,NO_AUTH,NO_REVERSE_DNS
 ```
 
+`X-Spam-Score` and `X-Spam-Status` a message brings along are always removed,
+also when the filter is off or did not look, and so are `Authentication-Results`
+in this server's name; that goes for mail submitted by local people as well.
+Only what this server wrote is left for mail apps and the AI spam check.
+
 With the virus scanner on, every message that is taken also says whether
 anyone looked at it:
 
@@ -556,3 +665,34 @@ Where to get such an address: an old one that only receives spam now does, and
 so does a fresh one that is published nowhere. An address that was once real
 and is still written to by people is a bad trap — it teaches the filter that
 their mail is spam.
+
+## Known limitations (security review)
+
+These are left as they are on purpose, because their impact is low:
+
+- **A provider that echoes a sender's parentheses into a comment, balanced again by the sender (0.22 R5 L-1, remainder).** An
+  unbalanced `Authentication-Results` from another provider is now ignored, a method named twice keeps its worse result and
+  a client address named twice counts as none. A sender who balances the parentheses themselves can still add a result
+  that is not already present. This only matters if the provider writes unescaped sender text into a comment, and the
+  sender can only add results that the provider's own results don't contradict.
+- **A provider's client address written only in a comment is not read (0.22 R5 I-3).** The server then runs no SPF check of
+  its own for that fetched mail and relies on the provider's results. This makes detection slightly weaker, but the
+  server never trusts more because of it.
+- **Mail stored before 0.22 counts as delivered by our SMTP (0.22 F-L3).** Migration 0074 sets
+  `smtp_delivered` to 1 for every existing mail, so a copy someone put in by IMAP APPEND or import
+  before the upgrade, with a forged header block of ours on top, is still read by the assistant.
+  Mail stored from 0.22 on is marked by the path it came in by.
+- **Mail between two local people counts as unchecked (info).** It goes through submission, not
+  SMTP delivery, so the assistant sees no authentication for it and may show a phishing hint
+  where none is needed. This fails safe.
+- **Fetched mail counts as having no authentication results (0.22 L2).** A forged colleague that
+  arrives through a fetched mailbox can still get the reduced history weight for mail without
+  results, at most -1.5.
+- **Mail from a colleague on the same server counts as having no authentication results (0.22 L3).**
+  A real internal payment request can therefore be flagged as suspicious. This fails safe.
+- **The reason check and the facts in the prompt use the unweighted history (0.22 L4).** A "known
+  sender" reason can survive on a forged mail, but the verdict cannot become legitimate from it.
+- **`EARLIER_IN_JUNK` is not weighted by authentication (0.22 L6).**
+- **Domain signatures check `ifInState` before writing, not in the same transaction (0.22 webmail WF-3).** Two saves in the
+  same instant can still overwrite each other. The signatures belong to the person, and only their own sessions write them.
+

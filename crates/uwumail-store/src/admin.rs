@@ -418,6 +418,8 @@ impl Store {
             // in the trash, and do not silently resume it on restore: sending needs a fresh proven
             // fetch, fetching needs switching back on by hand (security-audit-0.5.2 S-13).
             tx.execute("UPDATE fetch_accounts SET enabled = 0, send_enabled = 0 WHERE account_id = ?1", [account.id])?;
+            // An admin's move into this mailbox stops and forgets the old password.
+            crate::moves::wipe_moves_of_account(tx, account.id)?;
             account.deleted_at = Some(at);
             Ok(account)
         })

@@ -11,7 +11,7 @@ use uwumail_assist::{
     ProviderInput, ProviderView, SettingsPatch, SettingsView, SpamArgs, StreamEvent, SuggestArgs, SummarizeArgs,
     TodayUsage, Usage,
 };
-use uwumail_labels::{Detector, Rules};
+use uwumail_labels::{Base, Detector, OverlapLabel, Rules, overlaps};
 use uwumail_store::{Account, AssistLabel, AssistLabelWrite, LabelCounts, StoreError};
 
 use super::{Ctx, SetResponse, get_ids, if_in_state};
@@ -224,6 +224,9 @@ fn label_json(label: &AssistLabel, counts: LabelCounts) -> Value {
         "detector": label.detector,
         "learnSenders": label.learn_senders,
         "classifier": label.classifier,
+        "base": label.base,
+        "auto": label.auto,
+        "previousDescription": label.previous_description,
         "totalEmails": counts.total,
         "unreadEmails": counts.unread,
         "examples": counts.examples,
@@ -704,7 +707,10 @@ pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     out.insert("verdict".into(), json!(result.verdict));
     out.insert("confidence".into(), json!(result.confidence));
     out.insert("reasons".into(), json!(result.reasons));
+    out.insert("reasonDetails".into(), json!(result.reason_details));
+    out.insert("droppedReasons".into(), json!(result.dropped_reasons));
     out.insert("modelVerdict".into(), json!(result.model_verdict));
+    out.insert("facts".into(), json!(result.assessment));
     out.insert("signals".into(), json!(result.signals));
     Ok(with_source(out, &result.effective, &result.usage))
 }
@@ -813,6 +819,7 @@ async fn label_state(ctx: &Ctx<'_>) -> MethodResult<String> {
 
 pub async fn label_get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     assist(ctx)?;
+    ctx.jmap.store.ensure_base_labels(ctx.account.id, ctx.jmap.smtp.tone().language.code()).await?;
     let state = label_state(ctx).await?;
     let labels = ctx.jmap.store.assist_labels(ctx.account.id).await?;
     let counts = ctx.jmap.store.label_counts(ctx.account.id).await?;
@@ -828,8 +835,12 @@ fn boolean(value: &Value, property: &str) -> Result<bool, SetError> {
 }
 
 /// A label as written, from `patch` on top of `before` (with its `counts`, which may be sent back
-/// unchanged).
-fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> Result<AssistLabelWrite, SetError> {
+/// unchanged), and whether its earlier description is to be forgotten (`previousDescription: null`).
+fn label_fields(
+    patch: &Value,
+    before: Option<(&AssistLabel, LabelCounts)>,
+) -> Result<(AssistLabelWrite, bool), SetError> {
+    let mut forget_previous = false;
     let object = patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "a label is an object"))?;
     let mut name = before.map(|(b, _)| b.name.clone());
     let mut write = match before {
@@ -845,6 +856,15 @@ fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> R
                         .ok_or_else(|| SetError::invalid_properties(&["name"], "name is a string"))?
                         .to_owned(),
                 )
+            }
+            // A base label's definition is fixed: it may only be sent back as it is.
+            "description" if before.is_some_and(|(b, _)| b.base.is_some()) => {
+                if value.as_str() != before.map(|(b, _)| b.description.as_str()) {
+                    return Err(SetError::invalid_properties(
+                        &["description"],
+                        "the description of a base label can't be changed",
+                    ));
+                }
             }
             "description" => {
                 write.description = match value {
@@ -872,13 +892,20 @@ fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> R
                     _ => {
                         return Err(SetError::invalid_properties(
                             &["detector"],
-                            "detector is invoice, appointment, newsletter, shipping or null",
+                            "detector is invoice, appointment, newsletter, shipping, account, personal, work, \
+advertising or null",
                         ));
                     }
                 }
             }
             "learnSenders" => write.learn_senders = boolean(value, "learnSenders")?,
             "classifier" => write.classifier = boolean(value, "classifier")?,
+            "auto" => write.auto = boolean(value, "auto")?,
+            "base" if before.is_some_and(|(b, _)| value.as_str() == b.base.as_deref()) => {}
+            "previousDescription"
+                if before.is_some_and(|(b, _)| value.as_str() == b.previous_description.as_deref()) => {}
+            // It can only be forgotten, so it no longer goes to the model as a hint (WF-1).
+            "previousDescription" if before.is_some() && value.is_null() => forget_previous = true,
             "id" if before.is_some() => {}
             "keyword" if before.is_some_and(|(b, _)| value.as_str() == Some(b.keyword.as_str())) => {}
             "totalEmails" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.total)) => {}
@@ -890,7 +917,77 @@ fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> R
         }
     }
     write.name = name.ok_or_else(|| SetError::invalid_properties(&["name"], "a label needs a name"))?;
-    Ok(write)
+    Ok((write, forget_previous))
+}
+
+/// A base label made again after it was deleted: `{"base": "invoice"}`, perhaps with `auto`. When
+/// it is there, it is answered.
+async fn create_base_label(ctx: &Ctx<'_>, base: &Value, object: &Value) -> Result<AssistLabel, SetError> {
+    let base = base.as_str().and_then(Base::parse).ok_or_else(|| {
+        SetError::invalid_properties(
+            &["base"],
+            "base is invoice, shipping, appointment, newsletter, account, personal, work or advertising",
+        )
+    })?;
+    let auto = match object.get("auto") {
+        None => None,
+        Some(value) => Some(boolean(value, "auto")?),
+    };
+    if let Some(other) = object.as_object().and_then(|o| o.keys().find(|k| !matches!(k.as_str(), "base" | "auto"))) {
+        return Err(SetError::invalid_properties(&[other], format!("{other} can't be set with base")));
+    }
+    let store = &ctx.jmap.store;
+    let language = ctx.jmap.smtp.tone().language.code();
+    let label = store.create_base_label(ctx.account.id, base, language).await.map_err(label_store_error)?;
+    match auto {
+        Some(auto) if auto != label.auto => {
+            let write = AssistLabelWrite { auto, ..AssistLabelWrite::of(&label) };
+            store.update_assist_label_with(ctx.account.id, label.id, write).await.map_err(label_store_error)
+        }
+        _ => Ok(label),
+    }
+}
+
+/// Longest name and description `AssistLabel/checkOverlap` reads.
+const OVERLAP_MAX_NAME_CHARS: usize = 100;
+const OVERLAP_MAX_DESCRIPTION_CHARS: usize = 2000;
+
+/// `AssistLabel/checkOverlap`: which of the person's labels a label called `name` with
+/// `description` would overlap with (docs/jmap-assist.md, "Overlapping labels"). `id` is the label
+/// being changed, left out of the comparison. Changes nothing.
+pub async fn label_check_overlap(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    assist(ctx)?;
+    let name = arg_str(args, "name")?.ok_or_else(|| MethodError::invalid_arguments("name is required"))?;
+    let description = arg_str(args, "description")?.unwrap_or_default();
+    if name.chars().count() > OVERLAP_MAX_NAME_CHARS || description.chars().count() > OVERLAP_MAX_DESCRIPTION_CHARS {
+        return Err(MethodError::invalid_arguments("name or description is too long"));
+    }
+    let id = arg_id(ctx, args, "id", 'g')?;
+    let labels = ctx.jmap.store.assist_labels(ctx.account.id).await?;
+    let others: Vec<OverlapLabel<'_>> = labels
+        .iter()
+        .filter(|label| Some(label.id) != id)
+        .map(|label| OverlapLabel {
+            id: label.id,
+            name: &label.name,
+            description: &label.description,
+            base: label.base.as_deref().and_then(Base::parse),
+        })
+        .collect();
+    let found: Vec<Value> = overlaps(name, description, &others)
+        .into_iter()
+        .filter_map(|overlap| {
+            let label = labels.iter().find(|label| label.id == overlap.id)?;
+            Some(json!({
+                "id": label_id(label.id),
+                "name": label.name,
+                "base": label.base,
+                "kind": overlap.kind,
+                "words": overlap.words,
+            }))
+        })
+        .collect();
+    Ok(json!({ "accountId": ctx.account_id(), "overlaps": found }))
 }
 
 fn label_store_error(err: StoreError) -> SetError {
@@ -911,9 +1008,14 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let mut response = SetResponse::default();
     if let Some(create) = args.get("create").and_then(Value::as_object) {
         for (creation_id, object) in create {
-            let result = match label_fields(object, None) {
-                Ok(write) => store.create_assist_label_with(account.id, write).await.map_err(label_store_error),
-                Err(err) => Err(err),
+            let result = match object.get("base") {
+                Some(base) => create_base_label(ctx, base, object).await,
+                None => match label_fields(object, None) {
+                    Ok((write, _)) => {
+                        store.create_assist_label_with(account.id, write).await.map_err(label_store_error)
+                    }
+                    Err(err) => Err(err),
+                },
             };
             match result {
                 Ok(label) => {
@@ -937,10 +1039,15 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 Some(before) => {
                     let count = counts.get(&before.id).copied().unwrap_or_default();
                     match label_fields(patch, Some((before, count))) {
-                        Ok(write) => store
-                            .update_assist_label_with(account.id, before.id, write)
-                            .await
-                            .map_err(label_store_error),
+                        Ok((write, forget_previous)) => {
+                            match store.update_assist_label_with(account.id, before.id, write).await {
+                                Ok(_) if forget_previous => store
+                                    .forget_label_previous_description(account.id, before.id)
+                                    .await
+                                    .map_err(label_store_error),
+                                other => other.map_err(label_store_error),
+                            }
+                        }
                         Err(err) => Err(err),
                     }
                 }
@@ -1048,6 +1155,9 @@ pub async fn label_apply(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
     let (emails, mut not_found) =
         email_ids(ctx, args, MAX_APPLY)?.ok_or_else(|| MethodError::invalid_arguments("emailIds is required"))?;
+    // One call at a time per person: each reads up to MAX_APPLY mails and compares them with all
+    // their examples (security review 0.22 LABELS22-L4).
+    let _slot = assist.begin_label_apply(ctx.account.id).map_err(method_error)?;
     let mut labeled = Map::new();
     for email in emails {
         match assist.label_email(&ctx.account, email).await {

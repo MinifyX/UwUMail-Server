@@ -73,6 +73,15 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0064_assist_calibration.sql"),
     include_str!("migrations/0065_labels.sql"),
     include_str!("migrations/0066_label_limits.sql"),
+    include_str!("migrations/0067_m_moves.sql"),
+    include_str!("migrations/0068_signatures_domains.sql"),
+    include_str!("migrations/0069_spam_greylist_retries.sql"),
+    include_str!("migrations/0070_l_labels_base.sql"),
+    include_str!("migrations/0071_base_label_definitions.sql"),
+    include_str!("migrations/0072_l_contact_emails.sql"),
+    include_str!("migrations/0073_l_label_previous_description.sql"),
+    include_str!("migrations/0074_l_smtp_delivered.sql"),
+    include_str!("migrations/0075_m_import_interrupted.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -93,6 +102,7 @@ impl Database {
         )?;
         migrate(&mut writer)?;
         crate::contact_photos::backfill(&mut writer)?;
+        crate::contact_photos::backfill_emails(&mut writer)?;
         Ok(Database { path: path.to_path_buf(), writer: Mutex::new(writer), readers: Mutex::new(Vec::new()) })
     }
 
@@ -439,6 +449,18 @@ mod tests {
             .unwrap();
         assert_eq!(indexed, vec![("ami@example.org".to_owned(), 1)]);
         assert!(get_setting(&conn, "contact_photos.backfill").unwrap().is_none(), "only once");
+        // Every card's addresses, for knowing a sender (0072), photo or not.
+        crate::contact_photos::backfill_emails(&mut conn).unwrap();
+        let mut emails: Vec<String> = conn
+            .prepare("SELECT email FROM contact_emails WHERE account_id = 1")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        emails.sort();
+        assert_eq!(emails, ["ami@example.org", "nyu@example.org"]);
+        assert!(get_setting(&conn, "contact_emails.backfill").unwrap().is_none(), "only once");
     }
 
     #[test]
@@ -462,5 +484,55 @@ mod tests {
             })
             .unwrap();
         assert_eq!(row, (3, 0, 0));
+    }
+    #[test]
+    fn identity_signatures_shared_by_a_whole_domain_become_the_domains() {
+        let position = MIGRATIONS.iter().position(|sql| sql.contains("CREATE TABLE user_signatures")).unwrap();
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..position].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        // Mini: both addresses of example.org with the same signature, example.net differs from
+        // nothing (one address). Nyu: two addresses with different ones, one without.
+        conn.execute_batch(
+            "INSERT INTO accounts (id, login, created_at) VALUES (1, 'mini@example.org', 0), (2, 'nyu@example.org', 0);
+             INSERT INTO identities (account_id, email, text_signature, html_signature, created_modseq, updated_modseq) VALUES
+                 (1, 'mini@example.org', 'Mini', '<p>Mini</p>', 1, 1),
+                 (1, 'info@Example.org', 'Mini', '<p>Mini</p>', 1, 1),
+                 (1, 'mini@example.net', 'Net', '', 1, 1),
+                 (2, 'nyu@example.org', 'Nyu', '', 1, 1),
+                 (2, 'hi@example.org', 'Hi', '', 1, 1),
+                 (2, 'nyu@example.com', '', '', 1, 1);",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let domains: Vec<(i64, String, String)> = conn
+            .prepare("SELECT account_id, domain, text_signature FROM user_signatures ORDER BY account_id, domain")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            domains,
+            vec![(1, "example.net".to_owned(), "Net".to_owned()), (1, "example.org".to_owned(), "Mini".to_owned())]
+        );
+        let own: Vec<(String, bool)> = conn
+            .prepare("SELECT email, signature_override FROM identities ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let expected = [
+            ("mini@example.org", false),
+            ("info@Example.org", false),
+            ("mini@example.net", false),
+            ("nyu@example.org", true),
+            ("hi@example.org", true),
+            ("nyu@example.com", false),
+        ];
+        assert_eq!(own, expected.map(|(email, on)| (email.to_owned(), on)).to_vec());
     }
 }

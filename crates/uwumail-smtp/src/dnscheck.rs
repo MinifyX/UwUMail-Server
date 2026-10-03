@@ -1372,6 +1372,14 @@ impl DnsChecker {
             .find_map(|record| record.split_whitespace().find_map(|part| part.strip_prefix("path=")).map(str::to_owned))
     }
 
+    /// Only the MX check of a domain, as the full check judges it: for a move, which waits for the
+    /// MX records to point here before it is finished.
+    pub async fn check_mx(&self, domain: &str, hostname: &str, upstream: bool) -> RecordCheck {
+        let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+        let (lookups, _) = self.lookups(&domain).await;
+        evaluate_mx(&domain, hostname, upstream, lookups.mx(&domain).await)
+    }
+
     /// The addresses a host name points to, as the rest of the internet sees them.
     pub async fn host_addresses(&self, host: &str) -> Vec<IpAddr> {
         let (lookups, _) = self.lookups(host).await;

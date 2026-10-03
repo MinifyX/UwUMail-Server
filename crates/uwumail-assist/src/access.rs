@@ -55,6 +55,9 @@ pub struct Capability {
     pub max_label_conditions: usize,
     pub max_instruction_chars: usize,
     pub max_text_chars: usize,
+    /// The base labels this server knows (`invoice`, …): a client offers to make deleted ones
+    /// again, even when the person deleted them all.
+    pub base_labels: Vec<&'static str>,
     /// The assistant may be used for mail of the person's other accounts (docs/jmap-assist.md,
     /// "Foreign mail").
     pub foreign_mail: bool,
@@ -119,6 +122,9 @@ pub struct AdminProviderView {
     pub show_cost_to_users: bool,
     /// What the default model costs, when known.
     pub price: Option<Price>,
+    /// What the default model's name says about its size: below 7 billion parameters it is
+    /// `small`, and labels and spam are judged poorly (docs/llm.md, "Choosing a model").
+    pub model_hint: Option<kinds::ModelHint>,
     pub created_at: i64,
 }
 
@@ -335,6 +341,9 @@ fn admin_view(record: &AssistProviderRecord, prices: &Prices) -> AdminProviderVi
             let model = record.model.clone().or_else(|| info.model.map(str::to_owned))?;
             prices.price(record, info, &model)
         }),
+        model_hint: kinds::kind(&record.kind)
+            .filter(|info| !info.embeddings)
+            .and_then(|info| kinds::model_hint(record.model.as_deref().or(info.model)?)),
         created_at: record.created_at,
     }
 }
@@ -470,6 +479,13 @@ fn build_write(
             "a ChatGPT subscription belongs to one person and can't be shared with everyone",
         ));
     }
+    if !server && info.embeddings {
+        return Err(AssistError::invalid(
+            "badProviderKind",
+            "kind",
+            "an embeddings provider is set up by the admin for everyone",
+        ));
+    }
     let name = input.name.clone().or_else(|| before.map(|b| b.name.clone())).unwrap_or_else(|| info.name.to_owned());
     let name = name.trim().to_owned();
     if name.is_empty() || name.chars().count() > NAME_MAX_CHARS || name.chars().any(char::is_control) {
@@ -513,7 +529,12 @@ fn build_write(
     if info.key == Key::Required && !has_key {
         return Err(AssistError::invalid("badProviderKey", "apiKey", "this kind of provider needs a key"));
     }
+    if info.embeddings && model.is_none() && info.model.is_none() {
+        return Err(AssistError::invalid("badModel", "model", "name the embeddings model"));
+    }
     let features = match &input.features {
+        // An embeddings provider serves no feature by itself, only similar mails for labels.
+        _ if info.embeddings => Vec::new(),
         Some(features) => check_features(features)?,
         None => before
             .map(|b| b.features.clone())
@@ -629,6 +650,9 @@ impl Assist {
                 continue;
             }
             let Some(info) = kinds::kind(&record.kind) else { continue };
+            if info.embeddings {
+                continue;
+            }
             let features = record
                 .features
                 .iter()
@@ -639,7 +663,7 @@ impl Assist {
             out.push(Available { record, info, server: true, features, usable });
         }
         for record in store.assist_providers(Some(account.id)).await? {
-            let Some(info) = kinds::kind(&record.kind) else { continue };
+            let Some(info) = kinds::kind(&record.kind).filter(|info| !info.embeddings) else { continue };
             let features = if policy.allow_personal {
                 let foreign = policy.foreign_mail.then_some(ASSIST_FOREIGN_MAIL);
                 FEATURES.iter().filter(|f| policy.features.get(f)).copied().chain(foreign).map(str::to_owned).collect()
@@ -708,6 +732,7 @@ impl Assist {
             max_label_conditions: uwumail_labels::MAX_CONDITIONS,
             max_instruction_chars: MAX_INSTRUCTION_CHARS,
             max_text_chars: MAX_TEXT_CHARS,
+            base_labels: uwumail_labels::Base::ALL.iter().map(|base| base.as_str()).collect(),
             foreign_mail,
         })
     }
@@ -1270,6 +1295,64 @@ impl Assist {
         Ok((completion, provider.effective(model)))
     }
 
+    /// The server's embeddings provider `account` may use (the first enabled one allowed for them),
+    /// with its model; `None` without one (docs/labels.md, "Similar mails").
+    pub(crate) async fn embedder(&self, account: &Account) -> Result<Option<Embedder>> {
+        for record in self.store().assist_providers(None).await? {
+            let Some(info) = kinds::kind(&record.kind).filter(|info| info.embeddings) else { continue };
+            if !record.enabled || !allowed_for(&record, account) || !usable(&record, info) {
+                continue;
+            }
+            let Some(model) = record.model.clone().or_else(|| info.model.map(str::to_owned)) else { continue };
+            return Ok(Some(Embedder {
+                model,
+                provider: Available { record, info, server: true, features: Vec::new(), usable: true },
+            }));
+        }
+        Ok(None)
+    }
+
+    /// The embeddings of `texts` (at most [`llm::MAX_EMBED_TEXTS`]) for `account`, counted as one
+    /// request of `feature` against the provider's limits.
+    pub(crate) async fn embed(
+        &self,
+        account: &Account,
+        embedder: &Embedder,
+        feature: &str,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
+        let store = self.store();
+        let record = &embedder.provider.record;
+        let _running = self.begin(account.id)?;
+        let day = match store
+            .reserve_assist_usage(account.id, record.id, feature, record.requests_per_day, record.tokens_per_day)
+            .await
+        {
+            Ok(day) => day,
+            Err(StoreError::Rule { code: "overQuota", .. }) => {
+                return Err(AssistError::OverQuota(format!("the embeddings of {} are used up today", record.name)));
+            }
+            Err(err) => return Err(err.into()),
+        };
+        let policy = store.assist_policy().await?;
+        let target = self.target(&embedder.provider, &policy, embedder.model.clone()).await?;
+        let result = llm::embed(&target, texts).await;
+        let tokens = match &result {
+            Ok((_, tokens)) if *tokens > 0 => *tokens,
+            _ => llm::estimate(texts.iter().map(String::len).sum()),
+        };
+        let price = self.price_of(record, embedder.provider.info, &embedder.model).await;
+        let cost = price.map(|price| {
+            price.cost_of(&Metered { input: tokens as f64, prompt: tokens, ..Metered::default() }).total()
+        });
+        let count = TokenCount { input: tokens, calls: 1, cost_usd: cost, ..TokenCount::default() };
+        if let Err(err) = store.add_assist_tokens(account.id, record.id, day, feature, count).await {
+            tracing::warn!(%err, "counting an embeddings request's tokens failed");
+        }
+        let (vectors, _) = result.map_err(provider_failed)?;
+        Ok(vectors)
+    }
+
     async fn target(&self, provider: &Available, policy: &AssistPolicy, model: String) -> Result<Target> {
         let record = &provider.record;
         let info = provider.info;
@@ -1345,6 +1428,13 @@ impl Ticket<'_> {
     pub(crate) fn expecting(self, expected_output: i64) -> Self {
         Ticket { expected_output, ..self }
     }
+}
+
+/// The server's embeddings provider and model, from [`Assist::embedder`].
+#[derive(Clone)]
+pub(crate) struct Embedder {
+    pub provider: Available,
+    pub model: String,
 }
 
 /// The tokens of one counted request, until they are settled. Dropped unsettled (the caller went
@@ -1497,6 +1587,28 @@ mod tests {
         assert_eq!(code("ftp://api.example.com", Reach::Any), "badProviderUrl");
         assert_eq!(code("https://api.example.com/v1?x=1", Reach::Any), "badProviderUrl");
         assert_eq!(check_base_url("https://api.example.com/v1/", Reach::Public).unwrap(), "https://api.example.com/v1");
+    }
+
+    #[test]
+    fn embeddings_providers_are_the_admins_and_serve_no_feature() {
+        let input = |kind: &str, model: Option<&str>| ProviderInput {
+            kind: Some(kind.into()),
+            base_url: Some(Some("http://192.0.2.10:8081/v1".into())),
+            model: model.map(|m| Some(m.to_owned())),
+            features: Some(vec!["compose".into()]),
+            ..ProviderInput::default()
+        };
+        let code = |result: Result<(AssistProviderWrite, SecretChange)>| match result {
+            Err(AssistError::Invalid { code, .. }) => code,
+            _ => "ok",
+        };
+        assert_eq!(
+            code(build_write(None, &input("embeddingsCompatible", Some("nomic")), false, Reach::Any)),
+            "badProviderKind"
+        );
+        assert_eq!(code(build_write(None, &input("embeddingsCompatible", None), true, Reach::Any)), "badModel");
+        let (write, _) = build_write(None, &input("ollamaEmbeddings", None), true, Reach::Any).unwrap();
+        assert!(write.features.is_empty());
     }
 
     #[test]
