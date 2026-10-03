@@ -20,6 +20,9 @@ pub const UPLOAD_BUDGET_BYTES: i64 = 1024 * 1024 * 1024;
 pub const IDENTITY_SIGNATURE_MAX_BYTES: usize = 256 * 1024;
 /// The longest name of a sending identity, in characters.
 const IDENTITY_NAME_MAX_CHARS: usize = 200;
+/// Sending identities one account may create, so a change to every identity's signature stays a
+/// bounded amount of work (security review 0.22 SIG-2).
+pub const MAX_IDENTITIES_PER_ACCOUNT: i64 = 2000;
 
 /// Vacation replies go to each sender at most once in this period.
 const VACATION_INTERVAL_SECS: i64 = 7 * 24 * 3600;
@@ -280,6 +283,14 @@ impl Store {
             .write(move |tx| {
                 if !owns(tx, account_id, &email)? {
                     return Err(StoreError::Rule { code: "forbiddenFrom", message: format!("{email} is not an address of this account") });
+                }
+                let count: i64 =
+                    tx.query_row("SELECT count(*) FROM identities WHERE account_id = ?1", [account_id], |row| row.get(0))?;
+                if count >= MAX_IDENTITIES_PER_ACCOUNT {
+                    return Err(StoreError::Rule {
+                        code: "overQuota",
+                        message: format!("an account may have at most {MAX_IDENTITIES_PER_ACCOUNT} identities"),
+                    });
                 }
                 let modseq = next_modseq(tx, account_id)?;
                 tx.execute(

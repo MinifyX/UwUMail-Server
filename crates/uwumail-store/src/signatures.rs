@@ -322,17 +322,22 @@ fn company_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, Compan
     ))
 }
 
-/// Records an `Identity` change for every identity of the account on `domain` (all of them for
-/// [`SIGNATURE_ALL_DOMAINS`]), so mail programs fetch their new effective signature.
-fn touch_identities(conn: &Connection, account_id: i64, modseq: i64, domain: Option<&str>) -> Result<()> {
-    let ids: Vec<i64> = conn
-        .prepare(
-            "SELECT id FROM identities WHERE account_id = ?1
-               AND (?2 IS NULL OR lower(substr(email, instr(email, '@') + 1)) = ?2)",
-        )?
-        .query_map(params![account_id, domain], |row| row.get(0))?
+/// Records an `Identity` change, once each, for every identity of the account on one of `domains`
+/// (all of them when it holds [`SIGNATURE_ALL_DOMAINS`]), so mail programs fetch their new
+/// effective signature. Identities in `skip` are recorded by the caller.
+fn touch_identities(conn: &Connection, account_id: i64, modseq: i64, domains: &[&str], skip: &[i64]) -> Result<()> {
+    if domains.is_empty() {
+        return Ok(());
+    }
+    let all = domains.contains(&SIGNATURE_ALL_DOMAINS);
+    let identities: Vec<(i64, String)> = conn
+        .prepare("SELECT id, lower(substr(email, instr(email, '@') + 1)) FROM identities WHERE account_id = ?1")?
+        .query_map(params![account_id], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?;
-    for id in ids {
+    for (id, domain) in identities {
+        if skip.contains(&id) || !(all || domains.contains(&domain.as_str())) {
+            continue;
+        }
         conn.execute("UPDATE identities SET updated_modseq = ?1 WHERE id = ?2", params![modseq, id])?;
         record_change(conn, account_id, modseq, "Identity", id, "updated")?;
     }
@@ -410,15 +415,20 @@ impl Store {
             } else {
                 normalize_domain(&domain)?
             };
+            // `*`, ` *` and `Example.ORG`, `example.org` name the same entry: the last one counts,
+            // and each is written once (security review 0.22 SIG-2).
+            domains.retain(|(known, _): &(String, Option<SignatureText>)| *known != key);
             domains.push((key, signature));
         }
-        for (_, signature) in changes.identities.iter() {
-            if let Some(signature) = signature {
+        let mut identities: Vec<(i64, Option<SignatureText>)> = Vec::with_capacity(changes.identities.len());
+        for (id, signature) in changes.identities {
+            if let Some(signature) = &signature {
                 signature.check_size()?;
             }
+            identities.retain(|(known, _)| *known != id);
+            identities.push((id, signature));
         }
         self.identities(account_id).await?;
-        let identities = changes.identities;
         let modseq = self
             .write(move |tx| {
                 let own_domains: Vec<String> = tx
@@ -457,9 +467,11 @@ impl Store {
                             params![account_id, domain],
                         )?,
                     };
-                    let scope = (domain != SIGNATURE_ALL_DOMAINS).then_some(domain.as_str());
-                    touch_identities(tx, account_id, modseq, scope)?;
                 }
+                // Every identity the change reaches is recorded once, however many entries name it.
+                let scopes: Vec<&str> = domains.iter().map(|(domain, _)| domain.as_str()).collect();
+                let explicit: Vec<i64> = identities.iter().map(|(id, _)| *id).collect();
+                touch_identities(tx, account_id, modseq, &scopes, &explicit)?;
                 for (id, signature) in &identities {
                     let (text, html, on) = match signature {
                         Some(signature) => (signature.text.as_str(), signature.html.as_str(), true),
@@ -533,7 +545,7 @@ impl Store {
                 let mut changed = Vec::with_capacity(accounts.len());
                 for account_id in accounts {
                     let modseq = next_modseq(tx, account_id)?;
-                    touch_identities(tx, account_id, modseq, Some(&domain))?;
+                    touch_identities(tx, account_id, modseq, &[domain.as_str()], &[])?;
                     changed.push((account_id, modseq));
                 }
                 Ok(changed)
@@ -761,5 +773,72 @@ mod tests {
         assert_eq!(after.signature_source, SignatureSource::Identity);
         assert_eq!(after.text_signature, "Own");
         assert_eq!(after.signature_override, Some(SignatureText::new("Own", "")));
+    }
+
+    #[tokio::test]
+    async fn duplicate_entries_count_once_and_identities_are_touched_once() {
+        let (store, _dir, mini) = setup().await;
+        // `*`, ` *`, `*\t` and differently cased domains name the same entry: the last one wins.
+        let text = |t: &str| Some(SignatureText::new(t, ""));
+        let mut domains: Vec<(String, Option<SignatureText>)> =
+            (0..200).flat_map(|_| [("*".to_owned(), text("a")), (" *".to_owned(), text("b"))]).collect();
+        domains.push(("*\t".into(), text("Alle")));
+        domains.push(("Example.ORG".into(), text("x")));
+        domains.push(("example.org ".into(), text("Org")));
+        let info = store.identities(mini).await.unwrap().into_iter().find(|i| i.email == "info@example.org").unwrap();
+        let identities = vec![(info.id, text("first")), (info.id, None)];
+        let before = store.changes(mini, "Identity", 0, 1000).await.unwrap().new_state;
+        store.set_signatures(mini, SignatureChanges { domains, identities }).await.unwrap();
+        let overview = store.signature_overview(mini).await.unwrap();
+        assert_eq!(overview.all_domains, Some(SignatureText::new("Alle", "")));
+        assert_eq!(by_email(&overview, "mini@example.org").effective.text, "Org");
+        assert_eq!(by_email(&overview, "info@example.org").source, SignatureSource::Domain, "the last entry wins");
+        let changes = store.changes(mini, "Identity", before, 1000).await.unwrap();
+        assert_eq!(changes.updated.len(), 3, "every identity is reported");
+
+        // However many entries name an identity, it is written once (security review 0.22 SIG-2).
+        let deltas = store
+            .write(move |tx| {
+                let mut deltas = Vec::new();
+                for (round, scopes) in [
+                    &["*"][..],
+                    &["*", "example.org", "example.net", "*"],
+                    &["example.org"],
+                    &["example.org", "example.org"],
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let start = tx.total_changes();
+                    touch_identities(tx, mini, 1_000_000 + round as i64, scopes, &[])?;
+                    deltas.push(tx.total_changes() - start);
+                }
+                Ok(deltas)
+            })
+            .await
+            .unwrap();
+        assert_eq!(deltas[0], deltas[1]);
+        assert_eq!(deltas[2], deltas[3]);
+        assert!(deltas[2] < deltas[0] && deltas[2] > 0);
+    }
+
+    #[tokio::test]
+    async fn an_account_has_a_bounded_number_of_identities() {
+        let (store, _dir, mini) = setup().await;
+        store
+            .write(move |tx| {
+                for i in 0..crate::extras::MAX_IDENTITIES_PER_ACCOUNT {
+                    tx.execute(
+                        "INSERT INTO identities (account_id, name, email, created_modseq, updated_modseq)
+                         VALUES (?1, 'x', ?2, 1, 1)",
+                        params![mini, format!("mini+{i}@example.org")],
+                    )?;
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let refused = store.create_identity(mini, "Noch eine", "mini+more@example.org").await;
+        assert!(matches!(refused, Err(StoreError::Rule { code: "overQuota", .. })), "{refused:?}");
     }
 }
