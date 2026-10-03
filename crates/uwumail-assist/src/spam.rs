@@ -182,6 +182,8 @@ fn add(evidence: &mut Vec<Evidence>, code: &str, weight: f64, detail: Option<Str
         return;
     }
     let tone = if weight > 0.0 { Tone::Bad } else { Tone::Good };
+    // A detail can carry mail text; no bidi control of it reaches the card (webmail review WF-2).
+    let detail = detail.map(|detail| uwumail_smtp::without_bidi(&detail));
     evidence.push(Evidence { code: code.to_owned(), tone, weight: (weight * 10.0).round() / 10.0, detail, phishing });
 }
 
@@ -462,7 +464,14 @@ pub fn verify(
             dropped += 1;
             continue;
         }
-        kept.push(Reason { text, quote, fact: grounded });
+        // The model's words and the quote can carry mail text: no bidi control of it reaches the
+        // card (security review 0.22 webmail WF-2).
+        let text = uwumail_smtp::without_bidi(&text);
+        if kept.iter().any(|known| known.text == text) {
+            dropped += 1;
+            continue;
+        }
+        kept.push(Reason { text, quote: quote.map(|quote| uwumail_smtp::without_bidi(&quote)), fact: grounded });
     }
     (kept, dropped)
 }
@@ -763,7 +772,14 @@ const BETWEEN: &[&str] = &[
 
 /// What ends a clause: a negation before it belongs to another statement ("No red flags: verified
 /// sender", "No doubt, a trustworthy sender").
-const CLAUSE_ENDS: &[char] = &['.', ',', ':', ';', '!', '?', '—', '–', '(', ')', '"', '\n'];
+const CLAUSE_ENDS: &[char] = &[
+    '.', ',', ':', ';', '!', '?', '—', '–', '(', ')', '"', '\n', '…', '/', '|', '*', '«', '»', '“', '”', '„', '。',
+    '，', '：', '；', '！', '？',
+];
+
+/// Negations that a negation before them turns back into praise: "no less trustworthy", "not
+/// unlikely to be genuine".
+const WEAK_NEGATIONS: &[&str] = &["less", "unlikely", "unwahrscheinlich"];
 
 /// Whether `lower` uses one of `phrases` as a claim: as a word of its own (not inside "unverified"
 /// or "untrustworthy") and not turned around by a negation of its own clause (security review 0.22
@@ -785,11 +801,20 @@ fn claims(lower: &str, phrases: &[&str]) -> bool {
             let clause = clause.rsplit(" - ").next().unwrap_or_default();
             let mut words =
                 clause.split(|c: char| !(c.is_alphanumeric() || c == '\'')).filter(|word| !word.is_empty()).rev();
-            let is_negated = words
+            let negation = words
                 .by_ref()
                 .take(4)
                 .find(|word| !BETWEEN.contains(word))
-                .is_some_and(|word| NEGATIONS.contains(&word.trim_matches('\'')));
+                .map(|word| word.trim_matches('\''))
+                .filter(|word| NEGATIONS.contains(word));
+            let is_negated = match negation {
+                None => false,
+                // A double negative is praise again (R5 I-1).
+                Some(weak) if WEAK_NEGATIONS.contains(&weak) => {
+                    !words.next().is_some_and(|word| NEGATIONS.contains(&word.trim_matches('\'')))
+                }
+                Some(_) => true,
+            };
             !is_negated
         })
     })
@@ -1292,6 +1317,7 @@ mod tests {
             "This wouldn't be a genuine sender.",
             "These aren't authenticated sender details.",
             "The sender is unlikely to be trustworthy.",
+            "The sender seems less trustworthy than it claims.",
             "Der Absender ist kein wirklich echter Absender.",
             "The sender is not a verified sender, the domain is new.",
         ] {
@@ -1319,6 +1345,12 @@ mod tests {
             "Ohne Zweifel ein echter Absender.",
             "Nothing wrong. Trustworthy.",
             "Is it a scam? No! A verified sender.",
+            "Phishing? No\u{2026} a verified sender.",
+            "Phishing? No/verified sender.",
+            "No | trustworthy.",
+            "Phishing\u{ff1f}No\u{ff0c}trustworthy.",
+            "No less trustworthy than the bank itself.",
+            "Not unlikely to be a genuine sender.",
         ] {
             assert!(claims(&praise.to_lowercase(), AUTH_SUCCESS_PHRASES), "{praise}");
             let reason = format!("DMARC: {praise}");
@@ -1346,6 +1378,30 @@ mod tests {
             6,
         );
         assert_eq!(kept.len(), 1);
+    }
+
+    /// Security review 0.22 webmail WF-2: reasons, quotes and details come without bidi controls.
+    #[test]
+    fn no_bidi_control_reaches_the_card() {
+        let signals = invoice();
+        let assessment = assess(&signals, &[], "");
+        let facts = facts(&signals, &assessment, |_| None);
+        let mut tricky = mail();
+        tricky.text.push_str("\nIhr Konto\u{202E} wird gesperrt");
+        let (kept, _) = verify(
+            vec![("It threatens\u{2067} to block the account.".to_owned(), "Konto\u{202E} wird gesperrt".to_owned())],
+            &tricky,
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert_eq!(kept[0].text, "It threatens to block the account.");
+        assert_eq!(kept[0].quote.as_deref(), Some("Konto wird gesperrt"));
+        let mut evidence = Vec::new();
+        add(&mut evidence, "BRAND_IN_FROM_NAME", 2.5, Some("\"PayPal\u{202E}\" sent from x.example".into()), true);
+        assert_eq!(evidence[0].detail.as_deref(), Some("\"PayPal\" sent from x.example"));
     }
 
     #[test]

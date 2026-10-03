@@ -532,9 +532,11 @@ pub(crate) fn read_message(message: &Message<'_>) -> Read {
     }
 }
 
+/// Every detail goes out without bidi controls: it can carry a display name, link text or a link
+/// of the mail (security review 0.22 webmail WF-2).
 fn push(found: &mut Vec<Finding>, rule: &'static str, points: f32, detail: String) {
     if !found.iter().any(|finding| finding.rule == rule) {
-        found.push(Finding { rule, points, detail });
+        found.push(Finding { rule, points, detail: crate::headers::without_bidi(&detail) });
     }
 }
 
@@ -545,8 +547,16 @@ fn target_text(target: &LinkTarget) -> String {
     }
 }
 
+/// One line of mail text for a detail: no control characters, no bidi controls, at most 120
+/// characters.
 fn one_line(text: &str) -> String {
-    text.chars().map(|c| if c.is_control() { ' ' } else { c }).take(120).collect::<String>().trim().to_owned()
+    text.chars()
+        .filter(|c| !crate::headers::is_bidi_control(*c))
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(120)
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 /// The domain of an address, lower case, without a trailing dot.
@@ -983,6 +993,20 @@ mod tests {
         // Unauthenticated, the same mail only gets the hint that the name is in a domain.
         let input = Input { from_authenticated: false, ..input };
         assert_eq!(rules(&input), ["BRAND_IN_FROM_DOMAIN", "BRAND_IN_FROM_NAME"]);
+    }
+
+    /// Security review 0.22 webmail WF-2: no bidi control of the mail reaches a detail.
+    #[test]
+    fn details_carry_no_bidi_controls() {
+        for control in ['\u{202E}', '\u{2067}', '\u{200F}', '\u{061C}'] {
+            let name = format!("PayPal{control} Service");
+            let input =
+                Input { from_name: Some(&name), from_address: Some("a@konto-hilfe.example"), ..Input::default() };
+            let found = check(&input);
+            assert_eq!(found[0].rule, "BRAND_IN_FROM_NAME");
+            assert_eq!(found[0].detail, "\"PayPal Service\" sent from konto-hilfe.example", "{control:?}");
+        }
+        assert_eq!(crate::headers::without_bidi("a\u{202A}b\u{2069}c\u{200E}d"), "abcd");
     }
 
     #[test]
