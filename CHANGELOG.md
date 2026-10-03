@@ -138,6 +138,12 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   `evidence` is just that fact's number and the reason is about the fact's topic; a fact number in
   the reason text proves nothing, and reasons naming a phone number or address that is neither in
   the mail nor in the facts are dropped.
+- **No verdicts from the sender (client review C-1, server side).** `X-Spam-Status`/`X-Spam-Score`
+  a message brings are removed even when the filter did not look, and submitted mail loses
+  `Authentication-Results` in this server's name and spam verdicts before local delivery. The AI
+  spam check and the label facts read only the block this server wrote on top (its own `Received`
+  up to the next one); for another account's mail only what stands above the first `Received`,
+  without counting a good filter score, and "suspicious" is always allowed there.
 
 ## 0.21.2
 

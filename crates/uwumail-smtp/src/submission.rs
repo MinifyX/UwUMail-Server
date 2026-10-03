@@ -209,6 +209,10 @@ impl Smtp {
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
         let raw = headers::strip_faces(&raw);
+        // Verdicts are this server's to write. A local sender's own `Authentication-Results` in our
+        // name or `X-Spam-Status` would reach local recipients as if we had checked the mail
+        // (client review C-1, checked on the server).
+        let raw = headers::strip_spam_verdicts(&headers::strip_forged_auth_results(&raw, &ctx.hostname));
         // The company footer goes in before anything is signed (docs/signatures.md).
         let raw = self.with_company_footer(&account, &from[0], raw, &id).await;
 

@@ -904,9 +904,13 @@ to size.
 
 **Spam check.** `signals` are what the server can tell from the given
 headers: `authentication` from the topmost `Authentication-Results` of
-`headers`, whichever server wrote it (for own mail only this server's own
-counts); `spamScore`, `spamThreshold` and `tests` from `X-Spam-Status` if
-there is one; `inJunk` from the mail. `sender` is `null`: the server knows
+`headers` above the first `Received`, whichever server wrote it (a sender can
+write any header below that); `spamScore`, `spamThreshold` and `tests` from an
+`X-Spam-Status` above the first `Received`; `inJunk` from the mail. For own
+mail only the block this server wrote on top counts: its own `Received` line
+and the headers up to the next `Received`. A good word from another account's
+filter (a score of 0 or less) is not counted, and the model may always answer
+"suspicious" for another account's mail. `sender` is `null`: the server knows
 nothing about the history of another account. The model is told that these
 results come from the other provider.
 

@@ -342,6 +342,7 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     let reply = session
         .command(
             "Authentication-Results: mx.a.test; dkim=pass header.d=bank.example\r\n\
+             X-Spam-Status: No, score=-50.0 required=5.0 tests=none\r\n\
              From: someone@elsewhere.test\r\nSubject: Echt jetzt\r\n\r\nHallo\r\n.",
         )
         .await;
@@ -352,6 +353,27 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     let raw = a.raw(&inbox[0]).await;
     assert!(!raw.contains("header.d=bank.example"), "{raw}");
     assert!(raw.contains("Authentication-Results: mx.a.test"), "{raw}");
+    // The sender's own spam verdict never stays, whether the filter looked or not (client C-1).
+    assert!(!raw.contains("score=-50"), "{raw}");
+}
+
+/// Client review C-1, checked on the server: a local sender cannot hand local recipients a
+/// verdict in this server's name.
+#[tokio::test(flavor = "multi_thread")]
+async fn submitted_mail_cannot_bring_our_verdicts() {
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    let written = "Authentication-Results: mx.a.test; spf=pass; dkim=pass; dmarc=pass\r\n\
+                   Authentication-Results: elsewhere.test; spf=pass\r\n\
+                   X-Spam-Status: No, score=-50.0 required=5.0 tests=none\r\nX-Spam-Score: -50.0\r\n\
+                   From: ami@a.test\r\nTo: mini@a.test\r\nSubject: Alles sicher\r\n\r\nHallo\r\n";
+    let envelope =
+        lettre::address::Envelope::new(Some("ami@a.test".parse().unwrap()), vec!["mini@a.test".parse().unwrap()])
+            .unwrap();
+    a.mailer("ami@a.test", PASSWORD, false).send_raw(&envelope, written.as_bytes()).await.unwrap();
+    let raw = a.raw(&a.wait_for_inbox("mini@a.test", 1).await[0]).await;
+    assert!(!raw.contains("mx.a.test; spf=pass"), "{raw}");
+    assert!(!raw.contains("score=-50") && !raw.contains("X-Spam-Score: -50"), "{raw}");
+    assert!(raw.contains("Authentication-Results: elsewhere.test"), "another server's claim is left as it is");
 }
 
 #[tokio::test(flavor = "multi_thread")]

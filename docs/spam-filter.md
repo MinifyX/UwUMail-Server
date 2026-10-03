@@ -547,6 +547,11 @@ X-Spam-Score: 7.0
 X-Spam-Status: Yes, score=7.0 required=5.0 tests=DMARC_FAIL,SPF_FAIL,NO_AUTH,NO_REVERSE_DNS
 ```
 
+`X-Spam-Score` and `X-Spam-Status` a message brings along are always removed,
+also when the filter is off or did not look, and so are `Authentication-Results`
+in this server's name; that goes for mail submitted by local people as well.
+Only what this server wrote is left for mail apps and the AI spam check.
+
 With the virus scanner on, every message that is taken also says whether
 anyone looked at it:
 

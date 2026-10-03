@@ -1759,8 +1759,10 @@ pub(crate) async fn receive(
     // same message from the same server lands on the same value when it comes back.
     let raw_hash = live.spam.greylist_hold.then(|| uwumail_store::BlobHash::of(&raw).as_str().to_owned());
 
-    // Our verdict replaces whatever the message brought along.
-    let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
+    // Our verdict replaces whatever the message brought along — also when the filter did not look:
+    // a sender's own `X-Spam-Status: No, score=-50` would otherwise be the only verdict stored, and
+    // the AI spam check would take it for ours (client review C-1, checked on the server).
+    let raw = headers::strip_spam_verdicts(&raw);
     // Label headers are the server's to write, for Sieve only; one a sender wrote is not kept in
     // the stored message either, so nothing that reads it later takes it for a label (security
     // audit 0.21.0 LABELS-I1). After the checks, which may cover it with a signature.

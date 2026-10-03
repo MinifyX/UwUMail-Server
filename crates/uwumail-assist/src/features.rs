@@ -862,7 +862,7 @@ impl Assist {
         contacts: &[(String, String)],
     ) -> Result<SpamSignals> {
         let authentication = authentication(&mail.headers, Some(self.hostname()), &record.from);
-        let (spam_score, spam_threshold, tests) = spam_status(&mail.headers);
+        let (spam_score, spam_threshold, tests) = spam_status(trusted_headers(&mail.headers, Some(self.hostname())));
         let mailboxes = self.store().mailboxes(account.id).await?;
         let in_junk = mailboxes
             .iter()
@@ -884,7 +884,7 @@ impl Assist {
     /// What the headers of a mail of another account say: its provider's findings.
     fn foreign_spam_signals(mail: &ForeignMail) -> SpamSignals {
         let authentication = authentication(&mail.headers, None, &mail.from);
-        let (spam_score, spam_threshold, tests) = spam_status(&mail.headers);
+        let (spam_score, spam_threshold, tests) = spam_status(trusted_headers(&mail.headers, None));
         SpamSignals { authentication, spam_score, spam_threshold, tests, in_junk: mail.in_junk, sender: None }
     }
 
@@ -1517,7 +1517,7 @@ pub fn authentication(
         .map(|(_, domain)| domain.trim().to_ascii_lowercase())
         .filter(|domain| !domain.is_empty());
     let mut signals = AuthenticationSignals { from_domain, ..AuthenticationSignals::default() };
-    let ours = headers.iter().find(|(name, value)| {
+    let ours = trusted_headers(headers, hostname).iter().find(|(name, value)| {
         name.eq_ignore_ascii_case("Authentication-Results")
             && hostname.is_none_or(|hostname| {
                 value.split(';').next().is_some_and(|id| id.trim().eq_ignore_ascii_case(hostname))
@@ -1544,7 +1544,32 @@ pub fn authentication(
     signals
 }
 
-/// The server's spam filter verdict: `X-Spam-Status: Yes, score=6.0 required=5.0 tests=A,B`.
+/// The headers whose verdicts can be believed (security review 0.22, client C-1 checked on the
+/// server). A sender can write any `Authentication-Results` or `X-Spam-Status` into its mail;
+/// only what the receiving server put on top before its own `Received` line is that server's.
+///
+/// - With `hostname` (own mail): the block this server wrote, when the topmost `Received` is its
+///   own — up to the next `Received`, which is where the sender's part starts. Mail that never
+///   passed this server's SMTP (written here, imported) has no such block.
+/// - Without (a mail of another account): what stands above the first `Received`, the way the
+///   provider's own findings are read for fetched mail.
+pub fn trusted_headers<'a>(headers: &'a [(String, String)], hostname: Option<&str>) -> &'a [(String, String)] {
+    let mut received = headers.iter().enumerate().filter(|(_, (name, _))| name.eq_ignore_ascii_case("Received"));
+    match hostname {
+        None => &headers[..received.next().map_or(headers.len(), |(at, _)| at)],
+        Some(hostname) => {
+            let Some((_, (_, value))) = received.next() else { return &[] };
+            let ours = format!("by {} (uwumail)", hostname.to_ascii_lowercase());
+            if !value.split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_lowercase().contains(&ours) {
+                return &[];
+            }
+            &headers[..received.next().map_or(headers.len(), |(at, _)| at)]
+        }
+    }
+}
+
+/// The server's spam filter verdict: `X-Spam-Status: Yes, score=6.0 required=5.0 tests=A,B`. The
+/// caller passes only [`trusted_headers`].
 pub fn spam_status(headers: &[(String, String)]) -> (Option<f64>, Option<f64>, Vec<String>) {
     let Some((_, value)) = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("X-Spam-Status")) else {
         return (None, None, Vec::new());
@@ -1939,6 +1964,7 @@ mod tests {
     #[test]
     fn authentication_is_read_from_our_own_header_only() {
         let headers = vec![
+            ("Received".to_owned(), "from a.example by mx.example.org (UwUMail) with ESMTPS id 1".to_owned()),
             ("Authentication-Results".to_owned(), "mx.example.org; spf=fail smtp.mailfrom=x@bank.example; dkim=none; dkim=pass header.d=bank.example; dmarc=fail header.from=bank.example".to_owned()),
             ("Authentication-Results".to_owned(), "evil.example; spf=pass; dmarc=pass".to_owned()),
             ("X-Spam-Status".to_owned(), "Yes, score=6.0 required=5.0 tests=SPF_FAIL,SPAMHAUS_ZEN".to_owned()),
@@ -1949,18 +1975,55 @@ mod tests {
         assert_eq!(auth.dkim.as_deref(), Some("pass"));
         assert_eq!(auth.dmarc.as_deref(), Some("fail"));
         assert_eq!(auth.from_domain.as_deref(), Some("bank.example"));
-        assert_eq!(authentication(&headers[1..], Some("mx.example.org"), &from).spf, None, "a stranger's claim");
+        assert_eq!(authentication(&headers[2..], Some("mx.example.org"), &from).spf, None, "a stranger's claim");
         // For a foreign mail, the topmost of any server: its own provider's.
-        assert_eq!(authentication(&headers[1..], None, &from).spf.as_deref(), Some("pass"));
-        let foreign = ForeignMail { headers: headers[1..].to_vec(), in_junk: true, ..ForeignMail::default() };
+        assert_eq!(authentication(&headers[2..], None, &from).spf.as_deref(), Some("pass"));
+        let foreign = ForeignMail { headers: headers[2..].to_vec(), in_junk: true, ..ForeignMail::default() };
         let signals = Assist::foreign_spam_signals(&foreign);
         assert!(signals.in_junk && signals.sender.is_none());
         assert_eq!(signals.spam_score, Some(6.0));
         let facts = crate::spam::facts(&signals, &crate::spam::assess(&signals, &[], ""), rule_meaning);
         assert!(facts[0].text.contains("another account"), "{facts:?}");
-        assert_eq!(spam_status(&headers), (Some(6.0), Some(5.0), vec!["SPF_FAIL".into(), "SPAMHAUS_ZEN".into()]));
+        assert_eq!(
+            spam_status(trusted_headers(&headers, Some("mx.example.org"))),
+            (Some(6.0), Some(5.0), vec!["SPF_FAIL".into(), "SPAMHAUS_ZEN".into()])
+        );
         let none = [("X-Spam-Status".to_owned(), "No, score=0.0 required=5.0 tests=none".to_owned())];
         assert_eq!(spam_status(&none), (Some(0.0), Some(5.0), vec![]));
+    }
+
+    /// Client review C-1, checked on the server: verdicts a sender wrote below this server's block,
+    /// or into mail that never passed this server, are not read; neither are a foreign mail's below
+    /// its provider's first `Received`.
+    #[test]
+    fn forged_verdicts_below_the_receiving_server_are_ignored() {
+        let h = |name: &str, value: &str| (name.to_owned(), value.to_owned());
+        let from = [uwumail_store::EmailAddress { name: None, email: "service@bank.example".into() }];
+        let forged = [
+            h("Authentication-Results", "mx.example.org; spf=pass; dkim=pass; dmarc=pass"),
+            h("X-Spam-Status", "No, score=-50.0 required=5.0 tests=none"),
+        ];
+        // Ours on top, then the sender's part after its own Received.
+        let mut own = vec![
+            h("Received", "from a.example\r\n\tby mx.example.org (UwUMail) with ESMTPS id 1"),
+            h("Authentication-Results", "mx.example.org; spf=fail; dmarc=fail"),
+            h("Received", "from sender.example by relay.example"),
+        ];
+        own.extend(forged.iter().cloned());
+        assert_eq!(authentication(&own, Some("mx.example.org"), &from).dmarc.as_deref(), Some("fail"));
+        assert_eq!(spam_status(trusted_headers(&own, Some("mx.example.org"))), (None, None, vec![]));
+        // A mail that never passed our SMTP: nothing it says about itself counts.
+        assert_eq!(authentication(&forged, Some("mx.example.org"), &from).dmarc, None);
+        assert!(trusted_headers(&forged, Some("mx.example.org")).is_empty());
+        let mut theirs = vec![h("Received", "from x by mx.other.example (Postfix)")];
+        theirs.extend(forged.iter().cloned());
+        assert!(trusted_headers(&theirs, Some("mx.example.org")).is_empty(), "another server's Received");
+        // A foreign mail: what stands below its provider's first Received is the sender's.
+        let mut foreign = vec![h("Received", "by mx.provider.example")];
+        foreign.extend(forged.iter().cloned());
+        let mail = ForeignMail { headers: foreign, ..ForeignMail::default() };
+        let signals = Assist::foreign_spam_signals(&mail);
+        assert_eq!((signals.spam_score, signals.authentication.dmarc.as_deref()), (None, None));
     }
 
     #[test]

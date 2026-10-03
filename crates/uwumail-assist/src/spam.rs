@@ -206,8 +206,13 @@ pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assess
     if let Some(score) = signals.spam_score {
         let threshold = signals.spam_threshold.filter(|t| *t > 0.0).unwrap_or(5.0);
         let detail = Some(format!("{score:.1}/{threshold:.1}"));
+        // Another account's provider may write no verdict of its own, and then the one counted could
+        // be the sender's: a good word from a filter is only believed from this server's own.
+        let own_filter = signals.sender.is_some();
         if score <= 0.0 {
-            add(&mut evidence, "FILTER_WANTED", (score * 0.4).clamp(-2.0, -0.5), detail, false);
+            if own_filter {
+                add(&mut evidence, "FILTER_WANTED", (score * 0.4).clamp(-2.0, -0.5), detail, false);
+            }
         } else if score >= threshold {
             add(&mut evidence, "FILTER_OVER_LIMIT", 3.0 + ((score - threshold) * 0.2).min(1.5), detail, false);
         } else {
@@ -290,8 +295,10 @@ pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assess
     let mut assessment = Assessment { score, band, evidence, allowed: Vec::new(), default_verdict: "suspicious" };
     let phishing_possible = assessment.has_phishing_evidence();
     let (low, mut high) = band.range();
-    // A clean-looking mail that still shows a phishing trick may at least be called suspicious.
-    if high == 0 && phishing_possible {
+    // A clean-looking mail that still shows a phishing trick may at least be called suspicious, and
+    // so may another account's mail, whose facts this server cannot verify: the model can always
+    // raise a concern there (client review C-1).
+    if high == 0 && (phishing_possible || signals.sender.is_none()) {
         high = 1;
     }
     assessment.allowed = VERDICTS
@@ -814,6 +821,19 @@ mod tests {
                 ..SenderSignals::default()
             }),
         }
+    }
+
+    /// Client review C-1 on the server: another account's mail gets no good word from a filter
+    /// verdict this server cannot verify, and the model may always call it suspicious.
+    #[test]
+    fn a_foreign_filter_cannot_vouch_for_a_mail() {
+        let foreign = SpamSignals { sender: None, spam_score: Some(-50.0), ..invoice() };
+        let assessment = assess(&foreign, &[], "");
+        assert!(!assessment.evidence.iter().any(|evidence| evidence.code == "FILTER_WANTED"));
+        assert!(assessment.allowed.contains(&"suspicious"), "{:?}", assessment.allowed);
+        // Own mail keeps both: the verdict is this server's.
+        let own = assess(&invoice(), &[], "");
+        assert!(own.evidence.iter().any(|evidence| evidence.code == "FILTER_WANTED"));
     }
 
     fn stranger() -> SpamSignals {
