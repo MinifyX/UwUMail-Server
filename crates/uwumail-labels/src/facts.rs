@@ -901,6 +901,11 @@ fn invoice_numbers(text: &str) -> Vec<String> {
     out
 }
 
+/// Whether a text carries a one-time code, as [`Facts::code`] finds it.
+pub fn has_one_time_code(text: &str) -> bool {
+    one_time_code(&crate::text::fold(text)).is_some()
+}
+
 /// A one-time code: 4 to 8 digits within a few words after `code`, `pin`, `tan` or `passcode`.
 fn one_time_code(text: &str) -> Option<String> {
     let list: Vec<(usize, &str)> = words(text).collect();

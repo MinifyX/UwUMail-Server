@@ -428,16 +428,26 @@ Authentication-Results: mx.example.org; {results}\n"
 #[tokio::test]
 async fn correction_examples_hide_codes_and_go_with_ai_labels() {
     let (rig, _, _) = labelled_rig().await;
-    let raw = "From: Konto <noreply@bank.example>\nTo: Mia <mia@example.org>\nSubject: Dein Code 482913\n\
+    let raw = "From: Konto <noreply@bank.example>\nTo: Mia <mia@example.org>\nSubject: Rechnung 482913\n\
 Date: Mon, 28 Sep 2026 10:00:00 +0000\nMessage-ID: <code-1@bank.example>\n\n\
-Dein Einmalcode lautet 482 913. Oder klick https://login.bank.example/reset?t=abc\n";
+Kundennummer 482 913, Gutschein AB7-K2X fuer MP3. Oder klick https://login.bank.example/reset?t=abc\n";
     let email = rig.deliver(&rig.mia, raw).await;
     rig.store.update_emails(rig.mia.id, vec![keyword(email, "rechnungen", true)]).await.unwrap();
     let shots = rig.store.label_shots(rig.mia.id).await.unwrap();
     assert_eq!(shots.len(), 1);
-    assert_eq!(shots[0].subject, "Dein Code ######");
+    assert_eq!(shots[0].subject, "Rechnung ######");
     assert!(!shots[0].snippet.contains("482") && !shots[0].snippet.contains("https"), "{}", shots[0].snippet);
     assert!(shots[0].snippet.contains("### ###") && shots[0].snippet.contains("[link]"), "{}", shots[0].snippet);
+    // Letters and digits mixed are a code too (security review 0.22 R2, I-3); a short name stays.
+    assert!(shots[0].snippet.contains("###-###") && !shots[0].snippet.contains("K2X"), "{}", shots[0].snippet);
+    assert!(shots[0].snippet.contains("MP3"), "{}", shots[0].snippet);
+
+    // A mail with a one-time code keeps no example at all.
+    let code = "From: Konto <noreply@bank.example>\nTo: Mia <mia@example.org>\nSubject: Dein Code 482913\n\
+Date: Mon, 28 Sep 2026 10:00:00 +0000\nMessage-ID: <code-2@bank.example>\n\nDein Einmalcode lautet 482913.\n";
+    let email = rig.deliver(&rig.mia, code).await;
+    rig.store.update_emails(rig.mia.id, vec![keyword(email, "rechnungen", true)]).await.unwrap();
+    assert_eq!(rig.store.label_shots(rig.mia.id).await.unwrap().len(), 1);
 
     let off = SettingsPatch { auto_labels: Some(false), ..SettingsPatch::default() };
     rig.assist.set_settings(&rig.mia, off).await.unwrap();

@@ -353,7 +353,15 @@ fn masked(text: &str) -> String {
         .split_whitespace()
         .map(|word| {
             let lower = word.to_lowercase();
-            if lower.contains("://") || lower.starts_with("www.") { "[link]".to_owned() } else { word.to_owned() }
+            if lower.contains("://") || lower.starts_with("www.") {
+                "[link]".to_owned()
+            } else if mixed_code(word) {
+                // Letters and digits mixed, like a voucher or reference (`AB7-K2X`): the
+                // characters go, the shape stays (security review 0.22 R2, I-3).
+                word.chars().map(|c| if c.is_alphanumeric() { '#' } else { c }).collect()
+            } else {
+                word.to_owned()
+            }
         })
         .collect();
     let text = words.join(" ");
@@ -387,6 +395,13 @@ fn masked(text: &str) -> String {
     out
 }
 
+/// A word of four letters and digits or more that has both, like a code (`AB7-K2X`, `X9F2Q`),
+/// not a short name like `MP3` or `A4`.
+fn mixed_code(word: &str) -> bool {
+    let alphanumeric = word.chars().filter(|c| c.is_alphanumeric()).count();
+    alphanumeric >= 4 && word.chars().any(|c| c.is_ascii_digit()) && word.chars().any(char::is_alphabetic)
+}
+
 fn cut(text: &str, max: usize) -> String {
     let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     match text.char_indices().nth(max) {
@@ -411,6 +426,10 @@ fn keep_shot(
         })
         .optional()?;
     let Some((subject, preview)) = found else { return Ok(()) };
+    // A mail with a one-time code is no example worth keeping a piece of (R2, I-3).
+    if uwumail_labels::has_one_time_code(&format!("{subject}\n{preview}")) {
+        return Ok(());
+    }
     let domain = from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
     tx.execute(
         "INSERT INTO label_shots (account_id, label_id, email_id, positive, sender_domain, subject, snippet, created_at)
