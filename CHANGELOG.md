@@ -141,6 +141,77 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   read changes written meanwhile and sent them with the older state (JMAP push and web push); it now
   reads only up to its own state.
 
+### Security (review round 1, spam and labels)
+
+- **Regional bank names only under their own endings (SPAM-1).** `sparkasse-…` and `volksbank-…`
+  count as the bank's own domain only under `.de` and `.at`; `sparkasse-login.com` and the like are
+  imitations again, and such a domain never vouches for a link that shows `sparkasse.de`.
+- **Tracking links only for authenticated senders (SPAM-3).** A link whose text shows the sender's
+  own site and leads elsewhere is a harmless tracking link only when DMARC vouches for the From
+  domain; from a spoofable domain it counts as `PHISHING_LINK_TEXT` (+3) again, in the filter and
+  in the AI spam check.
+- **Phishing checks stay cheap on hostile headers (SPAM-4).** The display name (256 characters),
+  subject and text are capped inside the checks, host names longer than DNS allows are skipped,
+  brand names are split into words once, at most 2,000 contact domains are compared, and the AI
+  spam check parses the mail and runs the checks off the async runtime.
+- **Word statistics held back only for proven senders (SPAM-2).** The +3.5 limit for authenticated,
+  otherwise spotless mail now holds only for a sender with a good history or while the server's
+  Bayes is less than 99 % sure, and never for a sender whose mail mostly went to Junk; a throwaway
+  domain with its own DMARC no longer slips into the inbox on clean content.
+- **Waiting messages cannot be taken over by a guessed Message-ID (SPAM-5).** A retry only joins a
+  waiting entry with the same Message-ID when envelope sender and From match too, an arriving
+  message only removes waiting entries by Message-ID from the same envelope sender, and retries
+  keep an entry at most twice the waiting time from its first attempt.
+- **AI spam check reasons must really cite (SPAM-6).** A fact counts only when the reason's
+  `evidence` is just that fact's number and the reason is about the fact's topic; a fact number in
+  the reason text proves nothing, and reasons naming a phone number or address that is neither in
+  the mail nor in the facts are dropped.
+- **No verdicts from the sender (client review C-1, server side).** `X-Spam-Status`/`X-Spam-Score`
+  a message brings are removed even when the filter did not look, and submitted mail loses
+  `Authentication-Results` in this server's name and spam verdicts before local delivery. The AI
+  spam check and the label facts read only the block this server wrote on top (its own `Received`
+  up to the next one); for another account's mail only what stands above the first `Received`,
+  without counting a good filter score, and "suspicious" is always allowed there.
+- **Embeddings only with consent (LABELS22-M1).** Mail goes to the admin's embeddings provider only
+  while AI labels are on on the server and for the person, the person may use the assistant, and
+  their chosen labels model is one of the server's (not a personal or local one). Mail in Junk or
+  Trash is never embedded and no similar mail.
+- **Known senders by an index, exactly, and only when authenticated (LABELS22-M2, -L1).** Delivery no
+  longer reads every vCard of the recipient's address books for every message: a new index of card
+  addresses (migration 0072, filled once at start) is kept with every card write. A sender counts
+  as known only by exactly a card's address (not a prefix of one) and only when authentication
+  backs the From address.
+- **An adopted label keeps your own description (LABELS22-L2).** A label of yours that becomes a
+  base label because of its name keeps the description you had written as `previousDescription`
+  (migration 0073, shown in `AssistLabel/get`); the model gets it as a hint next to the definition.
+- **Correction examples without codes, and gone with AI labels (LABELS22-L3).** Examples kept from
+  hand-labelings mask runs of four digits or more and web addresses, are only sent while AI labels
+  are on, and are deleted when AI labels are switched off.
+- **Neighbour search off the async runtime (LABELS22-L4).** Comparing a mail with the person's
+  examples (words or vectors) runs on a blocking thread, the mail's words are made a set once, and
+  `AssistLabel/apply` runs one call at a time per person.
+
+### Security (review round 2, spam and labels)
+
+- **Authenticated means aligned, in the AI paths too (R2-M1).** The AI spam check and the AI labels
+  call a From authenticated only when DMARC passed, or — without a DMARC policy — a DKIM signature
+  or SPF pass belongs to the From domain, a parent or a subdomain of it, as the SMTP checks decide
+  it. A pass for the sender's other domain, or a DMARC failure, no longer makes a contact "known"
+  or a lookalike link a tracking link. `Authentication-Results` is read with comments and quoted
+  strings handled, so a quoted envelope sender cannot inject a result.
+- **Regional bank prefixes hide nothing (R2-L1).** A `sparkasse-…`/`volksbank-…` domain under
+  `.de`/`.at` counts as the bank's own only when the From is authenticated, and never vouches for a
+  request for a login or data: `CREDENTIAL_REQUEST` fires even for a freshly registered domain with
+  its own DMARC.
+- **Verdicts only in mail delivered here (R2-L2).** Mail stored by IMAP APPEND or JMAP import can
+  carry a forged copy of this server's header block; the AI spam check and the AI labels now read
+  that block only in mail this server's SMTP delivery stored (migration 0074 `smtp_delivered`;
+  copies keep the mark, mail stored before the update counts as delivered).
+- **Reasons and examples, tightened (R2 info).** A number an AI spam reason names must stand within
+  one number of the mail, and a reason calling the sender verified needs authentication behind it.
+  Correction examples also mask codes of letters and digits (`AB7-K2X`), and a mail with a one-time
+  code keeps no example.
+
 ## 0.21.2
 
 **Webmail 0.21.2** (bundled): its own font, **UwU Sans** (based on Atkinson Hyperlegible Next, with

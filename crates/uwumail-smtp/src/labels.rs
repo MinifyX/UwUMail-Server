@@ -124,7 +124,10 @@ async fn decide_now(
     let classifiers = setup.labels.iter().filter(|label| label.classifier).map(|label| label.id).collect();
     let knowledge = ctx.store.label_knowledge(account_id, mail.from.clone(), tokens.clone(), classifiers).await?;
     let from_trusted = sender.vouches_for(&mail.from);
-    let known_sender = !mail.from.is_empty() && ctx.store.knows_sender(account_id, mail.from.clone()).await?;
+    // Known only when authentication backs the From address: anybody can write a contact's address
+    // into From (security review 0.22 LABELS22-L1).
+    let known_sender =
+        from_trusted && !mail.from.is_empty() && ctx.store.knows_sender(account_id, mail.from.clone()).await?;
     // Deciding is plain computing: on the blocking pool, so the timeout above always ends the wait
     // and no worker of the server is held by one message.
     tokio::task::spawn_blocking(move || {

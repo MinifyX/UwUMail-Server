@@ -42,7 +42,10 @@ English otherwise. The language is the person's (`preferences.language`), else t
 - **Adopted labels.** A label the person had before with the same meaning (`Rechnungen`,
   `Invoices`, `Bestellungen & Versand`, `Termine`, `Persönlich` …) becomes the base label instead of
   a second one: it keeps its name, keyword and color and gets the definition; a detector that is
-  the base label's own is dropped.
+  the base label's own is dropped. A description the person had written is not lost: it is kept
+  as `previousDescription` (shown over JMAP) and goes to the model as a hint next to the
+  definition. To get the old label back, delete the base label and create an own one with that
+  description.
 - **Switched one by one.** `auto: false` keeps a label from being put on by itself (by any of the
   ways below or the model); the person may still put it on by hand. The definition can't be
   changed, the name and color can. A deleted base label stays deleted until it is made again
@@ -107,7 +110,7 @@ the cheap ways find is only a hint for the model (at most 0.79), never a label b
 | `calendar` | a `text/calendar` or `application/ics` part, or an attachment whose name ends in `.ics` |
 | `headers` | the names and values (at most 1,000 characters) of `List-Unsubscribe`, `List-Unsubscribe-Post`, `List-Id`, `List-Post`, `Precedence`, `Auto-Submitted` and `X-Auto-Response-Suppress` |
 | `from_trusted` | whether the `From` address says who sent the mail (see [Learned senders](#learned-senders)) |
-| `known_sender` | the address is in one of the person's address books, or they wrote to it (among their 2,000 newest sent mails) |
+| `known_sender` | the address is exactly an address of a card in one of the person's address books (an index kept with every card write), or they wrote to it (among their 2,000 newest sent mails) — and only when SPF/DKIM/DMARC back the From address |
 
 **Folding** makes text comparable: lower case (Unicode), and every run of white space one space.
 
@@ -236,6 +239,8 @@ new mail, and the labels of the most alike vote (k nearest neighbours, `similar.
   dimensions take 772 bytes, at most 4,096 dimensions, one per labeled mail and model. They go
   with the mail (destroyed) and the account. Similarity is the cosine; neighbours below **0.55**
   are left out, a label is sure only with a neighbour at least **0.78** alike.
+  Only while AI labels may use a server model for the person (see
+  [llm.md](llm.md#embeddings)); mail in Junk or Trash is no neighbour and is never embedded.
 - **Without one**, or when it fails, the mails' token sets ([Classifier](#classifier)) are compared
   by Jaccard similarity: below **0.12** left out, sure from **0.35**.
 
@@ -343,7 +348,10 @@ answers that put four labels on one mail.
 Each label put on or taken off by hand (while AI labels are on) is kept as an example for the
 model: the sender's domain (never the address), the subject (at most 120 characters) and the start of the text (at most
 200), the newest 4 positive and 3 negative per label. The prompt shows those of the labels asked
-about, at most 12. They go with the label and the mail.
+about, at most 12. They go with the label and the mail. Runs of four digits or more (codes, account
+and order numbers) are kept as `#` and web addresses as `[link]`. The examples are sent to the
+model along with other mails, so they are only sent while AI labels are on, and all of them are
+deleted when the person switches AI labels off.
 
 ## Overlapping labels
 

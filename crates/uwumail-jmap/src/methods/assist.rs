@@ -226,6 +226,7 @@ fn label_json(label: &AssistLabel, counts: LabelCounts) -> Value {
         "classifier": label.classifier,
         "base": label.base,
         "auto": label.auto,
+        "previousDescription": label.previous_description,
         "totalEmails": counts.total,
         "unreadEmails": counts.unread,
         "examples": counts.examples,
@@ -897,6 +898,8 @@ advertising or null",
             "classifier" => write.classifier = boolean(value, "classifier")?,
             "auto" => write.auto = boolean(value, "auto")?,
             "base" if before.is_some_and(|(b, _)| value.as_str() == b.base.as_deref()) => {}
+            "previousDescription"
+                if before.is_some_and(|(b, _)| value.as_str() == b.previous_description.as_deref()) => {}
             "id" if before.is_some() => {}
             "keyword" if before.is_some_and(|(b, _)| value.as_str() == Some(b.keyword.as_str())) => {}
             "totalEmails" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.total)) => {}
@@ -1139,6 +1142,9 @@ pub async fn label_apply(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
     let (emails, mut not_found) =
         email_ids(ctx, args, MAX_APPLY)?.ok_or_else(|| MethodError::invalid_arguments("emailIds is required"))?;
+    // One call at a time per person: each reads up to MAX_APPLY mails and compares them with all
+    // their examples (security review 0.22 LABELS22-L4).
+    let _slot = assist.begin_label_apply(ctx.account.id).map_err(method_error)?;
     let mut labeled = Map::new();
     for email in emails {
         match assist.label_email(&ctx.account, email).await {

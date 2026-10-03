@@ -14,7 +14,7 @@ use uwumail_store::{Account, AssistLabel, EmailRecord, KeywordsChange, LabelLogW
 
 use crate::access::Embedder;
 use crate::features::TYPICAL_LABEL_TOKENS_PER_LABEL;
-use crate::features::{LabelPick, authentication, parse_labels};
+use crate::features::{LabelPick, authentication, delivered_headers, parse_labels};
 use crate::llm;
 use crate::mail::MailText;
 use crate::prompts::{self, MAX_PROMPT_SHOTS, PromptLabel, PromptShot};
@@ -58,9 +58,18 @@ fn prompt_label(label: &AssistLabel) -> PromptLabel {
         Some(base) => {
             let language = base_label_language(base, label);
             let text = base.text(language);
+            // What the person had written for the label before it became a base label: a hint that
+            // says what they mean by it, the definition still decides (security review LABELS22-L2).
+            let description = match label.previous_description.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+                Some(own) => {
+                    let own: String = own.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(500).collect();
+                    format!("{} The person's own words for this label (a hint): \"{own}\"", text.description)
+                }
+                None => text.description.to_owned(),
+            };
             PromptLabel {
                 name: label.name.clone(),
-                description: text.description.to_owned(),
+                description,
                 examples: text.examples.iter().map(|e| e.to_string()).collect(),
                 counter_examples: text.counter_examples.iter().map(|e| e.to_string()).collect(),
             }
@@ -121,10 +130,13 @@ impl Assist {
         if !mail.from.is_empty() && store.account_owns_address(account.id, &mail.from).await? {
             return Ok(Vec::new());
         }
-        let auth = authentication(&mail_text.headers, Some(self.hostname()), &record.from);
-        let pass = |result: &Option<String>| result.as_deref() == Some("pass");
-        mail.from_trusted = pass(&auth.dmarc) || (pass(&auth.dkim) && pass(&auth.spf));
-        mail.known_sender = !mail.from.is_empty() && store.knows_sender(account.id, mail.from.clone()).await?;
+        let auth = authentication(delivered_headers(&record, &mail_text.headers), Some(self.hostname()), &record.from);
+        // Aligned with the From domain, as the SMTP checks and the spam check decide it (security
+        // review 0.22 R2-M1): a pass for the sender's own other domain, or a DMARC failure, is not.
+        mail.from_trusted = crate::spam::authentic(&auth);
+        // Known only when authentication backs the From address (security review 0.22 LABELS22-L1).
+        mail.known_sender =
+            mail.from_trusted && !mail.from.is_empty() && store.knows_sender(account.id, mail.from.clone()).await?;
         let facts = Facts::of(&mail);
 
         let rules: Vec<Option<Rules>> =
@@ -150,7 +162,7 @@ impl Assist {
         let mut effective = None;
         if !asked.is_empty() {
             let asked_labels: Vec<&AssistLabel> = stored.iter().filter(|l| asked.contains(&l.id)).collect();
-            match self.ask_labels(account, &asked_labels, &mail_text, &facts, &candidates).await {
+            match self.ask_labels(account, &asked_labels, &mail_text, &facts, &candidates, prefs.auto_labels).await {
                 Ok((verdicts, used)) => {
                     from_model = ai_candidates(&labels, &facts, &asked, &verdicts, &candidates);
                     effective = Some(used);
@@ -183,6 +195,7 @@ impl Assist {
         mail: &MailText,
         facts: &Facts,
         candidates: &[Decision],
+        with_shots: bool,
     ) -> Result<(Vec<AiVerdict>, crate::Effective)> {
         let ticket =
             self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS_PER_LABEL * asked.len() as i64);
@@ -197,10 +210,9 @@ impl Assist {
                 Some((name.to_string(), format!("{}{sure}", candidate.reason)))
             })
             .collect();
-        let shots: Vec<PromptShot> = self
-            .store()
-            .label_shots(account.id)
-            .await?
+        // The person's corrections only while they have AI labels on (security review LABELS22-L3).
+        let stored_shots = if with_shots { self.store().label_shots(account.id).await? } else { Vec::new() };
+        let shots: Vec<PromptShot> = stored_shots
             .into_iter()
             .filter_map(|shot| {
                 Some(PromptShot {
@@ -224,8 +236,24 @@ impl Assist {
         Ok((parse_labels(&answer, &owned), effective))
     }
 
+    /// The server's embeddings provider, when mail may go to it for labels: AI labels are on on the
+    /// server and for the person, the person may use the assistant for them, and the model they
+    /// chose for labels is one of the server's. Someone who picked a personal or local model, or
+    /// switched AI labels off, keeps their mail to themselves (security review 0.22 LABELS22-M1).
+    pub(crate) async fn label_embedder(&self, account: &Account) -> Result<Option<Embedder>> {
+        if !self.store().assist_prefs(account.id).await?.auto_labels {
+            return Ok(None);
+        }
+        match self.resolve_for(account, "autoLabels", false).await {
+            Ok((provider, _, _)) if provider.server => self.embedder(account).await,
+            Ok(_) | Err(AssistError::Unavailable(_)) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
     /// How like the person's labeled mails this one is: by embeddings when the server has an
-    /// embeddings provider, by tokens otherwise or when it fails.
+    /// embeddings provider the mail may go to ([`Assist::label_embedder`]), by tokens otherwise or
+    /// when it fails.
     async fn similar(
         &self,
         account: &Account,
@@ -233,21 +261,29 @@ impl Assist {
         mail: &MailText,
         tokens: &[i64],
     ) -> Result<HashMap<i64, Likeness>> {
-        if let Some(embedder) = self.embedder(account).await? {
+        if let Some(embedder) = self.label_embedder(account).await? {
             match self.similar_by_embeddings(account, &embedder, email_id, mail).await {
                 Ok(found) => return Ok(found),
                 Err(err) => tracing::info!(account = account.id, %err, "no embeddings, comparing tokens instead"),
             }
         }
-        let neighbours = self
-            .store()
-            .label_token_sets(account.id)
-            .await?
-            .into_iter()
-            .filter(|example| example.email_id != email_id)
-            .map(|example| Neighbour { similarity: similar::jaccard(tokens, &example.tokens), labels: example.labels })
-            .collect();
-        Ok(similar::vote(neighbours, similar::TOKENS))
+        let examples = self.store().label_token_sets(account.id).await?;
+        let mine = similar::token_set(tokens);
+        // Thousands of examples of hundreds of tokens each: plain computing, off the async runtime
+        // (security review 0.22 LABELS22-L4).
+        tokio::task::spawn_blocking(move || {
+            let neighbours = examples
+                .into_iter()
+                .filter(|example| example.email_id != email_id)
+                .map(|example| Neighbour {
+                    similarity: similar::jaccard_of_sets(&mine, &similar::token_set(&example.tokens)),
+                    labels: example.labels,
+                })
+                .collect();
+            similar::vote(neighbours, similar::TOKENS)
+        })
+        .await
+        .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))
     }
 
     /// Embeds the mail, and along with it up to [`BACKFILL_PER_MAIL`] labeled mails that have no
@@ -283,16 +319,19 @@ impl Assist {
             store.set_label_vector(account.id, *id, model.clone(), stored).await?;
         }
         let Some(this) = this else { return Ok(HashMap::new()) };
-        let neighbours = store
-            .label_vectors(account.id, model)
-            .await?
-            .into_iter()
-            .filter(|example| example.email_id != email_id)
-            .filter_map(|example| {
-                Some(Neighbour { similarity: similar::cosine(&this, &example.vector)?, labels: example.labels })
-            })
-            .collect();
-        Ok(similar::vote(neighbours, similar::EMBEDDINGS))
+        let examples = store.label_vectors(account.id, model).await?;
+        tokio::task::spawn_blocking(move || {
+            let neighbours = examples
+                .into_iter()
+                .filter(|example| example.email_id != email_id)
+                .filter_map(|example| {
+                    Some(Neighbour { similarity: similar::cosine(&this, &example.vector)?, labels: example.labels })
+                })
+                .collect();
+            similar::vote(neighbours, similar::EMBEDDINGS)
+        })
+        .await
+        .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))
     }
 
     /// Puts the chosen labels on and logs where each came from.
@@ -347,5 +386,36 @@ impl Assist {
                 })
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Security review 0.22 LABELS22-L2: what the person had written for an adopted label goes to
+    /// the model as a hint next to the base definition.
+    #[test]
+    fn an_adopted_label_brings_the_persons_words_as_a_hint() {
+        let label = AssistLabel {
+            id: 1,
+            name: "Rechnung".into(),
+            description: Base::Invoice.text("de").description.into(),
+            keyword: "rechnung".into(),
+            color: None,
+            created_at: 0,
+            rules: None,
+            detector: None,
+            learn_senders: true,
+            classifier: true,
+            base: Some("invoice".into()),
+            auto: true,
+            previous_description: Some("Alles vom\nSteuerberater".into()),
+        };
+        let prompt = prompt_label(&label);
+        assert!(prompt.description.starts_with(Base::Invoice.text("de").description));
+        assert!(prompt.description.ends_with("(a hint): \"Alles vom Steuerberater\""), "{}", prompt.description);
+        let plain = prompt_label(&AssistLabel { previous_description: None, ..label });
+        assert_eq!(plain.description, Base::Invoice.text("de").description);
     }
 }

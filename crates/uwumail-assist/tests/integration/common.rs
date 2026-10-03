@@ -234,18 +234,25 @@ impl Rig {
     }
 
     /// Delivers a mail into the person's inbox; answers its id.
+    /// Stores a mail the way this server's SMTP delivery does.
     pub async fn deliver(&self, account: &Account, raw: &str) -> i64 {
-        self.store
-            .ingest(IngestRequest {
-                account_id: account.id,
-                raw: raw.replace('\n', "\r\n").into_bytes(),
-                mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
-                keywords: vec![],
-                received_at: None,
-            })
-            .await
-            .unwrap()
-            .id
+        self.store_mail(account, raw, true).await
+    }
+
+    /// Stores a mail the way IMAP APPEND or JMAP import does: not delivered here over SMTP.
+    pub async fn append(&self, account: &Account, raw: &str) -> i64 {
+        self.store_mail(account, raw, false).await
+    }
+
+    async fn store_mail(&self, account: &Account, raw: &str, smtp_delivered: bool) -> i64 {
+        let request = IngestRequest {
+            account_id: account.id,
+            raw: raw.replace('\n', "\r\n").into_bytes(),
+            mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
+            keywords: vec![],
+            received_at: None,
+        };
+        self.store.ingest_marked(request, smtp_delivered).await.unwrap().id
     }
 }
 

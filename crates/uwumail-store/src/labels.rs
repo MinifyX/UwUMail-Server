@@ -64,6 +64,13 @@ pub struct LabelTokens {
     pub tokens: Vec<i64>,
 }
 
+/// An example whose mail is not in Junk or Trash: what is there is no example of anything the
+/// person wants labeled, and it is not sent to an embeddings provider either (security review 0.22
+/// LABELS22-M1). For a query over `label_examples x`.
+const NOT_IN_JUNK_OR_TRASH: &str =
+    "NOT EXISTS (SELECT 1 FROM email_mailboxes em JOIN mailboxes m ON m.id = em.mailbox_id
+                 WHERE em.email_id = x.email_id AND m.role IN ('junk', 'trash'))";
+
 /// The language base labels are named in: the person's own choice, or `fallback`.
 fn base_language(conn: &Connection, account_id: i64, fallback: &str) -> Result<String> {
     let preferences: Option<String> =
@@ -80,20 +87,27 @@ fn base_language(conn: &Connection, account_id: i64, fallback: &str) -> Result<S
 /// label yet. Answers its id.
 pub(crate) fn make_base_label(tx: &Transaction<'_>, account_id: i64, base: Base, language: &str) -> Result<i64> {
     let text = base.text(language);
-    let mut stmt =
-        tx.prepare("SELECT id, name, detector FROM assist_labels WHERE account_id = ?1 AND base IS NULL ORDER BY id")?;
-    let own: Vec<(i64, String, Option<String>)> =
-        stmt.query_map([account_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?.collect::<Result<_, _>>()?;
+    let mut stmt = tx.prepare(
+        "SELECT id, name, detector, description FROM assist_labels WHERE account_id = ?1 AND base IS NULL ORDER BY id",
+    )?;
+    let own: Vec<(i64, String, Option<String>, String)> = stmt
+        .query_map([account_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?
+        .collect::<Result<_, _>>()?;
     drop(stmt);
-    if let Some((id, _, detector)) = own.iter().find(|(_, name, _)| Base::named(name) == Some(base)) {
+    if let Some((id, _, detector, description)) = own.iter().find(|(_, name, _, _)| Base::named(name) == Some(base)) {
         // Adopted: name, keyword and color stay; the definition is the base label's, and a detector
-        // of its own is kept unless it is the base label's anyway.
+        // of its own is kept unless it is the base label's anyway. A description the person wrote
+        // themselves is kept aside, not lost (security review 0.22 LABELS22-L2).
         let detector = detector.clone().filter(|detector| detector != base.detector().as_str());
+        let written = description.trim();
+        let own_words = (!written.is_empty()
+            && ["de", "en"].iter().all(|language| base.text(language).description != written))
+        .then(|| written.to_owned());
         tx.execute(
             "UPDATE assist_labels SET base = ?2, description = ?3, detector = ?4, base_written = ?3,
-                 base_language = ?5
+                 base_language = ?5, previous_description = coalesce(?6, previous_description)
              WHERE id = ?1",
-            params![id, base.as_str(), text.description, detector, language],
+            params![id, base.as_str(), text.description, detector, language, own_words],
         )?;
         return Ok(*id);
     }
@@ -330,6 +344,64 @@ pub const MAX_SHOTS_NEGATIVE: i64 = 3;
 const SHOT_SUBJECT_CHARS: usize = 120;
 const SHOT_SNIPPET_CHARS: usize = 200;
 
+/// A text for a correction example with what could be a code, a number of an account or a link
+/// taken out: runs of four digits or more (spaces and hyphens inside a run count with it) become
+/// `#`, and web addresses `[link]` (security review 0.22 LABELS22-L3). What kind of mail it was
+/// stays readable.
+fn masked(text: &str) -> String {
+    let words: Vec<String> = text
+        .split_whitespace()
+        .map(|word| {
+            let lower = word.to_lowercase();
+            if lower.contains("://") || lower.starts_with("www.") {
+                "[link]".to_owned()
+            } else if mixed_code(word) {
+                // Letters and digits mixed, like a voucher or reference (`AB7-K2X`): the
+                // characters go, the shape stays (security review 0.22 R2, I-3).
+                word.chars().map(|c| if c.is_alphanumeric() { '#' } else { c }).collect()
+            } else {
+                word.to_owned()
+            }
+        })
+        .collect();
+    let text = words.join(" ");
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while at < chars.len() {
+        if !chars[at].is_ascii_digit() {
+            out.push(chars[at]);
+            at += 1;
+            continue;
+        }
+        // A run: digits, with single spaces or hyphens between them.
+        let mut end = at;
+        let mut digits = 0;
+        while end < chars.len() {
+            if chars[end].is_ascii_digit() {
+                digits += 1;
+                end += 1;
+            } else if matches!(chars[end], ' ' | '-') && chars.get(end + 1).is_some_and(char::is_ascii_digit) {
+                end += 1;
+            } else {
+                break;
+            }
+        }
+        for c in &chars[at..end] {
+            out.push(if digits >= 4 && c.is_ascii_digit() { '#' } else { *c });
+        }
+        at = end;
+    }
+    out
+}
+
+/// A word of four letters and digits or more that has both, like a code (`AB7-K2X`, `X9F2Q`),
+/// not a short name like `MP3` or `A4`.
+fn mixed_code(word: &str) -> bool {
+    let alphanumeric = word.chars().filter(|c| c.is_alphanumeric()).count();
+    alphanumeric >= 4 && word.chars().any(|c| c.is_ascii_digit()) && word.chars().any(char::is_alphabetic)
+}
+
 fn cut(text: &str, max: usize) -> String {
     let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     match text.char_indices().nth(max) {
@@ -354,6 +426,10 @@ fn keep_shot(
         })
         .optional()?;
     let Some((subject, preview)) = found else { return Ok(()) };
+    // A mail with a one-time code is no example worth keeping a piece of (R2, I-3).
+    if uwumail_labels::has_one_time_code(&format!("{subject}\n{preview}")) {
+        return Ok(());
+    }
     let domain = from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
     tx.execute(
         "INSERT INTO label_shots (account_id, label_id, email_id, positive, sender_domain, subject, snippet, created_at)
@@ -365,8 +441,8 @@ fn keep_shot(
             email_id,
             positive,
             cut(domain, 100),
-            cut(&subject, SHOT_SUBJECT_CHARS),
-            cut(&preview, SHOT_SNIPPET_CHARS),
+            cut(&masked(&subject), SHOT_SUBJECT_CHARS),
+            cut(&masked(&preview), SHOT_SNIPPET_CHARS),
             now()
         ],
     )?;
@@ -623,8 +699,10 @@ impl Store {
         Ok(label)
     }
 
-    /// Whether the person knows `address` (lower case): it is in one of their address books, or
-    /// they wrote to it (among their 2,000 newest sent mails). Cheap enough for delivery.
+    /// Whether the person knows `address` (lower case): it is exactly an address of a card in one of
+    /// their address books, or they wrote to it (among their 2,000 newest sent mails). One index
+    /// lookup for the cards (migration 0072), so cheap enough for every delivery (security review
+    /// 0.22 LABELS22-M2, -L1).
     pub async fn knows_sender(&self, account_id: i64, address: String) -> Result<bool> {
         let address = address.trim().to_lowercase().replace('"', "");
         if address.is_empty() || address.chars().count() > MAX_SENDER_CHARS {
@@ -632,16 +710,14 @@ impl Store {
         }
         self.read(move |conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS (SELECT 1 FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
-                                WHERE c.account_id = ?1 AND c.kind = 'addressbook' AND r.component = 'VCARD'
-                                  AND instr(lower(r.content), ?2) > 0)
+                "SELECT EXISTS (SELECT 1 FROM contact_emails WHERE account_id = ?1 AND email = ?2)
                      OR EXISTS (SELECT 1 FROM (SELECT e.to_addr, e.cc_addr FROM mailboxes m
                                                JOIN email_mailboxes em ON em.mailbox_id = m.id
                                                JOIN emails e ON e.id = em.email_id
                                                WHERE m.account_id = ?1 AND m.role = 'sent'
                                                ORDER BY e.id DESC LIMIT 2000)
                                 WHERE instr(lower(to_addr || cc_addr), ?3) > 0)",
-                params![account_id, format!(":{address}"), format!("\"{address}\"")],
+                params![account_id, address, format!("\"{address}\"")],
                 |row| row.get(0),
             )?)
         })
@@ -672,12 +748,12 @@ impl Store {
     /// The account's examples with an embedding by `model`, with their labels.
     pub async fn label_vectors(&self, account_id: i64, model: String) -> Result<Vec<LabelVector>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare_cached(
+            let mut stmt = conn.prepare_cached(&format!(
                 "SELECT x.id, x.email_id, v.vector,
                         (SELECT json_group_array(l.label_id) FROM label_example_labels l WHERE l.example_id = x.id)
                  FROM label_vectors v JOIN label_examples x ON x.id = v.example_id
-                 WHERE v.account_id = ?1 AND v.model = ?2",
-            )?;
+                 WHERE v.account_id = ?1 AND v.model = ?2 AND {NOT_IN_JUNK_OR_TRASH}"
+            ))?;
             let rows = stmt.query_map(params![account_id, model], |row| {
                 let labels: String = row.get(3)?;
                 Ok(LabelVector {
@@ -694,11 +770,11 @@ impl Store {
     /// The account's examples with their tokens and labels.
     pub async fn label_token_sets(&self, account_id: i64) -> Result<Vec<LabelTokens>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare_cached(
+            let mut stmt = conn.prepare_cached(&format!(
                 "SELECT x.email_id, x.tokens,
                         (SELECT json_group_array(l.label_id) FROM label_example_labels l WHERE l.example_id = x.id)
-                 FROM label_examples x WHERE x.account_id = ?1",
-            )?;
+                 FROM label_examples x WHERE x.account_id = ?1 AND {NOT_IN_JUNK_OR_TRASH}"
+            ))?;
             let rows = stmt.query_map([account_id], |row| {
                 let tokens: String = row.get(1)?;
                 let labels: String = row.get(2)?;
@@ -748,13 +824,14 @@ impl Store {
         limit: usize,
     ) -> Result<Vec<i64>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare_cached(
+            let mut stmt = conn.prepare_cached(&format!(
                 "SELECT x.email_id FROM label_examples x
                  WHERE x.account_id = ?1
                    AND EXISTS (SELECT 1 FROM emails e WHERE e.id = x.email_id AND e.account_id = ?1)
                    AND NOT EXISTS (SELECT 1 FROM label_vectors v WHERE v.example_id = x.id AND v.model = ?2)
-                 ORDER BY x.id DESC LIMIT ?3",
-            )?;
+                   AND {NOT_IN_JUNK_OR_TRASH}
+                 ORDER BY x.id DESC LIMIT ?3"
+            ))?;
             let rows = stmt.query_map(params![account_id, model, limit as i64], |row| row.get(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
@@ -1074,6 +1151,59 @@ mod tests {
         assert!(plan.iter().any(|step| step.contains("SCAN m") || step.contains("SEARCH m")), "{plan:#?}");
     }
 
+    /// Security review 0.22 LABELS22-M2/-L1: a sender is known by exactly a card's address, from the
+    /// index kept with every write of a card, not by a prefix of one; a deleted card is forgotten.
+    #[tokio::test]
+    async fn a_sender_is_known_by_exactly_a_cards_address() {
+        use crate::dav::{DavKind, DavPrecondition, DavWrite, NewDavCollection};
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "mini@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let mini = store.create_account(account).await.unwrap().id;
+        let book = NewDavCollection { slug: "contacts".into(), display_name: "Kontakte".into(), ..Default::default() };
+        let book = store.dav_collections(mini, DavKind::Addressbook, book).await.unwrap()[0].clone();
+        let card = "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:anna\r\nFN:Anna\r\nEMAIL:Anna@Example.com\r\n\
+                    PHOTO:data:image/png;base64,iVBORw0KGgo=\r\nEND:VCARD\r\n";
+        let write = DavWrite {
+            name: "anna.vcf".into(),
+            content: card.into(),
+            uid: "anna".into(),
+            component: "VCARD".into(),
+            starts_at: None,
+            ends_at: None,
+        };
+        store.dav_put(mini, book.id, write, DavPrecondition::default()).await.unwrap();
+
+        assert!(store.knows_sender(mini, "anna@example.com".into()).await.unwrap());
+        assert!(store.knows_sender(mini, " ANNA@example.com ".into()).await.unwrap());
+        assert!(!store.knows_sender(mini, "anna@example.co".into()).await.unwrap(), "a prefix is somebody else");
+        assert!(!store.knows_sender(mini, "nna@example.com".into()).await.unwrap());
+        assert!(!store.knows_sender(mini, "lisa@example.com".into()).await.unwrap());
+
+        // The query is one index lookup, not a scan of every card.
+        let plan: Vec<String> = store
+            .read(|conn| {
+                let mut stmt = conn.prepare(
+                    "EXPLAIN QUERY PLAN SELECT 1 FROM contact_emails WHERE account_id = 1 AND email = 'a@example.com'",
+                )?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(3))?;
+                Ok(rows.collect::<Result<_, _>>()?)
+            })
+            .await
+            .unwrap();
+        assert!(plan.iter().any(|step| step.contains("contact_emails_account")), "{plan:#?}");
+
+        store.dav_delete(mini, book.id, "anna.vcf", None).await.unwrap();
+        assert!(!store.knows_sender(mini, "anna@example.com".into()).await.unwrap(), "gone with the card");
+    }
+
     /// A later set of base labels gives the definitions the server wrote the new wording, keeps one
     /// that was changed, and makes no deleted base label again.
     #[tokio::test]
@@ -1117,5 +1247,34 @@ mod tests {
         assert_eq!(description(invoice), Base::Invoice.text("de").description, "in the language it was written in");
         assert_eq!(description(work), "eigene Worte");
         assert!(!labels.iter().any(|l| l.base.as_deref() == Some("shipping")), "deleted stays deleted");
+    }
+
+    /// Security review 0.22 LABELS22-L2: a label of the person's that becomes a base label because
+    /// of its name keeps the description they had written, aside; an empty one or the base text
+    /// itself is nothing to keep.
+    #[tokio::test]
+    async fn an_adopted_label_keeps_the_persons_own_description() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = crate::NewAccount {
+            address: "leni@example.org".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let leni = store.create_account(account).await.unwrap().id;
+        let own = "Alles vom Steuerberater und vom Finanzamt";
+        let invoice = store.create_assist_label(leni, "Rechnung".into(), own.into(), None).await.unwrap().id;
+        let news = store.create_assist_label(leni, "Newsletter".into(), String::new(), None).await.unwrap().id;
+        store.ensure_base_labels(leni, "de").await.unwrap();
+        let labels = store.assist_labels(leni).await.unwrap();
+        let label = |id: i64| labels.iter().find(|l| l.id == id).unwrap().clone();
+        assert_eq!(label(invoice).base.as_deref(), Some("invoice"));
+        assert_eq!(label(invoice).description, Base::Invoice.text("de").description);
+        assert_eq!(label(invoice).previous_description.as_deref(), Some(own), "kept, not lost");
+        assert_eq!(label(news).base.as_deref(), Some("newsletter"));
+        assert_eq!(label(news).previous_description, None, "nothing written, nothing kept");
     }
 }

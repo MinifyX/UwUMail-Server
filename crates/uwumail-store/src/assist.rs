@@ -243,6 +243,9 @@ pub struct AssistLabel {
     pub base: Option<String>,
     /// Put on by itself; off, only by hand.
     pub auto: bool,
+    /// For a label of the person's that became a base label because of its name: the description
+    /// they had written before.
+    pub previous_description: Option<String>,
 }
 
 /// What is written of a label; the caller checked `rules` and `detector`.
@@ -577,6 +580,7 @@ pub(crate) fn bump_prefs(tx: &Connection, account_id: i64) -> Result<()> {
 pub(crate) fn stop_personal_assist(tx: &Connection, account_id: i64) -> Result<()> {
     let providers = tx.execute("DELETE FROM assist_providers WHERE account_id = ?1", [account_id])?;
     tx.execute("DELETE FROM assist_label_queue WHERE account_id = ?1", [account_id])?;
+    tx.execute("DELETE FROM label_shots WHERE account_id = ?1", [account_id])?;
     let prefs = tx.execute(
         "UPDATE assist_prefs SET choices = '{}', auto_labels = 0 WHERE account_id = ?1 AND (choices <> '{}' OR auto_labels)",
         [account_id],
@@ -589,7 +593,8 @@ pub(crate) fn stop_personal_assist(tx: &Connection, account_id: i64) -> Result<(
 }
 
 pub(crate) const LABEL_COLUMNS: &str =
-    "id, name, description, keyword, color, created_at, rules, detector, learn_senders, classifier, base, auto";
+    "id, name, description, keyword, color, created_at, rules, detector, learn_senders, classifier, base, auto,
+     previous_description";
 
 pub(crate) fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
     let rules: Option<String> = row.get(6)?;
@@ -606,6 +611,7 @@ pub(crate) fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
         classifier: row.get(9)?,
         base: row.get(10)?,
         auto: row.get(11)?,
+        previous_description: row.get(12)?,
     })
 }
 
@@ -851,6 +857,9 @@ impl Store {
             )?;
             if !auto_labels {
                 tx.execute("DELETE FROM assist_label_queue WHERE account_id = ?1", [account_id])?;
+                // The corrections kept as examples for the model go too: nothing is sent with AI
+                // labels off, and nothing of other mails is kept for it (security review LABELS22-L3).
+                tx.execute("DELETE FROM label_shots WHERE account_id = ?1", [account_id])?;
             }
             Ok(tx.query_row("SELECT modseq FROM assist_prefs WHERE account_id = ?1", [account_id], |row| row.get(0))?)
         })

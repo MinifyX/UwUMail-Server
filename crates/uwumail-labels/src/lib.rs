@@ -31,7 +31,7 @@ pub use classifier::{
     Model, THRESHOLD, TOKEN_TEXT_CHARS, TOP_TOKENS, Verdict, token_hash, tokens,
 };
 pub use detect::{Detector, Finding, amount, date, detect, time};
-pub use facts::{FREEMAIL, Facts, SenderKind};
+pub use facts::{FREEMAIL, Facts, SenderKind, has_one_time_code};
 pub use mail::{Attachment, HEADERS, MAX_ATTACHMENTS, MAX_FIELD_CHARS, MAX_RECIPIENTS, MAX_TEXT_CHARS, Mail};
 pub use overlap::{Overlap, OverlapLabel, overlaps};
 pub use rules::{Condition, Field, MAX_CONDITIONS, MAX_VALUE_CHARS, Match, Rules};

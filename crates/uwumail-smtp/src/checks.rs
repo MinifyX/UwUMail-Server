@@ -207,11 +207,19 @@ fn face_signed(message: &AuthenticatedMessage<'_>, dkim: &[DkimOutput<'_>], from
 /// Whether a domain is the From domain, a parent of it or below it.
 fn related_to_from(from_address: Option<&str>, domain: &str) -> bool {
     let from = from_address.and_then(|address| address.rsplit_once('@')).map(|(_, domain)| domain);
-    let domain = domain.trim_end_matches('.').to_ascii_lowercase();
-    from.is_some_and(|from| {
-        domain.contains('.')
-            && (from == domain || from.ends_with(&format!(".{domain}")) || domain.ends_with(&format!(".{from}")))
-    })
+    from.is_some_and(|from| related_domains(from, domain))
+}
+
+/// Whether `domain` (a DKIM signer, an SPF-checked envelope domain) is the From domain, a parent of
+/// it or below it: what makes a pass vouch for the From when no DMARC policy judges it. The SMTP
+/// checks and the assistant's reading of `Authentication-Results` share it (security review 0.22
+/// R2-M1).
+pub fn related_domains(from_domain: &str, domain: &str) -> bool {
+    let from = from_domain.trim().trim_end_matches('.').to_ascii_lowercase();
+    let domain = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+    !from.is_empty()
+        && domain.contains('.')
+        && (from == domain || from.ends_with(&format!(".{domain}")) || domain.ends_with(&format!(".{from}")))
 }
 
 /// What a message can still be asked when there is no sending server to ask: its signatures.

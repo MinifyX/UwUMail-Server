@@ -3,7 +3,7 @@
 
 use serde_json::json;
 use uwumail_assist::SettingsPatch;
-use uwumail_store::{EmailUpdate, IngestRequest, KeywordsChange, MailboxRole, MailboxTarget};
+use uwumail_store::{EmailUpdate, IngestRequest, KeywordsChange, MailboxRole, MailboxTarget, MailboxesChange};
 
 use crate::common::{INVOICE, Reply, Rig, chat, rig};
 
@@ -276,6 +276,193 @@ async fn similar_mails_decide_by_embeddings_without_asking_the_model() {
     assert!(vectors.iter().all(|v| v.vector.len() == 4 + 3));
     let today = rig.assist.today(&rig.mia).await.unwrap();
     assert!(today.iter().all(|usage| usage.provider_id != embedder), "embeddings are no provider to choose");
+}
+
+/// Security review 0.22 LABELS22-M1: mail only goes to the embeddings provider while AI labels
+/// may use a server model for the person, and mail in Junk or Trash never does.
+#[tokio::test]
+async fn embeddings_follow_the_switches_and_the_persons_choice() {
+    let embedded = |rig: &Rig| rig.fake.seen().iter().filter(|seen| seen.path.ends_with("/embeddings")).count();
+    let (rig, _, _) = labelled_rig().await;
+    rig.server_provider("embeddingsCompatible", json!({ "model": "embed-model", "fastModel": null })).await;
+    let mut labeled = Vec::new();
+    for n in 1..=3 {
+        let email = rig.deliver(&rig.mia, &trip(n)).await;
+        rig.store.update_emails(rig.mia.id, vec![keyword(email, "reisen", true)]).await.unwrap();
+        labeled.push(email);
+    }
+    assert!(rig.assist.learn_labels().await);
+
+    // The admin switched AI labels off: nothing is embedded, nothing asked.
+    rig.policy(|policy| policy.features.set("autoLabels", false)).await;
+    let email = rig.deliver(&rig.mia, &trip(4)).await;
+    let _ = rig.assist.label_email(&rig.mia, email).await;
+    assert_eq!(embedded(&rig), 0, "switched off on the server");
+    rig.policy(|policy| policy.features.set("autoLabels", true)).await;
+
+    // The person switched AI labels off.
+    let off = SettingsPatch { auto_labels: Some(false), ..SettingsPatch::default() };
+    rig.assist.set_settings(&rig.mia, off).await.unwrap();
+    let _ = rig.assist.label_email(&rig.mia, email).await;
+    assert_eq!(embedded(&rig), 0, "switched off by the person");
+    let on = SettingsPatch { auto_labels: Some(true), ..SettingsPatch::default() };
+    rig.assist.set_settings(&rig.mia, on).await.unwrap();
+
+    // Mail in Junk or Trash is no neighbour and is not backfilled.
+    let roles = rig.store.mailboxes(rig.mia.id).await.unwrap();
+    let junk = roles.iter().find(|m| m.role == Some(MailboxRole::Junk)).unwrap().id;
+    let moved = EmailUpdate { id: labeled[0], mailboxes: MailboxesChange::Replace(vec![junk]), ..Default::default() };
+    rig.store.update_emails(rig.mia.id, vec![moved]).await.unwrap();
+    let vector = |x: f32| json!({ "object": "embedding", "embedding": [x, 0.2, 0.1] });
+    rig.fake.push(Reply::Json(
+        200,
+        json!({ "data": [vector(1.0), vector(0.9), vector(1.1)], "usage": { "prompt_tokens": 60 } }),
+        vec![],
+    ));
+    let _ = rig.assist.label_email(&rig.mia, email).await;
+    let seen = rig.fake.seen();
+    let request = seen.iter().find(|seen| seen.path.ends_with("/embeddings")).expect("embedded with a server model");
+    assert_eq!(request.body["input"].as_array().unwrap().len(), 3, "the new mail and the two labeled outside Junk");
+    let vectors = rig.store.label_vectors(rig.mia.id, "embed-model".into()).await.unwrap();
+    assert!(vectors.iter().all(|v| v.email_id != labeled[0]), "not a neighbour from Junk");
+    assert!(rig.store.label_token_sets(rig.mia.id).await.unwrap().iter().all(|t| t.email_id != labeled[0]));
+}
+
+/// Security review 0.22 LABELS22-M1: someone who picked a personal model for labels does not
+/// have their mail sent to the server's embeddings provider.
+#[tokio::test]
+async fn a_personal_model_for_labels_keeps_mail_from_the_embeddings() {
+    let (rig, _, _) = labelled_rig().await;
+    rig.server_provider("embeddingsCompatible", json!({ "model": "embed-model", "fastModel": null })).await;
+    rig.policy(|policy| policy.allow_personal = true).await;
+    let own: uwumail_assist::ProviderInput = serde_json::from_value(json!({
+        "name": "Own", "kind": "openaiCompatible", "baseUrl": "https://llm.example.net/v1",
+        "apiKey": "sk-test-abcdefgh1234", "model": "big-model", "fastModel": "small-model"
+    }))
+    .unwrap();
+    let personal = rig.assist.create_personal_provider(&rig.mia, own).await.unwrap();
+    let choice = serde_json::from_value(json!({ "providerId": personal.id })).unwrap();
+    let patch = SettingsPatch {
+        features: Some([("autoLabels".to_owned(), Some(choice))].into_iter().collect()),
+        ..SettingsPatch::default()
+    };
+    rig.assist.set_settings(&rig.mia, patch).await.unwrap();
+    for n in 1..=2 {
+        let email = rig.deliver(&rig.mia, &trip(n)).await;
+        rig.store.update_emails(rig.mia.id, vec![keyword(email, "reisen", true)]).await.unwrap();
+    }
+    assert!(rig.assist.learn_labels().await);
+    let email = rig.deliver(&rig.mia, &trip(3)).await;
+    let _ = rig.assist.label_email(&rig.mia, email).await;
+    assert!(rig.fake.seen().iter().all(|seen| !seen.path.ends_with("/embeddings")), "{:?}", rig.fake.seen().len());
+}
+
+/// Security review 0.22 LABELS22-L1: a contact's address in From makes a known sender only when
+/// this server's authentication backs it.
+#[tokio::test]
+async fn a_contact_is_only_known_when_authentication_backs_the_address() {
+    use uwumail_store::{DavKind, DavPrecondition, DavWrite, NewDavCollection};
+    let (rig, _, _) = labelled_rig().await;
+    let book = NewDavCollection { slug: "contacts".into(), display_name: "Kontakte".into(), ..Default::default() };
+    let book = rig.store.dav_collections(rig.mia.id, DavKind::Addressbook, book).await.unwrap()[0].clone();
+    let card = "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:anna\r\nFN:Anna\r\nEMAIL:anna@example.com\r\nEND:VCARD\r\n";
+    let write = DavWrite {
+        name: "anna.vcf".into(),
+        content: card.into(),
+        uid: "anna".into(),
+        component: "VCARD".into(),
+        starts_at: None,
+        ends_at: None,
+    };
+    rig.store.dav_put(rig.mia.id, book.id, write, DavPrecondition::default()).await.unwrap();
+    let mail = |headers: &str, n: u32| {
+        format!(
+            "{headers}From: Anna <anna@example.com>\nTo: Mia <mia@example.org>\nSubject: Hi {n}\n\
+Date: Mon, 28 Sep 2026 10:00:00 +0000\nMessage-ID: <anna-{n}@example.com>\n\nHey Mia, wie geht's?\n"
+        )
+    };
+    let known_line = |rig: &Rig, at: usize| {
+        let user = rig.fake.seen()[at].body["messages"][1]["content"].as_str().unwrap().to_owned();
+        user.lines().find(|line| line.contains("sender known to the reader")).map(str::to_owned).unwrap_or_default()
+    };
+
+    let forged = rig.deliver(&rig.mia, &mail("", 1)).await;
+    rig.fake.push(picks(json!({ "labels": [] })));
+    let _ = rig.assist.label_email(&rig.mia, forged).await;
+    assert!(known_line(&rig, 0).ends_with("no"), "{}", known_line(&rig, 0));
+
+    let ours = "Received: from mail.example.com\n\tby mx.example.org (UwUMail) with ESMTPS id 1\n\
+Authentication-Results: mx.example.org; spf=pass smtp.mailfrom=example.com; dkim=pass header.d=example.com; dmarc=pass header.from=example.com\n";
+    let real = rig.deliver(&rig.mia, &mail(ours, 2)).await;
+    rig.fake.push(picks(json!({ "labels": [] })));
+    let _ = rig.assist.label_email(&rig.mia, real).await;
+    assert!(known_line(&rig, 1).ends_with("yes"), "{}", known_line(&rig, 1));
+
+    // Security review 0.22 R2-L2: the same block in a mail appended over IMAP or imported over JMAP
+    // is anybody's copy of it.
+    let appended = rig.append(&rig.mia, &mail(ours, 3)).await;
+    rig.fake.push(picks(json!({ "labels": [] })));
+    let _ = rig.assist.label_email(&rig.mia, appended).await;
+    assert!(known_line(&rig, 2).ends_with("no"), "{}", known_line(&rig, 2));
+
+    // Security review 0.22 R2-M1: passes for the sender's own other domain, or a DMARC failure,
+    // do not make the contact's address known.
+    for (n, results) in [
+        (4, "spf=pass smtp.mailfrom=x@attacker.example; dkim=pass header.d=attacker.example; dmarc=none"),
+        (5, "spf=pass smtp.mailfrom=x@example.com; dkim=pass header.d=example.com; dmarc=fail"),
+    ] {
+        let block = format!(
+            "Received: from relay.example\n\tby mx.example.org (UwUMail) with ESMTPS id {n}\n\
+Authentication-Results: mx.example.org; {results}\n"
+        );
+        let spoofed = rig.deliver(&rig.mia, &mail(&block, n)).await;
+        rig.fake.push(picks(json!({ "labels": [] })));
+        let _ = rig.assist.label_email(&rig.mia, spoofed).await;
+        let at = rig.fake.seen().len() - 1;
+        assert!(known_line(&rig, at).ends_with("no"), "{results}: {}", known_line(&rig, at));
+    }
+}
+
+/// Security review 0.22 LABELS22-L3: corrections kept as examples carry no codes or links, and
+/// they go when AI labels are switched off.
+#[tokio::test]
+async fn correction_examples_hide_codes_and_go_with_ai_labels() {
+    let (rig, _, _) = labelled_rig().await;
+    let raw = "From: Konto <noreply@bank.example>\nTo: Mia <mia@example.org>\nSubject: Rechnung 482913\n\
+Date: Mon, 28 Sep 2026 10:00:00 +0000\nMessage-ID: <code-1@bank.example>\n\n\
+Kundennummer 482 913, Gutschein AB7-K2X fuer MP3. Oder klick https://login.bank.example/reset?t=abc\n";
+    let email = rig.deliver(&rig.mia, raw).await;
+    rig.store.update_emails(rig.mia.id, vec![keyword(email, "rechnungen", true)]).await.unwrap();
+    let shots = rig.store.label_shots(rig.mia.id).await.unwrap();
+    assert_eq!(shots.len(), 1);
+    assert_eq!(shots[0].subject, "Rechnung ######");
+    assert!(!shots[0].snippet.contains("482") && !shots[0].snippet.contains("https"), "{}", shots[0].snippet);
+    assert!(shots[0].snippet.contains("### ###") && shots[0].snippet.contains("[link]"), "{}", shots[0].snippet);
+    // Letters and digits mixed are a code too (security review 0.22 R2, I-3); a short name stays.
+    assert!(shots[0].snippet.contains("###-###") && !shots[0].snippet.contains("K2X"), "{}", shots[0].snippet);
+    assert!(shots[0].snippet.contains("MP3"), "{}", shots[0].snippet);
+
+    // A mail with a one-time code keeps no example at all.
+    let code = "From: Konto <noreply@bank.example>\nTo: Mia <mia@example.org>\nSubject: Dein Code 482913\n\
+Date: Mon, 28 Sep 2026 10:00:00 +0000\nMessage-ID: <code-2@bank.example>\n\nDein Einmalcode lautet 482913.\n";
+    let email = rig.deliver(&rig.mia, code).await;
+    rig.store.update_emails(rig.mia.id, vec![keyword(email, "rechnungen", true)]).await.unwrap();
+    assert_eq!(rig.store.label_shots(rig.mia.id).await.unwrap().len(), 1);
+
+    let off = SettingsPatch { auto_labels: Some(false), ..SettingsPatch::default() };
+    rig.assist.set_settings(&rig.mia, off).await.unwrap();
+    assert!(rig.store.label_shots(rig.mia.id).await.unwrap().is_empty(), "gone with AI labels");
+}
+
+/// Security review 0.22 LABELS22-L4: one `AssistLabel/apply` at a time per person.
+#[tokio::test]
+async fn one_label_apply_at_a_time_per_person() {
+    let (rig, _, _) = labelled_rig().await;
+    let slot = rig.assist.begin_label_apply(rig.mia.id).unwrap();
+    assert!(matches!(rig.assist.begin_label_apply(rig.mia.id), Err(uwumail_assist::AssistError::Busy)));
+    assert!(rig.assist.begin_label_apply(rig.mia.id + 1).is_ok(), "somebody else is not held up");
+    drop(slot);
+    assert!(rig.assist.begin_label_apply(rig.mia.id).is_ok(), "free again once it ended");
 }
 
 #[tokio::test]

@@ -33,13 +33,18 @@ pub struct EmailRecord {
     pub has_attachment: bool,
     pub keywords: Vec<String>,
     pub mailbox_ids: Vec<i64>,
+    /// This server's SMTP delivery stored it: the headers it wrote on top are its own (security
+    /// review 0.22 R2-L2). See [`Store::ingest_marked`].
+    #[serde(skip)]
+    pub smtp_delivered: bool,
 }
 
 pub(crate) const EMAIL_COLUMNS: &str = "e.id, e.thread_id, e.blob_hash, e.size, e.received_at, e.sent_at, e.message_id,
      e.in_reply_to, e.refs, e.subject, e.from_addr, e.sender_addr, e.to_addr, e.cc_addr, e.bcc_addr, e.reply_to_addr,
      e.preview, e.has_attachment,
      (SELECT json_group_array(keyword) FROM email_keywords WHERE email_id = e.id),
-     (SELECT json_group_array(mailbox_id) FROM email_mailboxes WHERE email_id = e.id)";
+     (SELECT json_group_array(mailbox_id) FROM email_mailboxes WHERE email_id = e.id),
+     e.smtp_delivered";
 
 fn json<T: serde::de::DeserializeOwned + Default>(row: &Row<'_>, index: usize) -> rusqlite::Result<T> {
     Ok(serde_json::from_str(&row.get::<_, String>(index)?).unwrap_or_default())
@@ -73,6 +78,7 @@ pub(crate) fn email_from_row(row: &Row<'_>) -> rusqlite::Result<EmailRecord> {
         has_attachment: row.get(17)?,
         keywords,
         mailbox_ids,
+        smtp_delivered: row.get(20)?,
     })
 }
 

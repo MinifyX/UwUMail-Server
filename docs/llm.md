@@ -348,6 +348,13 @@ daily limits and price count like any provider's, under the feature
 for 768 dimensions) is kept and goes with the mail and the account. Without an
 embeddings provider, the mails' words are compared instead.
 
+Mail only goes to the embeddings provider while AI labels (`autoLabels`) are
+switched on on the server and by the person, the person may use the
+assistant for them, and the model chosen for labels is one of the server's.
+Someone who picked a personal or local model for labels, or switched AI labels
+off, gets the word comparison instead, so their mail stays where they chose.
+Mail in Junk or Trash is never embedded and never counts as a similar mail.
+
 ### Choosing a model
 
 Labels and the spam check need a model that follows definitions closely. Below

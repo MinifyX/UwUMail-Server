@@ -1759,8 +1759,10 @@ pub(crate) async fn receive(
     // same message from the same server lands on the same value when it comes back.
     let raw_hash = live.spam.greylist_hold.then(|| uwumail_store::BlobHash::of(&raw).as_str().to_owned());
 
-    // Our verdict replaces whatever the message brought along.
-    let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
+    // Our verdict replaces whatever the message brought along — also when the filter did not look:
+    // a sender's own `X-Spam-Status: No, score=-50` would otherwise be the only verdict stored, and
+    // the AI spam check would take it for ours (client review C-1, checked on the server).
+    let raw = headers::strip_spam_verdicts(&raw);
     // Label headers are the server's to write, for Sieve only; one a sender wrote is not kept in
     // the stored message either, so nothing that reads it later takes it for a label (security
     // audit 0.21.0 LABELS-I1). After the checks, which may cover it with a signature.
@@ -1937,7 +1939,8 @@ pub(crate) async fn receive(
             if junk {
                 tracing::info!(%id, to = %recipient.address, "not passing spam on from a forwarding address");
             } else {
-                let forwarder = forward::Forwarder { name: &recipient.address, account_id: None, proof };
+                let forwarder =
+                    forward::Forwarder { name: &recipient.address, account_id: None, proof, smtp_delivered: true };
                 forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
             }
             note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
@@ -1986,7 +1989,8 @@ pub(crate) async fn receive(
         // was waiting. Take it and let it go: delivering it again would double it, and bringing
         // a discarded one back would undo what they decided.
         if let Some(raw_hash) = &raw_hash {
-            match ctx.store.returning_greylist_hold(account_id, raw_hash, message_id.as_deref()).await {
+            let envelope_from = shorten(&envelope.address, 320);
+            match ctx.store.returning_greylist_hold(account_id, raw_hash, message_id.as_deref(), &envelope_from).await {
                 Ok(uwumail_store::Returning::Fresh) => {}
                 Ok(settled) => {
                     tracing::info!(
@@ -2020,7 +2024,7 @@ pub(crate) async fn receive(
                     keywords: vec!["$seen".into()],
                     received_at: None,
                 };
-                match ctx.store.ingest(request).await {
+                match ctx.store.ingest_marked(request, true).await {
                     Ok(_) => {
                         note_for(&recipient.address, SpamAction::Delivered, Some("trash"));
                         delivered += 1;
@@ -2073,7 +2077,8 @@ pub(crate) async fn receive(
         if !plan.targets.is_empty()
             && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id), proof };
+            let forwarder =
+                forward::Forwarder { name: &account.login, account_id: Some(account.id), proof, smtp_delivered: true };
             forwarded =
                 forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
         }
@@ -2122,7 +2127,7 @@ pub(crate) async fn receive(
                 let request =
                     IngestRequest { account_id, raw: message.clone(), mailboxes, keywords, received_at: None };
                 ctx.store
-                    .ingest(request)
+                    .ingest_marked(request, true)
                     .await
                     .map(|email| (Some(if junk { "junk" } else { "inbox" }), true, vec![email.id]))
             }

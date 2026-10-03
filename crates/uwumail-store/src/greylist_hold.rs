@@ -144,7 +144,7 @@ impl Store {
             // Two attempts of the same message may race each other here; the second one to get
             // the write lock counts as a retry of the first. Its blob, if it put one, has no
             // reference then and goes with the next garbage collection.
-            if let Some(id) = repeat_of(tx, &RepeatKey::of(&hold), expires_at)? {
+            if let Some(id) = repeat_of(tx, &RepeatKey::of(&hold))? {
                 return Ok(Some(id));
             }
             let at = now();
@@ -182,15 +182,16 @@ impl Store {
     /// about: a retry of a message someone discarded must not show up on their list again, and
     /// one they delivered by hand is in their mailbox already.
     ///
-    /// For a row that is still waiting, the same Message-ID from the same envelope sender is the
-    /// same message too. Large senders retry from another of their machines, which writes another
-    /// Received line, so the bytes are not always the same twice. The worst a forged match can do
-    /// is keep a message off the list that is greylisted anyway — it never decides whether mail is
-    /// delivered, which stays a question of bytes only (see [`Store::returning_greylist_hold`]).
+    /// For a row that is still waiting, the same Message-ID from the same envelope sender with
+    /// the same From header is the same message too. Large senders retry from another of their
+    /// machines, which writes another Received line, so the bytes are not always the same twice.
+    /// All three are lines a sender writes, so a forged match can still fold one message into
+    /// another's row; requiring From to match too keeps a stranger who only guessed a Message-ID
+    /// out of it (security review 0.22 SPAM-5). It never decides whether mail is delivered, which
+    /// stays a question of bytes only (see [`Store::returning_greylist_hold`]).
     async fn repeated_greylist_hold(&self, hold: &NewGreylistHold) -> Result<Option<i64>> {
         let key = RepeatKey::of(hold);
-        let expires_at = now() + hold.keep_secs.max(0);
-        self.write(move |tx| repeat_of(tx, &key, expires_at)).await
+        self.write(move |tx| repeat_of(tx, &key)).await
     }
 
     /// What one person is still waiting on, newest first.
@@ -321,14 +322,17 @@ impl Store {
     /// settled row means they already dealt with it by hand, and the retry must not undo that.
     ///
     /// A settled row only ever recognises the message it was made from, by its bytes. See the
-    /// query for why a Message-ID is not enough to drop somebody's mail on.
+    /// query for why a Message-ID is not enough to drop somebody's mail on. A waiting row goes by
+    /// its Message-ID only when the envelope sender is the same too.
     pub async fn returning_greylist_hold(
         &self,
         account_id: i64,
         raw_hash: &str,
         message_id: Option<&str>,
+        envelope_from: &str,
     ) -> Result<Returning> {
         let (raw_hash, message_id) = (raw_hash.to_owned(), message_id.map(str::to_owned));
+        let envelope_from = envelope_from.to_owned();
         self.write(move |tx| {
             // The same bytes, always. The same Message-ID only for a row that is still waiting,
             // where the worst it can do is take an entry off somebody's list.
@@ -340,12 +344,15 @@ impl Store {
             // mail leaves nobody a trace, so this side errs towards delivering twice.
             //
             // Every waiting row of it goes, not just one: a message that arrives normally is off
-            // the list, however many attempts it took to get here.
+            // the list, however many attempts it took to get here. By Message-ID only from the
+            // same envelope sender: otherwise anybody who passes greylisting with a held message's
+            // Message-ID would wipe it off the list (security review 0.22 SPAM-5).
             let waiting = tx.execute(
                 "DELETE FROM greylist_hold
                  WHERE account_id = ?1 AND settled IS NULL
-                   AND (raw_hash = ?2 OR (?3 IS NOT NULL AND message_id = ?3))",
-                params![account_id, raw_hash, message_id],
+                   AND (raw_hash = ?2
+                        OR (?3 IS NOT NULL AND message_id = ?3 AND envelope_from = ?4 COLLATE NOCASE))",
+                params![account_id, raw_hash, message_id, envelope_from],
             )?;
             if waiting > 0 {
                 // It is coming back by itself, so nothing needs to be held any longer.
@@ -387,6 +394,9 @@ struct RepeatKey {
     raw_hash: String,
     message_id: Option<String>,
     envelope_from: String,
+    header_from: String,
+    /// How long one attempt keeps the row, from now.
+    keep_secs: i64,
 }
 
 impl RepeatKey {
@@ -396,33 +406,44 @@ impl RepeatKey {
             raw_hash: hold.raw_hash.clone(),
             message_id: hold.message_id.clone().filter(|id| !id.trim().is_empty()),
             envelope_from: hold.envelope_from.clone(),
+            header_from: hold.header_from.clone(),
+            keep_secs: hold.keep_secs.max(0),
         }
     }
 }
 
+/// However often a sender retries, a waiting row lives at most this many keeping times from its
+/// first attempt. Otherwise a sender that keeps coming back would pin its rows, and their blobs,
+/// for good, and fill the person's list so new mail is no longer kept (security review SPAM-5).
+const MAX_KEEPS_PER_ROW: i64 = 2;
+
 /// Finds the row `key` repeats and counts the attempt there. See
 /// [`Store::repeated_greylist_hold`] for what counts.
-fn repeat_of(tx: &rusqlite::Transaction<'_>, key: &RepeatKey, expires_at: i64) -> Result<Option<i64>> {
+fn repeat_of(tx: &rusqlite::Transaction<'_>, key: &RepeatKey) -> Result<Option<i64>> {
     let found: Option<(i64, Option<String>)> = tx
         .query_row(
             "SELECT id, settled FROM greylist_hold
              WHERE account_id = ?1
                AND (raw_hash = ?2
-                    OR (settled IS NULL AND ?3 IS NOT NULL AND message_id = ?3 AND envelope_from = ?4 COLLATE NOCASE))
+                    OR (settled IS NULL AND ?3 IS NOT NULL AND message_id = ?3
+                        AND envelope_from = ?4 COLLATE NOCASE AND header_from = ?5 COLLATE NOCASE))
              ORDER BY settled IS NULL DESC, id
              LIMIT 1",
-            params![key.account_id, key.raw_hash, key.message_id, key.envelope_from],
+            params![key.account_id, key.raw_hash, key.message_id, key.envelope_from, key.header_from],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
     let Some((id, settled)) = found else { return Ok(None) };
     if settled.is_none() {
         // Kept as long as the latest attempt is worth keeping, which is when the sender's greylist
-        // entry is forgotten too.
+        // entry is forgotten too — but never past MAX_KEEPS_PER_ROW keeping times from the first.
+        let at = now();
         tx.execute(
-            "UPDATE greylist_hold SET attempts = attempts + 1, last_at = ?2, expires_at = max(expires_at, ?3)
+            "UPDATE greylist_hold
+             SET attempts = attempts + 1, last_at = ?2,
+                 expires_at = max(expires_at, min(?2 + ?3, at + ?4))
              WHERE id = ?1",
-            params![id, now(), expires_at],
+            params![id, at, key.keep_secs, key.keep_secs.saturating_mul(MAX_KEEPS_PER_ROW)],
         )?;
     }
     Ok(Some(id))
@@ -439,7 +460,8 @@ fn settle_waiting_copies(tx: &rusqlite::Transaction<'_>, account_id: i64, id: i6
                       WHERE decided.id = ?1 AND copy.account_id = decided.account_id
                         AND (copy.raw_hash = decided.raw_hash
                              OR (decided.message_id IS NOT NULL AND copy.message_id = decided.message_id
-                                 AND copy.envelope_from = decided.envelope_from COLLATE NOCASE)))",
+                                 AND copy.envelope_from = decided.envelope_from COLLATE NOCASE
+                                 AND copy.header_from = decided.header_from COLLATE NOCASE)))",
         params![id, account_id, how.as_str(), now()],
     )?;
     Ok(())
@@ -535,7 +557,10 @@ mod tests {
 
         // Coming back while it still waits: delivered as usual, and the row goes.
         assert_eq!(
-            store.returning_greylist_hold(account, &raw_hash, Some("<Angebot@example.org>")).await.unwrap(),
+            store
+                .returning_greylist_hold(account, &raw_hash, Some("<Angebot@example.org>"), "fremder@example.org")
+                .await
+                .unwrap(),
             Returning::Fresh
         );
         assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0, "it is arriving normally now");
@@ -543,18 +568,27 @@ mod tests {
         // Delivered by hand: the retry must not deliver it a second time.
         let id2 = store.hold_greylisted(hold(account, "Angebot", &raw)).await.unwrap().unwrap();
         store.settle_greylist_hold(account, id2, Settled::Delivered, false).await.unwrap();
-        assert_eq!(store.returning_greylist_hold(account, &raw_hash, None).await.unwrap(), Returning::Delivered);
+        assert_eq!(
+            store.returning_greylist_hold(account, &raw_hash, None, "fremder@example.org").await.unwrap(),
+            Returning::Delivered
+        );
 
         // Discarded: the retry must not bring it back.
         let gone = b"Subject: Weg\r\n\r\nHallo".to_vec();
         let id3 = store.hold_greylisted(hold(account, "Weg", &gone)).await.unwrap().unwrap();
         store.settle_greylist_hold(account, id3, Settled::Discarded, false).await.unwrap();
         let gone_hash = BlobHash::of(&gone).as_str().to_owned();
-        assert_eq!(store.returning_greylist_hold(account, &gone_hash, None).await.unwrap(), Returning::Discarded);
+        assert_eq!(
+            store.returning_greylist_hold(account, &gone_hash, None, "fremder@example.org").await.unwrap(),
+            Returning::Discarded
+        );
 
         // Something nobody was greylisted on is none of its business.
         let other = BlobHash::of(b"etwas ganz anderes").as_str().to_owned();
-        assert_eq!(store.returning_greylist_hold(account, &other, None).await.unwrap(), Returning::Fresh);
+        assert_eq!(
+            store.returning_greylist_hold(account, &other, None, "fremder@example.org").await.unwrap(),
+            Returning::Fresh
+        );
         let _ = id;
     }
 
@@ -572,7 +606,10 @@ mod tests {
         // about, and it has to be delivered.
         let real = BlobHash::of(b"Subject: Rechnung\r\n\r\nGanz andere Nachricht").as_str().to_owned();
         assert_eq!(
-            store.returning_greylist_hold(account, &real, Some("<Rechnung@example.org>")).await.unwrap(),
+            store
+                .returning_greylist_hold(account, &real, Some("<Rechnung@example.org>"), "fremder@example.org")
+                .await
+                .unwrap(),
             Returning::Fresh,
             "a Message-ID is a line the sender wrote, not a reason to drop somebody's mail"
         );
@@ -580,7 +617,10 @@ mod tests {
         // The same bytes are still recognised, so a real retry is still not delivered twice.
         let spam_hash = BlobHash::of(&spam).as_str().to_owned();
         assert_eq!(
-            store.returning_greylist_hold(account, &spam_hash, Some("<Rechnung@example.org>")).await.unwrap(),
+            store
+                .returning_greylist_hold(account, &spam_hash, Some("<Rechnung@example.org>"), "fremder@example.org")
+                .await
+                .unwrap(),
             Returning::Discarded
         );
 
@@ -590,7 +630,10 @@ mod tests {
         store.hold_greylisted(hold(account, "Angebot", &waiting)).await.unwrap().unwrap();
         let rewritten = BlobHash::of(b"Subject: Angebot\r\n\r\nHallo, mit anderem Datum").as_str().to_owned();
         assert_eq!(
-            store.returning_greylist_hold(account, &rewritten, Some("<Angebot@example.org>")).await.unwrap(),
+            store
+                .returning_greylist_hold(account, &rewritten, Some("<Angebot@example.org>"), "fremder@example.org")
+                .await
+                .unwrap(),
             Returning::Fresh
         );
         assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0, "it is arriving normally now");
@@ -748,20 +791,92 @@ mod tests {
         let account = new_account(&store, "nyu").await;
         let raw = b"Subject: Paket\r\n\r\nHallo".to_vec();
         store.hold_greylisted(hold(account, "Paket", &raw)).await.unwrap();
-        // Copies from before retries were counted on one row.
+        // Copies from before retries were counted on one row, from the same envelope sender.
         for copy in 0..2 {
             let mut legacy = hold(account, "Paket", format!("Subject: Paket\r\nX-Try: {copy}\r\n\r\nHallo").as_bytes());
-            legacy.envelope_from = format!("bounce-{copy}@example.org");
+            legacy.header_from = format!("Versand {copy} <fremder@example.org>");
+            legacy.envelope_from = "Fremder@Example.org".into();
             store.hold_greylisted(legacy).await.unwrap();
         }
-        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 3);
+        // And a stranger's message that only carries the same Message-ID.
+        let mut stranger = hold(account, "Paket", b"Subject: Paket\r\n\r\nFremd");
+        stranger.envelope_from = "boese@example.net".into();
+        store.hold_greylisted(stranger).await.unwrap();
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 4);
 
         let arriving = BlobHash::of(b"Subject: Paket\r\nReceived: anders\r\n\r\nHallo").as_str().to_owned();
         assert_eq!(
-            store.returning_greylist_hold(account, &arriving, Some("<Paket@example.org>")).await.unwrap(),
+            store
+                .returning_greylist_hold(account, &arriving, Some("<Paket@example.org>"), "fremder@example.org")
+                .await
+                .unwrap(),
             Returning::Fresh
         );
-        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0, "all of it, not just one");
+        let left = store.greylist_holds(account).await.unwrap();
+        assert_eq!(left.len(), 1, "every copy from that sender, not just one");
+        assert_eq!(left[0].envelope_from, "boese@example.net", "but not the stranger's");
+    }
+
+    /// Security review 0.22 SPAM-5: a message that only shares a held message's Message-ID, from
+    /// another envelope sender, neither removes the held one when it arrives nor folds into it.
+    #[tokio::test]
+    async fn a_forged_message_id_neither_removes_nor_takes_over_a_held_message() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        let real = b"Subject: Vertrag\r\n\r\nDer echte".to_vec();
+        let id = store.hold_greylisted(hold(account, "Vertrag", &real)).await.unwrap().unwrap();
+
+        // The forgery arrives normally (it retried) with the same Message-ID.
+        let forged = BlobHash::of(b"Subject: Vertrag\r\n\r\nGefaelscht").as_str().to_owned();
+        let returning = store
+            .returning_greylist_hold(account, &forged, Some("<Vertrag@example.org>"), "boese@example.net")
+            .await
+            .unwrap();
+        assert_eq!(returning, Returning::Fresh);
+        assert_eq!(store.greylist_holds(account).await.unwrap()[0].id, id, "the real one is still waiting");
+
+        // Same envelope sender and Message-ID, but another From: not folded into the real one.
+        let mut other_from = hold(account, "Vertrag", b"Subject: Vertrag\r\n\r\nAuch gefaelscht");
+        other_from.header_from = "Bank <service@bank.example>".into();
+        assert_ne!(store.hold_greylisted(other_from).await.unwrap(), Some(id));
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 2);
+    }
+
+    /// Security review 0.22 SPAM-5: retries keep a row alive, but not past twice its keeping time
+    /// from the first attempt.
+    #[tokio::test]
+    async fn retries_do_not_keep_a_row_alive_for_ever() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        let raw = b"Subject: Immer\r\n\r\nWieder".to_vec();
+        let mut first = hold(account, "Immer", &raw);
+        first.keep_secs = 100;
+        let id = store.hold_greylisted(first.clone()).await.unwrap().unwrap();
+        // The first attempt was long ago: a retry now may only extend it to `at + 2 × keep`.
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "UPDATE greylist_hold SET at = at - 1000, expires_at = expires_at - 1000 WHERE id = ?1",
+                    [id],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert_eq!(store.hold_greylisted(first).await.unwrap(), Some(id));
+        let row = &store.greylist_holds(account).await.unwrap()[0];
+        assert_eq!(row.attempts, 2);
+        assert!(row.expires_at <= row.at + 200, "{} > {} + 200", row.expires_at, row.at);
+        store.prune_greylist_holds().await.unwrap();
+        assert!(store.greylist_holds(account).await.unwrap().is_empty(), "and it expires");
+
+        // A young row is still extended by a retry, up to the cap.
+        let mut young = hold(account, "Jung", b"Subject: Jung\r\n\r\nHallo");
+        young.keep_secs = 100;
+        let id = store.hold_greylisted(young.clone()).await.unwrap().unwrap();
+        store.hold_greylisted(young).await.unwrap();
+        let row = store.greylist_holds(account).await.unwrap().into_iter().find(|row| row.id == id).unwrap();
+        assert!(row.expires_at >= row.at + 100 && row.expires_at <= row.at + 200);
     }
 
     #[tokio::test]

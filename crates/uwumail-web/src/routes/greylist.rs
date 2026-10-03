@@ -91,7 +91,9 @@ pub async fn decide(
                 // It arrived when it arrived, not when the decision was made.
                 received_at: Some(held.received_at),
             };
-            if let Err(err) = store.ingest(request).await {
+            // It came in over SMTP and was held with this server's own headers on top (security
+            // review 0.22 R2-L2).
+            if let Err(err) = store.ingest_marked(request, true).await {
                 // Hand the row back, so a mailbox that was full at the wrong moment does not cost
                 // them the message.
                 match store.reopen_greylist_hold(account, id).await {

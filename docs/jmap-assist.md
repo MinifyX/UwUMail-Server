@@ -377,7 +377,12 @@ do not know as they are.
 
 The model sees the facts numbered, the allowed verdicts (its answer schema
 allows no others) and the mail as untrusted data. It gives its reasons, each
-with `evidence` (a quote or a fact number), before the verdict.
+with `evidence` (a quote or a fact number), before the verdict. A reason is
+kept only when its `evidence` is nothing but the number of an existing fact
+whose topic the reason is about (a fact number in the reason's own text counts
+for nothing), or a quote that stands in the mail. A reason that names a web
+address, mail address or phone number found neither in the mail nor in the
+facts is dropped. The reasons are still the model's wording.
 
 ## Assist/extractEvents
 
@@ -472,6 +477,7 @@ stay `AssistLabel/*`, as since 0.18.
 | `rules` | `Rules\|null` | conditions that put the label on new mail; `null` for none (default) |
 | `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter`, `shipping`, `account`, `personal`, `work` or `advertising`; `null` for none (default). A base label uses its own detector without one |
 | `base` | `String\|null` | server-set: which base label it is (`invoice`, `shipping`, `appointment`, `newsletter`, `account`, `personal`, `work`, `advertising`), `null` for the person's own |
+| `previousDescription` | `String\|null` | server-set: for a label of the person's that became a base label because of its name, the description they had written before (given to the model as a hint); `null` otherwise |
 | `auto` | `Boolean` | the label may be put on by itself (rules, detectors, learned senders, similar mails, classifier, the model); `false` keeps it for the person's hands (default `true`) |
 | `learnSenders` | `Boolean` | a sender whose mail the person gave this label by hand twice gets it on new mail (default `true`) |
 | `classifier` | `Boolean` | the label's classifier may put it on new mail once it has learned enough (default `true`) |
@@ -645,7 +651,10 @@ arrived before auto-labels were on or while it was off. It needs the
 `autoLabels` feature, not the setting, and decides as the label worker does
 (the cheap ways first, the model only in doubt, at most two labels); it logs
 each label with its source. Response `{ accountId, labeled: {
-emailId: [labelId] }, notFound: [ids] }`.
+emailId: [labelId] }, notFound: [ids] }`. One call runs at a time per person;
+another one meanwhile fails like a busy provider. With the person's setting
+off, similar mails are compared by their words (no embeddings) and no
+correction examples are sent.
 
 ### AssistLabel/suggest
 
@@ -899,9 +908,13 @@ to size.
 
 **Spam check.** `signals` are what the server can tell from the given
 headers: `authentication` from the topmost `Authentication-Results` of
-`headers`, whichever server wrote it (for own mail only this server's own
-counts); `spamScore`, `spamThreshold` and `tests` from `X-Spam-Status` if
-there is one; `inJunk` from the mail. `sender` is `null`: the server knows
+`headers` above the first `Received`, whichever server wrote it (a sender can
+write any header below that); `spamScore`, `spamThreshold` and `tests` from an
+`X-Spam-Status` above the first `Received`; `inJunk` from the mail. For own
+mail only the block this server wrote on top counts: its own `Received` line
+and the headers up to the next `Received`. A good word from another account's
+filter (a score of 0 or less) is not counted, and the model may always answer
+"suspicious" for another account's mail. `sender` is `null`: the server knows
 nothing about the history of another account. The model is told that these
 results come from the other provider.
 

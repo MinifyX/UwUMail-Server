@@ -138,7 +138,7 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
         links: body.links.iter().take(200).map(phishing::SeenLink::of).collect(),
         mailing_list: message.header("List-Id").is_some() || message.header("List-Post").is_some(),
     };
-    for finding in phishing::check(&seen.input()) {
+    for finding in phishing::check(&phishing::Input { from_authenticated: dmarc_passed, ..seen.input() }) {
         // A link text naming some third site is what newsletters with tracking links do all the
         // time; from a sender DMARC vouches for it is no trick. A brand's address on a link to
         // somewhere else always is.
@@ -321,8 +321,9 @@ TVo=
     #[test]
     fn a_real_newsletter_trips_nothing_and_its_tracking_links_only_count_without_dmarc() {
         assert!(rules(&newsletter(), true).is_empty(), "{:?}", rules(&newsletter(), true));
-        // Its tracking links show the shop's own address, which is no trick even without DMARC.
-        assert!(rules(&newsletter(), false).is_empty(), "{:?}", rules(&newsletter(), false));
+        // Its tracking links show the shop's own address, which is no trick when DMARC vouches for
+        // the shop; without that, anybody could have written the From (security review SPAM-3).
+        assert_eq!(rules(&newsletter(), false), ["PHISHING_LINK_TEXT"]);
         let found = examine(newsletter().as_bytes(), now(), true, None);
         assert_eq!(found.link_domains, ["shop.example", "click.mailer.example"]);
     }

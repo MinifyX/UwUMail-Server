@@ -50,9 +50,11 @@ greylisting off.
 While a sender is asked to come back, the message waits under *Mein Konto →
 Spamfilter → Wartende Nachrichten* (`greylist_hold`). Retries of the same
 message are one entry with a count of attempts: the same bytes, or the same
-Message-ID from the same envelope sender (large senders retry from another
-machine, which writes another `Received` line). Once the message arrives by
-itself, every waiting entry of it disappears; a retry of a message that was
+Message-ID from the same envelope sender with the same From (large senders
+retry from another machine, which writes another `Received` line). Retries keep
+an entry no longer than twice the waiting time from its first attempt. Once the
+message arrives by itself, every waiting entry of it disappears (by Message-ID
+only when the envelope sender is the same too); a retry of a message that was
 already delivered or discarded by hand does not show up again. Whether a retry
 is dropped because someone decided about it is still a question of the exact
 bytes only — a Message-ID is a line anyone can write.
@@ -159,8 +161,11 @@ A domain imitates a brand when it is one letter away from the brand's name
 (`paypa1`, `amazom`), looks like it once confusable letters are mapped
 (`rn` for `m`, `0` for `o`, Cyrillic `а` for Latin `a`), decodes from punycode
 (`xn--…`) into such a name, or carries the name in one part of a hyphenated
-label (`netfllx-billing`). The brand's own domains, its country domains and
-regional names (Sparkassen, Volksbanken) count as the brand itself.
+label (`netfllx-billing`). The brand's own domains and its country domains
+count as the brand itself. Regional names of Sparkassen and Volksbanken
+(`sparkasse-musterstadt.de`) count only under `.de` and `.at`; the same prefix
+under any other ending (`sparkasse-login.com`) is an imitation. A regional name
+never vouches for a link whose text shows the brand's main site.
 
 | Rule | Points | When |
 | --- | --- | --- |
@@ -178,7 +183,9 @@ regional names (Sparkassen, Volksbanken) count as the brand itself.
 | `CREDENTIAL_REQUEST` | +2.0 | the mail asks to sign in, confirm or update data (German or English) and its links lead somewhere else than the sender's own site, or it claims a brand it does not come from |
 
 A newsletter whose link text shows its own shop while the link goes through a
-tracking service is not counted (`TRACKED_LINK_TEXT`, 0 points). A user name
+tracking service is not counted (`TRACKED_LINK_TEXT`, 0 points), but only when
+the From domain is authenticated (DMARC passed); otherwise anybody could have
+written that From, and the link counts as `PHISHING_LINK_TEXT`. A user name
 with dots ("lia.lunare") is not taken for a domain: only names with a known
 ending are.
 
@@ -279,7 +286,10 @@ at most 1 point otherwise, it adds at most +3.5: word statistics tell one
 newsletter from another well, but not a newsletter someone wants from one they
 do not, and at full strength they put authenticated, otherwise spotless
 receipts and newsletters into Junk on real mail. Such a message is greylisted
-at most. A person's own knowledge goes past that limit when it is 99 % sure,
+at most. Since DMARC costs a spammer nothing on a fresh domain, the limit only
+holds for a sender with a known good history (at most a tenth junk), or while
+the server's statistics are less than 99 % sure; it never holds for a sender
+whose mail mostly went to Junk. The reputation is read before the limit is set. A person's own knowledge goes past that limit when it is 99 % sure,
 so someone who keeps moving one newsletter to Junk gets it there. The sender reputation and the clear cases below
 look at a message's points without the learned rules (these two and the
 reputation rules), so what was learned never feeds on itself.
@@ -536,6 +546,11 @@ curious person can see why a message ended up where it did:
 X-Spam-Score: 7.0
 X-Spam-Status: Yes, score=7.0 required=5.0 tests=DMARC_FAIL,SPF_FAIL,NO_AUTH,NO_REVERSE_DNS
 ```
+
+`X-Spam-Score` and `X-Spam-Status` a message brings along are always removed,
+also when the filter is off or did not look, and so are `Authentication-Results`
+in this server's name; that goes for mail submitted by local people as well.
+Only what this server wrote is left for mail apps and the AI spam check.
 
 With the virus scanner on, every message that is taken also says whether
 anyone looked at it:

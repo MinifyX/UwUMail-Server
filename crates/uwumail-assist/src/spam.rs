@@ -12,11 +12,13 @@
 //! dropped before anybody reads them. The confidence comes from how clear the facts are, nudged by
 //! the model, never from the model alone.
 
+use std::collections::HashSet;
+
 use serde::Serialize;
 use serde_json::Value;
 use uwumail_smtp::phishing::Finding;
 
-use crate::features::SpamSignals;
+use crate::features::{AuthenticationSignals, SpamSignals};
 use crate::mail::MailText;
 
 /// The verdicts, from good to bad. `phishing` ranks with `spam` and needs phishing evidence.
@@ -183,23 +185,41 @@ fn add(evidence: &mut Vec<Evidence>, code: &str, weight: f64, detail: Option<Str
     evidence.push(Evidence { code: code.to_owned(), tone, weight: (weight * 10.0).round() / 10.0, detail, phishing });
 }
 
+/// Whether authentication backs the From domain, as the SMTP checks decide it: DMARC passed, or —
+/// for a From domain without a DMARC policy — a DKIM signature or an SPF pass for the From domain,
+/// a parent or a subdomain of it. A pass for some other domain the sender owns vouches for nothing,
+/// and a DMARC failure is never outweighed (security review 0.22 R2-M1). The AI spam check and the
+/// AI labels both ask this.
+pub fn authentic(auth: &AuthenticationSignals) -> bool {
+    match auth.dmarc.as_deref() {
+        Some("pass") => true,
+        None | Some("none") => auth.from_domain.as_deref().is_some_and(|from| {
+            let related = |domain: &str| uwumail_smtp::related_domains(from, domain);
+            (passed(&auth.dkim) && auth.dkim_pass_domains.iter().any(|domain| related(domain)))
+                || (passed(&auth.spf) && auth.spf_pass_domain.as_deref().is_some_and(related))
+        }),
+        Some(_) => false,
+    }
+}
+
 /// Adds up what the server knows. `phishing` are the findings of `uwumail_smtp::phishing` for this
 /// mail, `text` the mail's subject and text for the content cues.
 pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assessment {
     let mut evidence = Vec::new();
     let auth = &signals.authentication;
-    let authentic = match auth.dmarc.as_deref() {
-        Some("pass") => true,
-        None | Some("none") => passed(&auth.dkim) && passed(&auth.spf),
-        Some(_) => false,
-    };
+    let authentic = authentic(auth);
 
     // The spam filter: its whole verdict in one fact, scaled so that its limit weighs 3.
     if let Some(score) = signals.spam_score {
         let threshold = signals.spam_threshold.filter(|t| *t > 0.0).unwrap_or(5.0);
         let detail = Some(format!("{score:.1}/{threshold:.1}"));
+        // Another account's provider may write no verdict of its own, and then the one counted could
+        // be the sender's: a good word from a filter is only believed from this server's own.
+        let own_filter = signals.sender.is_some();
         if score <= 0.0 {
-            add(&mut evidence, "FILTER_WANTED", (score * 0.4).clamp(-2.0, -0.5), detail, false);
+            if own_filter {
+                add(&mut evidence, "FILTER_WANTED", (score * 0.4).clamp(-2.0, -0.5), detail, false);
+            }
         } else if score >= threshold {
             add(&mut evidence, "FILTER_OVER_LIMIT", 3.0 + ((score - threshold) * 0.2).min(1.5), detail, false);
         } else {
@@ -282,8 +302,10 @@ pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assess
     let mut assessment = Assessment { score, band, evidence, allowed: Vec::new(), default_verdict: "suspicious" };
     let phishing_possible = assessment.has_phishing_evidence();
     let (low, mut high) = band.range();
-    // A clean-looking mail that still shows a phishing trick may at least be called suspicious.
-    if high == 0 && phishing_possible {
+    // A clean-looking mail that still shows a phishing trick may at least be called suspicious, and
+    // so may another account's mail, whose facts this server cannot verify: the model can always
+    // raise a concern there (client review C-1).
+    if high == 0 && (phishing_possible || signals.sender.is_none()) {
         high = 1;
     }
     assessment.allowed = VERDICTS
@@ -418,42 +440,180 @@ pub fn verify(
         mail.links.join("\n")
     ))
     .replace(['„', '“', '”'], "\"");
+    let known_text = normalized(&facts.iter().map(|fact| fact.text.as_str()).collect::<Vec<_>>().join("\n"));
+    let mail_numbers = digit_runs(&haystack);
     let mut kept: Vec<Reason> = Vec::new();
     let mut dropped = 0;
     for (text, evidence) in reasons {
         if kept.len() >= max {
             break;
         }
-        let cited = cited_fact(&evidence, facts).or_else(|| cited_fact(&text, facts));
+        // A fact counts only when the evidence field is nothing but its number and the reason is
+        // about what that fact says; a fact number written into the reason's own text proves
+        // nothing (security review 0.22 SPAM-6).
+        let cited = cited_fact(&evidence, facts).filter(|fact| relates(&text, fact));
         let quote = if cited.is_none() { quoted(&evidence, &haystack) } else { None };
-        let grounded = cited.is_some() || quote.is_some();
-        if !grounded || contradicts(&text, mail, shape, signals) || kept.iter().any(|known| known.text == text) {
+        let grounded = cited.map(|fact| fact.id.clone());
+        if (grounded.is_none() && quote.is_none())
+            || contradicts(&text, mail, shape, signals)
+            || brings_contacts(&text, &haystack, &known_text, &mail_numbers)
+            || kept.iter().any(|known| known.text == text)
+        {
             dropped += 1;
             continue;
         }
-        kept.push(Reason { text, quote, fact: cited });
+        kept.push(Reason { text, quote, fact: grounded });
     }
     (kept, dropped)
 }
 
-/// The fact id a citation names (`F3`, `[F3]`, `Fakt F3`), when that fact exists.
-fn cited_fact(text: &str, facts: &[Fact]) -> Option<String> {
-    let upper = text.to_uppercase();
-    let bytes = upper.as_bytes();
-    let mut at = 0;
-    while let Some(found) = upper[at..].find('F') {
-        let start = at + found;
-        let digits: String = upper[start + 1..].chars().take_while(char::is_ascii_digit).collect();
-        let before_ok = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
-        if before_ok && !digits.is_empty() {
-            let id = format!("F{digits}");
-            if facts.iter().any(|fact| fact.id == id) {
-                return Some(id);
-            }
-        }
-        at = start + 1;
+/// The fact an evidence field names, when the field is only that: `F3`, `[F3]`, `Fakt F3`, `fact
+/// F3.` — and that fact exists.
+fn cited_fact<'a>(evidence: &str, facts: &'a [Fact]) -> Option<&'a Fact> {
+    let lower = evidence.trim().to_lowercase();
+    let lower = lower.trim_matches(|c: char| c.is_whitespace() || "[]().:;,\"'".contains(c));
+    let lower = ["fakt", "fact"].iter().find_map(|word| lower.strip_prefix(word)).unwrap_or(lower).trim_start();
+    let digits = lower.strip_prefix('f')?.trim_end_matches(|c: char| ".:;,)]".contains(c));
+    if digits.is_empty() || digits.len() > 3 || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
     }
-    None
+    let id = format!("F{digits}");
+    facts.iter().find(|fact| fact.id == id)
+}
+
+/// Word stems by topic, English and German: a reason and a fact that both touch one topic are
+/// about the same thing.
+const TOPICS: &[&[&str]] = &[
+    &[
+        "spf",
+        "dkim",
+        "dmarc",
+        "authent",
+        "verif",
+        "signed",
+        "signiert",
+        "signatur",
+        "genuine",
+        "echt",
+        "spoof",
+        "forged",
+        "fälsch",
+        "gefälscht",
+        "really comes",
+        "wirklich",
+        "domain",
+    ],
+    &["filter", "score", "punkte", "points", "bayes", "rule", "regel", "limit", "grenze"],
+    &[
+        "earlier",
+        "früher",
+        "bisher",
+        "before",
+        "zuvor",
+        "wrote",
+        "written",
+        "geschrieben",
+        "sent to",
+        "contact",
+        "kontakt",
+        "address book",
+        "adressbuch",
+        "known",
+        "bekannt",
+        "unknown",
+        "unbekannt",
+        "first",
+        "erste",
+        "erstmals",
+        "history",
+        "verlauf",
+    ],
+    &["junk", "spam folder", "spam-ordner", "spamordner"],
+    &[
+        "link",
+        "url",
+        "address",
+        "adresse",
+        "site",
+        "seite",
+        "domain",
+        "lookalike",
+        "imitat",
+        "ähnlich",
+        "looks like",
+        "brand",
+        "marke",
+        "display name",
+        "anzeigename",
+        "reply",
+        "antwort",
+    ],
+    &["attachment", "anhang", "anhänge", "file", "datei"],
+    &["payment", "zahlung", "bezahl", "geld", "money", "gift card", "gutschein", "urgent", "dringend", "sofort"],
+    &["login", "log in", "sign in", "anmeld", "password", "passwort", "konto", "account", "verify", "bestätig"],
+];
+
+/// Whether a reason is about what its cited fact says: a topic or a word they share.
+fn relates(reason: &str, fact: &Fact) -> bool {
+    let reason = reason.to_lowercase();
+    let fact_text = fact.text.to_lowercase();
+    if TOPICS.iter().any(|stems| {
+        stems.iter().any(|stem| reason.contains(stem)) && stems.iter().any(|stem| fact_text.contains(stem))
+    }) {
+        return true;
+    }
+    let words = |text: &str| -> HashSet<String> {
+        text.split(|c: char| !c.is_alphanumeric()).filter(|word| word.chars().count() >= 5).map(str::to_owned).collect()
+    };
+    !words(&reason).is_disjoint(&words(&fact_text))
+}
+
+/// Whether a reason brings a web address, mail address or phone number that neither the mail nor
+/// the facts contain: the model's own invention, or one a prompt injection put there — shown as a
+/// checked reason it would send the reader somewhere (security review 0.22 SPAM-6).
+fn brings_contacts(text: &str, mail: &str, facts: &str, mail_numbers: &[String]) -> bool {
+    let address = text.split_whitespace().map(|word| normalized(word.trim_matches(['<', '>']))).any(|word| {
+        let looks = word.contains("://")
+            || word.starts_with("www.")
+            || (word.contains('@') && word.contains('.'))
+            || looks_like_host(&word);
+        looks && !mail.contains(&word) && !facts.contains(&word)
+    });
+    if address {
+        return true;
+    }
+    // Phone-like numbers of seven digits or more, each of which has to stand within one number of
+    // the mail: the end of one number and the start of the next run together are no number of it
+    // (security review 0.22 R2, I-2).
+    digit_runs(text)
+        .iter()
+        .filter(|number| number.len() >= 7)
+        .any(|number| !mail_numbers.iter().any(|known| known.contains(number.as_str())))
+}
+
+/// The numbers of a text as runs of digits, joined across the usual phone separators (`+49 (30)
+/// 123-45 67` is one).
+fn digit_runs(text: &str) -> Vec<String> {
+    let mut run = String::new();
+    let mut numbers = Vec::new();
+    for c in text.chars().chain(std::iter::once('x')) {
+        if c.is_ascii_digit() {
+            run.push(c);
+        } else if !(c == ' ' || c == '+' || c == '-' || c == '/' || c == '(' || c == ')') && !run.is_empty() {
+            numbers.push(std::mem::take(&mut run));
+        }
+    }
+    numbers
+}
+
+/// A word with a dot that reads like a host name (`hotline.example`), not like an abbreviation
+/// (`z.b.`) or a number (`12.00`).
+fn looks_like_host(word: &str) -> bool {
+    let labels: Vec<&str> = word.split('.').collect();
+    labels.len() >= 2
+        && labels.iter().all(|label| !label.is_empty() && label.chars().all(|c| c.is_alphanumeric() || c == '-'))
+        && labels.last().is_some_and(|end| end.chars().count() >= 2 && end.chars().all(char::is_alphabetic))
+        && labels.iter().map(|label| label.chars().count()).max().unwrap_or(0) >= 3
 }
 
 /// The quote when it stands in the mail: at least four characters, compared without case and
@@ -508,6 +668,34 @@ fn contradicts(text: &str, mail: &MailText, shape: &MailShape, signals: &SpamSig
         "spoofed",
     ]);
     if claims_auth_failure && passed(&auth.dmarc) {
+        return true;
+    }
+    // Calling a sender verified or genuine needs authentication that backs its From domain: the
+    // topic match alone would let "verified sender, you can trust it" lean on a failed DMARC fact
+    // (security review 0.22 R2, I-2).
+    let claims_auth_success = says(&[
+        "verified sender",
+        "sender is verified",
+        "verifizierter absender",
+        "absender ist verifiziert",
+        "authenticated sender",
+        "is authenticated",
+        "authentifizierter absender",
+        "ist authentifiziert",
+        "passed authentication",
+        "authentication passed",
+        "spf pass",
+        "dkim pass",
+        "dmarc pass",
+        "genuine sender",
+        "echter absender",
+        "really comes from",
+        "kommt wirklich von",
+        "can trust",
+        "trustworthy",
+        "vertrauenswürdig",
+    ]);
+    if claims_auth_success && !claims_auth_failure && !authentic(auth) {
         return true;
     }
     if let Some(sender) = &signals.sender {
@@ -656,7 +844,7 @@ address book: {}",
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::{AuthenticationSignals, SenderSignals};
+    use crate::features::SenderSignals;
 
     fn invoice() -> SpamSignals {
         SpamSignals {
@@ -665,6 +853,7 @@ mod tests {
                 dkim: Some("pass".into()),
                 dmarc: Some("pass".into()),
                 from_domain: Some("hoster.example".into()),
+                ..AuthenticationSignals::default()
             },
             spam_score: Some(-5.5),
             spam_threshold: Some(5.0),
@@ -678,6 +867,19 @@ mod tests {
         }
     }
 
+    /// Client review C-1 on the server: another account's mail gets no good word from a filter
+    /// verdict this server cannot verify, and the model may always call it suspicious.
+    #[test]
+    fn a_foreign_filter_cannot_vouch_for_a_mail() {
+        let foreign = SpamSignals { sender: None, spam_score: Some(-50.0), ..invoice() };
+        let assessment = assess(&foreign, &[], "");
+        assert!(!assessment.evidence.iter().any(|evidence| evidence.code == "FILTER_WANTED"));
+        assert!(assessment.allowed.contains(&"suspicious"), "{:?}", assessment.allowed);
+        // Own mail keeps both: the verdict is this server's.
+        let own = assess(&invoice(), &[], "");
+        assert!(own.evidence.iter().any(|evidence| evidence.code == "FILTER_WANTED"));
+    }
+
     fn stranger() -> SpamSignals {
         SpamSignals {
             authentication: AuthenticationSignals {
@@ -685,6 +887,7 @@ mod tests {
                 dkim: Some("pass".into()),
                 dmarc: Some("pass".into()),
                 from_domain: Some("konto-hilfe.example".into()),
+                ..AuthenticationSignals::default()
             },
             spam_score: Some(3.0),
             spam_threshold: Some(5.0),
@@ -835,11 +1038,95 @@ mod tests {
             vec![("Es hat keinen Anhang und keine Links.".to_owned(), "F1".to_owned())],
             &mail(),
             &shape,
-            &[Fact { id: "F1".into(), text: String::new() }],
+            &[Fact { id: "F1".into(), text: "Links: none; attachments: none".into() }],
             &signals,
             6,
         );
         assert_eq!(kept.len(), 1, "saying there is none is fine");
+    }
+
+    /// Security review 0.22 SPAM-6: a fact number in the reason's text, a citation of an unrelated
+    /// fact, or a phone number or address the mail does not contain is no grounding.
+    #[test]
+    fn citations_must_be_structured_and_about_the_fact() {
+        let signals = invoice();
+        let assessment = assess(&signals, &[], "");
+        let facts = facts(&signals, &assessment, |_| None);
+        let dmarc = facts.iter().find(|fact| fact.text.starts_with("DMARC passed")).unwrap().id.clone();
+        let filter = facts.iter().find(|fact| fact.text.starts_with("Spam filter")).unwrap().id.clone();
+        let reasons = vec![
+            // The id only in the text, with a free-form evidence: not a citation.
+            (format!("Verified sender ({dmarc}), safe to reply."), "trust me".to_owned()),
+            // The evidence is prose that happens to contain an id.
+            ("Verified sender.".to_owned(), format!("see {dmarc} and the hotline")),
+            // A citation of a fact about something else.
+            ("The invoice amount is correct.".to_owned(), filter.clone()),
+            // A related citation that brings a phone number and a site the mail never had.
+            (
+                "DMARC passed; call the hotline at +49 30 1234567 or visit hotline.example".to_owned(),
+                format!("[{dmarc}]"),
+            ),
+            // Fine: structured, related.
+            ("DMARC vouches for the sender's domain.".to_owned(), format!("Fakt {dmarc}.")),
+            ("The spam filter gave it few points.".to_owned(), filter.clone()),
+        ];
+        let (kept, dropped) = verify(reasons, &mail(), &MailShape::default(), &facts, &signals, 6);
+        let texts: Vec<&str> = kept.iter().map(|reason| reason.text.as_str()).collect();
+        assert_eq!(texts, ["DMARC vouches for the sender's domain.", "The spam filter gave it few points."]);
+        assert_eq!(dropped, 4);
+        assert_eq!(kept[0].fact.as_deref(), Some(dmarc.as_str()));
+
+        // A number or address that does stand in the mail may be named.
+        let mut with_number = mail();
+        with_number.text.push_str("\nRückfragen: 030 1234567");
+        let (kept, _) = verify(
+            vec![("It names the number 030 1234567 for questions.".to_owned(), "Rückfragen: 030 1234567".to_owned())],
+            &with_number,
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert_eq!(kept.len(), 1);
+
+        // The end of one number and the start of the next are no number of the mail (R2, I-2).
+        let mut two_numbers = mail();
+        two_numbers.text.push_str("\nKunde 4711, Rechnung 2026-0815");
+        let (kept, _) = verify(
+            vec![("Call 4711 2026 now.".to_owned(), "Kunde 4711, Rechnung".to_owned())],
+            &two_numbers,
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert!(kept.is_empty(), "{kept:?}");
+    }
+
+    /// Security review 0.22 R2, I-2: calling a sender verified needs authentication that backs it,
+    /// whatever fact the reason cites.
+    #[test]
+    fn a_verified_sender_needs_authentication_behind_it() {
+        let mut signals = invoice();
+        signals.authentication.dmarc = Some("fail".into());
+        let assessment = assess(&signals, &[], "");
+        let facts = facts(&signals, &assessment, |_| None);
+        let dmarc = facts.iter().find(|fact| fact.text.contains("DMARC")).unwrap().id.clone();
+        for claim in ["Verified sender, you can trust it.", "Der Absender ist vertrauenswürdig und verifiziert."] {
+            let (kept, _) =
+                verify(vec![(claim.to_owned(), dmarc.clone())], &mail(), &MailShape::default(), &facts, &signals, 6);
+            assert!(kept.is_empty(), "{claim}");
+        }
+        // Saying it failed is fine.
+        let (kept, _) = verify(
+            vec![("DMARC failed: the sender is not authenticated.".to_owned(), dmarc.clone())],
+            &mail(),
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert_eq!(kept.len(), 1);
     }
 
     #[test]

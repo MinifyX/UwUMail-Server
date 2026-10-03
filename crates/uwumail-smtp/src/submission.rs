@@ -223,6 +223,10 @@ impl Smtp {
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
         let raw = headers::strip_faces(&raw);
+        // Verdicts are this server's to write. A local sender's own `Authentication-Results` in our
+        // name or `X-Spam-Status` would reach local recipients as if we had checked the mail
+        // (client review C-1, checked on the server).
+        let raw = headers::strip_spam_verdicts(&headers::strip_forged_auth_results(&raw, &ctx.hostname));
         // The company footer goes in before anything is signed (docs/signatures.md).
         let raw = self.with_company_footer(&account, &from, raw, Some(&id)).await;
         if raw.len() > ctx.live().smtp.max_message_size {
@@ -353,6 +357,7 @@ impl Smtp {
                                 name: &address,
                                 account_id: Some(account.id),
                                 proof: forward::Proof::PROVEN,
+                                smtp_delivered: false,
                             };
                             forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
                             local_deliveries += 1;
@@ -486,8 +491,12 @@ impl Smtp {
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder =
-                forward::Forwarder { name: &target.login, account_id: Some(target.id), proof: forward::Proof::PROVEN };
+            let forwarder = forward::Forwarder {
+                name: &target.login,
+                account_id: Some(target.id),
+                proof: forward::Proof::PROVEN,
+                smtp_delivered: false,
+            };
             forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
         }
         if !plan.keep_copy {

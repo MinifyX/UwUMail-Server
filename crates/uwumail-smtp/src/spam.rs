@@ -499,9 +499,23 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
         }
     }
 
+    // The sender's reputation is read first: whether the Bayes filter is held back depends on it.
+    let reputation = match reputation_subject(ip, verdict) {
+        Some(subject) => match ctx.store.reputation(subject).await {
+            Ok(reputation) if reputation.is_known() => Some(reputation),
+            Ok(_) => None,
+            Err(err) => {
+                tracing::warn!(%err, "reading the reputation of a sender failed");
+                None
+            }
+        },
+        None => None,
+    };
+    let history = reputation.map(|reputation| History::of(reputation.junk_share()));
+
     // What the whole server's Bayes filter learned; a person's own knowledge is weighed per recipient.
     // Last of the message's own rules, because how far it may go depends on them.
-    score.bayes_ceiling = bayes_ceiling(verdict.is_some_and(|verdict| verdict.dmarc_passed), &score);
+    score.bayes_ceiling = bayes_ceiling(verdict.is_some_and(|verdict| verdict.dmarc_passed), &score, history, chance);
     if let Some(chance) = chance {
         let points = bayes::points(chance).min(score.bayes_ceiling.unwrap_or(f32::MAX));
         let detail = Some(format!("{:.0} %", chance * 100.0));
@@ -514,21 +528,39 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
     score.tokens = tokens;
     score.server_chance = chance;
 
-    let Some(subject) = reputation_subject(ip, verdict) else { return Some(score) };
-    match ctx.store.reputation(subject).await {
-        Ok(reputation) if reputation.is_known() => {
-            let share = reputation.junk_share();
-            if share <= 0.1 {
-                score.add("KNOWN_GOOD_SENDER", -2.5, Some(format!("{} delivered before", reputation.good)));
-            } else if share >= 0.5 {
-                score.add("KNOWN_JUNK_SENDER", 3.0, Some(format!("{} of them junk", reputation.junk)));
+    if let Some(reputation) = reputation {
+        match History::of(reputation.junk_share()) {
+            History::Good => {
+                score.add("KNOWN_GOOD_SENDER", -2.5, Some(format!("{} delivered before", reputation.good)))
             }
+            History::Junk => score.add("KNOWN_JUNK_SENDER", 3.0, Some(format!("{} of them junk", reputation.junk))),
+            History::Mixed => {}
         }
-        Ok(_) => {}
-        Err(err) => tracing::warn!(%err, "reading the reputation of a sender failed"),
     }
 
     Some(score)
+}
+
+/// What a sender's known history says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum History {
+    /// At most a tenth of its mail ended up as junk.
+    Good,
+    Mixed,
+    /// Half of it or more.
+    Junk,
+}
+
+impl History {
+    fn of(junk_share: f32) -> History {
+        if junk_share <= 0.1 {
+            History::Good
+        } else if junk_share >= 0.5 {
+            History::Junk
+        } else {
+            History::Mixed
+        }
+    }
 }
 
 /// What SPF, DKIM and DMARC said, as far as the score cares.
@@ -594,8 +626,22 @@ pub fn score_offline(raw: &[u8], now: i64, auth: Authentication) -> Score {
 /// against it still gets the full weight.
 pub(crate) const BAYES_ALONE_MAX: f32 = 3.5;
 
-fn bayes_ceiling(dmarc_passed: bool, score: &Score) -> Option<f32> {
-    (dmarc_passed && score.points_on_its_own() <= 1.0).then_some(BAYES_ALONE_MAX)
+/// How sure the server's Bayes filter must be to go past [`BAYES_ALONE_MAX`] for a sender without a
+/// known good history.
+const SERVER_BAYES_SURE: f64 = 0.99;
+
+/// The ceiling holds back word statistics for a mail DMARC vouches for with nothing else against
+/// it — but DMARC costs a spammer nothing on a fresh domain. So it only holds for a sender with a
+/// known good history, or while the filter is not all but certain; never for a sender whose mail
+/// mostly ended up as junk (security review 0.22 SPAM-2).
+fn bayes_ceiling(dmarc_passed: bool, score: &Score, history: Option<History>, chance: Option<f64>) -> Option<f32> {
+    let spotless = dmarc_passed && score.points_on_its_own() <= 1.0;
+    let vouched = match history {
+        Some(History::Good) => true,
+        Some(History::Junk) => false,
+        Some(History::Mixed) | None => chance.is_none_or(|chance| chance < SERVER_BAYES_SURE),
+    };
+    (spotless && vouched).then_some(BAYES_ALONE_MAX)
 }
 
 /// How sure a person's own Bayes knowledge must be to go past [`BAYES_ALONE_MAX`]: what the server
@@ -851,10 +897,23 @@ mod tests {
     fn word_statistics_alone_do_not_junk_an_authenticated_spotless_mail() {
         let mut score = Score::default();
         score.add("HTML_ONLY", 0.5, None);
-        assert_eq!(bayes_ceiling(true, &score), Some(BAYES_ALONE_MAX));
-        assert_eq!(bayes_ceiling(false, &score), None, "without DMARC it counts in full");
+        assert_eq!(bayes_ceiling(true, &score, None, Some(0.95)), Some(BAYES_ALONE_MAX));
+        assert_eq!(bayes_ceiling(false, &score, None, Some(0.95)), None, "without DMARC it counts in full");
+        // Security review SPAM-2: a fresh authenticated domain gets the full weight once the filter is
+        // all but certain; a sender with a good history keeps the ceiling, a junk one never has it.
+        assert_eq!(bayes_ceiling(true, &score, None, Some(0.995)), None);
+        assert_eq!(bayes_ceiling(true, &score, Some(History::Mixed), Some(0.995)), None);
+        assert_eq!(bayes_ceiling(true, &score, Some(History::Good), Some(0.995)), Some(BAYES_ALONE_MAX));
+        assert_eq!(bayes_ceiling(true, &score, Some(History::Junk), Some(0.9)), None);
+        assert_eq!(History::of(0.05), History::Good);
+        assert_eq!(History::of(0.3), History::Mixed);
+        assert_eq!(History::of(0.6), History::Junk);
         score.add("PHISHING_LINK_TEXT", 3.0, None);
-        assert_eq!(bayes_ceiling(true, &score), None, "nor with anything else against it");
+        assert_eq!(
+            bayes_ceiling(true, &score, Some(History::Good), Some(0.9)),
+            None,
+            "nor with anything else against it"
+        );
         assert!(BAYES_ALONE_MAX < SpamConfig::default().junk_score);
         // What the person taught themselves, when it is sure, goes all the way.
         assert_eq!(personal_ceiling(Some(BAYES_ALONE_MAX), 0.995), f32::MAX);
