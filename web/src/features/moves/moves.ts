@@ -137,7 +137,9 @@ export function linksCsv(
   const lines = [headers.map(csvCell).join(";")];
   for (const link of links) {
     lines.push(
-      [link.address, link.name, link.oldAddress, `${origin}${link.path}`, expires(link.expiresAt)].map(csvCell).join(";"),
+      [link.address, link.name, link.oldAddress, `${origin}${link.path}`, expires(link.expiresAt)]
+        .map(csvCell)
+        .join(";"),
     );
   }
   // A byte order mark, so spreadsheets read umlauts right.

