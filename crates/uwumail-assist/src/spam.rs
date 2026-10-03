@@ -441,7 +441,7 @@ pub fn verify(
     ))
     .replace(['„', '“', '”'], "\"");
     let known_text = normalized(&facts.iter().map(|fact| fact.text.as_str()).collect::<Vec<_>>().join("\n"));
-    let mail_digits: String = haystack.chars().filter(char::is_ascii_digit).collect();
+    let mail_numbers = digit_runs(&haystack);
     let mut kept: Vec<Reason> = Vec::new();
     let mut dropped = 0;
     for (text, evidence) in reasons {
@@ -456,7 +456,7 @@ pub fn verify(
         let grounded = cited.map(|fact| fact.id.clone());
         if (grounded.is_none() && quote.is_none())
             || contradicts(&text, mail, shape, signals)
-            || brings_contacts(&text, &haystack, &known_text, &mail_digits)
+            || brings_contacts(&text, &haystack, &known_text, &mail_numbers)
             || kept.iter().any(|known| known.text == text)
         {
             dropped += 1;
@@ -571,7 +571,7 @@ fn relates(reason: &str, fact: &Fact) -> bool {
 /// Whether a reason brings a web address, mail address or phone number that neither the mail nor
 /// the facts contain: the model's own invention, or one a prompt injection put there — shown as a
 /// checked reason it would send the reader somewhere (security review 0.22 SPAM-6).
-fn brings_contacts(text: &str, mail: &str, facts: &str, mail_digits: &str) -> bool {
+fn brings_contacts(text: &str, mail: &str, facts: &str, mail_numbers: &[String]) -> bool {
     let address = text.split_whitespace().map(|word| normalized(word.trim_matches(['<', '>']))).any(|word| {
         let looks = word.contains("://")
             || word.starts_with("www.")
@@ -582,20 +582,28 @@ fn brings_contacts(text: &str, mail: &str, facts: &str, mail_digits: &str) -> bo
     if address {
         return true;
     }
-    // Runs of digits with the usual phone separators, seven digits or more.
+    // Phone-like numbers of seven digits or more, each of which has to stand within one number of
+    // the mail: the end of one number and the start of the next run together are no number of it
+    // (security review 0.22 R2, I-2).
+    digit_runs(text)
+        .iter()
+        .filter(|number| number.len() >= 7)
+        .any(|number| !mail_numbers.iter().any(|known| known.contains(number.as_str())))
+}
+
+/// The numbers of a text as runs of digits, joined across the usual phone separators (`+49 (30)
+/// 123-45 67` is one).
+fn digit_runs(text: &str) -> Vec<String> {
     let mut run = String::new();
     let mut numbers = Vec::new();
     for c in text.chars().chain(std::iter::once('x')) {
         if c.is_ascii_digit() {
             run.push(c);
-        } else if !(c == ' ' || c == '+' || c == '-' || c == '/' || c == '(' || c == ')') {
-            if run.len() >= 7 {
-                numbers.push(std::mem::take(&mut run));
-            }
-            run.clear();
+        } else if !(c == ' ' || c == '+' || c == '-' || c == '/' || c == '(' || c == ')') && !run.is_empty() {
+            numbers.push(std::mem::take(&mut run));
         }
     }
-    numbers.iter().any(|number| !mail_digits.contains(number.as_str()))
+    numbers
 }
 
 /// A word with a dot that reads like a host name (`hotline.example`), not like an abbreviation
@@ -660,6 +668,34 @@ fn contradicts(text: &str, mail: &MailText, shape: &MailShape, signals: &SpamSig
         "spoofed",
     ]);
     if claims_auth_failure && passed(&auth.dmarc) {
+        return true;
+    }
+    // Calling a sender verified or genuine needs authentication that backs its From domain: the
+    // topic match alone would let "verified sender, you can trust it" lean on a failed DMARC fact
+    // (security review 0.22 R2, I-2).
+    let claims_auth_success = says(&[
+        "verified sender",
+        "sender is verified",
+        "verifizierter absender",
+        "absender ist verifiziert",
+        "authenticated sender",
+        "is authenticated",
+        "authentifizierter absender",
+        "ist authentifiziert",
+        "passed authentication",
+        "authentication passed",
+        "spf pass",
+        "dkim pass",
+        "dmarc pass",
+        "genuine sender",
+        "echter absender",
+        "really comes from",
+        "kommt wirklich von",
+        "can trust",
+        "trustworthy",
+        "vertrauenswürdig",
+    ]);
+    if claims_auth_success && !claims_auth_failure && !authentic(auth) {
         return true;
     }
     if let Some(sender) = &signals.sender {
@@ -1046,6 +1082,45 @@ mod tests {
         let (kept, _) = verify(
             vec![("It names the number 030 1234567 for questions.".to_owned(), "Rückfragen: 030 1234567".to_owned())],
             &with_number,
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert_eq!(kept.len(), 1);
+
+        // The end of one number and the start of the next are no number of the mail (R2, I-2).
+        let mut two_numbers = mail();
+        two_numbers.text.push_str("\nKunde 4711, Rechnung 2026-0815");
+        let (kept, _) = verify(
+            vec![("Call 4711 2026 now.".to_owned(), "Kunde 4711, Rechnung".to_owned())],
+            &two_numbers,
+            &MailShape::default(),
+            &facts,
+            &signals,
+            6,
+        );
+        assert!(kept.is_empty(), "{kept:?}");
+    }
+
+    /// Security review 0.22 R2, I-2: calling a sender verified needs authentication that backs it,
+    /// whatever fact the reason cites.
+    #[test]
+    fn a_verified_sender_needs_authentication_behind_it() {
+        let mut signals = invoice();
+        signals.authentication.dmarc = Some("fail".into());
+        let assessment = assess(&signals, &[], "");
+        let facts = facts(&signals, &assessment, |_| None);
+        let dmarc = facts.iter().find(|fact| fact.text.contains("DMARC")).unwrap().id.clone();
+        for claim in ["Verified sender, you can trust it.", "Der Absender ist vertrauenswürdig und verifiziert."] {
+            let (kept, _) =
+                verify(vec![(claim.to_owned(), dmarc.clone())], &mail(), &MailShape::default(), &facts, &signals, 6);
+            assert!(kept.is_empty(), "{claim}");
+        }
+        // Saying it failed is fine.
+        let (kept, _) = verify(
+            vec![("DMARC failed: the sender is not authenticated.".to_owned(), dmarc.clone())],
+            &mail(),
             &MailShape::default(),
             &facts,
             &signals,
