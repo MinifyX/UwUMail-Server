@@ -129,6 +129,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   larger than `smtp.max_message_size` is skipped and counted with the skipped ones. A move the
   server went down during at three starts in a row is paused as `interrupted` instead of crashing
   it again (migration 0075).
+- **An understated size skips one message, not the whole import** (review MFIX-M1): a body larger
+  than its `RFC822.SIZE` allows (Exchange only estimates it) is read past instead of failing the
+  portion, fetched again on its own with room for `smtp.max_message_size`, and skipped (UID in the
+  log) if it still does not fit, so fetched mailboxes and moves keep going past it.
 - **Submission removes `X-UwUMail-Label`** a sender wrote, as inbound delivery already did.
 - docs/moving.md and docs/signatures.md list the known limitations the review left as they are.
 - **Regional bank names only under their own endings (SPAM-1).** `sparkasse-…` and `volksbank-…`

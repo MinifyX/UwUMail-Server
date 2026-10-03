@@ -115,6 +115,9 @@ pub(crate) enum Token {
     Nil,
     Open,
     Close,
+    /// A literal of this many bytes that did not fit what the answer may still take, read past
+    /// and dropped (only for fetches that ask for it, see [`Connection::fetch_within`]).
+    Dropped(usize),
 }
 
 impl Token {
@@ -250,9 +253,19 @@ impl Connection {
     async fn command_within(&mut self, command: &str, budget: usize) -> anyhow::Result<Vec<Response>> {
         let limit = if command.starts_with("UID FETCH") { FETCH_LIMIT } else { COMMAND_LIMIT };
         let shown = if command.starts_with("LOGIN") { "LOGIN" } else { command }.to_owned();
-        tokio::time::timeout(limit, self.command_untimed(command, budget))
+        tokio::time::timeout(limit, self.command_untimed(command, budget, false))
             .await
             .map_err(|_| anyhow!("{shown}: the server did not finish answering in time"))?
+    }
+
+    /// A fetch limited to `budget` bytes in which a message body that does not fit is read past
+    /// and left as [`Token::Dropped`] instead of failing the whole command: a provider whose
+    /// `RFC822.SIZE` is an estimate (Exchange) must not stop the import at that message, and the
+    /// connection stays in step for the next command (security review 0.22 MFIX-M1).
+    async fn fetch_within(&mut self, command: &str, budget: usize) -> anyhow::Result<Vec<Response>> {
+        tokio::time::timeout(FETCH_LIMIT, self.command_untimed(command, budget, true))
+            .await
+            .map_err(|_| anyhow!("{command}: the server did not finish answering in time"))?
     }
 
     /// Logs in with an OAuth access token as SASL XOAUTH2 (Microsoft, Google), the token in the
@@ -260,13 +273,18 @@ impl Connection {
     /// an empty line; the refusal after it is the error. The token never shows in an error.
     pub(crate) async fn authenticate_xoauth2(&mut self, user: &str, token: &str) -> anyhow::Result<()> {
         let command = format!("AUTHENTICATE XOAUTH2 {}", uwumail_smtp::provider_oauth::xoauth2(user, token));
-        tokio::time::timeout(COMMAND_LIMIT, self.command_untimed(&command, MAX_SMALL_ANSWER))
+        tokio::time::timeout(COMMAND_LIMIT, self.command_untimed(&command, MAX_SMALL_ANSWER, false))
             .await
             .map_err(|_| anyhow!("AUTHENTICATE: the server did not finish answering in time"))??;
         Ok(())
     }
 
-    async fn command_untimed(&mut self, command: &str, mut budget: usize) -> anyhow::Result<Vec<Response>> {
+    async fn command_untimed(
+        &mut self,
+        command: &str,
+        mut budget: usize,
+        drop_large: bool,
+    ) -> anyhow::Result<Vec<Response>> {
         let tag = format!("u{}", self.next_tag);
         self.next_tag += 1;
         self.stream.get_mut().write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
@@ -274,7 +292,7 @@ impl Connection {
         let mut challenged = false;
         let mut untagged = Vec::new();
         loop {
-            let response = read_response(&mut self.stream, &mut budget).await?;
+            let response = read_response_dropping(&mut self.stream, &mut budget, drop_large).await?;
             if let Some(status) = response.text.strip_prefix(&format!("{tag} ")) {
                 if status.starts_with("OK") {
                     return Ok(untagged);
@@ -305,6 +323,16 @@ impl Connection {
 /// Reads one response with its literals, taking what it holds of it off `budget`: the text, every
 /// token and the literals.
 async fn read_response<R: AsyncBufRead + Unpin>(stream: &mut R, budget: &mut usize) -> anyhow::Result<Response> {
+    read_response_dropping(stream, budget, false).await
+}
+
+/// [`read_response`]; with `drop_large`, a literal that does not fit `budget` (but is no larger
+/// than [`MAX_LITERAL`]) is read past without being kept and becomes [`Token::Dropped`].
+async fn read_response_dropping<R: AsyncBufRead + Unpin>(
+    stream: &mut R,
+    budget: &mut usize,
+    drop_large: bool,
+) -> anyhow::Result<Response> {
     let too_much = || anyhow!("the server sent more than this reads for one answer");
     let mut response = Response::default();
     loop {
@@ -333,11 +361,24 @@ async fn read_response<R: AsyncBufRead + Unpin>(stream: &mut R, budget: &mut usi
         };
         response.text.push_str(String::from_utf8_lossy(shown).trim_end_matches(['\r', '\n']));
         let Some(size) = literal else { return Ok(response) };
-        if size > MAX_LITERAL {
+        // Read past, a literal may be somewhat larger: a message whose size the provider
+        // understated is skipped instead of stopping the import.
+        if size > MAX_LITERAL && !(drop_large && size <= 2 * MAX_LITERAL) {
             bail!("the server announced a {size}-byte literal, more than this reads at once");
         }
         if size > *budget {
-            bail!("the server sent more than this reads for one answer");
+            if !drop_large {
+                bail!("the server sent more than this reads for one answer");
+            }
+            let mut sink = tokio::io::sink();
+            let read = tokio::time::timeout(TIMEOUT, tokio::io::copy(&mut (&mut *stream).take(size as u64), &mut sink))
+                .await
+                .context("the server stopped sending")??;
+            if read as usize != size {
+                bail!("the server closed the connection");
+            }
+            response.tokens.push(Token::Dropped(size));
+            continue;
         }
         *budget -= size;
         let mut bytes = vec![0; size];
@@ -501,6 +542,8 @@ pub(crate) struct Fetched {
     pub(crate) body: Option<Vec<u8>>,
     /// `RFC822.SIZE`, when asked for.
     pub(crate) size: Option<usize>,
+    /// The body was larger than the fetch could take and was left out (see [`fetch_chunk`]).
+    pub(crate) dropped: bool,
 }
 
 /// How a batch of messages is fetched: in portions of about [`CHUNK_BYTES`], each message with
@@ -549,23 +592,60 @@ pub(crate) async fn plan_fetch(
     Ok(plan)
 }
 
+/// What a fetch of messages said to take `declared` bytes in all may read: sizes are not always
+/// exact (some servers count line ends differently); flags, dates and the answer lines take room
+/// too.
+fn fetch_budget(declared: usize, messages: usize) -> usize {
+    (declared + declared / 4 + messages * 64 * 1024 + 1024 * 1024).min(MAX_ANSWER)
+}
+
+async fn import_permit(bytes: usize) -> anyhow::Result<tokio::sync::SemaphorePermit<'static>> {
+    let kib = bytes.div_ceil(1024).min(IMPORT_BUDGET_KIB) as u32;
+    IMPORT_BYTES.acquire_many(kib).await.context("the import budget is closed")
+}
+
 /// Fetches one portion of a [`FetchPlan`] once the server-wide import budget has room for it. The
 /// answer may only take a little more than the sizes the provider gave; the permit is held while
 /// the caller stores the messages.
+///
+/// A body larger than that (`RFC822.SIZE` is only an estimate at some providers, Exchange among
+/// them) is fetched again on its own with room for `max_size`; one that still does not fit comes
+/// back with [`Fetched::dropped`], for the caller to count as skipped and move on (security review
+/// 0.22 MFIX-M1). Network and protocol errors fail as before.
 pub(crate) async fn fetch_chunk(
     connection: &mut Connection,
     chunk: &[(u32, usize)],
+    max_size: usize,
 ) -> anyhow::Result<(Vec<Fetched>, tokio::sync::SemaphorePermit<'static>)> {
     let declared: usize = chunk.iter().map(|(_, size)| size).sum();
-    // Sizes are not always exact (some servers count line ends differently); flags, dates and
-    // the answer lines take room too.
-    let budget = (declared + declared / 4 + chunk.len() * 64 * 1024 + 1024 * 1024).min(MAX_ANSWER);
-    let kib = budget.div_ceil(1024).min(IMPORT_BUDGET_KIB) as u32;
-    let permit = IMPORT_BYTES.acquire_many(kib).await.context("the import budget is closed")?;
+    let budget = fetch_budget(declared, chunk.len());
+    let mut permit = import_permit(budget).await?;
     let set = chunk.iter().map(|(uid, _)| uid.to_string()).collect::<Vec<_>>().join(",");
     let responses =
-        connection.command_within(&format!("UID FETCH {set} (UID FLAGS INTERNALDATE BODY.PEEK[])"), budget).await?;
-    Ok((responses.into_iter().filter_map(parse_fetch).collect(), permit))
+        connection.fetch_within(&format!("UID FETCH {set} (UID FLAGS INTERNALDATE BODY.PEEK[])"), budget).await?;
+    let mut fetched: Vec<Fetched> = responses.into_iter().filter_map(parse_fetch).collect();
+    let dropped: Vec<u32> = fetched.iter().filter(|fetched| fetched.dropped).map(|fetched| fetched.uid).collect();
+    if dropped.is_empty() || (chunk.len() == 1 && budget >= fetch_budget(max_size, 1)) {
+        return Ok((fetched, permit));
+    }
+    let single = fetch_budget(max_size, 1);
+    for uid in dropped {
+        // What the others hold stays counted; the permit before is given back first, so two
+        // imports never wait for each other's room while holding their own.
+        let held: usize = fetched.iter().filter_map(|fetched| fetched.body.as_ref().map(Vec::len)).sum();
+        drop(permit);
+        permit = import_permit(held + single).await?;
+        let again = connection
+            .fetch_within(&format!("UID FETCH {uid} (UID FLAGS INTERNALDATE BODY.PEEK[])"), single)
+            .await?
+            .into_iter()
+            .filter_map(parse_fetch)
+            .find(|again| again.uid == uid);
+        if let (Some(again), Some(slot)) = (again, fetched.iter_mut().find(|fetched| fetched.uid == uid)) {
+            *slot = again;
+        }
+    }
+    Ok((fetched, permit))
 }
 
 /// Reads one FETCH answer, taking the body out of it instead of copying it.
@@ -604,8 +684,10 @@ pub(crate) fn parse_fetch(mut response: Response) -> Option<Fetched> {
                 i += 2;
             }
             key if key.starts_with("BODY[") || key == "RFC822" => {
-                if let Some(Token::String(bytes)) = tokens.get_mut(i + 1) {
-                    fetched.body = Some(std::mem::take(bytes));
+                match tokens.get_mut(i + 1) {
+                    Some(Token::String(bytes)) => fetched.body = Some(std::mem::take(bytes)),
+                    Some(Token::Dropped(_)) => fetched.dropped = true,
+                    _ => {}
                 }
                 i += 2;
             }
@@ -906,13 +988,18 @@ pub(crate) async fn copy_folders(
                 copied.skipped += 1;
             }
             for chunk in &plan.chunks {
-                let (fetched, _permit) = fetch_chunk(connection, chunk).await?;
+                let (fetched, _permit) = fetch_chunk(connection, chunk, options.max_size()).await?;
                 let mut by_uid: HashMap<u32, Fetched> = fetched.into_iter().map(|f| (f.uid, f)).collect();
                 let mut found_objects = Vec::new();
                 // The messages the objects came in, copied as mail when the objects cannot be stored.
                 let mut object_messages = Vec::new();
                 for (uid, _) in chunk {
                     let Some(fetched) = by_uid.remove(uid) else { continue };
+                    if fetched.dropped {
+                        tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
+                        copied.skipped += 1;
+                        continue;
+                    }
                     let Some(body) = fetched.body.as_deref() else { continue };
                     if fetched.flags.iter().any(|flag| flag.eq_ignore_ascii_case("\\Deleted")) {
                         continue;
@@ -1053,7 +1140,7 @@ pub async fn copy_mail(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn tokens(line: &str) -> Vec<Token> {
@@ -1314,7 +1401,7 @@ mod tests {
     }
 
     /// A provider that answers every command with what `answer` gives for it, then `OK`.
-    async fn fake_provider(answer: fn(&str) -> Vec<u8>) -> Source {
+    pub(crate) async fn fake_provider(answer: fn(&str) -> Vec<u8>) -> Source {
         let (tls, roots) = test_tls();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap().to_string();
@@ -1357,25 +1444,78 @@ mod tests {
         assert_eq!(plan.too_large, [6]);
     }
 
-    /// Security review 0.22 M-1: a fetch may only take a little more than the provider said the
-    /// messages take, so a provider that understates them cannot fill the memory.
+    /// A message of about `size` bytes with this subject.
+    fn message_of(subject: &str, size: usize) -> Vec<u8> {
+        let mut raw = format!(
+            "From: shop@shop.example\r\nTo: mini@freemail.example\r\nSubject: {subject}\r\n\
+             Message-ID: <{subject}@shop.example>\r\n\r\n"
+        )
+        .into_bytes();
+        while raw.len() < size {
+            raw.extend_from_slice(&[b'x'; 78]);
+            raw.extend_from_slice(b"\r\n");
+        }
+        raw
+    }
+
+    /// The bytes a 2 MiB message takes that its provider says takes 100 (as Exchange's estimates
+    /// can be off), UID 2 of three in INBOX.
+    pub(crate) const UNDERSTATED: usize = 2 * 1024 * 1024;
+
+    /// A provider whose `RFC822.SIZE` for UID 2 is far too small: UIDs 1 and 3 are small
+    /// messages, UID 2 is [`UNDERSTATED`] bytes said to be 100.
+    pub(crate) fn understating_provider(command: &str) -> Vec<u8> {
+        let fetched = |uid: u32| {
+            let raw = match uid {
+                2 => message_of("Gross", UNDERSTATED),
+                _ => message_of(&format!("Klein{uid}"), 200),
+            };
+            let mut out = format!(
+                "* {uid} FETCH (UID {uid} FLAGS () INTERNALDATE \"17-Sep-2026 10:00:00 +0200\" BODY[] {{{}}}\r\n",
+                raw.len()
+            )
+            .into_bytes();
+            out.extend(raw);
+            out.extend(b")\r\n");
+            out
+        };
+        if command.starts_with("UID SEARCH") {
+            b"* SEARCH 1 2 3\r\n".to_vec()
+        } else if command.contains("RFC822.SIZE") {
+            let small = message_of("Klein1", 200).len();
+            format!(
+                "* 1 FETCH (UID 1 RFC822.SIZE {small})\r\n* 2 FETCH (UID 2 RFC822.SIZE 100)\r\n\
+                 * 3 FETCH (UID 3 RFC822.SIZE {small})\r\n"
+            )
+            .into_bytes()
+        } else if let Some(set) =
+            command.strip_prefix("UID FETCH ").and_then(|rest| rest.split_once(' ')).map(|(set, _)| set)
+        {
+            set.split(',').filter_map(|uid| uid.parse().ok()).flat_map(fetched).collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Security review 0.22 M-1 and MFIX-M1: a fetch may only take a little more than the
+    /// provider said the messages take. A body larger than that is not kept but read past, and
+    /// fetched again on its own with room for the largest message this server takes; one larger
+    /// still comes back dropped. The others come either way, and the connection stays in step.
     #[tokio::test]
-    async fn a_fetch_takes_little_more_than_the_sizes_given() {
-        let source = fake_provider(|command| {
-            if command.starts_with("UID FETCH 1 ") {
-                b"* 1 FETCH (UID 1 FLAGS (\\Seen) BODY[] {5}\r\nhello)\r\n".to_vec()
-            } else {
-                // Said 100 bytes, sends 4 MiB.
-                b"* 2 FETCH (UID 2 BODY[] {4194304}\r\n".to_vec()
-            }
-        })
-        .await;
+    async fn an_understated_message_is_fetched_alone_or_dropped() {
+        let source = fake_provider(understating_provider).await;
         let mut connection = Connection::open(&source).await.unwrap();
-        let (fetched, _permit) = fetch_chunk(&mut connection, &[(1, 5)]).await.unwrap();
-        assert_eq!(fetched[0].body.as_deref(), Some(&b"hello"[..]));
-        assert_eq!(fetched[0].flags, ["\\Seen"]);
-        let error = fetch_chunk(&mut connection, &[(2, 100)]).await.unwrap_err();
-        assert!(error.to_string().contains("more than this reads"), "{error}");
+        let small = message_of("Klein1", 200).len();
+        let chunk = [(1, small), (2, 100), (3, small)];
+
+        let (fetched, _permit) = fetch_chunk(&mut connection, &chunk, 100_000).await.unwrap();
+        let shape: Vec<_> = fetched.iter().map(|f| (f.uid, f.body.as_ref().map(Vec::len), f.dropped)).collect();
+        assert_eq!(shape, [(1, Some(small), false), (2, None, true), (3, Some(small), false)]);
+
+        let (fetched, _permit) = fetch_chunk(&mut connection, &chunk, MAX_LITERAL).await.unwrap();
+        let shape: Vec<_> = fetched.iter().map(|f| (f.uid, f.body.as_ref().map(Vec::len), f.dropped)).collect();
+        assert_eq!(shape[1], (2, Some(message_of("Gross", UNDERSTATED).len()), false));
+        assert_eq!((shape[0].1, shape[2].1), (Some(small), Some(small)));
     }
 
     /// Security review 0.22 M-1: a message larger than this server takes is left out and counted

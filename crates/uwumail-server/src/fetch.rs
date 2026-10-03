@@ -375,18 +375,25 @@ async fn take_new(
     }
     'batches: for chunk in &plan.chunks {
         let batch: Vec<u32> = chunk.iter().map(|(uid, _)| *uid).collect();
-        let (mut messages, _permit) = fetch_chunk(connection, chunk).await?;
+        let (mut messages, _permit) = fetch_chunk(connection, chunk, MAX_LITERAL).await?;
         messages.sort_by_key(|message| message.uid);
         // A UID the search named but the answer left out would be passed over for good once a later
         // one moves the folder on. Nothing can be done about it from here, but it is written down.
         for uid in &batch {
-            if !messages.iter().any(|message| message.uid == *uid && message.body.is_some()) {
+            if !messages.iter().any(|message| message.uid == *uid && (message.body.is_some() || message.dropped)) {
                 tracing::warn!(address = %account.address, folder, uid, "the provider did not hand this message out");
             }
         }
         for message in messages {
-            let Some(raw) = message.body else { continue };
             let uid = i64::from(message.uid);
+            // Larger than it said and than a fetch takes: stepped over, so the folder moves on
+            // (security review 0.22 MFIX-M1).
+            if message.dropped {
+                tracing::warn!(address = %account.address, folder, uid, "too large to fetch, left at the provider");
+                state.last_uid = state.last_uid.max(uid);
+                continue;
+            }
+            let Some(raw) = message.body else { continue };
             let mut judged = false;
             match take_message(store, smtp, account, to, from_junk, raw).await? {
                 Taken::Kept => {}
@@ -434,6 +441,13 @@ async fn take_new(
     }
     if deleted {
         let _ = connection.command("EXPUNGE").await;
+    }
+    // Messages larger than a fetch takes are stepped over once everything before them was dealt
+    // with, so the folder is not stuck on them.
+    if held.is_none()
+        && let Some(largest) = plan.too_large.iter().max()
+    {
+        state.last_uid = state.last_uid.max(i64::from(*largest));
     }
     // The clock on a waiting message keeps running while it is the same one, so a message that can
     // never be taken is stepped over a day after it first stopped the folder, not a day after the
@@ -512,7 +526,7 @@ async fn take_backlog(
         }
         for chunk in &plan.chunks {
             let batch: Vec<u32> = chunk.iter().map(|(uid, _)| *uid).collect();
-            let (fetched, _permit) = fetch_chunk(connection, chunk).await?;
+            let (fetched, _permit) = fetch_chunk(connection, chunk, MAX_LITERAL).await?;
             let mut by_uid: std::collections::HashMap<u32, Fetched> =
                 fetched.into_iter().map(|fetched| (fetched.uid, fetched)).collect();
             for uid in &batch {
@@ -560,6 +574,9 @@ async fn take_backlog(
                         }
                     }
                     Some(_) if gone => {}
+                    Some(Fetched { dropped: true, .. }) => {
+                        tracing::warn!(address = %account.address, folder, uid, "too large to fetch, left at the provider");
+                    }
                     // The provider named it in its search and then did not hand it out. Nothing
                     // can be done about it from here, but it should not pass unnoticed.
                     _ => tracing::warn!(address = %account.address, folder, uid, "the provider did not hand this message out"),
@@ -1240,6 +1257,43 @@ mod tests {
         let switched = ours.update_fetch_account(our_id, fetched.id, update).await.unwrap();
         assert!(!switched.password_refused);
         assert_eq!(switched.auth, uwumail_store::FetchAuth::Microsoft);
+    }
+
+    /// Security review 0.22 MFIX-M1: a provider that understates a message's size (Exchange
+    /// estimates it) does not stop the folder: the message is fetched again on its own and the
+    /// others come too, and the folder moves past all three.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_understated_size_does_not_stop_the_folder() {
+        use crate::import::imap::tests::{fake_provider, understating_provider};
+        let dir = tempfile::tempdir().unwrap();
+        let (ours, our_id) = store_with_person(&dir.path().join("ours"), None).await;
+        let smtp = our_smtp(ours.clone());
+        let fetch_id = ours
+            .create_fetch_account(NewFetchAccount {
+                account_id: our_id,
+                address: "mini@freemail.example".into(),
+                host: "imap.freemail.example".into(),
+                port: 993,
+                security: FetchSecurity::Tls,
+                username: "mini".into(),
+                password: PASSWORD.into(),
+                after_fetch: AfterFetch::MarkRead,
+                fetch_junk: false,
+                interval_secs: uwumail_store::DEFAULT_FETCH_INTERVAL_SECS,
+                auth_serv_id: String::new(),
+            })
+            .await
+            .unwrap()
+            .id;
+        let account = ours.fetch_account(our_id, fetch_id).await.unwrap().unwrap();
+        let mut connection = Connection::open(&fake_provider(understating_provider).await).await.unwrap();
+        let mut state = FetchFolder::default();
+        let taken = take_new(&ours, &smtp, &account, "mini@example.org", &mut connection, "INBOX", false, &mut state)
+            .await
+            .unwrap();
+        assert_eq!((taken, state.last_uid, state.held_uid), (3, 3, None));
+        let subjects: Vec<_> = inbox_mail(&ours, our_id).await.into_iter().map(|(subject, ..)| subject).collect();
+        assert_eq!(subjects, ["Gross", "Klein1", "Klein3"]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
