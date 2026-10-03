@@ -181,7 +181,9 @@ never vouches for a link whose text shows the brand's main site.
 | `CREDENTIAL_REQUEST` | +2.0 | the mail asks to sign in, confirm or update data (German or English) and its links lead somewhere else than the sender's own site, or it claims a brand it does not come from |
 
 A newsletter whose link text shows its own shop while the link goes through a
-tracking service is not counted (`TRACKED_LINK_TEXT`, 0 points). A user name
+tracking service is not counted (`TRACKED_LINK_TEXT`, 0 points), but only when
+the From domain is authenticated (DMARC passed); otherwise anybody could have
+written that From, and the link counts as `PHISHING_LINK_TEXT`. A user name
 with dots ("lia.lunare") is not taken for a domain: only names with a known
 ending are.
 

@@ -118,6 +118,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - **Regional bank names only under their own endings (SPAM-1).** `sparkasse-…` and `volksbank-…`
   count as the bank's own domain only under `.de` and `.at`; `sparkasse-login.com` and the like are
   imitations again, and such a domain never vouches for a link that shows `sparkasse.de`.
+- **Tracking links only for authenticated senders (SPAM-3).** A link whose text shows the sender's
+  own site and leads elsewhere is a harmless tracking link only when DMARC vouches for the From
+  domain; from a spoofable domain it counts as `PHISHING_LINK_TEXT` (+3) again, in the filter and
+  in the AI spam check.
 
 ## 0.21.2
 

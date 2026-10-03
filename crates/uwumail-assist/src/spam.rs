@@ -16,7 +16,7 @@ use serde::Serialize;
 use serde_json::Value;
 use uwumail_smtp::phishing::Finding;
 
-use crate::features::SpamSignals;
+use crate::features::{AuthenticationSignals, SpamSignals};
 use crate::mail::MailText;
 
 /// The verdicts, from good to bad. `phishing` ranks with `spam` and needs phishing evidence.
@@ -183,16 +183,22 @@ fn add(evidence: &mut Vec<Evidence>, code: &str, weight: f64, detail: Option<Str
     evidence.push(Evidence { code: code.to_owned(), tone, weight: (weight * 10.0).round() / 10.0, detail, phishing });
 }
 
+/// Whether authentication backs the From domain: DMARC passed, or SPF and DKIM passed for a domain
+/// without a DMARC policy.
+pub fn authentic(auth: &AuthenticationSignals) -> bool {
+    match auth.dmarc.as_deref() {
+        Some("pass") => true,
+        None | Some("none") => passed(&auth.dkim) && passed(&auth.spf),
+        Some(_) => false,
+    }
+}
+
 /// Adds up what the server knows. `phishing` are the findings of `uwumail_smtp::phishing` for this
 /// mail, `text` the mail's subject and text for the content cues.
 pub fn assess(signals: &SpamSignals, phishing: &[Finding], text: &str) -> Assessment {
     let mut evidence = Vec::new();
     let auth = &signals.authentication;
-    let authentic = match auth.dmarc.as_deref() {
-        Some("pass") => true,
-        None | Some("none") => passed(&auth.dkim) && passed(&auth.spf),
-        Some(_) => false,
-    };
+    let authentic = authentic(auth);
 
     // The spam filter: its whole verdict in one fact, scaled so that its limit weighs 3.
     if let Some(score) = signals.spam_score {
@@ -656,7 +662,7 @@ address book: {}",
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::{AuthenticationSignals, SenderSignals};
+    use crate::features::SenderSignals;
 
     fn invoice() -> SpamSignals {
         SpamSignals {

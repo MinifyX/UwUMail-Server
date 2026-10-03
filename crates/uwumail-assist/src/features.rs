@@ -945,7 +945,8 @@ impl Assist {
         let mail = MailText::read(record, &raw, MAX_MAIL_CHARS);
         let (domains, contacts) = self.contact_domains(account).await?;
         let signals = self.spam_signals(account, record, &mail, &contacts).await?;
-        let phishing = uwumail_smtp::phishing::check_message(&raw, &domains);
+        let authentic = crate::spam::authentic(&signals.authentication);
+        let phishing = uwumail_smtp::phishing::check_message(&raw, &domains, authentic);
         let shape =
             crate::spam::MailShape { has_links: !mail.links.is_empty(), attachments: Some(record_attachments(&raw)) };
         Ok(spam_check_prompt(mail, signals, &phishing, shape, language))
@@ -1332,6 +1333,7 @@ fn foreign_spam_check_prompt(
         links: uwumail_smtp::phishing::links_in_text(&mail.text),
         contact_domains,
         mailing_list: header("List-Id").is_some(),
+        from_authenticated: crate::spam::authentic(&signals.authentication),
     };
     let phishing = uwumail_smtp::phishing::check(&input);
     let shape = crate::spam::MailShape { has_links: mail.text.contains("http"), attachments: None };

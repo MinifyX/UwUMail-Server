@@ -250,6 +250,10 @@ pub struct Input<'a> {
     pub contact_domains: &'a [String],
     /// A mailing list rewrites From and Reply-To for good reasons.
     pub mailing_list: bool,
+    /// The From domain is authenticated (DMARC passed, or SPF and DKIM without a DMARC policy). Only
+    /// then is a link whose text shows the sender's own site a harmless tracking link: anybody can
+    /// write a From domain that publishes no DMARC policy.
+    pub from_authenticated: bool,
 }
 
 /// A link as the checks need it: what it shows and where it goes.
@@ -349,11 +353,12 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
             let named_site = site(named);
             // A link whose text is a brand's address and leads elsewhere is the classic trick, whoever
             // sent it. Its text naming the sender's own site is what every tracking link of a
-            // newsletter does, and says little by itself.
+            // newsletter does, and says little by itself — when the sender is who it claims to be
+            // (security review 0.22 SPAM-3).
             if named_site != target_site && !same_brand(&named_site, &target_site) {
                 if own_brand(&named_site).is_some() || input.contact_domains.iter().any(|d| site(d) == named_site) {
                     push(&mut found, "BRAND_LINK_TEXT", 3.0, format!("{named} -> {target_site}"));
-                } else if from_site.as_deref() == Some(named_site.as_str()) {
+                } else if input.from_authenticated && from_site.as_deref() == Some(named_site.as_str()) {
                     push(&mut found, "TRACKED_LINK_TEXT", 0.0, format!("{named} -> {target_site}"));
                 } else {
                     push(&mut found, "PHISHING_LINK_TEXT", 3.0, format!("{named} -> {target_site}"));
@@ -412,10 +417,11 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
 }
 
 /// Runs the checks on a stored message. `contact_domains` are the reader's partners' domains.
-pub fn check_message(raw: &[u8], contact_domains: &[String]) -> Vec<Finding> {
+/// `from_authenticated` as in [`Input`].
+pub fn check_message(raw: &[u8], contact_domains: &[String], from_authenticated: bool) -> Vec<Finding> {
     let Some(message) = parse_message(&raw[..raw.len().min(super::content::MAX_MESSAGE)]) else { return Vec::new() };
     let read = read_message(&message);
-    let input = Input { contact_domains, ..read.input() };
+    let input = Input { contact_domains, from_authenticated, ..read.input() };
     check(&input)
 }
 
@@ -447,6 +453,7 @@ impl Read {
             links: self.links.clone(),
             contact_domains: &[],
             mailing_list: self.mailing_list,
+            from_authenticated: false,
         }
     }
 }
@@ -949,10 +956,15 @@ mod tests {
         let input = Input {
             from_address: Some("news@shop.example"),
             links: vec![link(Some("shop.example"), "click.mailer.example")],
+            from_authenticated: true,
             ..Input::default()
         };
         assert_eq!(rules(&input), ["TRACKED_LINK_TEXT"]);
         assert_eq!(check(&input)[0].points, 0.0);
+        // Unless the From domain is not authenticated: anybody can write it (SPAM-3).
+        let input = Input { from_authenticated: false, ..input };
+        assert_eq!(rules(&input), ["PHISHING_LINK_TEXT"]);
+        assert_eq!(check(&input)[0].points, 3.0);
         // A link to a lookalike, and one to an IP address under an address text.
         let input = Input {
             from_address: Some("a@x.example"),
@@ -1028,6 +1040,6 @@ mod tests {
             ..Input::default()
         };
         let _ = check(&input);
-        let _ = check_message(b"\xff\xfe garbage", &[]);
+        let _ = check_message(b"\xff\xfe garbage", &[], false);
     }
 }

@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uwumail_assist::llm::{Prompt, chat_request, json_answer};
 use uwumail_assist::mail::MailText;
-use uwumail_assist::spam::{MailShape, assess, facts, settle, verify};
+use uwumail_assist::spam::{MailShape, assess, authentic, facts, settle, verify};
 use uwumail_assist::{AuthenticationSignals, SenderSignals, SpamSignals, parse_spam, prompts, rule_meaning};
 use uwumail_smtp::{Authentication, phishing, score_offline};
 
@@ -406,7 +406,7 @@ async fn spam_eval() {
         );
 
         // 0.22
-        let findings = phishing::check_message(&case.raw, &case.contacts);
+        let findings = phishing::check_message(&case.raw, &case.contacts, authentic(&case.signals.authentication));
         let assessment = assess(&case.signals, &findings, &format!("{}\n{}", mail.subject, mail.text));
         let facts = facts(&case.signals, &assessment, rule_meaning);
         let prompt = prompts::spam_check(&mail, &facts, &assessment.allowed, Some("de"));
