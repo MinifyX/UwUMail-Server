@@ -50,6 +50,8 @@ jobs:
           scripts=$(git ls-files '*.sh' deploy/host/helper deploy/gateway/hardening/helper \
             deploy/gateway/hardening/motd)
           for script in $scripts; do bash -n "$script"; done
+          # One argument per script, so the list is split on purpose.
+          # shellcheck disable=SC2086
           shellcheck --severity=warning $scripts
       - name: The root helpers never follow a symlink
         run: bash deploy/tests/helpers.sh
@@ -166,26 +168,33 @@ jobs:
           path: gateway-dist
           retention-days: 30
 
-  image:
-    name: Container image
+  # Both server binaries, each on a runner of its own architecture (arm64 natively, no cross
+  # compiler), side by side and alongside the tests: only the image job waits for everything.
+  server-binary:
+    name: Server binary (${{ matrix.arch }})
     if: github.event_name != 'pull_request'
-    needs: [test, audit, web, webmail]
-    runs-on: ubuntu-latest
+    needs: [web, webmail]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
-      packages: write
-      # Provenance for the pushed image: a signed statement of which workflow run built it.
-      id-token: write
-      attestations: write
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
     env:
-      # The server shows its commit and, for a release, checks for newer releases instead of commits.
+      # Embedded when compiling (crates/uwumail-web/src/updates.rs): the server shows its commit
+      # and, for a release, checks for newer releases instead of commits.
       UWUMAIL_GIT_SHA: ${{ github.sha }}
       UWUMAIL_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          # This job has packages: write and builds the binary that gets pushed. Nothing here needs
-          # git credentials afterwards, so none are left lying in .git/config.
+          # Nothing here needs git credentials afterwards, so none are left lying in .git/config.
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -200,31 +209,54 @@ jobs:
           path: webmail/dist
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
-          targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
-      - name: Cross compiler for arm64
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: release
-      - name: Build amd64
-        run: cargo build --release --locked -p uwumail-server --target x86_64-unknown-linux-gnu
-      - name: Build arm64
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
-          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
-        run: cargo build --release --locked -p uwumail-server --target aarch64-unknown-linux-gnu
-      - name: Collect binaries
+          key: release-${{ matrix.arch }}
+      - name: Build
+        run: cargo build --release --locked -p uwumail-server --target ${{ matrix.target }}
+      - name: Collect the binary
         run: |
-          mkdir -p dist/amd64 dist/arm64
-          cp target/x86_64-unknown-linux-gnu/release/uwumail-server dist/amd64/
-          cp target/aarch64-unknown-linux-gnu/release/uwumail-server dist/arm64/
-          # Both binaries must carry the web app and the webmail.
-          grep -q "uwumail-app-icon.svg" dist/amd64/uwumail-server
-          grep -q "uwumail-app-icon.svg" dist/arm64/uwumail-server
-          grep -q "manifest.webmanifest" dist/amd64/uwumail-server
-          grep -q "manifest.webmanifest" dist/arm64/uwumail-server
+          mkdir -p dist/${{ matrix.arch }}
+          cp target/${{ matrix.target }}/release/uwumail-server dist/${{ matrix.arch }}/
+          # The binary must carry the web app and the webmail.
+          grep -q "uwumail-app-icon.svg" dist/${{ matrix.arch }}/uwumail-server
+          grep -q "manifest.webmanifest" dist/${{ matrix.arch }}/uwumail-server
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-${{ matrix.arch }}
+          path: dist/${{ matrix.arch }}/uwumail-server
+          retention-days: 3
+
+  image:
+    name: Container image
+    if: github.event_name != 'pull_request'
+    needs: [test, audit, server-binary]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      # Provenance for the pushed image: a signed statement of which workflow run built it.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # This job has packages: write and pushes the image. Nothing here needs git credentials
+          # afterwards, so none are left lying in .git/config.
+          persist-credentials: false
+      # docker/Dockerfile.release packages dist/${TARGETARCH}/uwumail-server.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: server-amd64
+          path: dist/amd64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: server-arm64
+          path: dist/arm64
+      - name: The binaries are executable
+        # Artifacts do not keep file modes.
+        run: chmod +x dist/amd64/uwumail-server dist/arm64/uwumail-server
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
