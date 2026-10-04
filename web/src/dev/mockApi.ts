@@ -112,7 +112,7 @@ import type {
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 import { assistMockRoutes } from "./mockAssist";
-import { moveMockRoutes } from "./mockMoves";
+import { mockLeftOut, moveMockRoutes } from "./mockMoves";
 import { ruleRoutes } from "./mockRules";
 import { mockChangeSignatures, mockSignatureOverview } from "./mockSignatures";
 
@@ -1527,6 +1527,9 @@ const mockMoves: MoveJob[] = [
     messagesDone: 1840,
     messagesTotal: 5210,
     messagesSkipped: 12,
+    messagesKnown: 9,
+    messagesTooLarge: 2,
+    messagesUnreadable: 1,
     bytesDone: 212_000_000,
     createdAt: now - 1200,
     startedAt: now - 1200,
@@ -1547,6 +1550,9 @@ const mockMoves: MoveJob[] = [
     messagesDone: 734,
     messagesTotal: 734,
     messagesSkipped: 0,
+    messagesKnown: 0,
+    messagesTooLarge: 0,
+    messagesUnreadable: 0,
     bytesDone: 61_000_000,
     createdAt: now - 9 * 86_400,
     startedAt: now - 9 * 86_400,
@@ -3695,6 +3701,9 @@ const routes: [string, RegExp, Handler][] = [
         messagesDone: 0,
         messagesTotal: 0,
         messagesSkipped: 0,
+        messagesKnown: 0,
+        messagesTooLarge: 0,
+        messagesUnreadable: 0,
         bytesDone: 0,
         createdAt: Math.floor(Date.now() / 1000),
         startedAt: null,
@@ -3715,12 +3724,21 @@ const routes: [string, RegExp, Handler][] = [
       if (job.state === "queued" || job.state === "running") return problem(409, "moveRunning");
       if (job.state === "done") {
         Object.assign(job, { foldersDone: 0, messagesDone: 0, messagesTotal: 0, messagesSkipped: 0, bytesDone: 0 });
+        Object.assign(job, { messagesKnown: 0, messagesTooLarge: 0, messagesUnreadable: 0 });
         Object.assign(job, { startedAt: null, finishedAt: null });
       }
       void body;
       Object.assign(job, { state: "queued", error: "", errorDetail: "" });
       moveStartedAt.set(job.id, Date.now());
       return [200, job];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/account\/moving\/(\d+)\/skipped$/,
+    (_, [id]) => {
+      const job = mockMoves.find((candidate) => candidate.id === Number(id));
+      return job ? [200, mockLeftOut(job)] : problem(404, "notFound");
     },
   ],
   [

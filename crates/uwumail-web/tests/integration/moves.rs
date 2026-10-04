@@ -436,3 +436,102 @@ async fn a_refused_move_leaves_nothing_behind() {
     assert!(store.domain("umzug.example").await.unwrap().is_none(), "nothing was made");
     assert!(store.account("leni@umzug.example").await.unwrap().is_none());
 }
+
+fn skipped(folder: &str, uid: u32, reason: uwumail_store::SkipReason) -> uwumail_store::SkippedMessage {
+    uwumail_store::SkippedMessage {
+        folder: folder.into(),
+        uid,
+        reason,
+        from: "Nyu <nyu@example.net>".into(),
+        subject: format!("Nachricht {uid}"),
+        date: Some(1_700_000_000),
+        size: 4096,
+        recorded_at: 0,
+    }
+}
+
+/// What a mailbox left out: counted apart in the move's JSON, listed on its own page, for admins.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_messages_a_mailbox_left_out_are_counted_apart_and_listed() {
+    use uwumail_store::{MigrationProgress, NewMove, NewMoveMailbox, SkipReason, SkippedOf};
+    let (app, store, _dir) = portal().await;
+    let admin = login(&app, "admin@example.org").await;
+    let mini = login(&app, "mini@example.org").await;
+    let mini_id = store.account("mini@example.org").await.unwrap().unwrap().id;
+    let new = NewMove {
+        kind: uwumail_store::MoveKind::Mailbox,
+        domain: "example.org".into(),
+        imap_host: "imap.example.net".into(),
+        imap_port: 993,
+        dav_mode: uwumail_store::DavMode::None,
+        dav_host: String::new(),
+        dav_url: String::new(),
+        contacts: false,
+        calendars: false,
+        parallel: 1,
+        sync_minutes: 60,
+        created_by: None,
+    };
+    let mailbox = NewMoveMailbox {
+        account_id: mini_id,
+        old_address: "mini@example.net".into(),
+        login: String::new(),
+        password: OLD_PASSWORD.into(),
+        imap_host: None,
+        imap_port: None,
+        dav_url: String::new(),
+        created_account: false,
+        expected_login: None,
+        aliases: Vec::new(),
+    };
+    let started = store.create_move(new, vec![mailbox]).await.unwrap();
+    let taken = store.take_move_mailbox().await.unwrap().unwrap();
+    let progress = MigrationProgress {
+        messages_done: 10,
+        messages_total: 10,
+        messages_skipped: 4,
+        messages_known: 2,
+        messages_too_large: 1,
+        messages_unreadable: 1,
+        ..Default::default()
+    };
+    assert!(store.note_move_progress(taken.id, progress).await.unwrap());
+    let messages = vec![
+        skipped("INBOX", 3, SkipReason::Known),
+        skipped("Archiv", 7, SkipReason::TooLarge),
+        skipped("Archiv", 8, SkipReason::Unreadable),
+    ];
+    store.note_skipped_messages(SkippedOf::MoveMailbox(taken.id), messages).await.unwrap();
+
+    let id = started.id;
+    let (status, detail) = call(&app, "GET", &format!("/api/admin/moves/{id}"), None, &admin).await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    let row = &detail["mailboxes"][0];
+    assert_eq!(
+        (row["messagesSkipped"].as_i64(), row["messagesKnown"].as_i64()),
+        (Some(4), Some(2)),
+        "the total stays for older pages: {row}"
+    );
+    assert_eq!((row["messagesTooLarge"].as_i64(), row["messagesUnreadable"].as_i64()), (Some(1), Some(1)));
+    assert_eq!(detail["move"]["summary"]["messagesKnown"].as_i64(), Some(2));
+
+    let path = format!("/api/admin/moves/{id}/mailboxes/{}/skipped", taken.id);
+    let (status, listed) = call(&app, "GET", &path, None, &admin).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let entries = listed["messages"].as_array().unwrap();
+    assert_eq!(entries.len(), 3, "{listed}");
+    assert_eq!(listed["max"].as_i64(), Some(uwumail_store::MAX_SKIPPED_LISTED));
+    let large = &entries[1];
+    assert_eq!(
+        (large["folder"].as_str(), large["uid"].as_u64(), large["reason"].as_str(), large["size"].as_i64()),
+        (Some("Archiv"), Some(7), Some("tooLarge"), Some(4096))
+    );
+    assert_eq!((large["from"].as_str(), large["date"].as_i64()), (Some("Nyu <nyu@example.net>"), Some(1_700_000_000)));
+
+    // Only for admins, and only for a mailbox of this move.
+    let (status, _) = call(&app, "GET", &path, None, &mini).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let elsewhere = format!("/api/admin/moves/{}/mailboxes/{}/skipped", id + 1, taken.id);
+    let (status, _) = call(&app, "GET", &elsewhere, None, &admin).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

@@ -343,6 +343,17 @@ impl std::fmt::Debug for FetchAccountUpdate {
     }
 }
 
+/// Where a message a move brings stands here; see [`Store::known_message`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnownMessage {
+    /// The folder's mailbox here holds it already.
+    InMailbox,
+    /// This email has the same bytes, in other mailboxes only.
+    Elsewhere(i64),
+    /// Not here yet.
+    New,
+}
+
 /// Where one folder of a fetch account stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FetchFolder {
@@ -1105,6 +1116,51 @@ impl Store {
                 )?,
             };
             Ok(found)
+        })
+        .await
+    }
+
+    /// Where a message a move brings stands in the mailbox here, for one folder's mailbox
+    /// (`mailbox_id`). With a Message-ID, the emails under it are looked at; without one, the
+    /// emails with the same bytes. One of them in that mailbox already: [`KnownMessage::InMailbox`]
+    /// (a round again, or mail that came here directly while the MX records changed). Else one with
+    /// the same bytes elsewhere: [`KnownMessage::Elsewhere`], the old provider shows it in several
+    /// folders (Gmail's labels) and it goes into this one as well. Else it is new, also when
+    /// another message carries the same Message-ID.
+    pub async fn known_message(
+        &self,
+        account_id: i64,
+        mailbox_id: i64,
+        message_id: Option<String>,
+        blob: BlobHash,
+    ) -> Result<KnownMessage> {
+        let message_id = message_id
+            .map(|id| id.trim().trim_start_matches('<').trim_end_matches('>').to_owned())
+            .filter(|id| !id.is_empty());
+        self.read(move |conn| {
+            let (column, value) = match message_id {
+                Some(message_id) => ("message_id", message_id),
+                None => ("blob_hash", blob.as_str().to_owned()),
+            };
+            let mut stmt = conn.prepare(&format!(
+                "SELECT e.id, e.blob_hash = ?3,
+                        EXISTS (SELECT 1 FROM email_mailboxes m WHERE m.email_id = e.id AND m.mailbox_id = ?4)
+                 FROM emails e WHERE e.account_id = ?1 AND e.{column} = ?2 ORDER BY e.id"
+            ))?;
+            let rows = stmt.query_map(params![account_id, value, blob.as_str(), mailbox_id], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?))
+            })?;
+            let mut same_bytes = None;
+            for row in rows {
+                let (id, same, in_mailbox) = row?;
+                if in_mailbox {
+                    return Ok(KnownMessage::InMailbox);
+                }
+                if same && same_bytes.is_none() {
+                    same_bytes = Some(id);
+                }
+            }
+            Ok(same_bytes.map_or(KnownMessage::New, KnownMessage::Elsewhere))
         })
         .await
     }

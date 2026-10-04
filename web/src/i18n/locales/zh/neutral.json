@@ -2236,8 +2236,6 @@
       "progress": "{{done}} / {{total}} 封邮件 · {{size}}",
       "progressLabel": "搬家进度",
       "folders": "文件夹 {{done}} / {{total}}",
-      "skipped": "已跳过 {{count}} 封邮件：已经存在或超过此服务器允许的大小",
-      "skipped_other": "已跳过 {{count}} 封邮件：已经存在或超过此服务器允许的大小",
       "done": "全部到齐了。",
       "doneAt": "截至 {{date}}，原来的内容已全部在这里。"
     },
@@ -2266,11 +2264,37 @@
     "about": {
       "title": "须知",
       "what": "每个文件夹都会搬过来，特殊文件夹（已发送、草稿、垃圾邮件、废纸篓、归档）会进入你对应的文件夹，每封邮件都保留日期以及已读、旗标或已回复状态。",
-      "twice": "不会重复：根据 Message-ID 或内容判断已经存在的邮件会被跳过。",
+      "twice": "不重复，不丢失：同一文件夹中已存在的邮件（按 Message-ID 或内容判断）会被跳过。旧服务商在多个文件夹中显示的同一封邮件，在这里是一封邮件，出现在所有这些文件夹中。",
       "switch": "不用着急：现在先搬一次，告诉大家你的新地址，之后随时使用“再次同步”。它只会获取之后到达原服务商的邮件。",
       "password": "密码只用于复制，会被加密保存，并在你点击“完成并删除登录信息”后立即删除。",
       "calendars": "日历和通讯录需要单独搬：",
       "calendarsLink": "日历和通讯录 → 从其他服务商迁移"
+    }
+  },
+  "leftOut": {
+    "known_other": "{{count}} 封已存在",
+    "tooLarge_other": "{{count}} 封过大",
+    "unreadable_other": "{{count}} 封无法读取",
+    "earlier_other": "{{count}} 封此前已跳过",
+    "show": "显示已跳过的邮件",
+    "loading": "正在加载列表…",
+    "failed": "无法加载列表。",
+    "empty": "没有条目。0.22.2 版本之前跳过的邮件不在列表中。",
+    "capped": "列表显示前 {{max}} 封；计数仍在继续。",
+    "noSubject": "（无主题）",
+    "columns": {
+      "folder": "文件夹",
+      "from": "发件人",
+      "subject": "主题",
+      "date": "日期",
+      "size": "大小",
+      "reason": "原因"
+    },
+    "reasons": {
+      "known": "此文件夹中已存在",
+      "tooLarge": "超过此服务器接受的 {{limit}}",
+      "tooLargeAny": "超过此服务器接受的大小",
+      "unreadable": "嵌套过深，无法安全读取"
     }
   },
   "mailbox": {
@@ -4582,7 +4606,6 @@
       "title": "{{domain}} 的迁移",
       "overview": "进度",
       "messages": "{{done}}/{{total}} 封邮件（{{size}}）",
-      "skipped_other": "已跳过 {{count}} 封（已存在或过大）",
       "davCounts": "{{contacts}} 位联系人，{{events}} 条日程",
       "source": "来自 {{host}}",
       "noDav": "仅邮件",

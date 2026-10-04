@@ -82,6 +82,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0073_l_label_previous_description.sql"),
     include_str!("migrations/0074_l_smtp_delivered.sql"),
     include_str!("migrations/0075_m_import_interrupted.sql"),
+    include_str!("migrations/0076_m_move_skipped.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

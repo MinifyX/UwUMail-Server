@@ -694,6 +694,25 @@ pub async fn remove_mailbox(
     Ok(Json(detail_json(&web, id).await?))
 }
 
+/// The messages a mailbox of the move left out: here already, too large, or not readable.
+pub async fn skipped_mailbox(
+    State(web): State<Web>,
+    _admin: Admin,
+    Path((id, mailbox)): Path<(i64, i64)>,
+) -> ApiResult<Json<Value>> {
+    web.store()
+        .move_mailbox(Some(id), mailbox)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("mailbox {mailbox} of the move")))?;
+    let messages = web.store().skipped_messages(uwumail_store::SkippedOf::MoveMailbox(mailbox)).await?;
+    Ok(Json(json!({
+        "messages": messages,
+        "max": uwumail_store::MAX_SKIPPED_LISTED,
+        // What "too large" means here.
+        "maxSize": web.smtp().max_message_size(),
+    })))
+}
+
 #[derive(Deserialize)]
 pub struct UploadTarget {
     kind: String,

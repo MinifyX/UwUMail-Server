@@ -2338,8 +2338,6 @@
       "progress": "{{done}} sur {{total}} messages · {{size}}",
       "progressLabel": "Avancement du déménagement",
       "folders": "dossier {{done}} sur {{total}}",
-      "skipped": "{{count}} message a été ignoré : il était déjà là ou dépasse la taille acceptée par ce serveur",
-      "skipped_other": "{{count}} messages ont été ignorés : ils étaient déjà là ou dépassent la taille acceptée par ce serveur",
       "done": "Tout est là.",
       "doneAt": "Tout ce qui s'y trouvait est ici, au {{date}}."
     },
@@ -2368,11 +2366,41 @@
     "about": {
       "title": "Bon à savoir",
       "what": "Chaque dossier est repris, les dossiers spéciaux (envoyés, brouillons, indésirables, corbeille, archives) dans les vôtres, et chaque message avec sa date, lu, marqué ou répondu comme avant.",
-      "twice": "Rien n'arrive deux fois : un message déjà présent ici, selon son Message-ID ou son contenu, est ignoré.",
+      "twice": "Rien en double, rien de perdu : un message déjà présent ici dans le même dossier (d'après son Message-ID ou son contenu) est laissé de côté. Un message que l'ancien fournisseur affiche dans plusieurs dossiers devient ici un seul message, dans tous ces dossiers.",
       "switch": "Prenez votre temps : déménagez une fois maintenant, donnez votre nouvelle adresse et utilisez « Synchroniser à nouveau » quand vous voulez. Seul ce qui est arrivé chez l'ancien fournisseur depuis est récupéré.",
       "password": "Le mot de passe ne sert qu'à copier, il est gardé scellé et supprimé dès que vous cliquez sur « Terminé, supprimer les identifiants ».",
       "calendars": "Les calendriers et les contacts déménagent séparément :",
       "calendarsLink": "Agendas et contacts → Transférer depuis un autre fournisseur"
+    }
+  },
+  "leftOut": {
+    "known_one": "{{count}} déjà là",
+    "known_other": "{{count}} déjà là",
+    "tooLarge_one": "{{count}} trop volumineux",
+    "tooLarge_other": "{{count}} trop volumineux",
+    "unreadable_one": "{{count}} illisible",
+    "unreadable_other": "{{count}} illisibles",
+    "earlier_one": "{{count}} laissé de côté auparavant",
+    "earlier_other": "{{count}} laissés de côté auparavant",
+    "show": "Afficher les messages laissés de côté",
+    "loading": "Chargement de la liste …",
+    "failed": "La liste n'a pas pu être chargée.",
+    "empty": "Aucune entrée. Les messages laissés de côté avant la version 0.22.2 ne figurent pas dans la liste.",
+    "capped": "La liste affiche les {{max}} premiers ; le décompte continue.",
+    "noSubject": "(sans objet)",
+    "columns": {
+      "folder": "Dossier",
+      "from": "De",
+      "subject": "Objet",
+      "date": "Date",
+      "size": "Taille",
+      "reason": "Raison"
+    },
+    "reasons": {
+      "known": "déjà dans ce dossier ici",
+      "tooLarge": "plus volumineux que les {{limit}} acceptés par ce serveur",
+      "tooLargeAny": "plus volumineux que ce que ce serveur accepte",
+      "unreadable": "trop imbriqué pour être lu en toute sécurité"
     }
   },
   "mailbox": {
@@ -4762,9 +4790,6 @@
       "title": "Migration de {{domain}}",
       "overview": "Progression",
       "messages": "{{done}} sur {{total}} messages ({{size}})",
-      "skipped_one": "{{count}} ignoré (déjà là ou trop grand)",
-      "skipped_many": "{{count}} ignorés (déjà là ou trop grands)",
-      "skipped_other": "{{count}} ignorés (déjà là ou trop grands)",
       "davCounts": "{{contacts}} contacts, {{events}} entrées d'agenda",
       "source": "Depuis {{host}}",
       "noDav": "messages seulement",

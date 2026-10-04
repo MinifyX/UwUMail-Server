@@ -84,8 +84,15 @@ pub struct MigrationProgress {
     /// Copied and skipped together, out of `messages_total`.
     pub messages_done: i64,
     pub messages_total: i64,
-    /// Messages that were already here and were left out.
+    /// Messages left out, all of them: the three counts below together (rows from before 0.22.2
+    /// count only here).
     pub messages_skipped: i64,
+    /// Left out because the folder's mailbox here held them already.
+    pub messages_known: i64,
+    /// Left out because they are larger than this server takes.
+    pub messages_too_large: i64,
+    /// Left out because they could not be read safely (nested too deep, too many parts).
+    pub messages_unreadable: i64,
     pub bytes_done: i64,
 }
 
@@ -125,7 +132,8 @@ pub enum MigrationRun {
 
 const COLUMNS: &str = "id, account_id, address, host, port, login, state, error, error_detail, folders_done, \
                        folders_total, messages_done, messages_total, messages_skipped, bytes_done, created_at, \
-                       started_at, finished_at, last_run_at";
+                       started_at, finished_at, last_run_at, messages_known, messages_too_large, \
+                       messages_unreadable";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<MigrationJob> {
     let state: String = row.get(6)?;
@@ -145,6 +153,9 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<MigrationJob> {
             messages_done: row.get(11)?,
             messages_total: row.get(12)?,
             messages_skipped: row.get(13)?,
+            messages_known: row.get(19)?,
+            messages_too_large: row.get(20)?,
+            messages_unreadable: row.get(21)?,
             bytes_done: row.get(14)?,
         },
         created_at: row.get(15)?,
@@ -311,7 +322,8 @@ impl Store {
         self.write(move |tx| {
             let changed = tx.execute(
                 "UPDATE migration_jobs SET folders_done = ?2, folders_total = ?3, messages_done = ?4,
-                     messages_total = ?5, messages_skipped = ?6, bytes_done = ?7
+                     messages_total = ?5, messages_skipped = ?6, bytes_done = ?7, messages_known = ?8,
+                     messages_too_large = ?9, messages_unreadable = ?10
                  WHERE id = ?1 AND state = 'running'",
                 params![
                     id,
@@ -321,6 +333,9 @@ impl Store {
                     progress.messages_total,
                     progress.messages_skipped,
                     progress.bytes_done,
+                    progress.messages_known,
+                    progress.messages_too_large,
+                    progress.messages_unreadable,
                 ],
             )?;
             Ok(changed == 1)
@@ -377,11 +392,14 @@ impl Store {
                 MigrationState::Done => {
                     tx.execute(
                         "UPDATE migration_jobs SET folders_done = 0, folders_total = 0, messages_done = 0,
-                             messages_total = 0, messages_skipped = 0, bytes_done = 0, started_at = NULL,
+                             messages_total = 0, messages_skipped = 0, bytes_done = 0, messages_known = 0,
+                             messages_too_large = 0, messages_unreadable = 0, started_at = NULL,
                              finished_at = NULL
                          WHERE id = ?1 AND account_id = ?2",
                         params![id, account_id],
                     )?;
+                    // The list goes with the counts it belongs to.
+                    crate::move_skipped::clear_skipped(tx, crate::SkippedOf::MigrationJob(id))?;
                 }
                 MigrationState::Paused => {}
             }

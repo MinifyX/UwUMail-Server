@@ -2288,8 +2288,6 @@
       "progress": "{{done}} van {{total}} berichten · {{size}}",
       "progressLabel": "Hoe ver de verhuizing is",
       "folders": "map {{done}} van {{total}}",
-      "skipped": "{{count}} bericht is overgeslagen: het was er al of is groter dan deze server aanneemt",
-      "skipped_other": "{{count}} berichten zijn overgeslagen: ze waren er al of zijn groter dan deze server aanneemt",
       "done": "Alles is er.",
       "doneAt": "Alles wat daar was, is hier, stand {{date}}."
     },
@@ -2318,11 +2316,41 @@
     "about": {
       "title": "Goed om te weten",
       "what": "Elke map komt mee, de speciale (verzonden, concepten, spam, prullenbak, archief) in de jouwe, en elk bericht met de datum en gelezen, gemarkeerd of beantwoord zoals het was.",
-      "twice": "Niets komt dubbel: een bericht dat er al is, op basis van de Message-ID of de inhoud, wordt overgeslagen.",
+      "twice": "Niets dubbel, niets kwijt: een bericht dat hier al in dezelfde map staat (op Message-ID of inhoud) wordt overgeslagen. Een bericht dat de oude provider in meerdere mappen toont, is hier één bericht in al die mappen.",
       "switch": "Neem de tijd: verhuis nu één keer, geef mensen je nieuwe adres en gebruik „Opnieuw synchroniseren” wanneer je wilt. Het haalt alleen op wat sindsdien bij de oude provider is binnengekomen.",
       "password": "Het wachtwoord wordt alleen gebruikt om te kopiëren, verzegeld bewaard en gewist zodra je op „Klaar, inloggegevens wissen” klikt.",
       "calendars": "Agenda's en contacten verhuizen apart:",
       "calendarsLink": "Agenda's en contacten → Verhuizen van een andere provider"
+    }
+  },
+  "leftOut": {
+    "known_one": "{{count}} al hier",
+    "known_other": "{{count}} al hier",
+    "tooLarge_one": "{{count}} te groot",
+    "tooLarge_other": "{{count}} te groot",
+    "unreadable_one": "{{count}} onleesbaar",
+    "unreadable_other": "{{count}} onleesbaar",
+    "earlier_one": "{{count}} eerder overgeslagen",
+    "earlier_other": "{{count}} eerder overgeslagen",
+    "show": "Overgeslagen berichten tonen",
+    "loading": "Lijst laden …",
+    "failed": "De lijst kon niet worden geladen.",
+    "empty": "Geen items. Berichten die vóór versie 0.22.2 zijn overgeslagen, staan niet in de lijst.",
+    "capped": "De lijst toont de eerste {{max}}; er wordt verder geteld.",
+    "noSubject": "(geen onderwerp)",
+    "columns": {
+      "folder": "Map",
+      "from": "Van",
+      "subject": "Onderwerp",
+      "date": "Datum",
+      "size": "Grootte",
+      "reason": "Reden"
+    },
+    "reasons": {
+      "known": "staat hier al in deze map",
+      "tooLarge": "groter dan de {{limit}} die deze server aanneemt",
+      "tooLargeAny": "groter dan deze server aanneemt",
+      "unreadable": "te diep genest om veilig te lezen"
     }
   },
   "mailbox": {
@@ -4673,8 +4701,6 @@
       "title": "Verhuizing van {{domain}}",
       "overview": "Voortgang",
       "messages": "{{done}} van {{total}} berichten ({{size}})",
-      "skipped_one": "{{count}} overgeslagen (er al of te groot)",
-      "skipped_other": "{{count}} overgeslagen (er al of te groot)",
       "davCounts": "{{contacts}} contacten, {{events}} agenda-items",
       "source": "Van {{host}}",
       "noDav": "alleen mail",

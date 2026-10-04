@@ -8,9 +8,10 @@
 //! folder remembers the last message it took over, so a slice, a restart or "sync again" a week
 //! later all go on from where things stood.
 //!
-//! A message this mailbox holds already -- the same Message-ID, or the same bytes -- is not
-//! brought twice: the old provider may show one message in several folders (Gmail's labels), and
-//! some mail may have come here some other way already.
+//! A message the folder's mailbox here holds already -- the same Message-ID, or the same bytes --
+//! is not brought twice. One the old provider shows in several folders (Gmail's labels) is one
+//! email here too, in all of their mailboxes. What is left out (here already, too large, not
+//! readable) is counted apart and listed, so the person sees which messages they are.
 //!
 //! Like fetched mailboxes, it only ever connects to public addresses, through the egress proxy
 //! when the admin sends fetching that way. A full mailbox or a refused password pauses the job
@@ -21,7 +22,7 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use tokio::sync::watch;
-use uwumail_store::{DavKind, MigrationJob, MigrationProgress, MigrationRun, Store, StoreError};
+use uwumail_store::{DavKind, MigrationJob, MigrationProgress, MigrationRun, SkippedOf, Store, StoreError};
 
 use crate::fetch::Detour;
 use crate::import::imap::{Connection, CopyEnd, CopyEvent, CopyOptions, Source, copy_folders, quoted};
@@ -139,7 +140,8 @@ async fn run_job_within(
     };
     let options = CopyOptions { skip_known: true, max_size, ..CopyOptions::default() };
     let source_name = source_name(job);
-    let copy = copy(store, &mut connection, job.account_id, &source_name, job.progress, options, limit, note);
+    let skipped = SkippedOf::MigrationJob(job.id);
+    let copy = copy(store, &mut connection, job.account_id, &source_name, job.progress, options, limit, note, skipped);
     let run = match tokio::time::timeout_at(deadline, copy).await {
         Ok(run) => run,
         // A portion that never ended; the next turn starts it again.
@@ -206,6 +208,7 @@ pub(crate) type Note = dyn Fn(Store, MigrationProgress) -> Pin<Box<dyn Future<Ou
 /// One turn of copying: what is new since the last one, for up to `limit`, counted on top of
 /// `base` (the turns of this round before). `Done` when everything there was is here. Contacts
 /// and calendars found in IMAP folders (with [`CopyOptions::contacts`]/`calendars`) go to `objects`.
+/// The messages left out go on the list of `skipped`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn copy(
     store: &Store,
@@ -216,8 +219,9 @@ pub(crate) async fn copy(
     options: CopyOptions,
     limit: Duration,
     note: impl Fn(Store, MigrationProgress) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync + 'static,
+    skipped: SkippedOf,
 ) -> MigrationRun {
-    copy_with(store, connection, account_id, source_name, base, options, limit, Box::new(note), None).await
+    copy_with(store, connection, account_id, source_name, base, options, limit, Box::new(note), None, skipped).await
 }
 
 /// What a turn does with contacts and calendar entries found in IMAP folders: `true` when they
@@ -236,6 +240,7 @@ pub(crate) async fn copy_with(
     limit: Duration,
     note: Box<Note>,
     objects: Option<Box<Objects>>,
+    skipped: SkippedOf,
 ) -> MigrationRun {
     let options = CopyOptions { deadline: Some(tokio::time::Instant::now() + limit), ..options };
     let note: std::sync::Arc<Note> = note.into();
@@ -253,9 +258,21 @@ pub(crate) async fn copy_with(
                 }
                 CopyEvent::Progress(copied) => {
                     now.folders_done = copied.folders as i64;
-                    now.messages_done = base.messages_done + (copied.messages + copied.skipped) as i64;
-                    now.messages_skipped = base.messages_skipped + copied.skipped as i64;
+                    now.messages_done = base.messages_done + (copied.messages + copied.skipped()) as i64;
+                    now.messages_skipped = base.messages_skipped + copied.skipped() as i64;
+                    now.messages_known = base.messages_known + copied.known as i64;
+                    now.messages_too_large = base.messages_too_large + copied.too_large as i64;
+                    now.messages_unreadable = base.messages_unreadable + copied.unreadable as i64;
                     now.bytes_done = base.bytes_done + copied.bytes as i64;
+                }
+                CopyEvent::Skipped(messages) => {
+                    let store = store.clone();
+                    return Box::pin(async move {
+                        if let Err(err) = store.note_skipped_messages(skipped, messages).await {
+                            tracing::warn!(%err, "writing down the messages a move left out failed");
+                        }
+                        true
+                    });
                 }
                 CopyEvent::Renumbered { folder } => {
                     tracing::info!(folder, "the old provider renumbered a folder; copying it again");
@@ -278,7 +295,9 @@ pub(crate) async fn copy_with(
             tracing::info!(
                 account_id,
                 copied = copied.messages,
-                skipped = copied.skipped,
+                known = copied.known,
+                too_large = copied.too_large,
+                unreadable = copied.unreadable,
                 ?end,
                 "moved mail from another provider"
             );
@@ -405,7 +424,8 @@ mod tests {
         assert_eq!((sliced.progress.messages_total, sliced.progress.messages_done), (4, 0));
         let done = turn(&new, &detour, RUN_LIMIT).await;
         assert_eq!(done.state, MigrationState::Done, "{done:?}");
-        assert_eq!((done.progress.messages_done, done.progress.messages_skipped), (4, 1), "{done:?}");
+        // Eins in two folders is one email in two mailboxes: copied, nothing left out.
+        assert_eq!((done.progress.messages_done, done.progress.messages_skipped), (4, 0), "{done:?}");
         assert_eq!(done.progress.folders_done, done.progress.folders_total);
         assert!(done.progress.bytes_done > 0);
 
@@ -419,7 +439,10 @@ mod tests {
         let parent = mailboxes.iter().find(|mailbox| mailbox.name == "Projekte").unwrap();
         let child = mailboxes.iter().find(|mailbox| mailbox.name == "Alt").unwrap();
         assert_eq!((child.parent_id, child.total_emails), (Some(parent.id), 1));
-        assert_eq!(parent.total_emails, 0, "the second label of Eins is not a second copy");
+        assert_eq!(parent.total_emails, 1, "the second label of Eins comes along");
+        let labelled = new.emails_in_mailbox(parent.id, 10).await.unwrap();
+        assert_eq!(labelled[0].id, emails[0].id, "as the same email, not a second copy");
+        assert!(new.skipped_messages(SkippedOf::MigrationJob(job.id)).await.unwrap().is_empty());
 
         // A week later: "sync again" brings only what arrived since.
         deliver(&old, old_id, MailboxTarget::Role(MailboxRole::Inbox), "Zwei", &[]).await;
@@ -433,7 +456,7 @@ mod tests {
         // Done for good: the password goes with the job, the mail stays.
         new.delete_migration_job(new_id, job.id).await.unwrap();
         assert_eq!(new.migration_password(new_id, job.id).await.unwrap(), None);
-        assert_eq!(new.mailboxes(new_id).await.unwrap().iter().map(|m| m.total_emails).sum::<i64>(), 4);
+        assert_eq!(new.mailboxes(new_id).await.unwrap().iter().map(|m| m.total_emails).sum::<i64>(), 5);
     }
 
     #[tokio::test(flavor = "multi_thread")]

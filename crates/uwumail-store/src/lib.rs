@@ -52,6 +52,7 @@ mod masked_domains;
 mod microsoft;
 mod migration_jobs;
 pub mod mime_limits;
+mod move_skipped;
 mod moves;
 mod mutate;
 mod oauth;
@@ -150,8 +151,8 @@ pub use extras::{
 pub use feeds::FeedState;
 pub use fetch::{
     AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount, FetchAccountUpdate,
-    FetchAuth, FetchFolder, FetchGrant, FetchOAuth, FetchSecurity, FetchSender, FetchTokens, MAX_FETCH_ACCOUNTS,
-    MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS, NewFetchAccount, SendSecurity,
+    FetchAuth, FetchFolder, FetchGrant, FetchOAuth, FetchSecurity, FetchSender, FetchTokens, KnownMessage,
+    MAX_FETCH_ACCOUNTS, MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS, NewFetchAccount, SendSecurity,
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
@@ -174,6 +175,7 @@ pub use microsoft::{MICROSOFT_RESOLVE_AFTER_SECS, MicrosoftIssue, MicrosoftRefus
 pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
 };
+pub use move_skipped::{MAX_SKIPPED_LISTED, SkipReason, SkippedMessage, SkippedOf};
 pub use moves::{
     DEFAULT_MOVE_PARALLEL, DEFAULT_MOVE_SYNC_MINUTES, DavMode, MAX_MOVE_MAILBOXES, MAX_MOVE_PARALLEL,
     MAX_MOVE_SYNC_MINUTES, MAX_OPEN_MOVES, MIN_MOVE_SYNC_MINUTES, Move, MoveKind, MoveMailbox, MoveMailboxState,

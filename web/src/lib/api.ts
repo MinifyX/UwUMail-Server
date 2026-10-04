@@ -899,7 +899,14 @@ export interface MoveJob {
   foldersTotal: number;
   messagesDone: number;
   messagesTotal: number;
+  /** Left out, all of them; the three counts below apart (moves from before 0.22.2 only have this). */
   messagesSkipped: number;
+  /** The folder's mailbox here held them already. */
+  messagesKnown: number;
+  /** Larger than this server takes. */
+  messagesTooLarge: number;
+  /** Nested too deep or made of too many parts to be read safely. */
+  messagesUnreadable: number;
   bytesDone: number;
   createdAt: number;
   startedAt: number | null;
@@ -911,6 +918,38 @@ export interface MovingView {
   jobs: MoveJob[];
   max: number;
   hasMailbox: boolean;
+}
+
+/** How many messages a move left out, and why. */
+export interface LeftOutCounts {
+  messagesSkipped: number;
+  messagesKnown: number;
+  messagesTooLarge: number;
+  messagesUnreadable: number;
+}
+
+export type LeftOutReason = "known" | "tooLarge" | "unreadable";
+
+/** One message a move left out. */
+export interface LeftOutMessage {
+  /** The folder at the old provider. */
+  folder: string;
+  uid: number;
+  reason: LeftOutReason;
+  /** Empty when the headers could not be read. */
+  from: string;
+  subject: string;
+  date: number | null;
+  size: number;
+  recordedAt: number;
+}
+
+/** The list of what a move left out (`…/skipped`): the first `max` of them. */
+export interface LeftOutView {
+  messages: LeftOutMessage[];
+  max: number;
+  /** The largest message this server takes, in bytes (0: no limit of its own). */
+  maxSize: number;
 }
 
 /** A move the admin runs: a whole domain or one mailbox from another server (docs/moving.md). */
@@ -929,6 +968,9 @@ export interface MoveSummary {
   messagesDone: number;
   messagesTotal: number;
   messagesSkipped: number;
+  messagesKnown: number;
+  messagesTooLarge: number;
+  messagesUnreadable: number;
   bytesDone: number;
   contactsDone: number;
   eventsDone: number;
@@ -983,6 +1025,9 @@ export interface MoveMailboxInfo {
   messagesDone: number;
   messagesTotal: number;
   messagesSkipped: number;
+  messagesKnown: number;
+  messagesTooLarge: number;
+  messagesUnreadable: number;
   bytesDone: number;
   /** What the old mailbox holds, when its server said. */
   sourceBytes: number | null;
