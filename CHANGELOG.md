@@ -3,6 +3,16 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.1
+
+### Fixed
+
+- **Moves no longer stop with "a mailbox with this name already exists here".** A folder at the
+  old provider whose name starts or ends with a space ("Kunden ") is stored without it; its
+  subfolders and the next round looked for the name with the space, did not find it and tried to
+  make the folder a second time. They now find it, so the move goes on where it stopped. Restoring
+  folders from a backup looks names up the same way.
+
 ## 0.22.0
 
 **Webmail 0.22.0** (bundled): base labels with an overlap warning and an earlier description you can
