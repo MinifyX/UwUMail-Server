@@ -218,5 +218,9 @@
   },
   "bimi": {
     "enabledToast": "BIMI ist an, dein Logo ist bereit für den großen Auftritt (ﾉ◕ヮ◕)ﾉ"
+  },
+  "leftOut": {
+    "show": "Zeig mir, was liegen blieb (・・ )?",
+    "empty": "Nichts auf der Liste (◕‿◕) Was vor Version 0.22.2 liegen blieb, steht hier nicht drin."
   }
 }

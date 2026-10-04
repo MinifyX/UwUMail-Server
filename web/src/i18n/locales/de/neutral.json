@@ -2288,8 +2288,6 @@
       "progress": "{{done}} von {{total}} Mails · {{size}}",
       "progressLabel": "Wie weit der Umzug ist",
       "folders": "Ordner {{done}} von {{total}}",
-      "skipped": "{{count}} Mail wurde ausgelassen: Sie war schon da oder ist größer, als dieser Server annimmt",
-      "skipped_other": "{{count}} Mails wurden ausgelassen: Sie waren schon da oder sind größer, als dieser Server annimmt",
       "done": "Alles ist da.",
       "doneAt": "Alles, was dort war, ist hier, Stand {{date}}."
     },
@@ -2318,11 +2316,41 @@
     "about": {
       "title": "Gut zu wissen",
       "what": "Jeder Ordner kommt mit, die besonderen (Gesendet, Entwürfe, Spam, Papierkorb, Archiv) in deine, und jede Mail mit ihrem Datum und gelesen, markiert oder beantwortet wie dort.",
-      "twice": "Nichts kommt doppelt: Eine Mail, die schon hier ist, nach ihrer Message-ID oder ihrem Inhalt, wird ausgelassen.",
+      "twice": "Nichts kommt doppelt, nichts geht verloren: Eine Mail, die im selben Ordner schon hier ist (nach ihrer Message-ID oder ihrem Inhalt), wird ausgelassen. Liegt eine Mail beim alten Anbieter in mehreren Ordnern, ist sie hier eine Mail in all diesen Ordnern.",
       "switch": "Lass dir Zeit: Zieh jetzt einmal um, sag den Leuten deine neue Adresse und nimm „Nochmal abgleichen“, wann immer du willst. Es holt nur, was seitdem beim alten Anbieter angekommen ist.",
       "password": "Das Passwort wird nur zum Kopieren benutzt, versiegelt gespeichert und gelöscht, sobald du auf „Fertig, Zugangsdaten löschen“ klickst.",
       "calendars": "Kalender und Kontakte ziehen getrennt um:",
       "calendarsLink": "Kalender & Kontakte → Von anderem Anbieter umziehen"
+    }
+  },
+  "leftOut": {
+    "known_one": "{{count}} schon da",
+    "known_other": "{{count}} schon da",
+    "tooLarge_one": "{{count}} zu groß",
+    "tooLarge_other": "{{count}} zu groß",
+    "unreadable_one": "{{count}} nicht lesbar",
+    "unreadable_other": "{{count}} nicht lesbar",
+    "earlier_one": "{{count}} früher ausgelassen",
+    "earlier_other": "{{count}} früher ausgelassen",
+    "show": "Ausgelassene anzeigen",
+    "loading": "Lade die Liste …",
+    "failed": "Die Liste konnte nicht geladen werden.",
+    "empty": "Keine Einträge. Mails, die vor Version 0.22.2 ausgelassen wurden, stehen nicht in der Liste.",
+    "capped": "Die Liste zeigt die ersten {{max}}; gezählt wird weiter.",
+    "noSubject": "(ohne Betreff)",
+    "columns": {
+      "folder": "Ordner",
+      "from": "Von",
+      "subject": "Betreff",
+      "date": "Datum",
+      "size": "Größe",
+      "reason": "Grund"
+    },
+    "reasons": {
+      "known": "schon in diesem Ordner hier",
+      "tooLarge": "größer als die {{limit}}, die dieser Server annimmt",
+      "tooLargeAny": "größer, als dieser Server annimmt",
+      "unreadable": "zu verschachtelt, um sicher gelesen zu werden"
     }
   },
   "mailbox": {
@@ -4673,8 +4701,6 @@
       "title": "Umzug von {{domain}}",
       "overview": "Fortschritt",
       "messages": "{{done}} von {{total}} Mails ({{size}})",
-      "skipped_one": "{{count}} ausgelassen (schon da oder zu groß)",
-      "skipped_other": "{{count}} ausgelassen (schon da oder zu groß)",
       "davCounts": "{{contacts}} Kontakte, {{events}} Kalendereinträge",
       "source": "Von {{host}}",
       "noDav": "nur Mails",

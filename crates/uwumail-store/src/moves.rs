@@ -198,6 +198,9 @@ pub struct MoveSummary {
     pub messages_done: i64,
     pub messages_total: i64,
     pub messages_skipped: i64,
+    pub messages_known: i64,
+    pub messages_too_large: i64,
+    pub messages_unreadable: i64,
     pub bytes_done: i64,
     pub contacts_done: i64,
     pub events_done: i64,
@@ -348,7 +351,8 @@ const MAILBOX_COLUMNS: &str = "m.id, m.move_id, m.account_id, a.login, a.display
      m.state, m.final_round, m.error, m.error_detail, m.folders_done, m.folders_total, m.messages_done, \
      m.messages_total, m.messages_skipped, m.bytes_done, m.source_bytes, m.contacts_done + m.dav_contacts, \
      m.events_done + m.dav_events, m.dav_error, \
-     m.dav_found, m.rounds, m.created_at, m.last_run_at, m.last_synced_at, m.next_sync_at, m.finished_at";
+     m.dav_found, m.rounds, m.created_at, m.last_run_at, m.last_synced_at, m.next_sync_at, m.finished_at, \
+     m.messages_known, m.messages_too_large, m.messages_unreadable";
 const MAILBOX_FROM: &str = "move_mailboxes m JOIN accounts a ON a.id = m.account_id";
 
 fn mailbox_from_row(row: &Row<'_>) -> rusqlite::Result<MoveMailbox> {
@@ -377,6 +381,9 @@ fn mailbox_from_row(row: &Row<'_>) -> rusqlite::Result<MoveMailbox> {
             messages_done: row.get(20)?,
             messages_total: row.get(21)?,
             messages_skipped: row.get(22)?,
+            messages_known: row.get(35)?,
+            messages_too_large: row.get(36)?,
+            messages_unreadable: row.get(37)?,
             bytes_done: row.get(23)?,
         },
         source_bytes: row.get(24)?,
@@ -416,7 +423,9 @@ fn summary(conn: &Connection, id: i64) -> Result<MoveSummary> {
                 coalesce(sum(state = 'paused'), 0), coalesce(sum(state = 'synced'), 0),
                 coalesce(sum(state = 'done'), 0), coalesce(sum(messages_done), 0),
                 coalesce(sum(messages_total), 0), coalesce(sum(messages_skipped), 0), coalesce(sum(bytes_done), 0),
-                coalesce(sum(contacts_done + dav_contacts), 0), coalesce(sum(events_done + dav_events), 0)
+                coalesce(sum(contacts_done + dav_contacts), 0), coalesce(sum(events_done + dav_events), 0),
+                coalesce(sum(messages_known), 0), coalesce(sum(messages_too_large), 0),
+                coalesce(sum(messages_unreadable), 0)
          FROM move_mailboxes WHERE move_id = ?1",
         [id],
         |row| {
@@ -430,6 +439,9 @@ fn summary(conn: &Connection, id: i64) -> Result<MoveSummary> {
                 messages_done: row.get(6)?,
                 messages_total: row.get(7)?,
                 messages_skipped: row.get(8)?,
+                messages_known: row.get(12)?,
+                messages_too_large: row.get(13)?,
+                messages_unreadable: row.get(14)?,
                 bytes_done: row.get(9)?,
                 contacts_done: row.get(10)?,
                 events_done: row.get(11)?,
@@ -1187,7 +1199,8 @@ impl Store {
         self.write(move |tx| {
             let changed = tx.execute(
                 "UPDATE move_mailboxes SET folders_done = ?2, folders_total = ?3, messages_done = ?4,
-                     messages_total = ?5, messages_skipped = ?6, bytes_done = ?7
+                     messages_total = ?5, messages_skipped = ?6, bytes_done = ?7, messages_known = ?8,
+                     messages_too_large = ?9, messages_unreadable = ?10
                  WHERE id = ?1 AND state = 'running'
                    AND move_id IN (SELECT id FROM moves WHERE state IN ('active', 'finishing'))",
                 params![
@@ -1198,6 +1211,9 @@ impl Store {
                     progress.messages_total,
                     progress.messages_skipped,
                     progress.bytes_done,
+                    progress.messages_known,
+                    progress.messages_too_large,
+                    progress.messages_unreadable,
                 ],
             )?;
             Ok(changed == 1)

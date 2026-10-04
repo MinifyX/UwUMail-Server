@@ -218,5 +218,9 @@
   },
   "bimi": {
     "enabledToast": "BIMI staat aan, je logo is klaar voor zijn grote entree (ﾉ◕ヮ◕)ﾉ"
+  },
+  "leftOut": {
+    "show": "Laat zien wat achterbleef (・・ )?",
+    "empty": "Niets op de lijst (◕‿◕) Wat vóór versie 0.22.2 achterbleef, staat er niet in."
   }
 }

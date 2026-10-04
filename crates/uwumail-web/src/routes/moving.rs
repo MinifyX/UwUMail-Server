@@ -136,3 +136,15 @@ pub async fn finish(State(web): State<Web>, session: Session, Path(id): Path<i64
     web.store().delete_migration_job(session.account.id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// The messages this move left out: here already, too large, or not readable.
+pub async fn skipped(State(web): State<Web>, session: Session, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+    web.store().migration_job(session.account.id, id).await?.ok_or_else(|| ApiError::NotFound("move".into()))?;
+    let messages = web.store().skipped_messages(uwumail_store::SkippedOf::MigrationJob(id)).await?;
+    Ok(Json(json!({
+        "messages": messages,
+        "max": uwumail_store::MAX_SKIPPED_LISTED,
+        // What "too large" means here.
+        "maxSize": web.smtp().max_message_size(),
+    })))
+}

@@ -4,6 +4,8 @@
  */
 
 import type {
+  LeftOutCounts,
+  LeftOutView,
   MoveDetail,
   MoveInfo,
   MoveLimits,
@@ -66,6 +68,9 @@ function mailbox(
     messagesDone: 2140,
     messagesTotal: 2140,
     messagesSkipped: 0,
+    messagesKnown: 0,
+    messagesTooLarge: 0,
+    messagesUnreadable: 0,
     bytesDone: 120 * MB,
     sourceBytes: 120 * MB,
     contactsDone: 84,
@@ -122,6 +127,9 @@ function emptySummary(): MoveInfo["summary"] {
     messagesDone: 0,
     messagesTotal: 0,
     messagesSkipped: 0,
+    messagesKnown: 0,
+    messagesTooLarge: 0,
+    messagesUnreadable: 0,
     bytesDone: 0,
     contactsDone: 0,
     eventsDone: 0,
@@ -130,7 +138,19 @@ function emptySummary(): MoveInfo["summary"] {
 
 const firm = newMove({ domain: "kanzlei.example" });
 for (const [local, name, state, extra] of [
-  ["mini", "Mini Muster", "synced", { hasPortalPassword: true, aliases: ["info@kanzlei.example"] }],
+  [
+    "mini",
+    "Mini Muster",
+    "synced",
+    {
+      hasPortalPassword: true,
+      aliases: ["info@kanzlei.example"],
+      messagesSkipped: 6,
+      messagesKnown: 3,
+      messagesTooLarge: 2,
+      messagesUnreadable: 1,
+    },
+  ],
   ["nyu", "Nyu Neko", "running", { messagesDone: 900, foldersDone: 3, nextSyncAt: null, lastSyncedAt: null }],
   [
     "kiki",
@@ -179,11 +199,38 @@ function summed(move: MoveInfo): MoveInfo {
     summary.messagesDone += box.messagesDone;
     summary.messagesTotal += box.messagesTotal;
     summary.messagesSkipped += box.messagesSkipped;
+    summary.messagesKnown += box.messagesKnown;
+    summary.messagesTooLarge += box.messagesTooLarge;
+    summary.messagesUnreadable += box.messagesUnreadable;
     summary.bytesDone += box.bytesDone;
     summary.contactsDone += box.contactsDone;
     summary.eventsDone += box.eventsDone;
   }
   return { ...move, summary };
+}
+
+/** A list of left out messages that matches the counts. */
+export function mockLeftOut(counts: LeftOutCounts): LeftOutView {
+  const reasons = [
+    ...Array<"known">(counts.messagesKnown).fill("known"),
+    ...Array<"tooLarge">(counts.messagesTooLarge).fill("tooLarge"),
+    ...Array<"unreadable">(counts.messagesUnreadable).fill("unreadable"),
+  ];
+  const subjects = ["Rechnung März", "Urlaubsfotos (alle!)", "Fwd: Fwd: Fwd: Kettenbrief", "Newsletter", ""];
+  return {
+    messages: reasons.map((reason, index) => ({
+      folder: index % 2 === 0 ? "INBOX" : "Archiv/2024",
+      uid: 100 + index,
+      reason,
+      from: index === 2 ? "" : "Nyu Neko <nyu@example.net>",
+      subject: subjects[index % subjects.length]!,
+      date: index === 2 ? null : now - (index + 3) * 86_400,
+      size: reason === "tooLarge" ? 80 * MB + index * MB : 24_000 + index * 1000,
+      recordedAt: now - 3600,
+    })),
+    max: 1000,
+    maxSize: 50 * MB,
+  };
 }
 
 const find = (id: string) => moves.find((move) => move.id === Number(id));
@@ -448,6 +495,14 @@ export const moveMockRoutes: [string, RegExp, Handler][] = [
         if (at < 0) return problem(404, "notFound");
         boxes.splice(at, 1);
       }),
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/moves\/(\d+)\/mailboxes\/(\d+)\/skipped$/,
+    (_body, [id, boxId]) => {
+      const box = boxes.find((entry) => entry.id === Number(boxId) && entry.moveId === Number(id));
+      return box ? [200, mockLeftOut(box)] : problem(404, "notFound");
+    },
   ],
   [
     "POST",

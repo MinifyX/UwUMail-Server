@@ -16,7 +16,10 @@ use rustls_pki_types::ServerName;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
-use uwumail_store::{BlobHash, DavKind, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store, StoreError};
+use uwumail_store::{
+    BlobHash, DavKind, EmailUpdate, ImportProgress, IngestRequest, KnownMessage, MailboxRole, MailboxTarget,
+    MailboxesChange, SkipReason, SkippedMessage, Store, StoreError,
+};
 
 /// Messages fetched per request.
 const BATCH: usize = 25;
@@ -49,6 +52,8 @@ static IMPORT_BYTES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(
 /// What the answers to any other command may add up to, in memory: folder lists, status lines and
 /// searches, which for a folder of a million messages are a million tokens.
 const MAX_SMALL_ANSWER: usize = 16 * MAX_LINE;
+/// What the headers of one message left out may take in the answer that asks for them.
+const HEADER_ROOM: usize = 64 * 1024;
 /// What one token costs in memory beyond its bytes: its place in the list (a 32-byte enum, twice
 /// over while the list grows) and an allocation of its own. Charged against the budget, which
 /// otherwise counted only the bytes on the wire: a line of `a a a …` turned 16 MiB into hundreds of
@@ -779,11 +784,24 @@ pub(crate) fn parse_fetch(mut response: Response) -> Option<Fetched> {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Copied {
     pub folders: usize,
+    /// Messages stored, and ones that were here already in another folder and went into this
+    /// one's mailbox as well (see [`CopyOptions::skip_known`]).
     pub messages: usize,
-    /// Messages left out: ones the mailbox here held already (only when asked to look), and ones
-    /// larger than this server takes.
-    pub skipped: usize,
+    /// Left out because the folder's mailbox here held them already (only when asked to look).
+    pub known: usize,
+    /// Left out because they are larger than this server takes.
+    pub too_large: usize,
+    /// Left out because they could not be read safely (nested too deep, too many parts).
+    pub unreadable: usize,
+    /// What the stored messages take; one that only went into another mailbox adds nothing.
     pub bytes: usize,
+}
+
+impl Copied {
+    /// Every message left out, whatever the reason.
+    pub fn skipped(&self) -> usize {
+        self.known + self.too_large + self.unreadable
+    }
 }
 
 /// What a copy tells whoever started it, as it goes.
@@ -797,6 +815,9 @@ pub enum CopyEvent {
     Folder { name: String, path: String, new: usize, exists: usize },
     /// How far the copy got, after every portion and every folder.
     Progress(Copied),
+    /// The messages a portion left out, with what is known of them, just before its `Progress`.
+    /// The answer changes nothing: the copy goes on either way.
+    Skipped(Vec<SkippedMessage>),
     /// Contacts or calendar entries found in an IMAP folder that holds them as messages (Kolab
     /// and others keep them so), only for the kinds [`CopyOptions::contacts`] and
     /// [`CopyOptions::calendars`] asked for: the vCards or iCalendar texts of one portion, from
@@ -815,9 +836,12 @@ pub type Report<'a> = &'a mut (dyn FnMut(CopyEvent) -> Pin<Box<dyn Future<Output
 pub struct CopyOptions {
     /// Only count what would be copied.
     pub dry_run: bool,
-    /// Leave out messages the mailbox here holds already: by their Message-ID, by their bytes when
-    /// they have none. For a move, where the old provider may show one message in several folders
-    /// (Gmail's labels) and mail may have come here some other way already.
+    /// For a move: look at what the mailbox here holds already ([`Store::known_message`]). A
+    /// message the folder's mailbox holds (by its Message-ID, by its bytes when it has none) is left
+    /// out: a round again, or mail that came here directly while the MX records changed. One with
+    /// the same bytes in another mailbox only is not stored twice but goes into this one as well,
+    /// as one message shown in several folders at the old provider (Gmail's labels) is here too.
+    /// A different message with the same Message-ID is stored, so nothing is lost.
     pub skip_known: bool,
     /// Stop after the first portion that ends past this; the next copy goes on from there.
     pub deadline: Option<tokio::time::Instant>,
@@ -826,7 +850,7 @@ pub struct CopyOptions {
     /// Look for calendar entries kept as messages in folders named so.
     pub calendars: bool,
     /// The largest message this server takes (`smtp.max_message_size`); larger ones are left out
-    /// and counted as skipped. 0 means the largest a fetch reads at all.
+    /// and counted as [`Copied::too_large`]. 0 means the largest a fetch reads at all.
     pub max_size: usize,
 }
 
@@ -984,8 +1008,8 @@ async fn plan(
         };
         planned.push(Planned { folder, uid_validity, exists, uids });
     }
-    // The inbox first: a message the old server shows in several folders comes into the first one
-    // it is found in, when the mailbox here is asked to leave out what it holds already.
+    // The inbox first: a message the old server shows in several folders is stored with the first
+    // one it is found in, and goes into the mailboxes of the others as well (CopyOptions::skip_known).
     planned.sort_by_key(|planned| (planned.folder.role != Some(MailboxRole::Inbox), planned.folder.path.len()));
     Ok(planned)
 }
@@ -1052,15 +1076,15 @@ pub(crate) async fn copy_folders(
         // Made when the first message goes in: a folder of contacts may hold none.
         let mut mailbox = None;
         let objects = options.objects_in(&folder);
+        let shown = folder.path.join("/");
         for batch in uids.chunks(BATCH) {
             if options.deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                 return Ok((copied, CopyEnd::OutOfTime));
             }
             let plan = plan_fetch(connection, batch, options.max_size()).await?;
-            for uid in &plan.too_large {
-                tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
-                copied.skipped += 1;
-            }
+            // What this batch left out; the too large ones without a body get their headers after.
+            let mut skipped = Vec::new();
+            let mut too_large = plan.too_large.clone();
             let mut queue = FetchQueue::new(plan.chunks, options.max_size());
             while let Some(FetchedPortion { uids: chunk, messages, _permit }) = queue.next(connection).await? {
                 let mut by_uid: HashMap<u32, Fetched> = messages.into_iter().map(|f| (f.uid, f)).collect();
@@ -1070,8 +1094,7 @@ pub(crate) async fn copy_folders(
                 for uid in &chunk {
                     let Some(fetched) = by_uid.remove(uid) else { continue };
                     if fetched.dropped {
-                        tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
-                        copied.skipped += 1;
+                        too_large.push(*uid);
                         continue;
                     }
                     let Some(body) = fetched.body.as_deref() else { continue };
@@ -1081,7 +1104,8 @@ pub(crate) async fn copy_folders(
                     // The provider said it was smaller.
                     if body.len() > options.max_size() {
                         tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
-                        copied.skipped += 1;
+                        copied.too_large += 1;
+                        skipped.push(skipped_message(&shown, *uid, SkipReason::TooLarge, body, body.len()));
                         continue;
                     }
                     if let Some(kind) = objects {
@@ -1092,7 +1116,8 @@ pub(crate) async fn copy_folders(
                             continue;
                         }
                     }
-                    copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied).await?;
+                    let into = Into { folder: &folder, shown: &shown, mailbox: &mut mailbox, skipped: &mut skipped };
+                    copy_message(store, account_id, into, options, fetched, &mut copied).await?;
                 }
                 if let Some(kind) = objects
                     && !found_objects.is_empty()
@@ -1106,16 +1131,29 @@ pub(crate) async fn copy_folders(
                     } else {
                         tracing::info!(folder = %folder.raw, "objects could not be stored, copying them as mail");
                         for fetched in object_messages {
-                            copy_message(store, account_id, &folder, &mut mailbox, options, fetched, &mut copied)
-                                .await?;
+                            let into =
+                                Into { folder: &folder, shown: &shown, mailbox: &mut mailbox, skipped: &mut skipped };
+                            copy_message(store, account_id, into, options, fetched, &mut copied).await?;
                         }
                     }
                 }
+            }
+            if !too_large.is_empty() {
+                too_large.sort_unstable();
+                too_large.dedup();
+                for uid in &too_large {
+                    tracing::warn!(uid, folder = %folder.raw, "a message larger than this server takes was left out");
+                }
+                copied.too_large += too_large.len();
+                skipped.extend(headers_of(connection, &shown, &too_large).await);
             }
             let last_uid = *batch.last().expect("chunks are never empty");
             store
                 .set_import_progress(account_id, source_name, &folder.raw, ImportProgress { uid_validity, last_uid })
                 .await?;
+            if !skipped.is_empty() {
+                report(CopyEvent::Skipped(skipped)).await;
+            }
             if !report(CopyEvent::Progress(copied)).await {
                 return Ok((copied, CopyEnd::Stopped));
             }
@@ -1128,16 +1166,85 @@ pub(crate) async fn copy_folders(
     Ok((copied, CopyEnd::Finished))
 }
 
+/// How much of a message left out is read for its headers, at most.
+const HEADERS_READ: usize = 256 * 1024;
+
+/// What a message left out is listed with: From, Subject and Date from its headers (only the
+/// headers are read, in the first [`HEADERS_READ`] bytes of `raw`), and its size.
+fn skipped_message(folder: &str, uid: u32, reason: SkipReason, raw: &[u8], size: usize) -> SkippedMessage {
+    let parsed = mail_parser::MessageParser::default().parse_headers(&raw[..raw.len().min(HEADERS_READ)]);
+    let from = parsed
+        .as_ref()
+        .and_then(|message| message.from())
+        .and_then(|from| from.first())
+        .map(|address| match (address.name(), address.address()) {
+            (Some(name), Some(email)) if !name.trim().is_empty() => format!("{} <{email}>", name.trim()),
+            (_, Some(email)) => email.to_owned(),
+            (Some(name), None) => name.trim().to_owned(),
+            (None, None) => String::new(),
+        })
+        .unwrap_or_default();
+    SkippedMessage {
+        folder: folder.to_owned(),
+        uid,
+        reason,
+        from,
+        subject: parsed.as_ref().and_then(|message| message.subject()).unwrap_or_default().trim().to_owned(),
+        date: parsed.as_ref().and_then(|message| message.date()).map(|date| date.to_timestamp()),
+        size: size as i64,
+        recorded_at: 0,
+    }
+}
+
+/// The messages left out as too large, listed with what their headers say: only the headers and
+/// the size are fetched. When the provider does not answer that, they are listed without.
+async fn headers_of(connection: &mut Connection, folder: &str, uids: &[u32]) -> Vec<SkippedMessage> {
+    let set = uids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+    let command = format!("UID FETCH {set} (UID RFC822.SIZE BODY.PEEK[HEADER])");
+    // A header larger than its room is read past rather than failing the copy.
+    let mut by_uid: HashMap<u32, Fetched> = match connection
+        .fetch_within(&command, (uids.len() + 16) * HEADER_ROOM)
+        .await
+    {
+        Ok(responses) => responses
+            .into_iter()
+            .filter_map(parse_fetch)
+            .filter(|fetched| uids.contains(&fetched.uid))
+            .map(|fetched| (fetched.uid, fetched))
+            .collect(),
+        Err(err) => {
+            tracing::warn!(folder, err = %format!("{err:#}"), "the headers of messages left out could not be fetched");
+            HashMap::new()
+        }
+    };
+    uids.iter()
+        .map(|uid| {
+            let fetched = by_uid.remove(uid).unwrap_or_default();
+            let header = fetched.body.unwrap_or_default();
+            skipped_message(folder, *uid, SkipReason::TooLarge, &header, fetched.size.unwrap_or(0))
+        })
+        .collect()
+}
+
+/// Where [`copy_message`] stores a message: the folder there, its path as listed, its mailbox
+/// here (made on first use) and the list of what was left out.
+struct Into<'a> {
+    folder: &'a Folder,
+    shown: &'a str,
+    mailbox: &'a mut Option<i64>,
+    skipped: &'a mut Vec<SkippedMessage>,
+}
+
 /// Stores one fetched message as mail in the folder's mailbox here (made on first use).
 async fn copy_message(
     store: &Store,
     account_id: i64,
-    folder: &Folder,
-    mailbox: &mut Option<i64>,
+    into: Into<'_>,
     options: CopyOptions,
     fetched: Fetched,
     copied: &mut Copied,
 ) -> anyhow::Result<()> {
+    let Into { folder, shown, mailbox, skipped } = into;
     let Fetched { uid, flags, internal_date, body, .. } = fetched;
     let Some(body) = body else { return Ok(()) };
     let mailbox = match *mailbox {
@@ -1146,13 +1253,36 @@ async fn copy_message(
     };
     if options.skip_known {
         let message_id = uwumail_smtp::header_value(&body, "Message-ID");
-        if store.holds_message(account_id, message_id, BlobHash::of(&body)).await? {
-            copied.skipped += 1;
-            return Ok(());
+        match store.known_message(account_id, mailbox, message_id, BlobHash::of(&body)).await? {
+            KnownMessage::InMailbox => {
+                copied.known += 1;
+                skipped.push(skipped_message(shown, uid, SkipReason::Known, &body, body.len()));
+                return Ok(());
+            }
+            KnownMessage::Elsewhere(email) => {
+                // One message in several folders: here too, it is one email in several mailboxes.
+                let update = EmailUpdate {
+                    id: email,
+                    mailboxes: MailboxesChange::Patch(vec![(mailbox, true)]),
+                    ..Default::default()
+                };
+                match store.update_emails_by_server(account_id, vec![update]).await?.pop() {
+                    Some(Ok(())) => {
+                        copied.messages += 1;
+                        return Ok(());
+                    }
+                    // Gone meanwhile: stored as a message of its own below.
+                    Some(Err(err)) => tracing::debug!(%err, "a message could not go into a second mailbox"),
+                    None => {}
+                }
+            }
+            KnownMessage::New => {}
         }
     }
     let keywords = flags.iter().filter_map(|flag| uwumail_imap::parser::keyword_of_flag(flag)).collect();
     let size = body.len();
+    // Its start, for the headers should it be left out; the body goes to the store.
+    let header = body[..size.min(HEADERS_READ)].to_vec();
     let request = IngestRequest {
         account_id,
         raw: body,
@@ -1166,6 +1296,8 @@ async fn copy_message(
         // (uwumail_store::mime_limits): left out, and the move goes on with the rest.
         Err(StoreError::Rule { code: "invalidEmail", message }) => {
             tracing::warn!(uid, folder = %folder.raw, %message, "a message was left out");
+            copied.unreadable += 1;
+            skipped.push(skipped_message(shown, uid, SkipReason::Unreadable, &header, size));
             return Ok(());
         }
         Err(err) => {
@@ -1203,7 +1335,7 @@ pub async fn copy_mail(
             CopyEvent::Folder { name, path, new, exists } => {
                 progress(&format!("{name} → {path}: {new} new of {exists}"))
             }
-            CopyEvent::Planned { .. } | CopyEvent::Progress(_) | CopyEvent::Objects { .. } => {}
+            CopyEvent::Planned { .. } | CopyEvent::Progress(_) | CopyEvent::Objects { .. } | CopyEvent::Skipped(_) => {}
         }
         Box::pin(std::future::ready(true))
     };
@@ -1717,14 +1849,102 @@ pub(crate) mod tests {
         let (new, new_id) = store_with_person(&dir.path().join("new"), None).await;
         let mut connection = Connection::open(&source).await.unwrap();
         connection.command("LOGIN mini@example.org katzenpfote-123").await.unwrap();
-        let mut report =
-            |_: CopyEvent| -> Pin<Box<dyn Future<Output = bool> + Send>> { Box::pin(std::future::ready(true)) };
+        let mut skipped = Vec::new();
+        let mut report = |event: CopyEvent| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+            if let CopyEvent::Skipped(messages) = event {
+                skipped.extend(messages);
+            }
+            Box::pin(std::future::ready(true))
+        };
         let options = CopyOptions { max_size: 2000, ..CopyOptions::default() };
         let (copied, _) = copy_folders(&new, &mut connection, new_id, "test", options, &mut report).await.unwrap();
-        assert_eq!((copied.messages, copied.skipped), (1, 1));
+        assert_eq!((copied.messages, copied.too_large, copied.skipped()), (1, 1, 1));
         let inbox = new.mailboxes(new_id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
         let emails = new.emails_in_mailbox(inbox.unwrap().id, 10).await.unwrap();
         assert_eq!(emails.iter().map(|email| email.subject.as_str()).collect::<Vec<_>>(), ["Klein"]);
+        // Listed with what its headers say, fetched on their own.
+        let [large] = &skipped[..] else { panic!("{skipped:?}") };
+        assert_eq!((large.folder.as_str(), large.uid, large.reason), ("INBOX", 2, SkipReason::TooLarge));
+        assert_eq!((large.from.as_str(), large.subject.as_str()), ("nyu@example.net", "Gross"));
+        assert!(large.size > 4000, "{large:?}");
+    }
+
+    /// The provider of [`left_out_messages_are_counted_apart_and_listed`]: in INBOX, UID 1 is a
+    /// small message, UID 2 larger than the copy takes, UID 3 nested too deep to be read safely.
+    fn mixed_provider(command: &str) -> Vec<u8> {
+        let deep = || {
+            let mut raw =
+                b"From: Nyu <nyu@example.net>\r\nSubject: Tief\r\nContent-Type: message/rfc822\r\n\r\n".to_vec();
+            for _ in 0..70 {
+                raw.extend_from_slice(b"Subject: layer\r\nContent-Type: message/rfc822\r\n\r\n");
+            }
+            raw.extend_from_slice(b"Subject: bottom\r\n\r\nhi\r\n");
+            raw
+        };
+        let literal = |head: String, raw: &[u8]| {
+            let mut out = format!("{head} {{{}}}\r\n", raw.len()).into_bytes();
+            out.extend_from_slice(raw);
+            out.extend(b")\r\n");
+            out
+        };
+        if command.starts_with("LIST") {
+            b"* LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n".to_vec()
+        } else if command.starts_with("EXAMINE") {
+            b"* 3 EXISTS\r\n* OK [UIDVALIDITY 7] ok\r\n".to_vec()
+        } else if command.starts_with("UID SEARCH") {
+            b"* SEARCH 1 2 3\r\n".to_vec()
+        } else if command.ends_with("(UID RFC822.SIZE)") {
+            let (small, deep) = (message_of("Klein", 200).len(), deep().len());
+            format!(
+                "* 1 FETCH (UID 1 RFC822.SIZE {small})\r\n* 2 FETCH (UID 2 RFC822.SIZE 999999)\r\n\
+                 * 3 FETCH (UID 3 RFC822.SIZE {deep})\r\n"
+            )
+            .into_bytes()
+        } else if command.contains("BODY.PEEK[HEADER]") {
+            assert_eq!(command, "UID FETCH 2 (UID RFC822.SIZE BODY.PEEK[HEADER])");
+            let header = b"From: =?utf-8?q?Gro=C3=9Fe_Post?= <post@example.net>\r\nSubject: Riesig\r\n\
+                           Date: Tue, 14 Nov 2023 22:13:20 +0000\r\n\r\n";
+            literal("* 2 FETCH (UID 2 RFC822.SIZE 999999 BODY[HEADER]".into(), header)
+        } else if let Some(set) =
+            command.strip_prefix("UID FETCH ").and_then(|rest| rest.split_once(' ')).map(|(set, _)| set)
+        {
+            set.split(',')
+                .flat_map(|uid| {
+                    let raw = if uid == "3" { deep() } else { message_of("Klein", 200) };
+                    literal(format!("* {uid} FETCH (UID {uid} FLAGS () BODY[]"), &raw)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Nothing is left out without a word: too large and unreadable messages are counted apart
+    /// and listed with their folder, UID, size and what their headers say.
+    #[tokio::test]
+    async fn left_out_messages_are_counted_apart_and_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (new, new_id) = store_with_person(dir.path(), None).await;
+        let source = fake_provider(mixed_provider).await;
+        let mut connection = Connection::open(&source).await.unwrap();
+        let mut skipped = Vec::new();
+        let mut report = |event: CopyEvent| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+            if let CopyEvent::Skipped(messages) = event {
+                skipped.extend(messages);
+            }
+            Box::pin(std::future::ready(true))
+        };
+        let options = CopyOptions { skip_known: true, max_size: 100_000, ..CopyOptions::default() };
+        let (copied, end) = copy_folders(&new, &mut connection, new_id, "test", options, &mut report).await.unwrap();
+        assert_eq!(end, CopyEnd::Finished);
+        assert_eq!((copied.messages, copied.known, copied.too_large, copied.unreadable), (1, 0, 1, 1), "{copied:?}");
+        let [deep, large] = &skipped[..] else { panic!("{skipped:?}") };
+        assert_eq!((deep.uid, deep.reason, deep.subject.as_str()), (3, SkipReason::Unreadable, "Tief"));
+        assert_eq!((deep.folder.as_str(), deep.from.as_str()), ("INBOX", "Nyu <nyu@example.net>"));
+        assert!(deep.size > 70 * 40, "{deep:?}");
+        assert_eq!((large.uid, large.reason, large.size), (2, SkipReason::TooLarge, 999_999));
+        assert_eq!((large.from.as_str(), large.subject.as_str()), ("Große Post <post@example.net>", "Riesig"));
+        assert_eq!(large.date, Some(1_700_000_000));
     }
 
     #[test]

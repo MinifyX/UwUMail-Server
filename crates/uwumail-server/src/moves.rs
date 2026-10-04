@@ -26,7 +26,7 @@ use uwumail_dav::client::{self, Remote, RemoteCollection, RemoteError, Transport
 use uwumail_smtp::dnscheck::DnsChecker;
 use uwumail_store::{
     DavKind, DavMode, MigrationProgress, MigrationRun, Move, MoveMailbox, MoveTurn, NewDavCollection,
-    NewImportCollection, Store, split_ics, split_vcf,
+    NewImportCollection, SkippedOf, Store, split_ics, split_vcf,
 };
 
 use crate::fetch::Detour;
@@ -229,6 +229,7 @@ pub(crate) async fn run_turn(store: &Store, env: &Env, mailbox: &MoveMailbox) ->
         env.limit,
         note,
         objects,
+        SkippedOf::MoveMailbox(mailbox.id),
     );
     let run = tokio::time::timeout_at(deadline, copy).await.unwrap_or(MigrationRun::Continue);
     logout(&mut connection).await;

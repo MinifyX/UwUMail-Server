@@ -161,3 +161,59 @@ async fn a_move_is_started_paused_resumed_and_ended() {
     assert_eq!(after["jobs"].as_array().map(Vec::len), Some(0));
     assert_eq!(store.migration_password(mini_id, id).await.unwrap(), None);
 }
+
+/// What a move left out: counted apart in the job, listed for its person only.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_messages_a_move_left_out_are_counted_apart_and_listed() {
+    use uwumail_store::{MigrationProgress, SkipReason, SkippedMessage, SkippedOf};
+    let (app, store, _dir) = portal().await;
+    let mini = login(&app, "mini@example.org").await;
+    let nyu = login(&app, "nyu@example.org").await;
+    let body = json!({ "address": "mini@example.net", "password": OLD_PASSWORD, "host": "imap.example.net" });
+    let (status, job) = call(&app, "POST", "/api/account/moving", Some(body), &mini).await;
+    assert_eq!(status, StatusCode::CREATED, "{job}");
+    let id = job["id"].as_i64().unwrap();
+    assert_eq!(store.take_migration_job().await.unwrap().map(|job| job.id), Some(id));
+    let progress = MigrationProgress {
+        messages_done: 5,
+        messages_total: 5,
+        messages_skipped: 3,
+        messages_known: 1,
+        messages_too_large: 2,
+        ..Default::default()
+    };
+    assert!(store.note_migration_progress(id, progress).await.unwrap());
+    let large = |uid: u32| SkippedMessage {
+        folder: "INBOX".into(),
+        uid,
+        reason: SkipReason::TooLarge,
+        from: String::new(),
+        subject: "Urlaubsfotos".into(),
+        date: None,
+        size: 80 * 1024 * 1024,
+        recorded_at: 0,
+    };
+    store.note_skipped_messages(SkippedOf::MigrationJob(id), vec![large(1), large(2)]).await.unwrap();
+
+    let (_, list) = call(&app, "GET", "/api/account/moving", None, &mini).await;
+    let shown = &list["jobs"][0];
+    assert_eq!(
+        (shown["messagesSkipped"].as_i64(), shown["messagesKnown"].as_i64(), shown["messagesTooLarge"].as_i64()),
+        (Some(3), Some(1), Some(2)),
+        "{shown}"
+    );
+    assert_eq!(shown["messagesUnreadable"].as_i64(), Some(0));
+
+    let path = format!("/api/account/moving/{id}/skipped");
+    let (status, listed) = call(&app, "GET", &path, None, &mini).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let entries = listed["messages"].as_array().unwrap();
+    assert_eq!(entries.iter().map(|entry| entry["uid"].as_u64().unwrap()).collect::<Vec<_>>(), [1, 2]);
+    assert!(listed["maxSize"].as_u64().is_some_and(|size| size > 0), "{listed}");
+    assert_eq!(
+        (entries[0]["reason"].as_str(), entries[0]["subject"].as_str()),
+        (Some("tooLarge"), Some("Urlaubsfotos"))
+    );
+    let (status, _) = call(&app, "GET", &path, None, &nyu).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "nobody else's");
+}

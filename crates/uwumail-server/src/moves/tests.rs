@@ -484,8 +484,86 @@ async fn objects_that_cannot_be_stored_are_copied_as_mail() {
         Duration::from_secs(60),
         note,
         Some(failing),
+        SkippedOf::MoveMailbox(0),
     )
     .await;
     assert_eq!(run, MigrationRun::Done);
     assert_eq!(emails_in(&new.mailboxes(mini).await.unwrap(), "Contacts"), 1, "kept as mail");
+}
+
+fn subjects(emails: &[uwumail_store::EmailSummary]) -> Vec<&str> {
+    let mut subjects: Vec<&str> = emails.iter().map(|email| email.subject.as_str()).collect();
+    subjects.sort_unstable();
+    subjects
+}
+
+/// "One mail, in all its folders": a message the old server shows in two folders is one email
+/// here in both mailboxes, counted as copied; a different message that only reuses a Message-ID is
+/// copied too; a round over a renumbered folder finds everything here already and lists it.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_message_in_two_folders_is_one_email_in_both_and_nothing_is_lost() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = Store::open(&dir.path().join("old")).await.unwrap();
+    let old_mini = person(&old, "mini@example.org", Some(PASSWORD), 0).await;
+    let important = old.create_mailbox(old_mini, "Wichtig", None, None, 0, true).await.unwrap();
+    let projects = old.create_mailbox(old_mini, "Projekte", None, None, 0, true).await.unwrap();
+    // Eins with two labels; two different messages under one Message-ID in two folders.
+    deliver(&old, old_mini, MailboxTarget::Role(MailboxRole::Inbox), "Eins", &["$seen"]).await;
+    deliver(&old, old_mini, MailboxTarget::Id(important), "Eins", &["$seen"]).await;
+    let reused = |subject: &str| {
+        format!(
+            "From: nyu@example.net\r\nTo: mini@example.org\r\nSubject: {subject}\r\n\
+             Message-ID: <reused@example.net>\r\n\r\nHallo\r\n"
+        )
+        .into_bytes()
+    };
+    deliver_raw(&old, old_mini, MailboxTarget::Role(MailboxRole::Inbox), reused("Erste"), &[]).await;
+    deliver_raw(&old, old_mini, MailboxTarget::Id(projects), reused("Zweite"), &[]).await;
+    let (detour, _stop) = old_imap(&old).await;
+    let env = env(&old, detour);
+
+    let new = Store::open(&dir.path().join("new")).await.unwrap();
+    let mini = person(&new, "mini@example.org", None, 0).await;
+    let plain = NewMove { contacts: false, calendars: false, ..new_move(MoveKind::Mailbox) };
+    let started = new.create_move(plain, vec![mailbox(mini, "mini@example.org", PASSWORD)]).await.unwrap();
+    let done = take_turn(&new, &env).await;
+    assert_eq!(done.state, MoveMailboxState::Synced, "{done:?}");
+    let progress = done.progress;
+    assert_eq!((progress.messages_done, progress.messages_skipped, progress.messages_known), (4, 0, 0), "{done:?}");
+
+    let here = new.mailboxes(mini).await.unwrap();
+    let inbox = here.iter().find(|mailbox| mailbox.role == Some(MailboxRole::Inbox)).unwrap();
+    let important = here.iter().find(|mailbox| mailbox.name == "Wichtig").unwrap();
+    let projects = here.iter().find(|mailbox| mailbox.name == "Projekte").unwrap();
+    let in_inbox = new.emails_in_mailbox(inbox.id, 10).await.unwrap();
+    let in_important = new.emails_in_mailbox(important.id, 10).await.unwrap();
+    assert_eq!(subjects(&in_inbox), ["Eins", "Erste"]);
+    assert_eq!(subjects(&new.emails_in_mailbox(projects.id, 10).await.unwrap()), ["Zweite"], "not lost");
+    let eins = in_inbox.iter().find(|email| email.subject == "Eins").unwrap();
+    assert_eq!(in_important.iter().map(|email| email.id).collect::<Vec<_>>(), [eins.id], "one email, two mailboxes");
+    let stored = new.emails_by_ids(mini, vec![eins.id]).await.unwrap();
+    assert_eq!(stored[0].mailbox_ids.len(), 2, "{stored:?}");
+
+    // The old server renumbers its folders: the next round starts them over and leaves out what
+    // is here, listing it.
+    let source = done.source_name("imap.example.net");
+    for folder in ["INBOX", "Wichtig", "Projekte"] {
+        let renumbered = uwumail_store::ImportProgress { uid_validity: 1, last_uid: 0 };
+        new.set_import_progress(mini, &source, folder, renumbered).await.unwrap();
+    }
+    new.retry_move_mailbox(started.id, done.id, None, None).await.unwrap();
+    let again = take_turn(&new, &env).await;
+    assert_eq!(again.state, MoveMailboxState::Synced, "{again:?}");
+    let progress = again.progress;
+    assert_eq!((progress.messages_skipped, progress.messages_known), (4, 4), "{again:?}");
+    assert_eq!((progress.messages_too_large, progress.messages_unreadable), (0, 0));
+    let total: i64 = new.mailboxes(mini).await.unwrap().iter().map(|mailbox| mailbox.total_emails).sum();
+    assert_eq!(total, 4, "nothing twice");
+    let listed = new.skipped_messages(SkippedOf::MoveMailbox(done.id)).await.unwrap();
+    let mut seen: Vec<(&str, &str)> = listed.iter().map(|m| (m.folder.as_str(), m.subject.as_str())).collect();
+    seen.sort_unstable();
+    assert_eq!(seen, [("INBOX", "Eins"), ("INBOX", "Erste"), ("Projekte", "Zweite"), ("Wichtig", "Eins")]);
+    assert!(listed.iter().all(|m| m.reason == uwumail_store::SkipReason::Known && m.from == "nyu@example.net"));
+    let summary = new.move_by_id(started.id).await.unwrap().unwrap().summary;
+    assert_eq!((summary.messages_skipped, summary.messages_known), (4, 4));
 }

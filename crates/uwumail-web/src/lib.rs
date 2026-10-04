@@ -540,6 +540,7 @@ impl Web {
             .route("/api/account/moving/{id}", delete(routes::moving::finish))
             .route("/api/account/moving/{id}/sync", post(routes::moving::sync))
             .route("/api/account/moving/{id}/pause", post(routes::moving::pause))
+            .route("/api/account/moving/{id}/skipped", get(routes::moving::skipped))
             .route("/api/account/calendars", get(routes::calendars::list))
             .route("/api/account/calendars/{id}/shares", put(routes::calendars::share))
             .route("/api/account/calendars/{id}/shares/{account}", delete(routes::calendars::unshare))
@@ -680,6 +681,7 @@ impl Web {
             .route("/api/admin/moves/{id}/mailboxes/{mailbox}", delete(routes::moves::remove_mailbox))
             .route("/api/admin/moves/{id}/mailboxes/{mailbox}/retry", post(routes::moves::retry_mailbox))
             .route("/api/admin/moves/{id}/mailboxes/{mailbox}/pause", post(routes::moves::pause_mailbox))
+            .route("/api/admin/moves/{id}/mailboxes/{mailbox}/skipped", get(routes::moves::skipped_mailbox))
             .route(
                 "/api/admin/moves/{id}/mailboxes/{mailbox}/import",
                 post(routes::moves::upload)

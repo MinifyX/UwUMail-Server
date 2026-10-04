@@ -33,6 +33,7 @@ import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDateTime, formatNumber } from "@/lib/format";
 import { Link, navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
+import { LeftOut, leftOutParts } from "@/features/moving/LeftOut";
 import { LinksCard } from "./LinksCard";
 import { MailboxStatePill, MoveStatePill, ProgressBar } from "./MoveBits";
 import {
@@ -83,7 +84,7 @@ function Overview({ detail }: { detail: MoveDetail }) {
             total: n(summary.messagesTotal),
             size: formatBytes(summary.bytesDone, i18n.language),
           })}
-          {summary.messagesSkipped > 0 && ` · ${t("moves.detail.skipped", { count: summary.messagesSkipped })}`}
+          {leftOutParts(t, summary).map((part) => ` · ${part}`)}
         </p>
         <p className="text-[13px] text-muted">
           {t("moves.detail.davCounts", { contacts: n(summary.contactsDone), events: n(summary.eventsDone) })}
@@ -338,13 +339,13 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
         })}
         {mailbox.foldersTotal > 0 &&
           ` · ${t("moves.mailbox.folders", { done: mailbox.foldersDone, total: mailbox.foldersTotal })}`}
-        {mailbox.messagesSkipped > 0 && ` · ${t("moves.detail.skipped", { count: mailbox.messagesSkipped })}`}
         {" · "}
         {t("moves.detail.davCounts", { contacts: n(mailbox.contactsDone), events: n(mailbox.eventsDone) })}
         {mailbox.state === "synced" &&
           mailbox.nextSyncAt &&
           ` · ${t("moves.mailbox.next", { date: formatDateTime(mailbox.nextSyncAt, i18n.language) })}`}
       </p>
+      <LeftOut counts={mailbox} path={`/api/admin/moves/${id}/mailboxes/${mailbox.id}/skipped`} />
       {mailbox.aliases.length > 0 && (
         <p className="text-[12px] text-muted">{t("moves.mailbox.aliases", { aliases: mailbox.aliases.join(", ") })}</p>
       )}

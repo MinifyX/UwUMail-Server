@@ -35,11 +35,20 @@ with a master user still moves on the command line
 - Every message with the **date it arrived** there, and **read, flagged,
   answered** and other keywords as it was. Messages marked as deleted stay
   behind.
-- **Nothing twice.** A message this mailbox holds already, by its Message-ID or,
-  without one, by its content, is left out and counted as such. That covers mail
-  that came here some other way already, and providers that show one message in
-  several folders: at Gmail every label is a folder, and a message with two
-  labels comes once, into the first folder it is found in (the inbox first).
+- **Nothing twice, nothing lost.** A message the folder's mailbox here holds
+  already, by its Message-ID or, without one, by its content, is left out and
+  counted as *here already*. That covers a round that runs again and mail that
+  came here directly while the MX records changed.
+- **One message, in all its folders.** Providers that show one message in
+  several folders (at Gmail every label is a folder) have it once here too: it
+  is stored with the first folder it is found in (the inbox first), and the
+  other folders' mailboxes get the same email, with the same bytes, as a label
+  would. It counts as copied. A *different* message that only shares the
+  Message-ID of one that is here is copied as a message of its own.
+- **What is left out is shown.** The counts say why: *here already*, *too
+  large* (larger than this server takes) or *not readable* (nested too deep or
+  made of too many parts to be read safely). *Show left out* lists them with
+  the folder, sender, subject, date and size, the first 1000 of a move.
 
 ## How it runs
 
@@ -60,9 +69,9 @@ Messages are fetched by size: the provider is first asked how large they are
 (`RFC822.SIZE`), small ones come in portions of about 16 MiB, large ones one at
 a time, and a fetch may take only a little more than the size the provider gave.
 A message larger than its given size (some providers only estimate it) is read
-past and fetched again on its own; if it still does not fit, it is skipped.
-A message larger than this server takes (`smtp.max_message_size`) is left out
-and counted with the skipped ones. All imports together (admin moves, personal
+past and fetched again on its own; if it still does not fit, it is left out as
+too large. A message larger than this server takes (`smtp.max_message_size`) is
+left out and counted as too large; only its headers are fetched, for the list. All imports together (admin moves, personal
 moves, fetched mailboxes) hold at most 512 MiB of fetched mail at once; the
 rest waits for its turn.
 
@@ -85,7 +94,8 @@ Nothing is retried behind the person's back, so a wrong password never runs
 into the provider's lockout.
 
 When everything is here the move is **done**. *Sync again* fetches only what
-arrived at the old provider since, as often as you like: move once now, tell
+arrived at the old provider since (its counts and its list of what was left out
+start from zero), as often as you like: move once now, tell
 people the new address, and sync again a week later for the stragglers.
 *Done, delete login* ends the move for good and deletes the password; the mail
 that came stays.
@@ -179,7 +189,8 @@ nyu@example.com;nyan;Nyu;nyu.neko@example.com;;
 ### Progress and control
 
 The page of a move shows how far it got overall and per mailbox: folders,
-messages (and how many were here already), contacts and calendar entries.
+messages (and how many were left out, by reason: here already, too large, not
+readable, with a list per mailbox), contacts and calendar entries.
 Each mailbox has its own state: *waiting*, *copying*, *paused*, *up to date*
 and *finished*.
 
@@ -270,7 +281,8 @@ directory.
 - DAV import merges into a collection of the same name and can overwrite items with the same UID when it fills a mailbox that already has them.
 - Imported events keep their alarms (`VALARM`).
 - The 512 MiB import budget counts fetched message bodies only: the `RFC822.SIZE` answers and the copies made while storing a message are outside it.
-- "Skipped" counts messages that were here already and messages too large for this server together; the UIDs of the large ones are only in the server log.
+- The list of messages left out keeps the first 1000 per mailbox or move; the counts go on counting. Moves from before 0.22.2 show their earlier left-out messages only in the total.
+- A message whose Message-ID is in the folder's mailbox here already is left out even when its bytes differ, as mail that came here directly during the MX switch would; two different messages with the same Message-ID in the *same* old folder therefore come once.
 - A higher number of turns at once (`MAX_TURNS`, now 4) could make the shared budget slow imports down, as turns wait for room.
 - A message announced at more than 128 MiB, or one that does not arrive within two minutes, still fails its portion, so the mailbox pauses as failed until the message is gone at the old provider. A message whose size was understated is transferred once more when it is fetched again on its own.
 - An answer with two bodies for one message, one of them too large, counts as too large and is fetched again on its own; answers for UIDs that were not asked for are ignored.
@@ -291,11 +303,17 @@ All under `/api/admin/moves`, for admins only (403 otherwise):
 | `POST /{id}/mx`, `POST /{id}/links` | check the domain's MX; make password links |
 | `POST /{id}/mailboxes` | add people to a domain move |
 | `POST /{id}/mailboxes/{mailbox}/retry`, `/pause`, `/import?kind=calendar\|addressbook`; `DELETE /{id}/mailboxes/{mailbox}` | per mailbox: retry (optionally with a new login or password), pause, upload `.ics`/`.vcf`, take out |
+| `GET /{id}/mailboxes/{mailbox}/skipped` | the messages the mailbox left out (`messages`: `folder`, `uid`, `reason` `known`/`tooLarge`/`unreadable`, `from`, `subject`, `date`, `size`, `recordedAt`; `max`) |
+
+Moves and mailboxes count `messagesSkipped` (all left out) and apart
+`messagesKnown`, `messagesTooLarge` and `messagesUnreadable`. A person's own
+move has the same counts, and its list at `GET /api/account/moving/{id}/skipped`.
 
 ## For admins
 
 Personal moves are kept in the table `migration_jobs` (migration 0040), admin
-moves in `moves` and `move_mailboxes`; where each folder got is in
+moves in `moves` and `move_mailboxes`, the messages they left out in
+`migration_job_skipped` and `move_mailbox_skipped` (migration 0076); where each folder got is in
 `import_progress` under `move:<login>@<host>` for both, so a personal move and
 an admin move of the same old mailbox go on from each other. The worker runs
 inside the server; there is nothing to set up. `uwumail-server import imap`

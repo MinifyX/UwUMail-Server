@@ -12,6 +12,7 @@ import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
+import { LeftOut } from "./LeftOut";
 
 const movingKey = ["account", "moving"] as const;
 
@@ -284,9 +285,7 @@ function JobCard({ job }: { job: MoveJob }) {
               {job.foldersTotal > 0 &&
                 ` · ${t("moving.job.folders", { done: job.foldersDone, total: job.foldersTotal })}`}
             </p>
-            {job.messagesSkipped > 0 && (
-              <p className="text-[12px] text-muted">{t("moving.job.skipped", { count: job.messagesSkipped })}</p>
-            )}
+            <LeftOut counts={job} path={`/api/account/moving/${job.id}/skipped`} />
           </div>
         )}
         {passwordRefused && (

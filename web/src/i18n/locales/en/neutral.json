@@ -2288,8 +2288,6 @@
       "progress": "{{done}} of {{total}} messages · {{size}}",
       "progressLabel": "How far the move got",
       "folders": "folder {{done}} of {{total}}",
-      "skipped": "{{count}} message was left out: it was here already or is larger than this server takes",
-      "skipped_other": "{{count}} messages were left out: they were here already or are larger than this server takes",
       "done": "Everything is here.",
       "doneAt": "Everything that was there is here, as of {{date}}."
     },
@@ -2318,11 +2316,41 @@
     "about": {
       "title": "Worth knowing",
       "what": "Every folder comes along, the special ones (sent, drafts, junk, trash, archive) into yours, and every message with its date and read, flagged or answered as it was.",
-      "twice": "Nothing comes twice: a message that is here already, by its Message-ID or by its content, is left out.",
+      "twice": "Nothing twice, nothing lost: a message that is in the same folder here already (by its Message-ID or its content) is left out. A message the old provider shows in several folders is one message here, in all of them.",
       "switch": "Take your time: move once now, tell people your new address, and use “Sync again” whenever you like. It only fetches what arrived at the old provider since.",
       "password": "The password is only used for copying, kept sealed, and deleted as soon as you click “Done, delete login”.",
       "calendars": "Calendars and contacts move separately:",
       "calendarsLink": "Calendars & contacts → Move from another provider"
+    }
+  },
+  "leftOut": {
+    "known_one": "{{count}} here already",
+    "known_other": "{{count}} here already",
+    "tooLarge_one": "{{count}} too large",
+    "tooLarge_other": "{{count}} too large",
+    "unreadable_one": "{{count}} not readable",
+    "unreadable_other": "{{count}} not readable",
+    "earlier_one": "{{count}} left out earlier",
+    "earlier_other": "{{count}} left out earlier",
+    "show": "Show left out",
+    "loading": "Loading the list …",
+    "failed": "The list could not be loaded.",
+    "empty": "No entries. Messages left out before version 0.22.2 are not in the list.",
+    "capped": "The list shows the first {{max}}; the counts go on.",
+    "noSubject": "(no subject)",
+    "columns": {
+      "folder": "Folder",
+      "from": "From",
+      "subject": "Subject",
+      "date": "Date",
+      "size": "Size",
+      "reason": "Reason"
+    },
+    "reasons": {
+      "known": "in this folder here already",
+      "tooLarge": "larger than the {{limit}} this server takes",
+      "tooLargeAny": "larger than this server takes",
+      "unreadable": "nested too deep to be read safely"
     }
   },
   "mailbox": {
@@ -4673,8 +4701,6 @@
       "title": "Move of {{domain}}",
       "overview": "Progress",
       "messages": "{{done}} of {{total}} messages ({{size}})",
-      "skipped_one": "{{count}} left out (here already or too large)",
-      "skipped_other": "{{count}} left out (here already or too large)",
       "davCounts": "{{contacts}} contacts, {{events}} calendar entries",
       "source": "From {{host}}",
       "noDav": "mail only",

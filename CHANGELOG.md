@@ -3,6 +3,31 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.2
+
+### Fixed
+
+- **A move brings a message in all its folders.** A message the old provider shows in several
+  folders (Inbox and Archive, Gmail's labels) came into the first folder only and was counted as
+  "left out" in the others. It is now one email here in all of those mailboxes, as a label would
+  be, and counts as copied. A move leaves a message out only when the folder's own mailbox here
+  holds it already (a round again, or mail that came here directly during the MX switch).
+- **A different message under a reused Message-ID is no longer lost.** Any email of the account
+  with the same Message-ID made a move leave a message out, even with other content. Now only the
+  same bytes elsewhere make it one email in two mailboxes; anything else is stored.
+- **Unreadable messages are counted.** A message nested too deep or made of too many parts to be
+  read safely was left out without being counted anywhere; it now counts as "not readable".
+
+### Added
+
+- **What a move left out, by reason and as a list.** Admin moves (per mailbox and in all) and a
+  person's own move count `messagesKnown` (here already), `messagesTooLarge` and
+  `messagesUnreadable` apart; `messagesSkipped` stays the total. *Show left out* on both pages
+  lists the messages with folder, sender, subject, date, size and reason ("too large" with this
+  server's limit), the first 1000 per mailbox or move, from `GET /api/admin/moves/{id}/mailboxes/
+  {mailbox}/skipped` and `GET /api/account/moving/{id}/skipped`. For messages too large only their
+  headers are fetched.
+
 ## 0.22.1
 
 ### Fixed
