@@ -326,6 +326,8 @@ pub fn restored_folder_name(snapshot_created_at: i64) -> String {
 
 /// Finds or makes a folder by name below `parent`.
 async fn folder_below(store: &Store, account_id: i64, parent: Option<i64>, name: &str) -> Result<i64, Error> {
+    // Stored names are trimmed.
+    let name = name.trim();
     let existing = store
         .mailboxes(account_id)
         .await?

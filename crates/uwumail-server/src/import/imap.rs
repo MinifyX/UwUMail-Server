@@ -523,6 +523,8 @@ pub(crate) async fn mailbox_for(store: &Store, account_id: i64, folder: &Folder)
     }
     let mut parent = None;
     for (depth, name) in folder.path.iter().enumerate() {
+        // Stored names are trimmed, so "Kunden " must find the "Kunden" its parent folder became.
+        let name = name.trim();
         let current = store.mailboxes(account_id).await?;
         let existing =
             current.iter().find(|mailbox| mailbox.parent_id == parent && mailbox.name.eq_ignore_ascii_case(name));
@@ -1379,6 +1381,29 @@ pub(crate) mod tests {
             received_at: Some(1_700_000_000),
         };
         store.ingest(request).await.unwrap();
+    }
+
+    /// A folder named with a trailing space ("Kunden ") is stored trimmed; its subfolders and the
+    /// next round must find it again instead of making it a second time.
+    #[tokio::test]
+    async fn folders_with_spaces_around_their_name_are_found_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, id) = store_with_person(dir.path(), None).await;
+        let folder = |raw: &str, path: &[&str]| Folder {
+            raw: raw.into(),
+            path: path.iter().map(|part| part.to_string()).collect(),
+            role: None,
+        };
+        let parent = mailbox_for(&store, id, &folder("Kunden ", &["Kunden "])).await.unwrap();
+        let child = mailbox_for(&store, id, &folder("Kunden /Alt", &["Kunden ", "Alt"])).await.unwrap();
+        let other = mailbox_for(&store, id, &folder("Kunden / Neu ", &["Kunden ", " Neu "])).await.unwrap();
+        assert_eq!(mailbox_for(&store, id, &folder("Kunden ", &["Kunden "])).await.unwrap(), parent);
+        assert_eq!(mailbox_for(&store, id, &folder("Kunden/Neu", &["Kunden", "Neu"])).await.unwrap(), other);
+        let mailboxes = store.mailboxes(id).await.unwrap();
+        let named = |id: i64| mailboxes.iter().find(|mailbox| mailbox.id == id).unwrap();
+        assert_eq!((named(parent).name.as_str(), named(parent).parent_id), ("Kunden", None));
+        assert_eq!((named(child).name.as_str(), named(child).parent_id), ("Alt", Some(parent)));
+        assert_eq!((named(other).name.as_str(), named(other).parent_id), ("Neu", Some(parent)));
     }
 
     #[tokio::test(flavor = "multi_thread")]
