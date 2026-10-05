@@ -3,6 +3,15 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.3
+
+### Fixed
+
+- **Links in mails open again in Safari.** The webmail (now 0.22.3, `b0a9903`) shows mails in a
+  sandboxed frame; Safari (WebKit on macOS and iOS) never ran the webmail's listeners in it, so a
+  click on a link opened the page inside the frame instead of asking first, and shortcuts and
+  dates in the mail did nothing. Mail content itself still can't run anything.
+
 ## 0.22.2
 
 ### Fixed
