@@ -48,7 +48,7 @@ export function Dialog({
       className={clsx(
         // svh, not vh: on a phone `vh` is the height with the address bar hidden, so a dialog sized
         // by it reaches below the visible area and takes its buttons with it.
-        "m-auto max-h-[min(720px,calc(100svh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-[22px] border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-[#1c1420]/35 backdrop:backdrop-blur-[2px] open:animate-pop",
+        "m-auto max-h-[min(720px,calc(100svh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-[22px] border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-[#1c1420]/35 backdrop:backdrop-blur-[2px] open:flex open:animate-pop open:flex-col",
         width === "sm" && "max-w-[420px]",
         width === "md" && "max-w-[560px]",
         width === "lg" && "max-w-[860px]",
@@ -59,15 +59,18 @@ export function Dialog({
         className,
       )}
     >
+      {/* Safari sizes a <dialog> as fit-content, and in WebKit that is 0 for a column whose items
+          have flex-basis 0 (flex-1) or a percentage height. So items start from their content
+          (flex-auto) and shrink from there (min-h-0). Never flex-1 or h-full in here. */}
       {open && (
-        <div className="flex h-full max-h-[inherit] flex-col">
+        <div className="flex min-h-0 flex-auto flex-col">
           {title !== undefined && (
             <header className="flex items-center justify-between gap-4 px-6 pt-5 pb-2">
               <h2 className="text-lg font-bold">{title}</h2>
               <IconButton icon={X} label={t("common.close")} onClick={onClose} />
             </header>
           )}
-          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+          <div className="min-h-0 flex-auto overflow-y-auto">{children}</div>
         </div>
       )}
     </dialog>

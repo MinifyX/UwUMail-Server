@@ -3,6 +3,15 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.22.4
+
+### Fixed
+
+- **Dialogs open again in Safari.** Safari (WebKit on macOS and iOS) drew every dialog of the
+  admin portal and the webmail as an empty, invisible box: only the blurred background appeared,
+  so nothing could be created or edited there. The webmail is now 0.22.4 (`43934fd`), which also
+  brings UwU Sans without the `:3` and `<3` ligatures.
+
 ## 0.22.3
 
 ### Fixed
