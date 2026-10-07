@@ -3,7 +3,8 @@
 //! PKCE (RFC 6749, RFC 7636), refresh token rotation, revocation (RFC 7009), the signing keys and
 //! userinfo. The consent itself is a page of the portal, which asks `/api/oauth/authorize`.
 //!
-//! Also the list of apps signed in with OAuth, for the person and for their admin.
+//! Also the list of apps signed in with OAuth, for the person and for their admin, and the one-shot
+//! trade of an `app-password` access token for a named app password.
 
 use std::net::IpAddr;
 
@@ -18,8 +19,9 @@ use serde_json::{Value, json};
 use url::Url;
 use uwumail_jmap::ClientInfo;
 use uwumail_store::{
-    Account, MASKED_EMAIL_SCOPE, NewOAuthCode, OAuthClient, OAuthRefusal, OAuthTokens, SecurityEvent, oauth_scopes,
-    oauth_scopes_usable, redirect_uri_registered, scopes_for, valid_pkce_challenge,
+    APP_PASSWORD_SCOPE, Account, AppPasswordRefusal, AppScope, MASKED_EMAIL_SCOPE, NewOAuthCode, OAuthClient,
+    OAuthRefusal, OAuthTokens, SecurityEvent, oauth_scopes, oauth_scopes_usable, redirect_uri_registered, scopes_for,
+    valid_pkce_challenge,
 };
 
 use super::audit;
@@ -572,7 +574,14 @@ pub async fn token(
     };
     match result {
         Ok(Ok(tokens)) => {
-            if tokens.new_grant {
+            // A grant for nothing but an app password ends when the app trades it in, and that
+            // sends its own notice: one about the sign-in as well would only be noise.
+            let only_app_password = tokens.scopes.iter().any(|scope| scope == APP_PASSWORD_SCOPE)
+                && !tokens
+                    .scopes
+                    .iter()
+                    .any(|scope| matches!(scope.as_str(), "mail" | "smtp" | "dav" | MASKED_EMAIL_SCOPE));
+            if tokens.new_grant && !only_app_password {
                 // notify() writes the activity entry too; a second one here would list the app twice.
                 let ip = ip.to_string();
                 notify(
@@ -682,6 +691,124 @@ pub async fn userinfo(
     let mut claims = json!({ "sub": account.id.to_string() });
     add_profile_claims(&mut claims, &account, &scopes);
     Ok(open_to_all(Json(claims).into_response()))
+}
+
+// An app password for the app
+
+#[derive(Deserialize)]
+pub struct AppPasswordRequest {
+    name: String,
+    #[serde(default)]
+    scopes: Option<Vec<AppScope>>,
+}
+
+/// An error of `POST /oauth/app-password`: problem details (RFC 9457) that also carry OAuth's
+/// `error` code, with the `WWW-Authenticate` challenge of RFC 6750 for token problems.
+fn app_password_problem(status: StatusCode, error: &str, detail: &str) -> Response {
+    let body = json!({
+        "type": format!("urn:uwumail:oauth:{error}"),
+        "status": status.as_u16(),
+        "detail": detail,
+        "error": error,
+        "error_description": detail,
+    });
+    let mut response =
+        open_to_all((status, [(header::CONTENT_TYPE, "application/problem+json")], body.to_string()).into_response());
+    let challenge = match error {
+        "invalid_token" => Some("Bearer realm=\"UwUMail\", error=\"invalid_token\""),
+        "insufficient_scope" => Some("Bearer realm=\"UwUMail\", error=\"insufficient_scope\", scope=\"app-password\""),
+        _ if status == StatusCode::UNAUTHORIZED => Some("Bearer realm=\"UwUMail\""),
+        _ => None,
+    };
+    if let Some(challenge) = challenge {
+        response.headers_mut().insert(header::WWW_AUTHENTICATE, HeaderValue::from_static(challenge));
+    }
+    response
+}
+
+/// Trades an access token with the `app-password` scope in for a named app password, once
+/// (docs/oauth.md). The grant behind the token ends right away: the app keeps the app password,
+/// which the person sees and revokes under Security like any other. The token comes in the
+/// `Authorization` header only, never a cookie, so other sites cannot make a browser ask.
+pub async fn app_password(
+    State(web): State<Web>,
+    client_info: Option<Extension<ClientInfo>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let ip = client_info.map(|Extension(c)| c).unwrap_or_default().ip;
+    if !web.oauth_attempt(FAILURES, ip, false) {
+        return app_password_problem(
+            StatusCode::TOO_MANY_REQUESTS,
+            "temporarily_unavailable",
+            "too many failed attempts, try later",
+        );
+    }
+    let Some(token) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split_once(' '))
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+        .map(|(_, token)| token.trim().to_owned())
+        .filter(|token| !token.is_empty())
+    else {
+        web.oauth_attempt(FAILURES, ip, true);
+        return app_password_problem(StatusCode::UNAUTHORIZED, "invalid_request", "a Bearer access token is needed");
+    };
+    let Ok(request) = serde_json::from_slice::<AppPasswordRequest>(&body) else {
+        return app_password_problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "the body must be JSON with a name and optionally scopes out of mail, smtp and dav",
+        );
+    };
+    let created = match web.store().create_app_password_with_oauth(&token, &request.name, request.scopes).await {
+        Ok(Ok(created)) => created,
+        Ok(Err(AppPasswordRefusal::InvalidToken)) => {
+            web.oauth_attempt(FAILURES, ip, true);
+            return app_password_problem(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "the access token is not valid, expired or was used before",
+            );
+        }
+        Ok(Err(AppPasswordRefusal::InsufficientScope)) => {
+            web.oauth_attempt(FAILURES, ip, true);
+            return app_password_problem(
+                StatusCode::FORBIDDEN,
+                "insufficient_scope",
+                "the access token was not given the app-password scope",
+            );
+        }
+        Err(uwumail_store::StoreError::Invalid(detail)) => {
+            return app_password_problem(StatusCode::BAD_REQUEST, "invalid_request", &detail);
+        }
+        Err(uwumail_store::StoreError::Rule { code, message }) => {
+            return app_password_problem(StatusCode::CONFLICT, code, &message);
+        }
+        Err(err) => {
+            tracing::error!(%err, "making an app password with OAuth failed");
+            return app_password_problem(StatusCode::INTERNAL_SERVER_ERROR, "server_error", "try again later");
+        }
+    };
+    let password = &created.created.app_password;
+    tracing::info!(login = %created.account.login, app = %created.client_name, name = %password.name, %ip, "an app made itself an app password with OAuth");
+    let ip = ip.to_string();
+    notify(
+        &web,
+        &created.account,
+        Notice::AppPasswordCreated { name: password.name.clone() },
+        Origin { actor: "", ip: &ip },
+    )
+    .await;
+    let body = json!({
+        "id": password.id,
+        "name": password.name,
+        "username": created.account.login,
+        "password": created.created.secret,
+        "scopes": password.scopes,
+    });
+    open_to_all((StatusCode::CREATED, Json(body)).into_response())
 }
 
 // The person's and the admin's list

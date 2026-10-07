@@ -15,6 +15,7 @@ export const KNOWN_SCOPES = [
   "smtp",
   "dav",
   "maskedemail",
+  "app-password",
   "openid",
   "profile",
   "email",
@@ -33,4 +34,14 @@ export function knownScopes(scopes: string[]): KnownScope[] {
  */
 export function masksOnly(scopes: string[]): boolean {
   return scopes.includes("maskedemail") && !scopes.some((scope) => ["mail", "smtp", "dav"].includes(scope));
+}
+
+/**
+ * Whether an app asks for nothing but an app password for itself (the `app-password` scope, as
+ * the UwUMail app does when it sets up an account): the page then says so plainly.
+ */
+export function appPasswordOnly(scopes: string[]): boolean {
+  return (
+    scopes.includes("app-password") && !scopes.some((scope) => ["mail", "smtp", "dav", "maskedemail"].includes(scope))
+  );
 }

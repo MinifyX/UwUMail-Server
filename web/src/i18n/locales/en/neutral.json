@@ -2015,11 +2015,13 @@
   "oauth": {
     "title": "“{{name}}” wants to access your account",
     "titleMasked": "“{{name}}” wants to create and manage your masked addresses",
+    "titleAppPassword": "“{{name}}” wants to set itself up with an app password",
     "account": "Logged in as",
     "nameClaim": "The app calls itself “{{name}}”. Only allow this if you just started signing in to it yourself.",
     "returnsTo": "Afterwards you go back to {{host}}.",
     "returnsToDevice": "Afterwards you go back to the app on this device ({{host}}).",
     "maskedOnly": "It cannot read or send your mail and sees nothing else of your account: only your masked addresses.",
+    "appPasswordOnly": "The app gets its own app password for your mail, sending, calendars and contacts, and nothing else. This sign-in ends right after; you see the app password under My account → Security and can revoke it there.",
     "scopesTitle": "The app may",
     "scopes": {
       "mail": {
@@ -2037,6 +2039,10 @@
       "maskedemail": {
         "title": "Create and manage your masked addresses",
         "hint": "Make new ones, turn them on and off and delete them, with JMAP. Only where your admin allows masked addresses."
+      },
+      "app-password": {
+        "title": "Create an app password for this app",
+        "hint": "The app signs in with it from then on, over JMAP, IMAP, SMTP and CalDAV/CardDAV."
       },
       "openid": {
         "title": "Know that it is you",
