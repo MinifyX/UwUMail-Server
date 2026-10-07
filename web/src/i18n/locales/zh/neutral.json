@@ -1964,11 +1964,13 @@
   "oauth": {
     "title": "“{{name}}”想要访问你的账户",
     "titleMasked": "“{{name}}”想要创建和管理你的隐藏地址",
+    "titleAppPassword": "“{{name}}”想要用应用密码完成设置",
     "account": "当前登录账户：",
     "nameClaim": "“{{name}}”是应用的自称。只有在你刚刚亲自在该应用中开始登录时才允许。",
     "returnsTo": "之后将返回 {{host}}。",
     "returnsToDevice": "之后将返回此设备上的应用（{{host}}）。",
     "maskedOnly": "它不能读取或发送你的邮件，也看不到你账户的其他内容：只有你的隐藏地址。",
+    "appPasswordOnly": "该应用会获得一个专用的应用密码，用于你的邮件、发送、日历和联系人，除此之外什么都没有。此次登录随后立即结束；你可以在“我的账户 → 安全”中看到并撤销该应用密码。",
     "scopesTitle": "该应用将可以",
     "scopes": {
       "mail": {
@@ -1986,6 +1988,10 @@
       "maskedemail": {
         "title": "创建和管理你的隐藏地址",
         "hint": "新建、开启、关闭和删除隐藏地址，通过 JMAP。仅限管理员允许使用隐藏地址的地方。"
+      },
+      "app-password": {
+        "title": "为此应用创建应用密码",
+        "hint": "此后应用将用它通过 JMAP、IMAP、SMTP 和 CalDAV/CardDAV 登录。"
       },
       "openid": {
         "title": "确认是你本人",

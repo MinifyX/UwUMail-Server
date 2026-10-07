@@ -596,3 +596,136 @@ async fn a_password_manager_connects_for_masked_addresses_only() {
     let account = store.account("mini@example.org").await.unwrap().unwrap();
     assert!(store.oauth_grants(account.id).await.unwrap().is_empty());
 }
+
+async fn app_password(app: &Router, token: Option<&str>, body: Value) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let mut request = request("POST", "/oauth/app-password", "application/json", body.to_string());
+    if let Some(token) = token {
+        request.headers_mut().insert(header::AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
+    }
+    let response = app.clone().oneshot(request).await.unwrap();
+    let (status, headers) = (response.status(), response.headers().clone());
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+/// Signs `client_id` in with `scope` through the consent page and returns its tokens.
+async fn sign_in(app: &Router, auth: &(String, String), client_id: &str, scope: &str) -> Value {
+    let query = authorize_query(client_id, &[("scope", scope)]);
+    let code = allow(app, auth, &query).await;
+    let (status, tokens) = redeem(app, client_id, &code, VERIFIER, "http://127.0.0.1:41234/callback").await;
+    assert_eq!(status, StatusCode::OK, "{tokens}");
+    tokens
+}
+
+/// The UwUMail app sets an account up without a typed password: it asks for `app-password`
+/// alone, trades the access token in once for a named app password and keeps only that.
+#[tokio::test]
+async fn a_mail_app_trades_its_token_in_for_an_app_password_once() {
+    let (app, store, _dir) = setup().await;
+    let (_, metadata) = get(&app, "/.well-known/oauth-authorization-server").await;
+    assert!(metadata["scopes_supported"].as_array().unwrap().contains(&json!("app-password")), "{metadata}");
+
+    // The app's own scheme on phones, a loopback address on desktops.
+    let (status, client) = register(&app, json!(["app.uwumail://oauth", "app.uwumail:/oauth", REDIRECT])).await;
+    assert_eq!(status, StatusCode::CREATED, "{client}");
+    let client_id = client["client_id"].as_str().unwrap().to_owned();
+    let auth = login(&app).await;
+    let query = authorize_query(&client_id, &[("scope", "app-password")]);
+    let (status, page) = portal(&app, "GET", &format!("/api/oauth/authorize?{query}"), Value::Null, &auth).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert_eq!((page["scopes"].clone(), page["consented"].clone()), (json!(["app-password"]), json!(false)));
+    let tokens = sign_in(&app, &auth, &client_id, "app-password").await;
+    assert_eq!(tokens["scope"], "app-password");
+    let access = tokens["access_token"].as_str().unwrap().to_owned();
+    let refresh = tokens["refresh_token"].as_str().unwrap().to_owned();
+    let account = store.account("mini@example.org").await.unwrap().unwrap();
+    // The token itself opens no mailbox.
+    let auth_mail =
+        store.authenticate_oauth(&access, uwumail_store::AppScope::Mail, "imap", "192.0.2.1").await.unwrap();
+    assert!(matches!(auth_mail, uwumail_store::MailAuth::Denied(_)));
+
+    // Without a token, or with a name that does not fit: refused, and the token stays good.
+    let (status, headers, _) = app_password(&app, None, json!({ "name": "Lorins MacBook" })).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(headers[header::WWW_AUTHENTICATE].to_str().unwrap().starts_with("Bearer"));
+    for name in [json!(""), json!("   "), json!("x".repeat(81)), json!("a\u{7}b"), json!("Laptop\u{202E}koobcaM")] {
+        let (status, headers, problem) = app_password(&app, Some(&access), json!({ "name": name })).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name}: {problem}");
+        assert_eq!(headers[header::CONTENT_TYPE], "application/problem+json");
+        assert_eq!(problem["error"], "invalid_request");
+    }
+    let (status, _, _) = app_password(&app, Some(&access), json!({ "name": "x", "scopes": ["imap"] })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "only mail, smtp and dav");
+
+    let (status, headers, created) = app_password(&app, Some(&access), json!({ "name": "  Lorins MacBook  " })).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+    assert_eq!(created["name"], "Lorins MacBook");
+    assert_eq!(created["username"], "mini@example.org");
+    assert_eq!(created["scopes"], json!(["dav", "mail", "smtp"]), "everything the account may use");
+    assert!(created["id"].is_i64());
+    let password = created["password"].as_str().unwrap();
+    for (scope, protocol) in [
+        (uwumail_store::AppScope::Mail, "imap"),
+        (uwumail_store::AppScope::Smtp, "smtp"),
+        (uwumail_store::AppScope::Dav, "dav"),
+    ] {
+        let auth = store.authenticate_mail("mini@example.org", password, scope, protocol, "192.0.2.1").await.unwrap();
+        assert!(matches!(auth, uwumail_store::MailAuth::Ok { .. }), "{protocol}");
+    }
+    let listed = store.app_passwords(account.id).await.unwrap();
+    assert_eq!(listed.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Lorins MacBook"]);
+    let (_, security) = portal(&app, "GET", "/api/account/security", Value::Null, &auth).await;
+    let kinds: Vec<&str> =
+        security["events"].as_array().into_iter().flatten().filter_map(|event| event["kind"].as_str()).collect();
+    assert!(kinds.contains(&"appPasswordCreated"), "{security}");
+    assert!(!kinds.contains(&"oauthGranted"), "one notice, not two: {security}");
+
+    // Once only: the token, its refresh token and the grant are gone.
+    let (status, headers, problem) = app_password(&app, Some(&access), json!({ "name": "Noch eins" })).await;
+    assert_eq!((status, problem["error"].as_str()), (StatusCode::UNAUTHORIZED, Some("invalid_token")));
+    assert!(headers[header::WWW_AUTHENTICATE].to_str().unwrap().contains("error=\"invalid_token\""));
+    let (status, refused) = form(
+        &app,
+        "/oauth/token",
+        &[("grant_type", "refresh_token"), ("client_id", &client_id), ("refresh_token", &refresh)],
+    )
+    .await;
+    assert_eq!((status, refused["error"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_grant")));
+    assert!(store.oauth_grants(account.id).await.unwrap().is_empty());
+    // And the next app password is asked for again: that consent is never kept.
+    let (_, page) = portal(&app, "GET", &format!("/api/oauth/authorize?{query}"), Value::Null, &auth).await;
+    assert_eq!(page["consented"], json!(false));
+
+    // Uses can be narrowed.
+    let tokens = sign_in(&app, &auth, &client_id, "app-password").await;
+    let access = tokens["access_token"].as_str().unwrap();
+    let (status, _, created) =
+        app_password(&app, Some(access), json!({ "name": "Nur Senden", "scopes": ["smtp"] })).await;
+    assert_eq!((status, created["scopes"].clone()), (StatusCode::CREATED, json!(["smtp"])));
+}
+
+#[tokio::test]
+async fn a_token_without_the_app_password_scope_makes_none() {
+    let (app, store, _dir) = setup().await;
+    let (_, client) = register(&app, json!([REDIRECT])).await;
+    let client_id = client["client_id"].as_str().unwrap().to_owned();
+    let auth = login(&app).await;
+    let tokens = sign_in(&app, &auth, &client_id, "mail smtp").await;
+    let access = tokens["access_token"].as_str().unwrap();
+    let (status, headers, problem) = app_password(&app, Some(access), json!({ "name": "Laptop" })).await;
+    assert_eq!((status, problem["error"].as_str()), (StatusCode::FORBIDDEN, Some("insufficient_scope")));
+    let challenge = headers[header::WWW_AUTHENTICATE].to_str().unwrap();
+    assert!(challenge.starts_with("Bearer") && challenge.contains("error=\"insufficient_scope\""), "{challenge}");
+    let account = store.account("mini@example.org").await.unwrap().unwrap();
+    assert!(store.app_passwords(account.id).await.unwrap().is_empty());
+    assert_eq!(store.oauth_grants(account.id).await.unwrap().len(), 1, "the grant stays");
+
+    // Guessed tokens count as failures for the network, like at the token endpoint.
+    for _ in 0..30 {
+        app_password(&app, Some("uwu_at_guess"), json!({ "name": "Laptop" })).await;
+    }
+    let (status, _, _) = app_password(&app, Some(access), json!({ "name": "Laptop" })).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+}

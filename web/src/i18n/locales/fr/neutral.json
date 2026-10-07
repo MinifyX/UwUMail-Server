@@ -2064,11 +2064,13 @@
   "oauth": {
     "title": "« {{name}} » souhaite accéder à votre compte",
     "titleMasked": "« {{name}} » souhaite créer et gérer vos adresses masquées",
+    "titleAppPassword": "« {{name}} » souhaite se configurer avec un mot de passe d'application",
     "account": "Connecté en tant que",
     "nameClaim": "L'appli se présente elle-même comme « {{name}} ». N'autorisez ceci que si vous venez vous-même de lancer la connexion dans cette appli.",
     "returnsTo": "Vous retournerez ensuite à {{host}}.",
     "returnsToDevice": "Vous retournerez ensuite à l'appli sur cet appareil ({{host}}).",
     "maskedOnly": "Elle ne peut ni lire ni envoyer votre courrier et ne voit rien d'autre de votre compte : seulement vos adresses masquées.",
+    "appPasswordOnly": "L'application reçoit son propre mot de passe d'application pour votre courrier, l'envoi, les agendas et les contacts, et rien d'autre. Cette connexion se termine juste après ; vous voyez le mot de passe d'application sous Mon compte → Sécurité et pouvez le révoquer là.",
     "scopesTitle": "L'appli pourra",
     "scopes": {
       "mail": {
@@ -2086,6 +2088,10 @@
       "maskedemail": {
         "title": "Créer et gérer vos adresses masquées",
         "hint": "En créer de nouvelles, les activer, les désactiver et les supprimer, via JMAP. Seulement là où votre administrateur autorise les adresses masquées."
+      },
+      "app-password": {
+        "title": "Créer un mot de passe d'application pour cette application",
+        "hint": "L'application se connecte ensuite avec lui, via JMAP, IMAP, SMTP et CalDAV/CardDAV."
       },
       "openid": {
         "title": "Savoir que c'est vous",

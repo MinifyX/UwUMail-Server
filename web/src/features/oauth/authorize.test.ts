@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decisionBody, knownScopes, masksOnly } from "./authorize";
+import { appPasswordOnly, decisionBody, knownScopes, masksOnly } from "./authorize";
 
 describe("decisionBody", () => {
   it("passes every parameter of the request on as it came", () => {
@@ -29,6 +29,7 @@ describe("knownScopes", () => {
   it("keeps the ones it can explain, in a fixed order", () => {
     expect(knownScopes(["openid", "smtp", "something", "mail"])).toEqual(["mail", "smtp", "openid"]);
     expect(knownScopes(["openid", "maskedemail"])).toEqual(["maskedemail", "openid"]);
+    expect(knownScopes(["openid", "app-password"])).toEqual(["app-password", "openid"]);
   });
 });
 
@@ -39,5 +40,15 @@ describe("masksOnly", () => {
     expect(masksOnly(["mail", "maskedemail"])).toBe(false);
     expect(masksOnly(["smtp", "maskedemail"])).toBe(false);
     expect(masksOnly(["openid"])).toBe(false);
+  });
+});
+
+describe("appPasswordOnly", () => {
+  it("is true only when the app asks for an app password and no protocol itself", () => {
+    expect(appPasswordOnly(["app-password"])).toBe(true);
+    expect(appPasswordOnly(["openid", "app-password"])).toBe(true);
+    expect(appPasswordOnly(["mail", "app-password"])).toBe(false);
+    expect(appPasswordOnly(["maskedemail", "app-password"])).toBe(false);
+    expect(appPasswordOnly(["openid"])).toBe(false);
   });
 });

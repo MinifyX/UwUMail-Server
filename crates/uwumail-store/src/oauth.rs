@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::db::{get_setting, set_setting};
 use crate::directory::{ACCOUNT_COLUMNS, account_from_row, login_key};
 use crate::fetch::{seal, unseal};
+use crate::security::{CreatedAppPassword, NewAppPassword, scopes_for};
 use crate::security::{MailAuth, MailAuthDenied};
 use crate::{Account, AppScope, Result, Store, StoreError, now, random_bytes};
 
@@ -41,7 +42,13 @@ const CODE_PREFIX: &str = "uwu_ac_";
 /// The scopes this server knows, in the order they are shown. Everything else an app asks for is
 /// left out of what it gets.
 pub const OAUTH_SCOPES: &[&str] =
-    &["openid", "email", "profile", "offline_access", "mail", "smtp", "dav", MASKED_EMAIL_SCOPE];
+    &["openid", "email", "profile", "offline_access", "mail", "smtp", "dav", MASKED_EMAIL_SCOPE, APP_PASSWORD_SCOPE];
+
+/// One app password for the app, and nothing else: the access token is traded in once at
+/// `POST /oauth/app-password` for a named app password, and the grant ends with that
+/// (docs/oauth.md). A mail app sets itself up this way without anyone typing a password into it.
+/// The consent is never remembered, so each new app password is asked for.
+pub const APP_PASSWORD_SCOPE: &str = "app-password";
 
 /// Masked addresses and nothing else of the mailbox: JMAP's session, `Core/echo` and the
 /// `MaskedEmail` methods, with push for their changes (docs/jmap-masked-email.md). For a password
@@ -71,7 +78,9 @@ pub fn oauth_scopes(requested: &str) -> Vec<&'static str> {
 
 /// Whether a set of scopes lets an app do anything at all: a protocol, or signing in (`openid`).
 pub fn oauth_scopes_usable(scopes: &[&str]) -> bool {
-    scopes.iter().any(|scope| matches!(*scope, "mail" | "smtp" | "dav" | "openid" | MASKED_EMAIL_SCOPE))
+    scopes
+        .iter()
+        .any(|scope| matches!(*scope, "mail" | "smtp" | "dav" | "openid" | MASKED_EMAIL_SCOPE | APP_PASSWORD_SCOPE))
 }
 
 fn scope_list(scopes: &[&str]) -> String {
@@ -278,7 +287,89 @@ pub enum OAuthRefusal {
     Reused { account_id: i64, client_name: String },
 }
 
+/// An app password made with an OAuth access token (`POST /oauth/app-password`).
+#[derive(Debug, Clone)]
+pub struct OAuthAppPassword {
+    pub account: Account,
+    pub created: CreatedAppPassword,
+    /// The app that asked, as it registered itself.
+    pub client_name: String,
+}
+
+/// Why an access token was not traded in for an app password.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppPasswordRefusal {
+    /// Unknown, expired, already traded in, or its account may not sign in.
+    InvalidToken,
+    /// A good token without the `app-password` scope.
+    InsufficientScope,
+}
+
 impl Store {
+    /// Trades an access token with the `app-password` scope in for a new app password, once: the
+    /// grant behind the token ends in the same transaction, with its refresh token and anything
+    /// else it allowed. `scopes` are the uses wanted, `None` for every protocol the account may
+    /// use; uses the account may not have are left out. The checks are those of
+    /// [`Store::create_app_password`]; when one fails, the token stays good.
+    pub async fn create_app_password_with_oauth(
+        &self,
+        token: &str,
+        name: &str,
+        scopes: Option<Vec<AppScope>>,
+    ) -> Result<std::result::Result<OAuthAppPassword, AppPasswordRefusal>> {
+        if !is_oauth_access_token(token) {
+            return Ok(Err(AppPasswordRefusal::InvalidToken));
+        }
+        let hash = token_hash("oauth-access", token);
+        let name = name.to_owned();
+        self.write(move |tx| {
+            let found = tx
+                .query_row(
+                    &format!(
+                        "SELECT {ACCOUNT_COLUMNS}, x.grant_id, x.scopes, x.expires_at, x.client_name FROM accounts JOIN (
+                             SELECT g.account_id AS account_id, g.id AS grant_id, g.scopes AS scopes,
+                                    t.expires_at AS expires_at, c.name AS client_name
+                             FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id
+                             JOIN oauth_clients c ON c.id = g.client_id
+                             WHERE t.token_hash = ?1 AND t.kind = 'access'
+                         ) x ON x.account_id = accounts.id"
+                    ),
+                    params![hash],
+                    |row| {
+                        let n = crate::directory::ACCOUNT_COLUMN_COUNT;
+                        Ok((
+                            account_from_row(row)?,
+                            row.get::<_, i64>(n)?,
+                            row.get::<_, String>(n + 1)?,
+                            row.get::<_, i64>(n + 2)?,
+                            row.get::<_, String>(n + 3)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((account, grant_id, granted, expires_at, client_name)) = found else {
+                return Ok(Err(AppPasswordRefusal::InvalidToken));
+            };
+            if !account.can_use_portal() || expires_at <= now() {
+                return Ok(Err(AppPasswordRefusal::InvalidToken));
+            }
+            if !granted.split_whitespace().any(|scope| scope == APP_PASSWORD_SCOPE) {
+                return Ok(Err(AppPasswordRefusal::InsufficientScope));
+            }
+            let usable = scopes_for(account.protocols);
+            let scopes = match scopes {
+                Some(wanted) => wanted.into_iter().filter(|scope| usable.contains(scope)).collect(),
+                None => usable,
+            };
+            let checked =
+                crate::security::check_new_app_password(&account, NewAppPassword { name, scopes, expires_at: None })?;
+            let created = crate::security::insert_app_password(tx, account.id, checked)?;
+            forget_grant(tx, grant_id)?;
+            Ok(Ok(OAuthAppPassword { account, created, client_name }))
+        })
+        .await
+    }
+
     /// Registers an app (RFC 7591), always as a public client.
     pub async fn register_oauth_client(&self, name: &str, redirect_uris: Vec<String>) -> Result<OAuthClient> {
         let name: String = name.trim().chars().filter(|c| !c.is_control()).take(80).collect();
@@ -414,7 +505,8 @@ impl Store {
                 )
                 .optional()?;
             let mut all: Vec<&str> = before.as_deref().map(|s| s.split_whitespace().collect()).unwrap_or_default();
-            for scope in scopes.split_whitespace() {
+            // A new app password is asked for every time: that consent is never kept.
+            for scope in scopes.split_whitespace().filter(|scope| *scope != APP_PASSWORD_SCOPE) {
                 if !all.contains(&scope) {
                     all.push(scope);
                 }

@@ -494,6 +494,7 @@ impl Web {
             .route("/oauth/token", post(routes::oauth::token).options(routes::oauth::preflight))
             .route("/oauth/register", post(routes::oauth::register).options(routes::oauth::preflight))
             .route("/oauth/revoke", post(routes::oauth::revoke).options(routes::oauth::preflight))
+            .route("/oauth/app-password", post(routes::oauth::app_password).options(routes::oauth::preflight))
             .route("/oauth/jwks", get(routes::oauth::jwks).options(routes::oauth::preflight))
             .route(
                 "/oauth/userinfo",

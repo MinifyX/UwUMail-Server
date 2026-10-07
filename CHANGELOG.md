@@ -3,6 +3,26 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.23.0
+
+### Added
+
+- **Mail apps can make their own app password with OAuth.** A new OAuth scope `app-password`
+  (listed in `scopes_supported`) and the endpoint `POST /oauth/app-password`: an app signs in
+  through the portal as usual, then trades its access token in once for a named app password
+  (`{ "name", "scopes"? }` → `201 { "id", "name", "username", "password", "scopes" }`). The
+  sign-in behind the token ends right there, so the app keeps only the app password, which shows
+  up under *Security → App passwords* like any other. The UwUMail app uses this to set up an
+  account without anyone typing a password into it. The consent page says plainly that the app
+  wants an app password; that consent is never remembered, so each one is asked for. A token
+  without the scope gets `403 insufficient_scope`. See docs/oauth.md.
+
+### Changed
+
+- App password names may now have up to 80 characters (was 60), and no control or bidi characters.
+- No "new app signed in" mail for a sign-in that only asked for an app password: the app
+  password made with it sends its own.
+
 ## 0.22.4
 
 ### Fixed

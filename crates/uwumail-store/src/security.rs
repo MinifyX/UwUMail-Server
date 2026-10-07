@@ -21,6 +21,91 @@ pub(crate) const MAX_APP_PASSWORDS: i64 = 50;
 const TOTP_PERIOD: i64 = 30;
 const EVENT_RETENTION_SECS: i64 = 180 * 24 * 3600;
 
+/// The longest name an app password may have.
+pub const APP_PASSWORD_NAME_CHARS: usize = 80;
+
+/// A new app password that passed [`check_new_app_password`].
+pub(crate) struct CheckedAppPassword {
+    name: String,
+    scopes: Vec<AppScope>,
+    expires_at: Option<i64>,
+}
+
+/// What every new app password must be: a name of 1 to [`APP_PASSWORD_NAME_CHARS`] characters
+/// without control or bidi characters, at least one use, one of them a protocol the account may use, and
+/// an expiry in the future if any. The portal and `POST /oauth/app-password` both check here.
+pub(crate) fn check_new_app_password(account: &Account, new: NewAppPassword) -> Result<CheckedAppPassword> {
+    let name = new.name.trim().to_owned();
+    // Control characters and the invisible ones that turn text around would let a name pose as
+    // another in the list and in the notice mail.
+    let hidden = |c: char| {
+        c.is_control() || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+    };
+    if name.is_empty() || name.chars().count() > APP_PASSWORD_NAME_CHARS || name.chars().any(hidden) {
+        return Err(StoreError::Invalid(format!(
+            "an app password needs a name of up to {APP_PASSWORD_NAME_CHARS} characters"
+        )));
+    }
+    let mut scopes = new.scopes;
+    scopes.sort_by_key(|scope| scope.as_str());
+    scopes.dedup();
+    if scopes.is_empty() {
+        return Err(StoreError::Invalid("an app password needs at least one use".into()));
+    }
+    // A password whose every use is switched off would never open anything: the login gate
+    // holds it at each protocol. Better to say so here than to hand out a secret that fails.
+    // Rights beyond that are kept, so switching a protocol on later makes them work.
+    let usable = scopes_for(account.protocols);
+    if !scopes.iter().any(|scope| usable.contains(scope)) {
+        return Err(StoreError::Invalid(
+            "this account may not use any of those protocols, so the password would open nothing".into(),
+        ));
+    }
+    if new.expires_at.is_some_and(|at| at <= now()) {
+        return Err(StoreError::Invalid("the expiry date must be in the future".into()));
+    }
+    Ok(CheckedAppPassword { name, scopes, expires_at: new.expires_at })
+}
+
+/// Stores a checked app password inside the caller's transaction and returns its secret.
+pub(crate) fn insert_app_password(
+    tx: &Connection,
+    account_id: i64,
+    new: CheckedAppPassword,
+) -> Result<CreatedAppPassword> {
+    let count: i64 =
+        tx.query_row("SELECT COUNT(*) FROM app_passwords WHERE account_id = ?1", [account_id], |r| r.get(0))?;
+    if count >= MAX_APP_PASSWORDS {
+        return Err(StoreError::Rule {
+            code: "tooManyAppPasswords",
+            message: format!("at most {MAX_APP_PASSWORDS} app passwords"),
+        });
+    }
+    let created_at = now();
+    let secret = random_code(APP_PASSWORD_CHARS);
+    let hash = code_hash("app", &secret);
+    let scope_list = new.scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>().join(" ");
+    let id = crate::db::next_id(tx, "app_passwords")?;
+    tx.execute(
+        "INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at, expires_at)
+         VALUES (?7, ?1, ?2, ?3, ?4, ?5, ?6)",
+        params![account_id, new.name, hash, scope_list, created_at, new.expires_at, id],
+    )?;
+    Ok(CreatedAppPassword {
+        app_password: AppPassword {
+            id,
+            name: new.name,
+            scopes: new.scopes,
+            created_at,
+            expires_at: new.expires_at,
+            last_used_at: None,
+            last_used_protocol: None,
+            last_used_ip: None,
+        },
+        secret: grouped(&secret, 4),
+    })
+}
+
 fn random_code(chars: usize) -> String {
     let mut code = String::with_capacity(chars);
     while code.len() < chars {
@@ -498,71 +583,12 @@ impl Store {
     }
 
     pub async fn create_app_password(&self, account_id: i64, new: NewAppPassword) -> Result<CreatedAppPassword> {
-        let name = new.name.trim().to_owned();
-        if name.is_empty() || name.chars().count() > 60 {
-            return Err(StoreError::Invalid("an app password needs a name of up to 60 characters".into()));
-        }
-        let mut scopes = new.scopes.clone();
-        scopes.sort_by_key(|scope| scope.as_str());
-        scopes.dedup();
-        if scopes.is_empty() {
-            return Err(StoreError::Invalid("an app password needs at least one use".into()));
-        }
-        // A password whose every use is switched off would never open anything: the login gate
-        // holds it at each protocol. Better to say so here than to hand out a secret that fails.
-        // Rights beyond that are kept, so switching a protocol on later makes them work.
         let account = self
             .account_by_id(account_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
-        let usable = scopes_for(account.protocols);
-        if !scopes.iter().any(|scope| usable.contains(scope)) {
-            return Err(StoreError::Invalid(
-                "this account may not use any of those protocols, so the password would open nothing".into(),
-            ));
-        }
-        let created_at = now();
-        if new.expires_at.is_some_and(|at| at <= created_at) {
-            return Err(StoreError::Invalid("the expiry date must be in the future".into()));
-        }
-        let secret = random_code(APP_PASSWORD_CHARS);
-        let hash = code_hash("app", &secret);
-        let scope_list = scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>().join(" ");
-        let expires_at = new.expires_at;
-        let id = self
-            .write(move |tx| {
-                let count: i64 =
-                    tx.query_row("SELECT COUNT(*) FROM app_passwords WHERE account_id = ?1", [account_id], |r| {
-                        r.get(0)
-                    })?;
-                if count >= MAX_APP_PASSWORDS {
-                    return Err(StoreError::Rule {
-                        code: "tooManyAppPasswords",
-                        message: format!("at most {MAX_APP_PASSWORDS} app passwords"),
-                    });
-                }
-                let id = crate::db::next_id(tx, "app_passwords")?;
-                tx.execute(
-                    "INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at, expires_at)
-                     VALUES (?7, ?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![account_id, name, hash, scope_list, created_at, expires_at, id],
-                )?;
-                Ok(id)
-            })
-            .await?;
-        Ok(CreatedAppPassword {
-            app_password: AppPassword {
-                id,
-                name: new.name.trim().to_owned(),
-                scopes,
-                created_at,
-                expires_at,
-                last_used_at: None,
-                last_used_protocol: None,
-                last_used_ip: None,
-            },
-            secret: grouped(&secret, 4),
-        })
+        let checked = check_new_app_password(&account, new)?;
+        self.write(move |tx| insert_app_password(tx, account_id, checked)).await
     }
 
     /// Takes over an app password from another server by its hash, e.g. mailcow's bcrypt. It keeps

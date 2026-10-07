@@ -143,6 +143,7 @@ forgets that.
 | `smtp` | Sending through submission (ports 587 and 465) |
 | `dav` | Calendars and contacts (CalDAV, CardDAV, and over JMAP) |
 | `maskedemail` | Masked addresses only, over JMAP; nothing else of the mailbox ([jmap-masked-email.md](jmap-masked-email.md#apps-allowed-masked-addresses-only-the-maskedemail-scope)) |
+| `app-password` | One app password for the app, made once at [`POST /oauth/app-password`](#an-app-password-for-the-app-post-oauthapp-password); the token opens no protocol itself |
 | `openid` | An ID token, and `/oauth/userinfo` |
 | `email` | The address in the ID token and userinfo |
 | `profile` | The name in the ID token and userinfo |
@@ -152,8 +153,14 @@ forgets that.
 `smtp`, `caldav` and `carddav` as `dav`. Unknown scopes are left out.
 Protocols the admin switched off for the account (*Protocols* on the
 account's page) are left out as well (`maskedemail` goes with JMAP), and a
-request that ends up with none of `mail`, `smtp`, `dav`, `maskedemail` or
-`openid` is `invalid_scope`. `mail` includes everything `maskedemail` opens.
+request that ends up with none of `mail`, `smtp`, `dav`, `maskedemail`,
+`app-password` or `openid` is `invalid_scope`. `mail` includes everything
+`maskedemail` opens.
+
+`app-password` is never remembered as allowed: each request with it shows the
+question (and needs the password again when the login is older than ten
+minutes), and `prompt=none` answers `consent_required`. The page then says
+plainly that the app wants to set itself up with an app password.
 
 ## Tokens: `POST /oauth/token`
 
@@ -208,6 +215,66 @@ the address and name.
 Tokens and codes are long random strings. The database keeps only their
 SHA-256 hashes, like app passwords.
 
+## An app password for the app: `POST /oauth/app-password`
+
+A mail app that only wants a normal login, such as the UwUMail app setting an
+account up, asks for `scope=app-password` alone, trades the code in as usual
+and then, right away:
+
+```
+POST /oauth/app-password
+Authorization: Bearer uwu_at_…
+Content-Type: application/json
+
+{ "name": "Lorins MacBook", "scopes": ["mail", "smtp", "dav"] }
+```
+
+| Field | |
+| --- | --- |
+| `name` | required; trimmed, 1 to 80 characters, no control or bidi characters. Shown in the list of app passwords, e.g. the device's name |
+| `scopes` | optional; out of `mail`, `smtp`, `dav`. Left out: every one the account may use. Uses the account may not have (switched-off protocols) are left out |
+
+`201 Created`:
+
+```json
+{
+  "id": 42,
+  "name": "Lorins MacBook",
+  "username": "nyu@example.com",
+  "password": "abcd-efgh-jkmn-pqrs",
+  "scopes": ["dav", "mail", "smtp"]
+}
+```
+
+`username` and `password` are an ordinary login for HTTP Basic (JMAP, CalDAV,
+CardDAV), IMAP `LOGIN`/`AUTHENTICATE PLAIN`, SMTP `AUTH PLAIN`/`LOGIN` and
+ManageSieve, within `scopes`. The password is shown only in this answer. It
+works when the person requires app passwords for mail apps, like any other
+app password.
+
+**Once only.** In the same database transaction the whole sign-in behind the
+token ends: the access token, its refresh token and the grant. The app keeps
+nothing but the app password, which the person sees under *Security → App
+passwords* and revokes there. When a check fails (name, scopes, the limit of 50
+app passwords), nothing is made and the token stays good for another try.
+
+Errors are problem details (`application/problem+json`, RFC 9457) that also
+carry OAuth's `error` and `error_description`:
+
+| Status | `error` | When |
+| --- | --- | --- |
+| 400 | `invalid_request` | not JSON, unknown scopes, a name that does not fit, no use the account may have |
+| 401 | `invalid_token` | unknown, expired or already traded-in token, or the account may not log in (disabled, made a service); `WWW-Authenticate: Bearer error="invalid_token"` |
+| 401 | `invalid_request` | no `Authorization: Bearer` header |
+| 403 | `insufficient_scope` | a good token without `app-password`; `WWW-Authenticate: Bearer error="insufficient_scope", scope="app-password"`. The token stays good |
+| 409 | `tooManyAppPasswords` | the account has 50 app passwords already |
+| 429 | `temporarily_unavailable` | the network had 30 refused tokens in 15 minutes (counted with the token endpoint) |
+
+The person gets the *new app password* mail and activity entry, as for one made
+in the portal; the sign-in itself sends none. Like the other `/oauth/`
+endpoints it answers any web page (`Access-Control-Allow-Origin: *`): the token
+comes in the header only, never from a cookie.
+
 ## Using the access token
 
 | Protocol | How |
@@ -250,7 +317,8 @@ mail apps, the same way app passwords do.
 - *My account → Security → Apps signed in with OAuth* lists each sign-in with
   its app, scopes, when it was made and last used (protocol and address).
   *Sign out* ends it at once.
-- The first sign-in of an app sends the person a mail, and so does a refresh
+- The first sign-in of an app sends the person a mail (not one for nothing but
+  `app-password`: the app password made with it sends its own), and so does a refresh
   token that came back after it was traded in. The security activity lists
   sign-ins of apps and signing them out.
 - An admin sees the same list on the person's page and can sign an app out,

@@ -1,5 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, CalendarDays, Check, EyeOff, IdCard, Inbox, RefreshCw, Send, UserRound, X } from "lucide-react";
+import {
+  AtSign,
+  CalendarDays,
+  Check,
+  EyeOff,
+  IdCard,
+  Inbox,
+  KeyRound,
+  RefreshCw,
+  Send,
+  UserRound,
+  X,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
@@ -12,13 +24,14 @@ import { useT } from "@/i18n";
 import { api, ApiError, setCsrfToken, type OAuthRequest, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { navigate, useSearch } from "@/lib/router";
-import { decisionBody, knownScopes, masksOnly, type KnownScope } from "./authorize";
+import { appPasswordOnly, decisionBody, knownScopes, masksOnly, type KnownScope } from "./authorize";
 
 const SCOPE_ICONS: Record<KnownScope, LucideIcon> = {
   mail: Inbox,
   smtp: Send,
   dav: CalendarDays,
   maskedemail: EyeOff,
+  "app-password": KeyRound,
   openid: UserRound,
   profile: IdCard,
   email: AtSign,
@@ -156,13 +169,13 @@ export function OAuthConsentPage({ session }: { session: Session }) {
   const { client } = ask;
   const scopes = knownScopes(ask.scopes);
   const onlyMasked = masksOnly(ask.scopes);
+  const onlyAppPassword = appPasswordOnly(ask.scopes);
+  const title = onlyMasked ? "oauth.titleMasked" : onlyAppPassword ? "oauth.titleAppPassword" : "oauth.title";
   return (
     <Frame>
       <div className="rounded-[22px] border border-hairline bg-surface px-6 pt-4 pb-7 shadow-float sm:px-8">
         <NyuScene name="addons" className="mx-auto h-auto w-[180px]" />
-        <h1 className="mt-1 text-center text-[20px] font-bold break-words">
-          {onlyMasked ? t("oauth.titleMasked", { name: client.name }) : t("oauth.title", { name: client.name })}
-        </h1>
+        <h1 className="mt-1 text-center text-[20px] font-bold break-words">{t(title, { name: client.name })}</h1>
         <p className="mt-1 text-center text-sm text-muted">
           {t("oauth.account")} <span className="font-semibold break-all text-ink">{session.account.login}</span>
         </p>
@@ -173,6 +186,9 @@ export function OAuthConsentPage({ session }: { session: Session }) {
             : t("oauth.returnsTo", { host: client.redirectHost })}
         </p>
         {onlyMasked && <p className="mt-3 text-center text-[13px] font-semibold text-ink">{t("oauth.maskedOnly")}</p>}
+        {onlyAppPassword && (
+          <p className="mt-3 text-center text-[13px] font-semibold text-ink">{t("oauth.appPasswordOnly")}</p>
+        )}
 
         {scopes.length > 0 && (
           <>

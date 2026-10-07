@@ -2015,11 +2015,13 @@
   "oauth": {
     "title": "„{{name}}“ möchte auf dein Konto zugreifen",
     "titleMasked": "„{{name}}“ möchte deine maskierten Adressen anlegen und verwalten",
+    "titleAppPassword": "„{{name}}“ möchte sich mit einem App-Passwort einrichten",
     "account": "Angemeldet als",
     "nameClaim": "Die App nennt sich selbst „{{name}}“. Erlaube das nur, wenn du gerade selbst die Anmeldung in dieser App begonnen hast.",
     "returnsTo": "Danach geht es zurück zu {{host}}.",
     "returnsToDevice": "Danach geht es zurück zur App auf diesem Gerät ({{host}}).",
     "maskedOnly": "Die App kann deine Mails weder lesen noch senden und sieht sonst nichts von deinem Konto: nur deine maskierten Adressen.",
+    "appPasswordOnly": "Die App bekommt ein eigenes App-Passwort für deine Mails, das Senden, Kalender und Kontakte, und sonst nichts. Diese Anmeldung endet gleich danach; das App-Passwort siehst du unter Mein Konto → Sicherheit und kannst es dort widerrufen.",
     "scopesTitle": "Die App darf",
     "scopes": {
       "mail": {
@@ -2037,6 +2039,10 @@
       "maskedemail": {
         "title": "Deine maskierten Adressen anlegen und verwalten",
         "hint": "Neue anlegen, sie ein- und ausschalten und löschen, über JMAP. Nur dort, wo dein Admin maskierte Adressen erlaubt."
+      },
+      "app-password": {
+        "title": "Ein App-Passwort für diese App erstellen",
+        "hint": "Die App meldet sich ab dann damit an, über JMAP, IMAP, SMTP und CalDAV/CardDAV."
       },
       "openid": {
         "title": "Wissen, dass du es bist",

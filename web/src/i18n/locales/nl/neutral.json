@@ -2015,11 +2015,13 @@
   "oauth": {
     "title": "‘{{name}}’ wil toegang tot je account",
     "titleMasked": "‘{{name}}’ wil je gemaskeerde adressen aanmaken en beheren",
+    "titleAppPassword": "‘{{name}}’ wil zichzelf instellen met een app-wachtwoord",
     "account": "Ingelogd als",
     "nameClaim": "De app noemt zichzelf ‘{{name}}’. Sta dit alleen toe als je zelf net bent begonnen met inloggen in deze app.",
     "returnsTo": "Daarna ga je terug naar {{host}}.",
     "returnsToDevice": "Daarna ga je terug naar de app op dit apparaat ({{host}}).",
     "maskedOnly": "De app kan je mail niet lezen of verzenden en ziet verder niets van je account: alleen je gemaskeerde adressen.",
+    "appPasswordOnly": "De app krijgt een eigen app-wachtwoord voor je mail, verzenden, agenda's en contacten, en verder niets. Deze aanmelding eindigt meteen daarna; je ziet het app-wachtwoord onder Mijn account → Beveiliging en kunt het daar intrekken.",
     "scopesTitle": "De app mag",
     "scopes": {
       "mail": {
@@ -2037,6 +2039,10 @@
       "maskedemail": {
         "title": "Je gemaskeerde adressen aanmaken en beheren",
         "hint": "Nieuwe aanmaken, ze aan- en uitzetten en verwijderen, via JMAP. Alleen waar je beheerder gemaskeerde adressen toestaat."
+      },
+      "app-password": {
+        "title": "Een app-wachtwoord voor deze app aanmaken",
+        "hint": "De app meldt zich daarna daarmee aan, via JMAP, IMAP, SMTP en CalDAV/CardDAV."
       },
       "openid": {
         "title": "Weten dat jij het bent",
