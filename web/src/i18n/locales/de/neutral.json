@@ -1469,6 +1469,20 @@
     "toasts": {
       "retry": "Wird gleich erneut versucht",
       "dropped": "Mail #{{id}} gelöscht"
+    },
+    "refused": {
+      "title": "Abgelehnte Mails",
+      "hint": "Mails der letzten 30 Tage, die ein anderer Server nicht angenommen hat.",
+      "from": "von",
+      "to": "an",
+      "gaveUp": "nach Wiederholungen aufgegeben",
+      "empty": {
+        "title": "Nichts wurde abgelehnt",
+        "body": "In den letzten 30 Tagen haben andere Server alle Mails angenommen."
+      },
+      "clear": "Liste leeren",
+      "clearConfirm": "Die Liste der abgelehnten Mails leeren? An den Mails selbst ändert das nichts.",
+      "cleared": "Liste geleert"
     }
   },
   "logs": {
@@ -1487,6 +1501,16 @@
     "resume": "Weiter",
     "empty": "Keine passenden Zeilen.",
     "unavailable": "Dieser Server hält keine Logs für die Verwaltung bereit.",
+    "category": {
+      "label": "Art",
+      "login": "Logins",
+      "login_failed": "Fehlgeschlagene Logins",
+      "block": "Sperren",
+      "mail_in": "Mail-Eingang",
+      "mail_out": "Mail-Ausgang",
+      "gateway": "Gateway",
+      "system": "System"
+    },
     "loki": {
       "title": "An Grafana Loki senden",
       "intro": "Schickt die Logs dieses Servers und seines Gateways an ein Grafana Loki, z. B. an deinen eigenen Log-Server oder an Grafana Cloud.",
@@ -1537,9 +1561,49 @@
     "tabs": {
       "live": "Live-Log",
       "changes": "Änderungen",
+      "blocks": "Sperren",
       "shipping": "Log-Versand"
     },
-    "shippingIntro": "Wohin der Server seine Logs zusätzlich schickt, damit sie auch nach einem Neustart und an einem Ort mit anderen Servern bleiben."
+    "shippingIntro": "Wohin der Server seine Logs zusätzlich schickt, damit sie auch nach einem Neustart und an einem Ort mit anderen Servern bleiben.",
+    "blocksIntro": "Welche Adressen sich gerade nicht anmelden dürfen, warum, und welche nie gesperrt werden.",
+    "blocks": {
+      "rulesTitle": "Wann gesperrt wird",
+      "rules": {
+        "instant": "Wer sich mit etwas anmelden will, das keine Mailadresse ist oder keiner Adresse hier ähnelt, wird sofort für 24 Stunden gesperrt – beim nächsten Mal für 7 Tage.",
+        "typo": "Sieht ein Anmeldename nach einem Tippfehler in einer Adresse aus, die es hier gibt, wird nicht sofort gesperrt.",
+        "never": "Adressen, von denen sich in den letzten 30 Tagen jemand erfolgreich angemeldet hat, und private oder lokale Adressen werden nie sofort gesperrt.",
+        "short": "Mehrere Versuche mit Anmeldenamen, die es nicht gibt, oder zu viele falsche Passwörter sperren für 15 Minuten."
+      },
+      "empty": {
+        "title": "Gerade ist niemand gesperrt",
+        "body": "Sobald der Server eine Adresse sperrt, steht sie hier."
+      },
+      "reasons": {
+        "not_an_address": "Anmeldename ist keine Mailadresse",
+        "unknown_login": "Adresse gibt es hier nicht und ähnelt keiner",
+        "unknown_logins": "Mehrere Versuche mit Anmeldenamen, die es nicht gibt",
+        "wrong_passwords": "Zu viele falsche Passwörter"
+      },
+      "tried": "versucht: {{login}}",
+      "since": "gesperrt {{time}}",
+      "remaining": "noch {{duration}} (bis {{time}})",
+      "repeat": "Wiederholt · {{times}}. Sperre",
+      "unblock": "Entsperren",
+      "unblockConfirm": "{{ip}} entsperren? Die Sperre wird hier und am UwUMail Gateway aufgehoben.",
+      "unblocked": "{{ip}} ist entsperrt.",
+      "exempt": {
+        "title": "Nie sperren",
+        "intro": "Adressen und Netze in dieser Liste werden nie gesperrt, egal was von dort versucht wird – zum Beispiel dein Büro oder dein Monitoring.",
+        "label": "Adresse oder Netz",
+        "hint": "Eine IP-Adresse oder ein Netz, z. B. 192.0.2.10, 198.51.100.0/24 oder 2001:db8::/32.",
+        "add": "Hinzufügen",
+        "remove": "{{network}} entfernen",
+        "empty": "Noch keine Ausnahmen.",
+        "invalid": "Das ist weder eine IP-Adresse noch ein Netz.",
+        "duplicate": "Das steht schon in der Liste.",
+        "saved": "Ausnahmen gespeichert."
+      }
+    }
   },
   "settings": {
     "title": "Einstellungen",

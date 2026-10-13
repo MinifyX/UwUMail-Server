@@ -26,10 +26,6 @@ use crate::http;
 /// Where the pairing lives in the settings table.
 pub const PAIRING_KEY: &str = "gateway.pairing";
 
-/// How long the gateway keeps a network away that this server turned away. The same hour its
-/// fail2ban jail uses, so the two do not disagree about when someone may come back.
-const BAN_AT_GATEWAY: Duration = Duration::from_secs(3600);
-
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredPairing {
@@ -218,14 +214,17 @@ impl GatewayManager {
     pub fn reporter(self: &Arc<Self>) -> uwumail_smtp::Reporter {
         // Weak, so the manager is not kept alive by the services it hands this to.
         let manager = Arc::downgrade(self);
-        Arc::new(move |ip, why: &str| {
+        Arc::new(move |ip, how_long: Option<Duration>, why: &str| {
             let Some(manager) = manager.upgrade() else {
                 return;
             };
             let client =
                 manager.current.lock().expect("gateway poisoned").as_ref().map(|current| current.client.clone());
             if let Some(client) = client {
-                client.ban(ip, BAN_AT_GATEWAY, why);
+                match how_long {
+                    Some(how_long) => client.ban(ip, how_long, why),
+                    None => client.unban(ip),
+                }
             }
         })
     }

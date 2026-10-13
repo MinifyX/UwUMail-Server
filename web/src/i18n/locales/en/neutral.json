@@ -1469,6 +1469,20 @@
     "toasts": {
       "retry": "Will be retried in a moment",
       "dropped": "Message #{{id}} deleted"
+    },
+    "refused": {
+      "title": "Refused mail",
+      "hint": "Mail of the last 30 days that another server did not accept.",
+      "from": "from",
+      "to": "to",
+      "gaveUp": "given up after retries",
+      "empty": {
+        "title": "Nothing was refused",
+        "body": "In the last 30 days other servers accepted every mail."
+      },
+      "clear": "Empty list",
+      "clearConfirm": "Empty the list of refused mail? This changes nothing about the mails themselves.",
+      "cleared": "List emptied"
     }
   },
   "logs": {
@@ -1487,6 +1501,16 @@
     "resume": "Resume",
     "empty": "No matching lines.",
     "unavailable": "This server keeps no logs for the admin panel.",
+    "category": {
+      "label": "Kind",
+      "login": "Logins",
+      "login_failed": "Failed logins",
+      "block": "Blocks",
+      "mail_in": "Incoming mail",
+      "mail_out": "Outgoing mail",
+      "gateway": "Gateway",
+      "system": "System"
+    },
     "loki": {
       "title": "Send to Grafana Loki",
       "intro": "Sends the logs of this server and its gateway to a Grafana Loki, such as your own log server or Grafana Cloud.",
@@ -1537,9 +1561,49 @@
     "tabs": {
       "live": "Live log",
       "changes": "Changes",
+      "blocks": "Blocks",
       "shipping": "Log shipping"
     },
-    "shippingIntro": "Where the server also sends its logs, so they outlast a restart and sit in one place with other servers."
+    "shippingIntro": "Where the server also sends its logs, so they outlast a restart and sit in one place with other servers.",
+    "blocksIntro": "Which addresses may not log in right now, why, and which ones are never blocked.",
+    "blocks": {
+      "rulesTitle": "When an address is blocked",
+      "rules": {
+        "instant": "Trying to log in with something that is not an email address, or that resembles no address here, blocks the IP address at once for 24 hours – for 7 days the next time.",
+        "typo": "A login that looks like a typo of an address that exists here is not blocked at once.",
+        "never": "Addresses someone logged in from successfully within the last 30 days, and private or local addresses, are never blocked at once.",
+        "short": "Several tries at logins that do not exist, or too many wrong passwords, block for 15 minutes."
+      },
+      "empty": {
+        "title": "Nobody is blocked right now",
+        "body": "As soon as the server blocks an address, it shows up here."
+      },
+      "reasons": {
+        "not_an_address": "Login is not an email address",
+        "unknown_login": "Address does not exist here and resembles none",
+        "unknown_logins": "Several tries at logins that do not exist",
+        "wrong_passwords": "Too many wrong passwords"
+      },
+      "tried": "tried: {{login}}",
+      "since": "blocked {{time}}",
+      "remaining": "{{duration}} left (until {{time}})",
+      "repeat": "Repeated · block no. {{times}}",
+      "unblock": "Unblock",
+      "unblockConfirm": "Unblock {{ip}}? The block is lifted here and at the UwUMail Gateway.",
+      "unblocked": "{{ip}} is unblocked.",
+      "exempt": {
+        "title": "Never block",
+        "intro": "Addresses and networks in this list are never blocked, whatever is tried from there – your office or your monitoring, for example.",
+        "label": "Address or network",
+        "hint": "An IP address or a network, e.g. 192.0.2.10, 198.51.100.0/24 or 2001:db8::/32.",
+        "add": "Add",
+        "remove": "Remove {{network}}",
+        "empty": "No exceptions yet.",
+        "invalid": "That is neither an IP address nor a network.",
+        "duplicate": "That is already in the list.",
+        "saved": "Exceptions saved."
+      }
+    }
   },
   "settings": {
     "title": "Settings",

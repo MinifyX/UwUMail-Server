@@ -639,7 +639,9 @@ impl Session {
             Ok(MailAuth::Denied(reason)) => {
                 match reason {
                     MailAuthDenied::AppPasswordRequired => {}
-                    MailAuthDenied::UnknownLogin => limiter.record_unknown_login(self.peer.ip()),
+                    MailAuthDenied::UnknownLogin => {
+                        self.sieve.store.unknown_login(self.peer.ip(), username, "managesieve").await
+                    }
                     _ => limiter.record_failure(self.peer.ip(), username),
                 }
                 self.auth_failures += 1;

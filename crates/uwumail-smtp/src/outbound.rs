@@ -126,7 +126,7 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
                     tracing::warn!(message = message.id, to = %recipient.address, %error, "giving up after retries");
                     ctx.store.stats().count(uwumail_store::Stat::Bounced);
                     failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
-                    ctx.store.mark_recipient_failed(recipient.id, error).await
+                    ctx.store.mark_recipient_given_up(recipient.id, error).await
                 } else {
                     tracing::info!(message = message.id, to = %recipient.address, %error, "delivery deferred");
                     ctx.store.mark_recipient_deferred(recipient.id, error, next).await

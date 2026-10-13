@@ -3,6 +3,39 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.23.1
+
+### Added
+
+- **A login nobody here could have meant blocks its network at once.** Something that is not a
+  mail address (`root`, `admin`), or an address that is neither an account nor an alias here and
+  does not resemble one, keeps the network it came from out for 24 hours, on every way in
+  (portal, IMAP, SMTP, ManageSieve, JMAP, CalDAV/CardDAV); for 7 days when it comes back within
+  30 days. What looks like a slip of the keys is counted as before (3 within 15 minutes): up to
+  two typing mistakes in an address that exists, the right name at the wrong domain, a `+tag`,
+  or just the name without the domain. Never blocked at once: networks with a successful login
+  in the last 30 days, private and local addresses, and servers where LDAP makes accounts at the
+  first login. Blocks survive a restart and reach the UwUMail Gateway for their whole length.
+- **Server → Logs → Blocks.** Who is kept out, why, with which login, and for how long; a
+  button lets an address back in, at the gateway too. A list of addresses and networks that
+  are never blocked (an office, a monitoring host).
+- **The live log can be narrowed to kinds of lines:** logins, failed logins, blocks, incoming
+  mail, outgoing mail, gateway, system. Several can be chosen at once.
+- **Server → Queue shows the mail other servers refused.** Sender, recipient and what the other
+  server answered, for 30 days, also after the queue has forgotten the message. The alert
+  "many messages were refused by other servers" now links straight to it.
+
+### Changed
+
+- The portal answers a login that is not a mail address like any other wrong login
+  (`401 invalidCredentials`, was `422`).
+
+### Fixed
+
+- No more warning "Illegal SNI extension: ignoring IP address presented as hostname" in the
+  log of the server and the gateway. It was written whenever a client (mostly a scanner)
+  connected by IP address instead of by name, and never meant that anything was wrong.
+
 ## 0.23.0
 
 ### Added

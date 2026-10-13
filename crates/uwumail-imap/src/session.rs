@@ -670,7 +670,7 @@ where
                 match reason {
                     // A phone still using the right account password should not lock out its network.
                     MailAuthDenied::AppPasswordRequired => {}
-                    MailAuthDenied::UnknownLogin => self.imap.limiter.record_unknown_login(self.peer.ip()),
+                    MailAuthDenied::UnknownLogin => self.store.unknown_login(self.peer.ip(), username, "imap").await,
                     _ => self.imap.limiter.record_failure(self.peer.ip(), username),
                 }
                 self.auth_failures += 1;

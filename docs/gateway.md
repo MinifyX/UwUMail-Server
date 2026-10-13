@@ -188,7 +188,11 @@ from (`[limits]` in `gateway.toml`: `max_connections`, `max_connections_per_ip`,
 
 What the gateway *can* do is act on what your server sees. Your server reads the
 failed logins, and hands the addresses worth keeping out to the gateway over the
-tunnel, where they stop before they reach the house at all.
+tunnel, where they stop before they reach the house at all: for an hour after
+too many failed logins, and for as long as the server itself keeps a network
+out (24 hours, then 7 days) after a login nobody there could have meant. An
+admin who lets an address back in under *Server → Logs → Blocks* lifts the ban
+at the gateway as well.
 
 ### What it says, and where
 

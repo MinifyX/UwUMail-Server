@@ -77,7 +77,11 @@ async fn main() -> ExitCode {
 fn init_logging(config: &GatewayConfig, serving: bool) -> Option<Arc<LogQueue>> {
     // Commands only print what matters; the gateway logs at the configured level.
     let level = if serving { config.log.level.as_str() } else { "warn" };
-    let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
+    // rustls warns whenever a client names an IP address where the hostname belongs, which is
+    // what scanners do all day; nothing is wrong then.
+    let quiet = "rustls::msgs::handshake=error";
+    let filter =
+        EnvFilter::try_new(format!("{level},{quiet}")).unwrap_or_else(|_| EnvFilter::new(format!("info,{quiet}")));
     let output = match config.log.format {
         LogFormat::Json => tracing_subscriber::fmt::layer().json().with_target(false).boxed(),
         LogFormat::Text => tracing_subscriber::fmt::layer()

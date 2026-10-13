@@ -325,7 +325,7 @@ async fn delivery_area(web: &Web, now: i64) -> ApiResult<Area> {
     let finished = summary.delivered + summary.failed;
     if summary.failed >= 3 && summary.failed * 4 >= finished {
         let params = json!({ "count": summary.failed, "total": finished });
-        findings.push(Finding::new("manyBounces", Level::Warning, params));
+        findings.push(Finding::new("manyBounces", Level::Warning, params).link("/admin/queue#refused"));
     }
     Ok(Area::new("delivery", findings))
 }

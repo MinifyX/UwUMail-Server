@@ -7,6 +7,27 @@ use crate::address::normalize_address;
 use crate::blobs::BlobHash;
 use crate::{Result, Store, StoreError, now};
 
+/// How long a refused mail stays on the admin's list.
+pub const REFUSED_KEPT_SECS: i64 = 30 * 24 * 3600;
+/// And how many of them at most, so a flood of bounces cannot fill the disk.
+const REFUSED_KEPT_ROWS: i64 = 5000;
+/// What the other server said can be a page of text; the list keeps the start of it.
+const REFUSED_ERROR_MAX_CHARS: usize = 500;
+
+/// An outgoing mail another server did not take.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefusedDelivery {
+    pub id: i64,
+    pub at: i64,
+    /// The return path, empty for bounces.
+    pub from: String,
+    pub to: String,
+    pub error: String,
+    /// Put off until the message expired, rather than refused outright.
+    pub gave_up: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct NewQueueRecipient {
     pub address: String,
@@ -219,7 +240,64 @@ impl Store {
     }
 
     pub async fn mark_recipient_failed(&self, recipient_id: i64, error: &str) -> Result<()> {
-        self.update_recipient(recipient_id, "failed", Some(error.to_owned()), None).await
+        self.update_recipient(recipient_id, "failed", Some(error.to_owned()), None).await?;
+        self.note_refused(recipient_id, error, false).await
+    }
+
+    /// Like [`Self::mark_recipient_failed`], for a recipient that was put off until the message
+    /// expired.
+    pub async fn mark_recipient_given_up(&self, recipient_id: i64, error: &str) -> Result<()> {
+        self.update_recipient(recipient_id, "failed", Some(error.to_owned()), None).await?;
+        self.note_refused(recipient_id, error, true).await
+    }
+
+    /// Writes down that a recipient's server did not take the mail, for the admin to read after
+    /// the queue has forgotten the message. Kept [`REFUSED_KEPT_SECS`] long.
+    async fn note_refused(&self, recipient_id: i64, error: &str, gave_up: bool) -> Result<()> {
+        let error: String = error.chars().take(REFUSED_ERROR_MAX_CHARS).collect();
+        self.write(move |tx| {
+            let now = now();
+            tx.execute(
+                "INSERT INTO refused_deliveries (at, sender, recipient, error, gave_up)
+                 SELECT ?1, m.return_path, r.address, ?2, ?3
+                 FROM queue_recipients r JOIN queue_messages m ON m.id = r.message_id WHERE r.id = ?4",
+                params![now, error, gave_up, recipient_id],
+            )?;
+            tx.execute("DELETE FROM refused_deliveries WHERE at < ?1", [now - REFUSED_KEPT_SECS])?;
+            tx.execute(
+                "DELETE FROM refused_deliveries WHERE id <= (SELECT max(id) FROM refused_deliveries) - ?1",
+                [REFUSED_KEPT_ROWS],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// The newest outgoing mails another server did not take, newest first.
+    pub async fn refused_deliveries(&self, limit: usize) -> Result<Vec<RefusedDelivery>> {
+        self.read(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, at, sender, recipient, error, gave_up FROM refused_deliveries
+                 WHERE at >= ?1 ORDER BY at DESC, id DESC LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(params![now() - REFUSED_KEPT_SECS, limit as i64], |row| {
+                Ok(RefusedDelivery {
+                    id: row.get(0)?,
+                    at: row.get(1)?,
+                    from: row.get(2)?,
+                    to: row.get(3)?,
+                    error: row.get(4)?,
+                    gave_up: row.get(5)?,
+                })
+            })?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .await
+    }
+
+    /// Empties the list of refused mails. Returns how many there were.
+    pub async fn clear_refused_deliveries(&self) -> Result<usize> {
+        self.write(|tx| Ok(tx.execute("DELETE FROM refused_deliveries", [])?)).await
     }
 
     async fn update_recipient(
@@ -349,6 +427,14 @@ mod tests {
         store.mark_recipient_failed(second.id, "550 no such user").await.unwrap();
         assert!(store.complete_queue_message(id).await.unwrap());
         assert!(store.queue_entries().await.unwrap().is_empty());
+        // The queue has forgotten the message; the admin can still read who refused it.
+        let refused = store.refused_deliveries(10).await.unwrap();
+        assert_eq!(refused.len(), 1);
+        assert_eq!(refused[0].to, second.address);
+        assert_eq!(refused[0].error, "550 no such user");
+        assert!(!refused[0].gave_up);
+        assert_eq!(store.clear_refused_deliveries().await.unwrap(), 1);
+        assert!(store.refused_deliveries(10).await.unwrap().is_empty());
         assert_eq!(store.collect_garbage(0).await.unwrap(), 1);
     }
 

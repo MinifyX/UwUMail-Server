@@ -688,6 +688,23 @@ export interface QueuedMessage {
   recipients: QueueRecipient[];
 }
 
+/** An outgoing mail another server would not take; kept for 30 days. */
+export interface RefusedMail {
+  id: number;
+  /** Unix time. */
+  at: number;
+  /** The envelope sender; empty for bounces and the server's own mail. */
+  from: string;
+  to: string;
+  /** The other server's answer, or the reason. */
+  error: string;
+  /** True when it was retried until the message expired, false when it was refused outright. */
+  gaveUp: boolean;
+}
+
+/** What a log line is about; the live log can be narrowed to some of them. */
+export type LogCategory = "login" | "login_failed" | "block" | "mail_in" | "mail_out" | "gateway" | "system";
+
 export interface LogLine {
   seq: number;
   /** Milliseconds since 1970. */
@@ -695,9 +712,34 @@ export interface LogLine {
   /** "gateway" for lines the UwUMail Gateway handed over through the tunnel. */
   source: "server" | "gateway";
   level: "error" | "warn" | "info" | "debug" | "trace";
+  category: LogCategory;
   target: string;
   message: string;
   fields: [string, string][];
+}
+
+export type BlockReason = "not_an_address" | "unknown_login" | "unknown_logins" | "wrong_passwords";
+
+/** An address that may not log in for now. */
+export interface Block {
+  ip: string;
+  reason: BlockReason;
+  /** The login that was tried; empty when there is none to name. */
+  login: string;
+  /** Where it was tried, e.g. "imap"; may be empty. */
+  protocol: string;
+  /** Unix time. */
+  since: number;
+  /** Unix time. */
+  until: number;
+  /** How often this address has been blocked; from the second time on the block lasts 7 days. */
+  times: number;
+}
+
+export interface BlocksView {
+  blocks: Block[];
+  /** Addresses and networks that are never blocked. */
+  exempt: string[];
 }
 
 /** How sending the log to Grafana Loki goes. */
