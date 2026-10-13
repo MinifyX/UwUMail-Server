@@ -334,7 +334,7 @@ impl Authenticator {
         drop(attempt);
         match checked {
             Ok(MailAuth::Ok { account, app_password, credential, scopes }) => {
-                self.limiter().record_success(client.ip, login);
+                self.limiter().record_success_of(client.ip, login, &account.login);
                 // App passwords are a quick lookup; only the slow account password is worth caching.
                 if app_password.is_none() {
                     let mut cache = self.cache.lock().expect("auth cache poisoned");

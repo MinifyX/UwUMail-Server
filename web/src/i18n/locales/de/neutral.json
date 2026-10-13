@@ -1572,6 +1572,7 @@
         "instant": "Wer sich mit etwas anmelden will, das keine Mailadresse ist oder keiner Adresse hier ähnelt, wird sofort für 24 Stunden gesperrt – beim nächsten Mal für 7 Tage.",
         "typo": "Sieht ein Anmeldename nach einem Tippfehler in einer Adresse aus, die es hier gibt, wird nicht sofort gesperrt.",
         "never": "Adressen, von denen sich in den letzten 30 Tagen jemand erfolgreich angemeldet hat, und private oder lokale Adressen werden nie sofort gesperrt.",
+        "shared": "Adressen, von denen sich mehrere verschiedene Konten angemeldet haben – ein Büro, eine Uni, ein geteilter Anschluss –, gelten ein Jahr lang als geteilt und werden ebenfalls nie sofort gesperrt.",
         "short": "Mehrere Versuche mit Anmeldenamen, die es nicht gibt, oder zu viele falsche Passwörter sperren für 15 Minuten."
       },
       "empty": {

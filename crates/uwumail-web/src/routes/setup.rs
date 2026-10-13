@@ -301,7 +301,7 @@ pub async fn complete(
         tracing::error!(%err, "writing the change log failed");
     }
     tracing::info!(login = %account.login, %domain, "setup finished, the first admin exists");
-    web.limiter().record_success(client.ip, SETUP_CODE);
+    web.limiter().record_success_of(client.ip, SETUP_CODE, "");
     super::auth::complete_login(&web, &account, client, &headers, "setup").await
 }
 

@@ -188,11 +188,22 @@ from (`[limits]` in `gateway.toml`: `max_connections`, `max_connections_per_ip`,
 
 What the gateway *can* do is act on what your server sees. Your server reads the
 failed logins, and hands the addresses worth keeping out to the gateway over the
-tunnel, where they stop before they reach the house at all: for an hour after
-too many failed logins, and for as long as the server itself keeps a network
-out (24 hours, then 7 days) after a login nobody there could have meant. An
-admin who lets an address back in under *Server → Logs → Blocks* lifts the ban
-at the gateway as well.
+tunnel, where they stop before they reach the house at all: after too many
+failed logins, and after a login nobody there could have meant — but that one
+only once the network has come back ten more times while your server keeps it
+out (24 hours, then 7 days). One bad login and then silence is dealt with at
+home and never becomes a firewall rule. A ban at the gateway lasts an hour;
+a network that is still coming after that is handed over again. An admin who
+lets an address back in under *Server → Logs → Blocks* lifts the ban at the
+gateway as well.
+
+These bans cover the ports somebody logs in on — 80, 443, 465, 587 and 993 —
+and **never port 25**. Whoever fails to log in is very often a machine that
+also carries real mail: a provider's shared address, a hacked account on an
+honest server. Mail from there keeps arriving and is judged like any other
+mail. For the same reason these bans do not count towards the week fail2ban
+gives to addresses that keep getting banned (`recidive`), which would close
+every port.
 
 ### What it says, and where
 

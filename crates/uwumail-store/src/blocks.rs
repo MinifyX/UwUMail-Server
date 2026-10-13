@@ -13,7 +13,7 @@ use std::net::IpAddr;
 use rusqlite::params;
 
 use crate::address::{base_local_part, normalize_address};
-use crate::limiter::{BLOCK_MEMORY, Block, KNOWN_FOR, Network, key, reason};
+use crate::limiter::{BLOCK_MEMORY, Block, KNOWN_FOR, Known, Network, SHARED_FOR, key, reason};
 use crate::{Result, Store, StoreError, now};
 
 const EXEMPT_SETTING: &str = "login_block_exempt";
@@ -122,14 +122,22 @@ impl Store {
                     .into_iter()
                     .flatten()
                     .collect();
-                let mut stmt = conn.prepare("SELECT network, last_seen FROM known_networks WHERE last_seen > ?1")?;
-                let known: Vec<(IpAddr, u64)> = stmt
-                    .query_map([now - KNOWN_FOR.as_secs() as i64], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                let mut stmt = conn.prepare(
+                    "SELECT network, last_seen, login, shared FROM known_networks
+                     WHERE last_seen > ?1 OR (shared AND last_seen > ?2)",
+                )?;
+                let known: Vec<(IpAddr, Known)> = stmt
+                    .query_map([now - KNOWN_FOR.as_secs() as i64, now - SHARED_FOR.as_secs() as i64], |row| {
+                        let known = Known {
+                            seen: row.get::<_, i64>(1)?.max(0) as u64,
+                            login: row.get(2)?,
+                            shared: row.get(3)?,
+                        };
+                        Ok((row.get::<_, String>(0)?, known))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()?
                     .into_iter()
-                    .filter_map(|(network, seen)| Some((network.parse().ok()?, seen.max(0) as u64)))
+                    .filter_map(|(network, known)| Some((network.parse().ok()?, known)))
                     .collect();
                 let exempt = crate::db::get_setting(conn, EXEMPT_SETTING)?;
                 Ok((blocks, known, exempt))
@@ -142,7 +150,8 @@ impl Store {
 
         // Weak, or the store would hold itself through its own limiter.
         let inner = std::sync::Arc::downgrade(&self.inner);
-        limiter.remember_with(Box::new(move |network, seen| {
+        limiter.remember_with(Box::new(move |network, seen, login, shared| {
+            let login = login.to_owned();
             let (Some(inner), Ok(runtime)) = (inner.upgrade(), tokio::runtime::Handle::try_current()) else {
                 return;
             };
@@ -151,13 +160,19 @@ impl Store {
                 let written = store
                     .write(move |tx| {
                         tx.execute(
-                            "INSERT INTO known_networks (network, last_seen) VALUES (?1, ?2)
-                             ON CONFLICT (network) DO UPDATE SET last_seen = excluded.last_seen",
-                            params![network.to_string(), seen as i64],
+                            "INSERT INTO known_networks (network, last_seen, login, shared) VALUES (?1, ?2, ?3, ?4)
+                             ON CONFLICT (network) DO UPDATE SET
+                                 -- Two logins close together are written in whatever order they
+                                 -- get here, so neither may take back what the other noted.
+                                 login = CASE WHEN last_seen > ?5 AND login != '' THEN login ELSE excluded.login END,
+                                 shared = CASE WHEN last_seen > ?5 THEN MAX(shared, excluded.shared) ELSE excluded.shared END,
+                                 last_seen = MAX(last_seen, excluded.last_seen)",
+                            params![network.to_string(), seen as i64, login, shared, seen as i64 - KNOWN_FOR.as_secs() as i64],
                         )?;
                         tx.execute(
-                            "DELETE FROM known_networks WHERE last_seen <= ?1",
-                            [seen as i64 - KNOWN_FOR.as_secs() as i64],
+                            "DELETE FROM known_networks
+                             WHERE last_seen <= ?2 OR (NOT shared AND last_seen <= ?1)",
+                            [seen as i64 - KNOWN_FOR.as_secs() as i64, seen as i64 - SHARED_FOR.as_secs() as i64],
                         )?;
                         Ok(())
                     })
@@ -346,6 +361,47 @@ mod tests {
         // Too long to be anything, and not worth comparing.
         assert_eq!(cannot_exist(&format!("{}@example.org", "ä".repeat(400)), &known()), Some(reason::NOT_AN_ADDRESS));
         assert_eq!(cannot_exist("nyu@example.org", &[]), Some(reason::UNKNOWN_LOGIN), "nobody here at all");
+    }
+
+    #[tokio::test]
+    async fn a_shared_network_is_still_one_after_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        let office: IpAddr = "198.51.100.20".parse().unwrap();
+        let home: IpAddr = "2001:db8:5::1".parse().unwrap();
+        store.auth_limiter().record_success(office, "minifyx@example.org");
+        store.auth_limiter().record_success(office, "nyu@example.org");
+        store.auth_limiter().record_success(home, "nyu@example.org");
+        // Written down behind the login's back: wait for it instead of guessing how long it takes.
+        let patience = std::time::Instant::now();
+        loop {
+            assert!(patience.elapsed() < std::time::Duration::from_secs(30), "never written down");
+            let written: Vec<(String, String, bool)> = store
+                .read(|conn| {
+                    let mut stmt =
+                        conn.prepare("SELECT network, login, shared FROM known_networks ORDER BY network")?;
+                    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+                    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+                })
+                .await
+                .unwrap();
+            if written.len() == 2 && written[0].2 {
+                assert_eq!(written[0], ("198.51.100.20".to_owned(), "minifyx@example.org".to_owned(), true));
+                assert_eq!(written[1], ("2001:db8:5::".to_owned(), "nyu@example.org".to_owned(), false));
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        drop(store);
+
+        let store = Store::open(dir.path()).await.unwrap();
+        let limiter = store.auth_limiter();
+        assert!(limiter.is_shared(office));
+        assert!(limiter.is_known(home) && !limiter.is_shared(home));
+        store.unknown_login(office, "root", "imap").await;
+        assert!(!limiter.is_blocked(office), "counted, not kept out");
+        limiter.record_success(home, "minifyx@example.org");
+        assert!(limiter.is_shared(home), "the first login was remembered too");
     }
 
     #[test]

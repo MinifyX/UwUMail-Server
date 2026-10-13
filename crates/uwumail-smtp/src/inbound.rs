@@ -1107,7 +1107,7 @@ impl Session {
             Ok(MailAuth::Ok { account, .. })
                 if uwumail_store::sasl_user_matches(parsed.user.as_deref(), &account.login) =>
             {
-                ctx.auth_limiter.record_success(self.peer, &username);
+                ctx.auth_limiter.record_success_of(self.peer, &username, &account.login);
                 tracing::info!(login = %account.login, peer = %self.peer, oauth = true, "smtp login");
                 self.account = Some(account);
                 self.reply("235 2.7.0 Authentication succeeded\r\n").await?;
@@ -1172,7 +1172,7 @@ impl Session {
         drop(attempt);
         match checked {
             Ok(MailAuth::Ok { account, app_password, .. }) => {
-                ctx.auth_limiter.record_success(self.peer, login);
+                ctx.auth_limiter.record_success_of(self.peer, login, &account.login);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "smtp login");
                 self.account = Some(account);
                 self.reply("235 2.7.0 Authentication succeeded\r\n").await?;

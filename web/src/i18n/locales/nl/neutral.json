@@ -1572,6 +1572,7 @@
         "instant": "Wie probeert in te loggen met iets dat geen e-mailadres is of op geen enkel adres hier lijkt, wordt meteen 24 uur geblokkeerd – de volgende keer 7 dagen.",
         "typo": "Lijkt een inlognaam op een typfout in een adres dat hier bestaat, dan wordt er niet meteen geblokkeerd.",
         "never": "Adressen waarvandaan iemand in de afgelopen 30 dagen met succes heeft ingelogd, en privé- of lokale adressen, worden nooit meteen geblokkeerd.",
+        "shared": "Adressen waarvandaan meerdere verschillende accounts hebben ingelogd – een kantoor, een universiteit, een gedeelde aansluiting – gelden een jaar lang als gedeeld en worden ook nooit meteen geblokkeerd.",
         "short": "Meerdere pogingen met inlognamen die niet bestaan, of te veel verkeerde wachtwoorden, blokkeren 15 minuten."
       },
       "empty": {

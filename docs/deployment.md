@@ -213,9 +213,18 @@ JMAP token endpoint) shares one count of failed logins:
   exists (`minifx@…` for `minifyx@…`), the right name at the wrong domain, a
   `+tag` on a real address, and a bare name that is the part before the `@`
   of a real address. Never shut out at once are networks someone logged in
-  from successfully in the last 30 days, private and local addresses, and
-  servers where a directory (LDAP) makes accounts at the first login. The
-  answer to the login is word for word the same as for a wrong password.
+  from successfully in the last 30 days, shared networks (below), private and
+  local addresses, and servers where a directory (LDAP) makes accounts at the
+  first login. The answer to the login is word for word the same as for a
+  wrong password.
+- **Shared networks.** A network that more than one account has logged in
+  from — an office, a university, one address a carrier hands to many
+  customers — counts as shared for a year after its last login, and is never
+  shut out at once: one stranger behind it says nothing about the others.
+  What comes from it is still counted as above. The server only knows the
+  networks it has seen logins from; a shared address nobody here ever logged
+  in from looks like any other stranger's. For those there is the list of
+  networks that are never blocked.
 - **Per login**, from all networks together: after 10 wrong passwords, one try
   every 30 seconds, and only one at a time. It is a delay, not a lockout, so
   nobody can lock the owner out by guessing.
@@ -228,7 +237,10 @@ JMAP token endpoint) shares one count of failed logins:
 
 Who is kept out, since when, why and with which login is listed in the portal
 under *Server → Logs → Blocks*, with a button that lets an address back in
-(at the UwUMail Gateway too). The same page holds the addresses and networks
+(at the UwUMail Gateway too). The gateway is only told about a network that
+is kept out for long once it has come back ten times, so one bad login never
+reaches the firewall there, and its bans leave port 25 alone
+([gateway.md](gateway.md)). The same page holds the addresses and networks
 that are never blocked, for an office or a monitoring host (single addresses
 or CIDR networks, up to 200). Blocks survive a restart. In the live log the
 kind *Blocks* shows only these lines.

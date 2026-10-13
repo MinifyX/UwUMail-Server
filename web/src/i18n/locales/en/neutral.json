@@ -1572,6 +1572,7 @@
         "instant": "Trying to log in with something that is not an email address, or that resembles no address here, blocks the IP address at once for 24 hours – for 7 days the next time.",
         "typo": "A login that looks like a typo of an address that exists here is not blocked at once.",
         "never": "Addresses someone logged in from successfully within the last 30 days, and private or local addresses, are never blocked at once.",
+        "shared": "Addresses that several different accounts logged in from – an office, a university, a shared connection – count as shared for a year and are never blocked at once either.",
         "short": "Several tries at logins that do not exist, or too many wrong passwords, block for 15 minutes."
       },
       "empty": {
