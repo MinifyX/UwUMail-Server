@@ -3206,6 +3206,7 @@
         "greylist": "Tegengehouden",
         "dmarc": "DMARC",
         "blocked": "Geblokkeerd",
+        "virus": "Virus",
         "delivered": "Afgeleverd"
       },
       "actions": {

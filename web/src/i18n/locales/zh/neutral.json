@@ -3143,6 +3143,7 @@
         "greylist": "已暂缓",
         "dmarc": "DMARC",
         "blocked": "已屏蔽",
+        "virus": "病毒",
         "delivered": "已投递"
       },
       "actions": {

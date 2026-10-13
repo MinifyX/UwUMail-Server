@@ -3143,6 +3143,7 @@
         "greylist": "保留",
         "dmarc": "DMARC",
         "blocked": "ブロック",
+        "virus": "ウイルス",
         "delivered": "配信済み"
       },
       "actions": {

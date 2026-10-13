@@ -3206,6 +3206,7 @@
         "greylist": "Zurückgestellt",
         "dmarc": "DMARC",
         "blocked": "Blockiert",
+        "virus": "Virus",
         "delivered": "Zugestellt"
       },
       "actions": {

@@ -3206,6 +3206,7 @@
         "greylist": "Held back",
         "dmarc": "DMARC",
         "blocked": "Blocked",
+        "virus": "Virus",
         "delivered": "Delivered"
       },
       "actions": {

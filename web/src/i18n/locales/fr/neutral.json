@@ -3263,6 +3263,7 @@
         "greylist": "Retenus",
         "dmarc": "DMARC",
         "blocked": "Bloqués",
+        "virus": "Virus",
         "delivered": "Distribués"
       },
       "actions": {
