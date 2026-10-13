@@ -185,6 +185,7 @@ export function BlocksPage() {
           <li>{t("logs.blocks.rules.instant")}</li>
           <li>{t("logs.blocks.rules.typo")}</li>
           <li>{t("logs.blocks.rules.never")}</li>
+          <li>{t("logs.blocks.rules.shared")}</li>
           <li>{t("logs.blocks.rules.short")}</li>
         </ul>
       </Card>

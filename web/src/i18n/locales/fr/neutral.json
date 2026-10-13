@@ -1604,6 +1604,7 @@
         "instant": "Tenter de se connecter avec un identifiant qui n'est pas une adresse e-mail, ou qui ne ressemble à aucune adresse d'ici, bloque aussitôt l'adresse IP pendant 24 heures – pendant 7 jours la fois suivante.",
         "typo": "Un identifiant qui ressemble à une faute de frappe dans une adresse existante n'est pas bloqué aussitôt.",
         "never": "Les adresses depuis lesquelles quelqu'un s'est connecté avec succès au cours des 30 derniers jours, ainsi que les adresses privées ou locales, ne sont jamais bloquées aussitôt.",
+        "shared": "Les adresses depuis lesquelles plusieurs comptes différents se sont connectés – un bureau, une université, une connexion partagée – comptent comme partagées pendant un an et ne sont, elles non plus, jamais bloquées aussitôt.",
         "short": "Plusieurs tentatives avec des identifiants qui n'existent pas, ou trop de mots de passe erronés, bloquent pendant 15 minutes."
       },
       "empty": {

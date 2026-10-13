@@ -586,7 +586,7 @@ impl Session {
             Ok(MailAuth::Ok { account, credential, .. })
                 if uwumail_store::sasl_user_matches(parsed.user.as_deref(), &account.login) =>
             {
-                limiter.record_success(self.peer.ip(), &username);
+                limiter.record_success_of(self.peer.ip(), &username, &account.login);
                 tracing::info!(login = %account.login, peer = %self.peer, oauth = true, "managesieve login");
                 self.login = Some(LiveLogin::new(&account, credential));
                 self.account = Some(account);
@@ -629,7 +629,7 @@ impl Session {
         drop(attempt);
         match checked {
             Ok(MailAuth::Ok { account, app_password, credential, .. }) => {
-                limiter.record_success(self.peer.ip(), username);
+                limiter.record_success_of(self.peer.ip(), username, &account.login);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "managesieve login");
                 self.login = Some(LiveLogin::new(&account, credential));
                 self.account = Some(account);

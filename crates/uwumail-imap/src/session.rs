@@ -657,7 +657,7 @@ where
     ) -> io::Result<Flow> {
         match checked {
             Ok(MailAuth::Ok { account, app_password, credential, .. }) => {
-                self.imap.limiter.record_success(self.peer.ip(), username);
+                self.imap.limiter.record_success_of(self.peer.ip(), username, &account.login);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), oauth = challenge.is_some(), "imap login");
                 self.changes = Some(self.store.subscribe_changes());
                 self.login = Some(LiveLogin::new(&account, credential));

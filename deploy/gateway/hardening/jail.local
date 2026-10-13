@@ -32,8 +32,11 @@ enabled = true
 backend = systemd
 
 # Whoever comes back after being banned gets a week. Still only TCP, still not the server.
+# Bans the UwUMail server asked for do not count here: a week on every port would take port 25
+# with it, which those bans leave open on purpose (see below).
 [recidive]
 enabled = true
+filter = recidive[_jailname="(?:recidive|uwumail-server)"]
 backend = systemd
 bantime = 1w
 findtime = 1d
@@ -51,6 +54,10 @@ journalmatch = _SYSTEMD_UNIT=uwumail-gateway-holds-no-log.service
 bantime = 1h
 findtime = 10m
 maxretry = 1
+# Only the ports somebody logs in on. Whoever fails to log in is very often a machine that also
+# carries real mail — a provider's shared address, a hacked account on an honest server — and a ban
+# on port 25 would turn its mail away with it.
+banaction = ufw[blocktype=reject, destination="any port 80,443,465,587,993 proto tcp"]
 
 # Port 25 has no jail on purpose. The gateway cannot see who fails to log in there — it carries the
 # bytes and nothing else — so any jail on it would count connections, and banning a mail server for

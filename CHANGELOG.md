@@ -3,6 +3,34 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.23.2
+
+0.23.1 was tagged but never built: the release stopped at the dependency audit. This release
+is 0.23.1 plus what is below.
+
+### Changed
+
+- **Shared networks are not blocked at once.** A network that more than one account has logged
+  in from (an office, a university, one address for many of a carrier's customers) counts as
+  shared for a year after its last login. A login nobody could have meant from there is counted
+  like any other failed login instead of keeping everyone behind it out for a day. The server
+  only knows networks it has seen logins from.
+- **The gateway hears about a blocked network later.** A network kept out for 24 hours or 7
+  days is refused by the server at once, as before, but handed to the UwUMail Gateway's firewall
+  only when it has come back ten times, and again every ten times after that. One bad login no
+  longer becomes a firewall rule, and whoever was just blocked is refused by the same server in
+  the same words as anyone who mistyped a password too often.
+- **Bans at the gateway leave port 25 alone.** They cover the login ports (80, 443, 465, 587,
+  993) only, and no longer count towards fail2ban's week-long `recidive` ban. A provider's shared
+  address that someone guessed passwords from can still deliver mail. Takes effect once the
+  gateway is updated (`install.sh` on the VPS).
+
+### Security
+
+- **Mail HTML is cleaned by ammonia 4.2.3** (was 4.2.0), which closes two ways around the
+  cleaning: SVG animation tags (RUSTSEC-2021-0158) and `url("")` in style attributes
+  (RUSTSEC-2021-0157).
+
 ## 0.23.1
 
 ### Added

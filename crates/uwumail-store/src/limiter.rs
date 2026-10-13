@@ -45,6 +45,17 @@ pub const BLOCK_MEMORY: Duration = Duration::from_secs(30 * 24 * 3600);
 pub const KNOWN_FOR: Duration = Duration::from_secs(30 * 24 * 3600);
 /// A network already known is written down again this often, not on every login.
 const KNOWN_REFRESH: u64 = 24 * 3600;
+/// How long a network that several accounts logged in from counts as shared: an office, a
+/// university, a carrier's address for many customers. Much longer than [`KNOWN_FOR`], because the
+/// people behind it do not all log in every month, and a stranger's bad login from there must not
+/// keep them out for a day.
+pub const SHARED_FOR: Duration = Duration::from_secs(365 * 24 * 3600);
+/// How often a network that is kept out for long is turned away here before it is reported further
+/// out ([`AuthLimiter::report_to`]), and again every this many times after that. One bad login and
+/// then silence is dealt with here alone; only a network that keeps coming is worth a rule in the
+/// firewall in front. It also keeps the answer the same for a while: whoever was just blocked is
+/// refused by the same server in the same words as everyone who mistyped a password too often.
+pub const REPORT_AFTER: u32 = 10;
 
 /// Why a network is kept out, as the portal and the database name it.
 pub mod reason {
@@ -206,8 +217,27 @@ struct AccountFailures {
 /// this server; and with `None` when it is let back in before its time.
 pub type Reporter = Arc<dyn Fn(IpAddr, Option<Duration>, &str) + Send + Sync>;
 
-/// Told that somebody logged in from a network, so it is still known after a restart.
-pub(crate) type Remember = Box<dyn Fn(IpAddr, u64) + Send + Sync>;
+/// Told that somebody logged in from a network, so it is still known after a restart: when, the
+/// login it is known by, and whether more than that one has logged in from it.
+pub(crate) type Remember = Box<dyn Fn(IpAddr, u64, &str, bool) + Send + Sync>;
+
+/// A network somebody logged in from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Known {
+    /// Seconds since 1970 of the last login.
+    pub seen: u64,
+    /// The login it is known by, as it is counted.
+    pub login: String,
+    /// Another login got in from it too.
+    pub shared: bool,
+}
+
+impl Known {
+    fn still(&self, now: u64) -> bool {
+        let how_long = if self.shared { SHARED_FOR } else { KNOWN_FOR };
+        now.saturating_sub(self.seen) <= how_long.as_secs()
+    }
+}
 
 /// What the window's own, short blocks are worth further out. Longer than the window: whoever
 /// crossed the line once is not owed a fresh count every quarter of an hour at the front door.
@@ -245,8 +275,10 @@ pub struct AuthLimiter {
     /// Networks kept out for a day or a week, and those that were not long ago. Unlike the counts
     /// above these are written to the database ([`crate::Store::unknown_login`]).
     blocks: Mutex<HashMap<IpAddr, Block>>,
-    /// Networks somebody logged in from, and when last.
-    known: Mutex<HashMap<IpAddr, u64>>,
+    /// How often each network that is kept out for long has been turned away since.
+    turned_away: Mutex<HashMap<IpAddr, u32>>,
+    /// Networks somebody logged in from, when last, and whether they are shared.
+    known: Mutex<HashMap<IpAddr, Known>>,
     remember: std::sync::OnceLock<Remember>,
     /// Never blocked, whatever comes from them: the admin's list.
     exempt: RwLock<Vec<Network>>,
@@ -282,6 +314,7 @@ impl AuthLimiter {
             return false;
         }
         if self.kept_out(ip) {
+            self.turn_away(ip);
             return true;
         }
         let mut failures = self.failures.lock().expect("limiter poisoned");
@@ -323,6 +356,7 @@ impl AuthLimiter {
         let login = login_key(login);
         let exempt = self.is_exempt(ip);
         if !exempt && self.kept_out(ip) {
+            self.turn_away(ip);
             return None;
         }
         let wrong = {
@@ -437,7 +471,16 @@ impl AuthLimiter {
     /// `login` got in from `ip`. Its own mistakes are forgiven, on that network and everywhere;
     /// what others tried from the same network stays counted until the window ends.
     pub fn record_success(&self, ip: IpAddr, login: &str) {
+        self.record_success_of(ip, login, login);
+    }
+
+    /// [`Self::record_success`] where what was typed as the login and the account that got in are
+    /// known apart. The mistakes forgiven are those counted under what was typed; whether a
+    /// network is shared goes by the account, so one person's alias, `+tag` or spelling does not
+    /// make two of them. An empty `account` names nobody: the network is known, and that is all.
+    pub fn record_success_of(&self, ip: IpAddr, login: &str, account: &str) {
         let login = login_key(login);
+        let account = login_key(account);
         self.accounts.lock().expect("limiter poisoned").remove(&login);
         {
             let mut failures = self.failures.lock().expect("limiter poisoned");
@@ -448,17 +491,36 @@ impl AuthLimiter {
             }
         }
         let now = unix_now();
-        let before = {
+        let (known, changed) = {
             let mut known = self.known.lock().expect("limiter poisoned");
             if known.len() > MAX_ENTRIES {
-                known.retain(|_, seen| now.saturating_sub(*seen) <= KNOWN_FOR.as_secs());
+                known.retain(|_, known| known.still(now));
             }
-            known.insert(key(ip), now)
+            match known.get_mut(&key(ip)) {
+                Some(known) if known.still(now) => {
+                    // Written down before logins were: whoever comes first is the one it is
+                    // known by, not a second one.
+                    let named = known.login.is_empty() && !account.is_empty();
+                    if named {
+                        known.login = account.clone();
+                    }
+                    let became_shared = !known.shared && !account.is_empty() && known.login != account;
+                    let changed = named || became_shared || now.saturating_sub(known.seen) >= KNOWN_REFRESH;
+                    known.shared |= became_shared;
+                    if changed {
+                        known.seen = now;
+                    }
+                    (known.clone(), changed)
+                }
+                _ => {
+                    let fresh = Known { seen: now, login: account, shared: false };
+                    known.insert(key(ip), fresh.clone());
+                    (fresh, true)
+                }
+            }
         };
-        if before.is_none_or(|before| now.saturating_sub(before) >= KNOWN_REFRESH)
-            && let Some(remember) = self.remember.get()
-        {
-            remember(key(ip), now);
+        if changed && let Some(remember) = self.remember.get() {
+            remember(key(ip), known.seen, &known.login, known.shared);
         }
     }
 
@@ -485,14 +547,26 @@ impl AuthLimiter {
         inside
     }
 
-    /// Whether somebody logged in from this network within [`KNOWN_FOR`].
+    /// Whether somebody logged in from this network within [`KNOWN_FOR`], or several did within
+    /// [`SHARED_FOR`].
     pub fn is_known(&self, ip: IpAddr) -> bool {
         let known = self.known.lock().expect("limiter poisoned");
-        known.get(&key(ip)).is_some_and(|seen| unix_now().saturating_sub(*seen) <= KNOWN_FOR.as_secs())
+        known.get(&key(ip)).is_some_and(|known| known.still(unix_now()))
+    }
+
+    /// Whether more than one account logged in from this network, within [`SHARED_FOR`]: many
+    /// people behind one address, of whom one stranger says nothing about the rest.
+    ///
+    /// Only what this server has seen for itself. A shared address nobody here ever logged in
+    /// from looks like any other stranger's.
+    pub fn is_shared(&self, ip: IpAddr) -> bool {
+        let known = self.known.lock().expect("limiter poisoned");
+        known.get(&key(ip)).is_some_and(|known| known.shared && known.still(unix_now()))
     }
 
     /// Whether one bad login may keep `ip` out for a day: only an address strangers come from,
-    /// that nobody logged in from lately and that the admin did not except.
+    /// that nobody logged in from lately, that is not shared ([`Self::is_shared`]) and that the
+    /// admin did not except.
     pub fn may_block_at_once(&self, ip: IpAddr) -> bool {
         public(ip) && !self.is_exempt(ip) && !self.is_known(ip)
     }
@@ -502,9 +576,40 @@ impl AuthLimiter {
         blocks.get(&key(ip)).is_some_and(|block| block.until > unix_now())
     }
 
+    /// A network that is kept out for long came again. Every [`REPORT_AFTER`]th time it is
+    /// reported further out, for what is left of its block: the first report is what
+    /// [`Self::block`] left out, the later ones are for a firewall that let it back in sooner.
+    fn turn_away(&self, ip: IpAddr) {
+        let times = {
+            let mut turned_away = self.turned_away.lock().expect("limiter poisoned");
+            let times = turned_away.entry(key(ip)).or_default();
+            *times = times.saturating_add(1);
+            *times
+        };
+        if !times.is_multiple_of(REPORT_AFTER) {
+            return;
+        }
+        let Some(reporter) = self.reporter.read().expect("limiter poisoned").clone() else {
+            return;
+        };
+        let now = unix_now();
+        let block = self.blocks.lock().expect("limiter poisoned").get(&key(ip)).cloned();
+        if let Some(block) = block.filter(|block| block.until > now) {
+            let why = if block.reason == reason::NOT_AN_ADDRESS {
+                "kept coming after a login that is not an address"
+            } else {
+                "kept coming after a login that nobody here has"
+            };
+            reporter(ip, Some(Duration::from_secs(block.until - now)), why);
+        }
+    }
+
     /// Keeps `ip` out from now on: [`BLOCK_FIRST`], or [`BLOCK_AGAIN`] when it was blocked before
     /// and that is not forgotten yet. Returns the block for writing down, or `None` when the
     /// network is kept out already, or may not be ([`Self::may_block_at_once`]).
+    ///
+    /// Nothing is reported further out yet: that waits until the network has come back
+    /// [`REPORT_AFTER`] times ([`Self::turn_away`]).
     pub fn block(&self, ip: IpAddr, reason: &str, login: &str, protocol: &str) -> Option<Block> {
         if !self.may_block_at_once(ip) {
             return None;
@@ -539,15 +644,11 @@ impl AuthLimiter {
             blocks.insert(key(ip), block.clone());
             block
         };
-        let reporter = self.reporter.read().expect("limiter poisoned").clone();
-        if let Some(reporter) = reporter {
-            let why = if reason == reason::NOT_AN_ADDRESS {
-                "tried a login that is not an address"
-            } else {
-                "tried a login that nobody here has"
-            };
-            reporter(ip, Some(Duration::from_secs(block.until - block.since)), why);
+        let mut turned_away = self.turned_away.lock().expect("limiter poisoned");
+        if turned_away.len() >= MAX_BLOCKS {
+            turned_away.clear();
         }
+        turned_away.remove(&key(ip));
         Some(block)
     }
 
@@ -556,6 +657,7 @@ impl AuthLimiter {
     /// block there outlives the count it came from.
     pub fn unblock(&self, ip: IpAddr) -> bool {
         let lasting = self.blocks.lock().expect("limiter poisoned").remove(&key(ip)).is_some();
+        self.turned_away.lock().expect("limiter poisoned").remove(&key(ip));
         let counted = self.failures.lock().expect("limiter poisoned").remove(&key(ip)).is_some();
         let reporter = self.reporter.read().expect("limiter poisoned").clone();
         if let Some(reporter) = reporter {
@@ -598,9 +700,9 @@ impl AuthLimiter {
 
     /// What the database remembers, put back after a start. Nothing is reported: whoever was told
     /// about these blocks was told when they were made.
-    pub(crate) fn restore(&self, blocks: Vec<Block>, known: Vec<(IpAddr, u64)>, exempt: Vec<Network>) {
+    pub(crate) fn restore(&self, blocks: Vec<Block>, known: Vec<(IpAddr, Known)>, exempt: Vec<Network>) {
         self.blocks.lock().expect("limiter poisoned").extend(blocks.into_iter().map(|block| (key(block.ip), block)));
-        self.known.lock().expect("limiter poisoned").extend(known.into_iter().map(|(ip, seen)| (key(ip), seen)));
+        self.known.lock().expect("limiter poisoned").extend(known.into_iter().map(|(ip, known)| (key(ip), known)));
         *self.exempt.write().expect("limiter poisoned") = exempt;
     }
 
@@ -811,6 +913,29 @@ mod tests {
         assert!(limiter.block(neighbour, reason::UNKNOWN_LOGIN, "x@example.org", "imap").is_none(), "already out");
         assert_eq!(limiter.blocked(), vec![block.clone()]);
 
+        // One bad login and two more knocks are dealt with here. Further out it is only reported
+        // once it keeps coming, and again when it still does after that.
+        assert!(reported.lock().unwrap().is_empty(), "not reported for the block alone");
+        for _ in 2..REPORT_AFTER - 1 {
+            assert!(limiter.is_blocked(ip));
+        }
+        assert!(reported.lock().unwrap().is_empty());
+        assert!(limiter.begin(ip, "mini@example.org").is_none());
+        {
+            let reported = reported.lock().unwrap();
+            assert_eq!(reported.len(), 1, "the tenth time it is turned away");
+            assert_eq!(reported[0].0, ip);
+            assert!(
+                reported[0].1.is_some_and(|left| left <= BLOCK_FIRST && left > BLOCK_FIRST - WINDOW),
+                "what is left"
+            );
+            assert_eq!(reported[0].2, "kept coming after a login that is not an address");
+        }
+        for _ in 0..REPORT_AFTER {
+            assert!(limiter.is_blocked(neighbour));
+        }
+        assert_eq!(reported.lock().unwrap().len(), 2, "and every tenth time after that");
+
         // It ended a while ago, and is not forgotten yet.
         let ended = Block { since: 1, until: unix_now() - 60, ..block };
         limiter.blocks.lock().unwrap().insert(key(ip), ended);
@@ -818,16 +943,69 @@ mod tests {
         assert!(limiter.blocked().is_empty());
         let again = limiter.block(ip, reason::UNKNOWN_LOGIN, "sales@example.org", "imap").expect("blocked again");
         assert_eq!((again.times, again.until - again.since), (2, BLOCK_AGAIN.as_secs()));
+        for _ in 0..REPORT_AFTER - 1 {
+            assert!(limiter.is_blocked(ip));
+        }
+        assert_eq!(reported.lock().unwrap().len(), 2, "a new block starts its count over");
 
         assert!(limiter.unblock(ip));
         assert!(!limiter.is_blocked(ip));
         assert!(limiter.block(ip, reason::UNKNOWN_LOGIN, "sales@example.org", "imap").is_some_and(|b| b.times == 1));
         let reported = reported.lock().unwrap();
+        assert_eq!(reported.len(), 3);
+        assert_eq!(reported[2].1, None, "let back in further out too, reported there or not");
+    }
+
+    #[test]
+    fn a_network_several_accounts_logged_in_from_is_shared() {
+        let remembered = Arc::new(Mutex::new(Vec::new()));
+        let limiter = AuthLimiter::default();
+        let seen = remembered.clone();
+        limiter.remember_with(Box::new(move |network, _seen, login: &str, shared| {
+            seen.lock().unwrap().push((network, login.to_owned(), shared));
+        }));
+        let office: IpAddr = "198.51.100.20".parse().unwrap();
+
+        limiter.record_success(office, "Mini@Example.org");
+        limiter.record_success(office, "mini@example.org ");
+        assert!(limiter.is_known(office));
+        assert!(!limiter.is_shared(office), "one account, however often and however it is spelled");
+        limiter.record_success(office, "nyu@example.org");
+        limiter.record_success(office, "admin@example.org");
+        assert!(limiter.is_shared(office));
+
+        // An alias is the same person, and a login that names nobody is nobody.
+        let flat: IpAddr = "198.51.100.22".parse().unwrap();
+        limiter.record_success_of(flat, "setup code", "");
+        limiter.record_success_of(flat, "mini+shop@example.org", "mini@example.org");
+        limiter.record_success_of(flat, "kontakt@example.net", "mini@example.org");
+        limiter.record_success_of(flat, "", "");
+        assert!(limiter.is_known(flat) && !limiter.is_shared(flat));
+        remembered.lock().unwrap().retain(|(network, ..)| *network == office);
         assert_eq!(
-            reported.iter().map(|(_, how_long, _)| *how_long).collect::<Vec<_>>(),
-            [Some(BLOCK_FIRST), Some(BLOCK_AGAIN), None, Some(BLOCK_FIRST)]
+            *remembered.lock().unwrap(),
+            [(office, "mini@example.org".to_owned(), false), (office, "mini@example.org".to_owned(), true)],
+            "written down when it becomes known, and when it becomes shared"
         );
-        assert_eq!(reported[0].2, "tried a login that is not an address");
+
+        // Long after a household's network would be forgotten, a shared one is still spared.
+        let long_ago = unix_now() - KNOWN_FOR.as_secs() - 60;
+        limiter.known.lock().unwrap().get_mut(&key(office)).unwrap().seen = long_ago;
+        assert!(limiter.block(office, reason::NOT_AN_ADDRESS, "x", "imap").is_none());
+        for _ in 0..MAX_UNKNOWN {
+            limiter.record_unknown_login(office);
+        }
+        assert!(limiter.is_blocked(office), "what comes from it is still counted");
+        limiter.known.lock().unwrap().get_mut(&key(office)).unwrap().seen = unix_now() - SHARED_FOR.as_secs() - 60;
+        assert!(!limiter.is_shared(office) && !limiter.is_known(office), "but not for ever");
+
+        // A network written down before logins were is named by whoever comes first.
+        let home: IpAddr = "198.51.100.21".parse().unwrap();
+        limiter.restore(vec![], vec![(home, Known { seen: unix_now(), login: String::new(), shared: false })], vec![]);
+        limiter.record_success(home, "mini@example.org");
+        assert!(!limiter.is_shared(home));
+        limiter.record_success(home, "nyu@example.org");
+        assert!(limiter.is_shared(home));
     }
 
     #[test]
@@ -843,7 +1021,7 @@ mod tests {
         limiter.record_success(home, "mini@example.org");
         assert!(limiter.is_known(home));
         assert!(limiter.block(home, reason::NOT_AN_ADDRESS, "mini", "imap").is_none());
-        limiter.known.lock().unwrap().insert(key(home), unix_now() - KNOWN_FOR.as_secs() - 60);
+        limiter.known.lock().unwrap().get_mut(&key(home)).unwrap().seen = unix_now() - KNOWN_FOR.as_secs() - 60;
         assert!(limiter.block(home, reason::NOT_AN_ADDRESS, "mini", "imap").is_some(), "known no longer");
 
         // Putting a network on the list lets it back in, and nothing it does counts after that.
