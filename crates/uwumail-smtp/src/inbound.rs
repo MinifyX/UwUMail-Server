@@ -1182,7 +1182,7 @@ impl Session {
                 match reason {
                     // A phone still using the right account password should not lock out its network.
                     MailAuthDenied::AppPasswordRequired => {}
-                    MailAuthDenied::UnknownLogin => ctx.auth_limiter.record_unknown_login(self.peer),
+                    MailAuthDenied::UnknownLogin => ctx.store.unknown_login(self.peer, login, "smtp").await,
                     _ => ctx.auth_limiter.record_failure(self.peer, login),
                 }
                 self.auth_failures += 1;

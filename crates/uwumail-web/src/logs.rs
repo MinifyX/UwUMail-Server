@@ -42,8 +42,37 @@ pub struct LogLine {
     /// "error", "warn", "info", "debug" or "trace".
     pub level: &'static str,
     pub target: String,
+    /// One of [`CATEGORIES`]: what the line is about, for reading only one kind.
+    pub category: &'static str,
     pub message: String,
     pub fields: Vec<(String, String)>,
+}
+
+/// The kinds of lines the portal can filter by.
+#[cfg(test)]
+const CATEGORIES: [&str; 7] = ["login", "login_failed", "block", "mail_in", "mail_out", "gateway", "system"];
+
+/// What a line is about, told from where it was logged and what it says.
+fn category(source: LogSource, target: &str, message: &str) -> &'static str {
+    let blocking = ["blocked an address", "unblocked an address", "keep an address out", "turned a client away"];
+    if blocking.iter().any(|part| message.contains(part)) || message.contains(" ban") || message.starts_with("ban") {
+        return "block";
+    }
+    if source == LogSource::Gateway {
+        return "gateway";
+    }
+    if message.contains("login") || message.contains("authentication failed") {
+        let failed = ["failed", "refused", "no longer valid"];
+        return if failed.iter().any(|part| message.contains(part)) { "login_failed" } else { "login" };
+    }
+    let module = target.strip_prefix("uwumail_smtp").map(|rest| rest.trim_start_matches("::"));
+    match module {
+        Some(module) => {
+            let outgoing = ["outbound", "client", "dane", "mta_sts", "dsn", "egress", "relay", "microsoft", "tlsrpt"];
+            if outgoing.iter().any(|name| module.starts_with(name)) { "mail_out" } else { "mail_in" }
+        }
+        None => "system",
+    }
 }
 
 pub struct LogBuffer {
@@ -102,7 +131,17 @@ impl LogBuffer {
             "trace" => "trace",
             _ => "info",
         };
-        self.push(LogLine { seq: 0, at, source: LogSource::Gateway, level, target: "gateway".into(), message, fields });
+        let category = category(LogSource::Gateway, "gateway", &message);
+        self.push(LogLine {
+            seq: 0,
+            at,
+            source: LogSource::Gateway,
+            level,
+            target: "gateway".into(),
+            category,
+            message,
+            fields,
+        });
     }
 
     fn push(&self, mut line: LogLine) {
@@ -118,14 +157,23 @@ impl LogBuffer {
         inner.0.push_back(line);
     }
 
-    /// Lines newer than `after`, at `max_rank` or more severe, containing `search`, oldest first.
-    pub fn lines(&self, after: u64, max_rank: u8, search: Option<&str>, limit: usize) -> (Vec<LogLine>, u64) {
+    /// Lines newer than `after`, at `max_rank` or more severe, of one of `categories` (all of them
+    /// when empty), containing `search`, oldest first.
+    pub fn lines(
+        &self,
+        after: u64,
+        max_rank: u8,
+        categories: &[&str],
+        search: Option<&str>,
+        limit: usize,
+    ) -> (Vec<LogLine>, u64) {
         let inner = self.inner.lock().expect("log buffer poisoned");
         let needle = search.map(str::to_lowercase).filter(|needle| !needle.is_empty());
         let matching: Vec<LogLine> = inner
             .0
             .iter()
             .filter(|line| line.seq > after && level_rank(line.level) <= max_rank)
+            .filter(|line| categories.is_empty() || categories.contains(&line.category))
             .filter(|line| {
                 needle.as_ref().is_none_or(|needle| {
                     line.message.to_lowercase().contains(needle)
@@ -172,12 +220,14 @@ impl<S: Subscriber> Layer<S> for LogLayer {
         let mut fields = Fields::default();
         event.record(&mut fields);
         let at = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or_default();
+        let target = event.metadata().target();
         self.0.push(LogLine {
             seq: 0,
             at,
             source: LogSource::Server,
             level: level_name(*event.metadata().level()),
-            target: event.metadata().target().to_owned(),
+            target: target.to_owned(),
+            category: category(LogSource::Server, target, &fields.message),
             message: fields.message,
             fields: fields.fields,
         });
@@ -201,7 +251,7 @@ mod tests {
             tracing::error!(error = "disk full", "writing failed");
         });
 
-        let (all, latest) = buffer.lines(0, 4, None, 100);
+        let (all, latest) = buffer.lines(0, 4, &[], None, 100);
         assert_eq!(latest, 4);
         assert_eq!(
             all.iter().map(|l| l.message.as_str()).collect::<Vec<_>>(),
@@ -209,12 +259,14 @@ mod tests {
         );
         assert_eq!(all[0].fields, vec![("ip".to_owned(), "192.0.2.1".to_owned())]);
 
-        let (warnings, _) = buffer.lines(0, level_rank("warn"), None, 100);
+        let (warnings, _) = buffer.lines(0, level_rank("warn"), &[], None, 100);
         assert_eq!(warnings.len(), 2);
-        let (newer, _) = buffer.lines(3, 4, None, 100);
+        let (newer, _) = buffer.lines(3, 4, &[], None, 100);
         assert_eq!(newer.len(), 1);
-        let (found, _) = buffer.lines(0, 4, Some("DISK"), 100);
+        let (found, _) = buffer.lines(0, 4, &[], Some("DISK"), 100);
         assert_eq!(found[0].level, "error");
+        let (failed, _) = buffer.lines(0, 4, &["login_failed", "block"], None, 100);
+        assert_eq!(failed.iter().map(|l| l.message.as_str()).collect::<Vec<_>>(), ["failed web login"]);
     }
 
     #[test]
@@ -222,9 +274,34 @@ mod tests {
         let buffer = LogBuffer::new(10);
         buffer.record_gateway(5, "warn", "did not ban an address the server asked about".into(), vec![]);
         buffer.record_gateway(6, "loud", "an unknown level".into(), vec![]);
-        let (lines, _) = buffer.lines(0, 4, None, 10);
+        let (lines, _) = buffer.lines(0, 4, &[], None, 10);
         assert_eq!((lines[0].source, lines[0].level, lines[0].at), (LogSource::Gateway, "warn", 5));
         assert_eq!(lines[1].level, "info", "an unknown level counts as info");
         assert_eq!(serde_json::to_value(&lines[0]).unwrap()["source"], "gateway");
+        assert_eq!((lines[0].category, lines[1].category), ("block", "gateway"));
+    }
+
+    #[test]
+    fn every_line_has_a_kind() {
+        let server = LogSource::Server;
+        for (target, message, kind) in [
+            ("uwumail_imap::session", "imap login", "login"),
+            ("uwumail_web::routes::auth", "web login", "login"),
+            ("uwumail_smtp::inbound", "failed smtp login", "login_failed"),
+            ("uwumail_imap::session", "imap login no longer valid, closing", "login_failed"),
+            ("uwumail_web::routes::security", "passkey login refused", "login_failed"),
+            ("uwumail_store::blocks", "blocked an address: nobody here could have meant this login", "block"),
+            ("uwumail_web::routes::blocks", "unblocked an address", "block"),
+            ("uwumail_smtp::inbound", "received message", "mail_in"),
+            ("uwumail_smtp::spam::rules", "refused by a sender list", "mail_in"),
+            ("uwumail_smtp::outbound", "delivered", "mail_out"),
+            ("uwumail_smtp::outbound", "delivery failed", "mail_out"),
+            ("uwumail_server", "ready", "system"),
+        ] {
+            assert_eq!(category(server, target, message), kind, "{target}: {message}");
+            assert!(CATEGORIES.contains(&kind));
+        }
+        assert_eq!(category(LogSource::Gateway, "gateway", "the tunnel is up"), "gateway");
+        assert_eq!(category(LogSource::Gateway, "gateway", "the server asked to keep an address out"), "block");
     }
 }

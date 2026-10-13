@@ -18,6 +18,7 @@ import type {
   AccountSpamView,
   AdminAlert,
   AlertsView,
+  Block,
   StatsRange,
   StatsView,
   AntivirusTest,
@@ -56,6 +57,7 @@ import type {
   DomainSummary,
   EffectiveMaskedPolicy,
   LearnedFromFolders,
+  LogCategory,
   LokiStatus,
   MaskedAddress,
   MaskedState,
@@ -109,6 +111,7 @@ import type {
   MicrosoftChecklist,
   MicrosoftIssue,
   MicrosoftIssues,
+  RefusedMail,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 import { assistMockRoutes } from "./mockAssist";
@@ -891,10 +894,38 @@ const queue = [
   },
 ];
 
+let refused: RefusedMail[] = [
+  {
+    id: 3,
+    at: now - 2 * 3600,
+    from: "leni@uwu.example",
+    to: "opa@example.org",
+    error: "550 5.7.1 rejected by policy",
+    gaveUp: false,
+  },
+  {
+    id: 2,
+    at: now - 26 * 3600,
+    from: "",
+    to: "newsletter@example.net",
+    error: "550 5.1.1 <newsletter@example.net>: Recipient address rejected: User unknown in virtual mailbox table",
+    gaveUp: false,
+  },
+  {
+    id: 1,
+    at: now - 6 * 86_400,
+    from: "lorin@uwu.example",
+    to: "oma@mail.example.com",
+    error: "451 4.7.1 Greylisted, please try again later",
+    gaveUp: true,
+  },
+];
+
 let logSeq = 0;
-const LOG_SAMPLES: [string, string, [string, string][]][] = [
+const LOG_SAMPLES: [string, LogCategory, string, [string, string][]][] = [
   [
     "info",
+    "mail_in",
     "received message",
     [
       ["from", "news@shop.example"],
@@ -903,6 +934,7 @@ const LOG_SAMPLES: [string, string, [string, string][]][] = [
   ],
   [
     "info",
+    "login",
     "web login",
     [
       ["login", "lorin@uwu.example"],
@@ -911,6 +943,7 @@ const LOG_SAMPLES: [string, string, [string, string][]][] = [
   ],
   [
     "info",
+    "mail_out",
     "delivered",
     [
       ["to", "opa@web.example"],
@@ -919,6 +952,7 @@ const LOG_SAMPLES: [string, string, [string, string][]][] = [
   ],
   [
     "warn",
+    "login_failed",
     "failed web login",
     [
       ["login", "admin@uwu.example"],
@@ -927,14 +961,65 @@ const LOG_SAMPLES: [string, string, [string, string][]][] = [
   ],
   [
     "info",
+    "mail_out",
     "delivery deferred",
     [
       ["to", "oma@web.example"],
       ["error", "451 4.7.1 Greylisted"],
     ],
   ],
-  ["error", "writing the change log failed", [["err", "database is locked"]]],
+  [
+    "warn",
+    "block",
+    "address blocked",
+    [
+      ["ip", "203.0.113.9"],
+      ["reason", "unknown_login"],
+    ],
+  ],
+  ["error", "system", "writing the change log failed", [["err", "database is locked"]]],
 ];
+
+const blockedAt = Math.floor(Date.now() / 1000);
+const blocks: Block[] = [
+  {
+    ip: "203.0.113.9",
+    reason: "unknown_login",
+    login: "admin@uwu.example",
+    protocol: "imap",
+    since: blockedAt - 3 * 3600,
+    until: blockedAt + 21 * 3600,
+    times: 1,
+  },
+  {
+    ip: "2001:db8:52::17",
+    reason: "not_an_address",
+    login: "root",
+    protocol: "smtp",
+    since: blockedAt - 2 * 86_400,
+    until: blockedAt + 5 * 86_400,
+    times: 3,
+  },
+  {
+    ip: "198.51.100.44",
+    reason: "wrong_passwords",
+    login: "lorin@uwu.example",
+    protocol: "web",
+    since: blockedAt - 240,
+    until: blockedAt + 660,
+    times: 1,
+  },
+  {
+    ip: "203.0.113.120",
+    reason: "unknown_logins",
+    login: "",
+    protocol: "",
+    since: blockedAt - 60,
+    until: blockedAt + 840,
+    times: 1,
+  },
+];
+let exemptNetworks = ["192.0.2.0/24"];
 
 const settings: Record<string, { value: unknown; source: "default" | "database" | "file"; set?: boolean }> = {
   "tone.language": { value: "de", source: "file" },
@@ -3009,6 +3094,15 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/admin\/queue$/, () => [200, queue]],
+  ["GET", /^\/api\/admin\/queue\/refused$/, () => [200, { refused }]],
+  [
+    "DELETE",
+    /^\/api\/admin\/queue\/refused$/,
+    () => {
+      refused = [];
+      return [204, null];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/queue\/(\d+)\/retry$/,
@@ -3030,11 +3124,11 @@ const routes: [string, RegExp, Handler][] = [
   [
     "GET",
     /^\/api\/admin\/logs$/,
-    () => {
+    (_, __, search) => {
       // A few new lines on every poll, as if the server were busy.
-      const lines = Array.from({ length: logSeq === 0 ? 40 : 2 }, () => {
+      const all = Array.from({ length: logSeq === 0 ? 40 : 2 }, () => {
         logSeq += 1;
-        const [level, message, fields] = LOG_SAMPLES[logSeq % LOG_SAMPLES.length]!;
+        const [level, category, message, fields] = LOG_SAMPLES[logSeq % LOG_SAMPLES.length]!;
         // Every seventh line comes from the gateway, so its badge can be seen.
         const source = logSeq % 7 === 0 ? "gateway" : "server";
         return {
@@ -3042,12 +3136,38 @@ const routes: [string, RegExp, Handler][] = [
           at: Date.now() - (40 - logSeq) * 1000,
           source,
           level,
+          category: source === "gateway" ? "gateway" : category,
           target: "uwumail",
           message,
           fields,
         };
       });
+      const wanted = search.get("category")?.split(",") ?? [];
+      const lines = wanted.length > 0 ? all.filter((line) => wanted.includes(line.category)) : all;
       return [200, { lines, latest: logSeq }];
+    },
+  ],
+  ["GET", /^\/api\/admin\/blocks$/, () => [200, { blocks, exempt: exemptNetworks }]],
+  [
+    "POST",
+    /^\/api\/admin\/blocks\/unblock$/,
+    (body) => {
+      const { ip } = body as { ip: string };
+      const index = blocks.findIndex((block) => block.ip === ip);
+      if (index >= 0) blocks.splice(index, 1);
+      return [204, null];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/blocks\/exempt$/,
+    (body) => {
+      const networks = (body as { networks: string[] }).networks.map((entry) => entry.trim().toLowerCase());
+      // The real one parses every entry; here a host name is enough to see the server's answer.
+      const bad = networks.find((entry) => !/^[0-9a-f:.]+(\/\d{1,3})?$/.test(entry));
+      if (bad !== undefined) return [400, { code: "invalid", detail: `${bad} is not an address or network` }];
+      exemptNetworks = [...new Set(networks)];
+      return [200, { exempt: exemptNetworks }];
     },
   ],
   [

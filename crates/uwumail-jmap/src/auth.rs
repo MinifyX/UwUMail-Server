@@ -349,7 +349,7 @@ impl Authenticator {
                 match reason {
                     // A phone still using the right account password should not lock out its network.
                     MailAuthDenied::AppPasswordRequired => {}
-                    MailAuthDenied::UnknownLogin => self.limiter().record_unknown_login(client.ip),
+                    MailAuthDenied::UnknownLogin => self.store.unknown_login(client.ip, login, self.protocol).await,
                     _ => self.limiter().record_failure(client.ip, login),
                 }
                 tracing::warn!(%login, ip = %client.ip, %reason, protocol = self.protocol, "failed login");
@@ -427,11 +427,6 @@ impl Authenticator {
     /// Counts a wrong password (or second factor) for `login` from this client's network.
     pub fn failed(&self, client: ClientInfo, login: &str) {
         self.limiter().record_failure(client.ip, login);
-    }
-
-    /// Counts a login that does not exist here, from this client's network.
-    pub fn unknown_login(&self, client: ClientInfo) {
-        self.limiter().record_unknown_login(client.ip);
     }
 
     /// Forgives `login` its own failures, once it got all the way in.

@@ -10,6 +10,7 @@ import { api, type QueuedMessage, type QueueRecipient } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
 import { toast } from "@/state/toasts";
+import { RefusedCard } from "./RefusedCard";
 
 const STATUS_STYLES: Record<QueueRecipient["status"], string> = {
   pending: "bg-warning-tint text-warning",
@@ -131,6 +132,7 @@ export function QueuePage() {
           ))}
         </ul>
       )}
+      <RefusedCard />
     </div>
   );
 }

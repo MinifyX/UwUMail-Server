@@ -1469,6 +1469,20 @@
     "toasts": {
       "retry": "Wordt zo meteen opnieuw geprobeerd",
       "dropped": "Bericht #{{id}} verwijderd"
+    },
+    "refused": {
+      "title": "Geweigerde mails",
+      "hint": "Mails van de afgelopen 30 dagen die een andere server niet heeft aangenomen.",
+      "from": "van",
+      "to": "aan",
+      "gaveUp": "opgegeven na herhaalde pogingen",
+      "empty": {
+        "title": "Er is niets geweigerd",
+        "body": "In de afgelopen 30 dagen hebben andere servers alle mails aangenomen."
+      },
+      "clear": "Lijst leegmaken",
+      "clearConfirm": "De lijst met geweigerde mails leegmaken? Aan de mails zelf verandert dat niets.",
+      "cleared": "Lijst leeggemaakt"
     }
   },
   "logs": {
@@ -1487,6 +1501,16 @@
     "resume": "Hervatten",
     "empty": "Geen passende regels.",
     "unavailable": "Deze server bewaart geen logs voor het beheerpaneel.",
+    "category": {
+      "label": "Soort",
+      "login": "Logins",
+      "login_failed": "Mislukte logins",
+      "block": "Blokkades",
+      "mail_in": "Inkomende mail",
+      "mail_out": "Uitgaande mail",
+      "gateway": "Gateway",
+      "system": "Systeem"
+    },
     "loki": {
       "title": "Naar Grafana Loki sturen",
       "intro": "Stuurt de logs van deze server en zijn gateway naar een Grafana Loki, zoals je eigen logserver of Grafana Cloud.",
@@ -1537,9 +1561,49 @@
     "tabs": {
       "live": "Live log",
       "changes": "Wijzigingen",
+      "blocks": "Blokkades",
       "shipping": "Logs doorsturen"
     },
-    "shippingIntro": "Waar de server zijn logs ook naartoe stuurt, zodat ze een herstart overleven en samen met andere servers op één plek staan."
+    "shippingIntro": "Waar de server zijn logs ook naartoe stuurt, zodat ze een herstart overleven en samen met andere servers op één plek staan.",
+    "blocksIntro": "Welke adressen nu niet mogen inloggen, waarom, en welke nooit worden geblokkeerd.",
+    "blocks": {
+      "rulesTitle": "Wanneer er wordt geblokkeerd",
+      "rules": {
+        "instant": "Wie probeert in te loggen met iets dat geen e-mailadres is of op geen enkel adres hier lijkt, wordt meteen 24 uur geblokkeerd – de volgende keer 7 dagen.",
+        "typo": "Lijkt een inlognaam op een typfout in een adres dat hier bestaat, dan wordt er niet meteen geblokkeerd.",
+        "never": "Adressen waarvandaan iemand in de afgelopen 30 dagen met succes heeft ingelogd, en privé- of lokale adressen, worden nooit meteen geblokkeerd.",
+        "short": "Meerdere pogingen met inlognamen die niet bestaan, of te veel verkeerde wachtwoorden, blokkeren 15 minuten."
+      },
+      "empty": {
+        "title": "Er is nu niemand geblokkeerd",
+        "body": "Zodra de server een adres blokkeert, staat het hier."
+      },
+      "reasons": {
+        "not_an_address": "Inlognaam is geen e-mailadres",
+        "unknown_login": "Adres bestaat hier niet en lijkt op geen enkel adres",
+        "unknown_logins": "Meerdere pogingen met inlognamen die niet bestaan",
+        "wrong_passwords": "Te veel verkeerde wachtwoorden"
+      },
+      "tried": "geprobeerd: {{login}}",
+      "since": "geblokkeerd {{time}}",
+      "remaining": "nog {{duration}} (tot {{time}})",
+      "repeat": "Herhaald · blokkade nr. {{times}}",
+      "unblock": "Deblokkeren",
+      "unblockConfirm": "{{ip}} deblokkeren? De blokkade wordt hier en op de UwUMail Gateway opgeheven.",
+      "unblocked": "{{ip}} is gedeblokkeerd.",
+      "exempt": {
+        "title": "Nooit blokkeren",
+        "intro": "Adressen en netwerken in deze lijst worden nooit geblokkeerd, wat er ook vandaan wordt geprobeerd – je kantoor of je monitoring bijvoorbeeld.",
+        "label": "Adres of netwerk",
+        "hint": "Een IP-adres of een netwerk, bv. 192.0.2.10, 198.51.100.0/24 of 2001:db8::/32.",
+        "add": "Toevoegen",
+        "remove": "{{network}} verwijderen",
+        "empty": "Nog geen uitzonderingen.",
+        "invalid": "Dat is geen IP-adres en ook geen netwerk.",
+        "duplicate": "Dat staat al in de lijst.",
+        "saved": "Uitzonderingen opgeslagen."
+      }
+    }
   },
   "settings": {
     "title": "Instellingen",

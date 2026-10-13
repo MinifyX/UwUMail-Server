@@ -293,6 +293,7 @@ impl Loki {
             source: LogSource::Server,
             level: "info",
             target: "uwumail".into(),
+            category: "system",
             message: "a test line from the UwUMail admin panel".into(),
             fields: Vec::new(),
         };
@@ -508,6 +509,7 @@ mod tests {
             source,
             level,
             target: "uwumail_smtp".into(),
+            category: "mail_in",
             message: message.into(),
             fields: vec![("login".into(), "leni@example.org".into())],
         }

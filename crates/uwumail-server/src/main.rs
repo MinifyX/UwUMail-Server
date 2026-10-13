@@ -57,7 +57,10 @@ fn init_logging(config: &Config, serving: bool) -> Arc<LogBuffer> {
     // which is normal for names below a zone cut. DNS problems show up in the check results instead.
     // html5ever warns about every piece of broken markup while mail HTML is cleaned (a sloppy newsletter
     // brings hundreds of lines); the cleaned result is fine either way.
-    let quiet = "hickory_resolver::recursor=error,html5ever=error";
+    // rustls warns ("Illegal SNI extension: ignoring IP address presented as hostname") whenever a
+    // client connects by address instead of by name, which is what scanners do all day. Nothing is
+    // wrong: the handshake goes on with the default certificate.
+    let quiet = "hickory_resolver::recursor=error,html5ever=error,rustls::msgs::handshake=error";
     let filter =
         EnvFilter::try_new(format!("{level},{quiet}")).unwrap_or_else(|_| EnvFilter::new(format!("info,{quiet}")));
     let ansi = std::io::IsTerminal::is_terminal(&std::io::stdout());

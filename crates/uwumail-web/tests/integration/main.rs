@@ -6,6 +6,7 @@ mod api;
 mod apps;
 mod assist_costs;
 mod backups;
+mod blocks;
 mod branding;
 mod calendar_import;
 mod calendars;

@@ -90,13 +90,24 @@ pub async fn login(
     };
     // A service account has no password here at all, but the answer must not say which of the
     // two it was: the same refusal, and the same time spent, as a wrong password.
-    let found = match web.store().authenticate(request.login.trim(), &request.password).await? {
+    // Something that is no address is nobody's login: refused like any other, not explained.
+    let unreadable = |err| match err {
+        uwumail_store::StoreError::Invalid(_) => Ok(None),
+        err => Err(err),
+    };
+    let found = match web.store().authenticate(request.login.trim(), &request.password).await.or_else(unreadable)? {
         Some(account) => Some(account),
         // Someone the directory knows, without an account here yet (docs/login-oidc-ldap.md).
         None => super::external_login::ldap_account(&web, request.login.trim(), &request.password).await?,
     };
     let Some(account) = found.filter(Account::can_use_portal) else {
-        web.limiter().record_failure(client.ip, &request.login);
+        // A wrong password counts against the account; a login nobody here could have meant
+        // keeps its network out at once, like on the mail ports.
+        if web.store().account(request.login.trim()).await.or_else(unreadable)?.is_some() {
+            web.limiter().record_failure(client.ip, &request.login);
+        } else {
+            web.store().unknown_login(client.ip, &request.login, "web").await;
+        }
         web.store().stats().count(uwumail_store::Stat::LoginFailedPortal);
         tracing::warn!(login = %request.login, ip = %client.ip, "failed web login");
         return Err(ApiError::InvalidCredentials);

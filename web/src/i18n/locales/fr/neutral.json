@@ -1500,6 +1500,20 @@
     "toasts": {
       "retry": "Nouvelle tentative dans un instant",
       "dropped": "Message #{{id}} supprimé"
+    },
+    "refused": {
+      "title": "Messages refusés",
+      "hint": "Les messages des 30 derniers jours qu'un autre serveur n'a pas acceptés.",
+      "from": "de",
+      "to": "à",
+      "gaveUp": "abandonné après plusieurs essais",
+      "empty": {
+        "title": "Rien n'a été refusé",
+        "body": "Ces 30 derniers jours, les autres serveurs ont accepté tous les messages."
+      },
+      "clear": "Vider la liste",
+      "clearConfirm": "Vider la liste des messages refusés ? Cela ne change rien aux messages eux-mêmes.",
+      "cleared": "Liste vidée"
     }
   },
   "logs": {
@@ -1518,6 +1532,16 @@
     "resume": "Reprendre",
     "empty": "Aucune ligne correspondante.",
     "unavailable": "Ce serveur ne conserve pas de journaux pour le panneau d'administration.",
+    "category": {
+      "label": "Type",
+      "login": "Connexions",
+      "login_failed": "Connexions échouées",
+      "block": "Blocages",
+      "mail_in": "Courrier entrant",
+      "mail_out": "Courrier sortant",
+      "gateway": "Passerelle",
+      "system": "Système"
+    },
     "loki": {
       "title": "Envoyer vers Grafana Loki",
       "intro": "Envoie les journaux de ce serveur et de sa passerelle vers un Grafana Loki, comme votre propre serveur de journaux ou Grafana Cloud.",
@@ -1569,9 +1593,49 @@
     "tabs": {
       "live": "Journal en direct",
       "changes": "Modifications",
+      "blocks": "Blocages",
       "shipping": "Envoi des journaux"
     },
-    "shippingIntro": "Où le serveur envoie aussi ses journaux, pour qu'ils survivent à un redémarrage et soient réunis au même endroit avec ceux d'autres serveurs."
+    "shippingIntro": "Où le serveur envoie aussi ses journaux, pour qu'ils survivent à un redémarrage et soient réunis au même endroit avec ceux d'autres serveurs.",
+    "blocksIntro": "Quelles adresses ne peuvent pas se connecter en ce moment, pourquoi, et lesquelles ne sont jamais bloquées.",
+    "blocks": {
+      "rulesTitle": "Quand une adresse est bloquée",
+      "rules": {
+        "instant": "Tenter de se connecter avec un identifiant qui n'est pas une adresse e-mail, ou qui ne ressemble à aucune adresse d'ici, bloque aussitôt l'adresse IP pendant 24 heures – pendant 7 jours la fois suivante.",
+        "typo": "Un identifiant qui ressemble à une faute de frappe dans une adresse existante n'est pas bloqué aussitôt.",
+        "never": "Les adresses depuis lesquelles quelqu'un s'est connecté avec succès au cours des 30 derniers jours, ainsi que les adresses privées ou locales, ne sont jamais bloquées aussitôt.",
+        "short": "Plusieurs tentatives avec des identifiants qui n'existent pas, ou trop de mots de passe erronés, bloquent pendant 15 minutes."
+      },
+      "empty": {
+        "title": "Personne n'est bloqué en ce moment",
+        "body": "Dès que le serveur bloque une adresse, elle apparaît ici."
+      },
+      "reasons": {
+        "not_an_address": "L'identifiant n'est pas une adresse e-mail",
+        "unknown_login": "L'adresse n'existe pas ici et ne ressemble à aucune autre",
+        "unknown_logins": "Plusieurs tentatives avec des identifiants qui n'existent pas",
+        "wrong_passwords": "Trop de mots de passe erronés"
+      },
+      "tried": "essayé : {{login}}",
+      "since": "bloquée {{time}}",
+      "remaining": "encore {{duration}} (jusqu'au {{time}})",
+      "repeat": "Récidive · blocage n° {{times}}",
+      "unblock": "Débloquer",
+      "unblockConfirm": "Débloquer {{ip}} ? Le blocage est levé ici et sur la UwUMail Gateway.",
+      "unblocked": "{{ip}} est débloquée.",
+      "exempt": {
+        "title": "Ne jamais bloquer",
+        "intro": "Les adresses et réseaux de cette liste ne sont jamais bloqués, quoi qu'on tente depuis là – votre bureau ou votre supervision, par exemple.",
+        "label": "Adresse ou réseau",
+        "hint": "Une adresse IP ou un réseau, p. ex. 192.0.2.10, 198.51.100.0/24 ou 2001:db8::/32.",
+        "add": "Ajouter",
+        "remove": "Retirer {{network}}",
+        "empty": "Aucune exception pour l'instant.",
+        "invalid": "Ce n'est ni une adresse IP ni un réseau.",
+        "duplicate": "C'est déjà dans la liste.",
+        "saved": "Exceptions enregistrées."
+      }
+    }
   },
   "settings": {
     "title": "Paramètres",

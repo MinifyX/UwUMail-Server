@@ -204,6 +204,18 @@ JMAP token endpoint) shares one count of failed logins:
   count as well, so a burst of tries sent all at once cannot slip past the
   count: at most 10 checks from one network run at the same time, fewer the
   more have failed already.
+- **A login nobody here could have meant** keeps its network out at once: for
+  24 hours, and for 7 days when the same network comes back within 30 days of
+  the block ending. That is anything that is not a mail address (`root`,
+  `admin`), and any address that is neither an account nor an alias here and
+  does not look like a slip of the keys in one. Counted as before (3 within
+  15 minutes) are logins up to two typing mistakes away from an address that
+  exists (`minifx@…` for `minifyx@…`), the right name at the wrong domain, a
+  `+tag` on a real address, and a bare name that is the part before the `@`
+  of a real address. Never shut out at once are networks someone logged in
+  from successfully in the last 30 days, private and local addresses, and
+  servers where a directory (LDAP) makes accounts at the first login. The
+  answer to the login is word for word the same as for a wrong password.
 - **Per login**, from all networks together: after 10 wrong passwords, one try
   every 30 seconds, and only one at a time. It is a delay, not a lockout, so
   nobody can lock the owner out by guessing.
@@ -213,6 +225,13 @@ JMAP token endpoint) shares one count of failed logins:
   turn is answered with "try again later" (portal and JMAP: `429`/`503`, IMAP
   `NO [UNAVAILABLE]`, SMTP `454`, ManageSieve `NO (TRYLATER)`); mail apps try
   again by themselves.
+
+Who is kept out, since when, why and with which login is listed in the portal
+under *Server → Logs → Blocks*, with a button that lets an address back in
+(at the UwUMail Gateway too). The same page holds the addresses and networks
+that are never blocked, for an office or a monitoring host (single addresses
+or CIDR networks, up to 200). Blocks survive a restart. In the live log the
+kind *Blocks* shows only these lines.
 
 ## Calendars and contacts
 

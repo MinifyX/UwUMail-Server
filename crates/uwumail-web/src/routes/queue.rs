@@ -51,10 +51,26 @@ pub async fn drop(State(web): State<Web>, Admin(session): Admin, Path(id): Path<
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// How many refused mails the admin is shown at once.
+const REFUSED_SHOWN: usize = 200;
+
+/// Outgoing mail other servers did not take: who wrote to whom and what the other side said.
+pub async fn refused(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
+    Ok(Json(json!({ "refused": web.store().refused_deliveries(REFUSED_SHOWN).await? })))
+}
+
+pub async fn clear_refused(State(web): State<Web>, Admin(session): Admin) -> ApiResult<StatusCode> {
+    let cleared = web.store().clear_refused_deliveries().await?;
+    audit(&web, &session, "queue.refused.clear", "", json!({ "cleared": cleared })).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Deserialize)]
 pub struct LogQuery {
     after: Option<u64>,
     level: Option<String>,
+    /// Kinds of lines, separated by commas; all of them when missing.
+    category: Option<String>,
     search: Option<String>,
     limit: Option<usize>,
 }
@@ -64,7 +80,14 @@ pub async fn logs(State(web): State<Web>, _admin: Admin, Query(query): Query<Log
         return Err(ApiError::NotFound("the server log".into()));
     };
     let max_rank = query.level.as_deref().map(level_rank).unwrap_or(4);
-    let (lines, latest) =
-        buffer.lines(query.after.unwrap_or(0), max_rank, query.search.as_deref(), query.limit.unwrap_or(500).min(2000));
+    let categories: Vec<&str> =
+        query.category.as_deref().unwrap_or("").split(',').map(str::trim).filter(|kind| !kind.is_empty()).collect();
+    let (lines, latest) = buffer.lines(
+        query.after.unwrap_or(0),
+        max_rank,
+        &categories,
+        query.search.as_deref(),
+        query.limit.unwrap_or(500).min(2000),
+    );
     Ok(Json(json!({ "lines": lines, "latest": latest })))
 }

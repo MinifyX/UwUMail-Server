@@ -18,6 +18,7 @@ mod bimi;
 pub mod birthday_import;
 pub mod birthdays;
 mod blobs;
+mod blocks;
 mod calendar;
 mod calendar_alerts;
 mod calendar_notifications;
@@ -117,6 +118,7 @@ pub use bayes::{
 };
 pub use bimi::{BimiUpdate, DomainBimi};
 pub use blobs::{BlobCleanupPause, BlobHash};
+pub use blocks::BLOCK_EXEMPT_LIMIT;
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
 pub use calendar_alerts::{CalendarAlertFired, DueAlert, PlannedAlert};
 pub use calendar_notifications::{
@@ -162,7 +164,7 @@ pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
 pub use labels::{BASE_LABELS_VERSION, LabelSetup, LabelShot, LabelTokens, LabelTraining, LabelVector};
-pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
+pub use limiter::{Attempt, AuthLimiter, Block, Network, Reporter as BlockReporter, reason as block_reason};
 pub use mail::{
     EmailSummary, IngestRequest, IngestedEmail, MAX_KEYWORDS_PER_EMAIL, Mailbox, MailboxRole, MailboxTarget,
     TestMessageStatus,
@@ -203,7 +205,7 @@ pub use push::{
     push_credential_for_app_password, push_credential_for_oauth_grant, push_credential_for_session,
 };
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
-pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
+pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage, RefusedDelivery};
 pub use reports::{
     CachedStsPolicy, DMARC_REPORT_ADDRESS, DmarcRow, DmarcSource, DmarcSummary, MtaStsMode, MtaStsSettings,
     NewDmarcReport, NewTlsReport, REPORT_RETENTION_SECS, ReportEntry, ReportKind, ReportStored, ReportSummary,
@@ -336,7 +338,7 @@ impl Store {
         let blobs = blobs::BlobStore::open(data_dir.join("blobs")).await?;
         let (changes, _) = broadcast::channel(1024);
         let (calendar_alerts, _) = broadcast::channel(256);
-        Ok(Store {
+        let store = Store {
             inner: Arc::new(Inner {
                 db,
                 blobs,
@@ -354,7 +356,9 @@ impl Store {
                 hashing: password::Gate::new(),
                 sharing_generation: Default::default(),
             }),
-        })
+        };
+        store.restore_blocks().await?;
+        Ok(store)
     }
 
     /// The failed-login counts of the whole server. Every login path checks it before a password

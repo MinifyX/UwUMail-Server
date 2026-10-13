@@ -6,6 +6,7 @@ pub mod assist;
 pub mod auth;
 pub mod backups;
 pub mod bimi;
+pub mod blocks;
 pub mod branding;
 pub mod calendar_import;
 pub mod calendars;

@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { Segmented, TextInput } from "@/components/ui/Field";
+import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
-import { api, ApiError, type LogLine } from "@/lib/api";
+import { api, ApiError, type LogCategory, type LogLine } from "@/lib/api";
+import { LOG_CATEGORIES, toggleCategory } from "./blocks";
 
 type Level = "all" | "warn" | "error";
 const MAX_LINES = 1000;
@@ -23,6 +25,9 @@ export function LogsPage() {
   const { t, i18n } = useT();
   const [level, setLevel] = useState<Level>("all");
   const [search, setSearch] = useState("");
+  // None chosen means every kind of line.
+  const [categories, setCategories] = useState<LogCategory[]>([]);
+  const category = categories.join(",");
   const [live, setLive] = useState(true);
   const [lines, setLines] = useState<LogLine[]>([]);
   const [unavailable, setUnavailable] = useState(false);
@@ -36,6 +41,7 @@ export function LogsPage() {
       const params = new URLSearchParams({ after: String(replace ? 0 : latest.current), limit: "500" });
       if (level !== "all") params.set("level", level);
       if (search.trim()) params.set("search", search.trim());
+      if (category) params.set("category", category);
       try {
         const result = await api<{ lines: LogLine[]; latest: number }>(`/api/admin/logs?${params}`);
         if (cancelled) return;
@@ -52,7 +58,7 @@ export function LogsPage() {
       window.clearTimeout(debounce);
       window.clearInterval(timer);
     };
-  }, [level, search, live]);
+  }, [level, search, category, live]);
 
   useEffect(() => {
     if (live) bottom.current?.scrollIntoView({ block: "end" });
@@ -90,6 +96,17 @@ export function LogsPage() {
         <Button className="sm:ml-auto" icon={live ? Pause : Play} onClick={() => setLive((value) => !value)}>
           {live ? t("logs.pause") : t("logs.resume")}
         </Button>
+      </div>
+      <div role="group" aria-label={t("logs.category.label")} className="flex flex-wrap gap-2">
+        {LOG_CATEGORIES.map((value) => (
+          <Pill
+            key={value}
+            active={categories.includes(value)}
+            onClick={() => setCategories((current) => toggleCategory(current, value))}
+          >
+            {t(`logs.category.${value}`)}
+          </Pill>
+        ))}
       </div>
 
       {unavailable ? (
