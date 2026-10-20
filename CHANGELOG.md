@@ -30,6 +30,13 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - `assist.currency` and `nyu.animations` can be removed from the synced settings again;
   setting them to `null` was refused as an invalid property.
 
+### Security
+
+- **Dependency updates:** ammonia 4.2.4, rustls 0.23.46 and ruzstd 0.9.1 close the advisories
+  cargo audit reported against 4.2.3, 0.23.45 and 0.9.0. The zip 8 advisories about extracting
+  archives to disk (RUSTSEC-2026-0367/-0368/-0369) are ignored in `.cargo/audit.toml`: mail-auth
+  still needs zip 8, and neither it nor the spam check ever extracts an archive.
+
 ## 0.23.2
 
 0.23.1 was tagged but never built: the release stopped at the dependency audit. This release

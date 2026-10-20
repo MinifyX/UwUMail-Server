@@ -899,17 +899,28 @@ async fn reports_are_read_by_the_server_instead_of_landing_in_a_mailbox() {
         a.smtp.dns_cache().pin_no_txt(name);
     }
 
-    let dmarc = "<?xml version=\"1.0\"?><feedback><report_metadata><org_name>reporter.test</org_name>\
+    // Yesterday: the server refuses reports about periods long past, so fixed dates would expire.
+    let end = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 - 3600;
+    let begin = end - 86_399;
+    let dmarc = format!(
+        "<?xml version=\"1.0\"?><feedback><report_metadata><org_name>reporter.test</org_name>\
         <email>dmarc@reporter.test</email><report_id>r-1</report_id>\
-        <date_range><begin>1757894400</begin><end>1757980799</end></date_range></report_metadata>\
+        <date_range><begin>{begin}</begin><end>{end}</end></date_range></report_metadata>\
         <policy_published><domain>a.test</domain><p>quarantine</p></policy_published>\
         <record><row><source_ip>192.0.2.10</source_ip><count>7</count><policy_evaluated>\
         <disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated></row>\
-        <identifiers><header_from>a.test</header_from></identifiers><auth_results></auth_results></record></feedback>";
-    let tls = r#"{"organization-name":"reporter.test","date-range":{"start-datetime":"2026-09-14T00:00:00Z","end-datetime":"2026-09-14T23:59:59Z"},"report-id":"t-1","policies":[{"policy":{"policy-type":"sts","policy-domain":"a.test","mx-host":["mx.a.test"]},"summary":{"total-successful-session-count":9,"total-failure-session-count":1},"failure-details":[{"result-type":"certificate-not-trusted","failed-session-count":1}]}]}"#;
+        <identifiers><header_from>a.test</header_from></identifiers><auth_results></auth_results></record></feedback>"
+    );
+    let (start_at, end_at) = (
+        mail_parser::DateTime::from_timestamp(begin).to_rfc3339(),
+        mail_parser::DateTime::from_timestamp(end).to_rfc3339(),
+    );
+    let tls = format!(
+        r#"{{"organization-name":"reporter.test","date-range":{{"start-datetime":"{start_at}","end-datetime":"{end_at}"}},"report-id":"t-1","policies":[{{"policy":{{"policy-type":"sts","policy-domain":"a.test","mx-host":["mx.a.test"]}},"summary":{{"total-successful-session-count":9,"total-failure-session-count":1}},"failure-details":[{{"result-type":"certificate-not-trusted","failed-session-count":1}}]}}]}}"#
+    );
     let messages = [
-        ("dmarc-reports@a.test", "text/xml; name=report.xml".to_owned(), dmarc.to_owned()),
-        ("tls-reports@a.test", "application/tlsrpt+json; name=report.json".to_owned(), tls.to_owned()),
+        ("dmarc-reports@a.test", "text/xml; name=report.xml".to_owned(), dmarc),
+        ("tls-reports@a.test", "application/tlsrpt+json; name=report.json".to_owned(), tls),
     ];
     for (to, content_type, body) in messages {
         let mut session = RawSession::connect(a.mx).await;
