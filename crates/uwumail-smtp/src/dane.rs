@@ -20,7 +20,7 @@ use hickory_resolver::proto::rr::{RData, RecordType};
 use mail_auth::ResolverCache;
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
+use rustls::crypto::CryptoProvider;
 use rustls::server::ParsedCertificate;
 use rustls::{CertificateError, DigitallySignedStruct, OtherError, RootCertStore, SignatureScheme};
 use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
@@ -61,9 +61,9 @@ impl Tlsa {
     pub fn matches(&self, cert: &CertificateDer<'_>) -> bool {
         let selected = match self.selector {
             0 => cert.as_ref().to_vec(),
-            1 => match ParsedCertificate::try_from(cert) {
-                Ok(parsed) => parsed.subject_public_key_info().as_ref().to_vec(),
-                Err(_) => return false,
+            1 => match crate::tls::public_key_info(cert) {
+                Some(spki) => spki,
+                None => return false,
             },
             _ => return false,
         };
@@ -248,7 +248,7 @@ impl ServerCertVerifier for DaneVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls12_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
+        crate::tls::verify_signature(message, cert, dss, &self.provider.signature_verification_algorithms, false)
     }
 
     fn verify_tls13_signature(
@@ -257,7 +257,7 @@ impl ServerCertVerifier for DaneVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls13_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
+        crate::tls::verify_signature(message, cert, dss, &self.provider.signature_verification_algorithms, true)
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {

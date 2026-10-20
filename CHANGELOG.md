@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.24.1
+
+### Fixed
+
+- Mail to servers with a self-signed X.509 v1 certificate (e.g. Proxmox Mail Gateway) no longer
+  stays in the queue with `UnsupportedCertVersion`. Such certificates are now accepted for
+  opportunistic TLS, with the handshake signature still checked against the certificate's key.
+
 ## 0.24.0
 
 ### Added
