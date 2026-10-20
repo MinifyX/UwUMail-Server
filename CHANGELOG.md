@@ -3,6 +3,40 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.24.0
+
+### Added
+
+- **Webmail 0.23.0 (`88dc6d4`): organising, snooze, templates and search operators.** Mailboxes
+  can be hidden from the unified views and counts, extra folders shown in the unified inbox,
+  mailboxes reordered, folders pinned as favorites or hidden, and everything marked as read
+  (Shift+I) with undo. Mail can be snoozed and comes back unread; text templates with
+  placeholders, a reminder for a mentioned but missing attachment, and search operators
+  (`from:`, `subject:`, `has:attachment`, `is:unread`, `before:`, `after:` …). Notifications can
+  be muted per mailbox and paused during quiet hours. All of it syncs with the UwUMail apps
+  (0.11.0-beta.4).
+- **More settings sync between the webmail and the apps.** The synced settings
+  (docs/jmap-settings.md) take new keys: accounts left out of the unified views
+  (`unified.hidden:<address>`), folders added to the unified inbox
+  (`unified.folders:<id>`), the order of the accounts (`accounts.order`), favorite and
+  hidden folders (`folders.favorite:<id>`, `folders.hidden:<id>`), notifications muted per
+  account and quiet hours (`notify.muted:<address>`, `notify.quietHours`), the reminder
+  about a missing attachment (`compose.attachmentReminder`), snoozed mail (`snooze:<id>`)
+  and text templates (`template:<id>`). The server checks each value as strictly as the
+  existing keys.
+
+### Fixed
+
+- `assist.currency` and `nyu.animations` can be removed from the synced settings again;
+  setting them to `null` was refused as an invalid property.
+
+### Security
+
+- **Dependency updates:** ammonia 4.2.4, rustls 0.23.46 and ruzstd 0.9.1 close the advisories
+  cargo audit reported against 4.2.3, 0.23.45 and 0.9.0. The zip 8 advisories about extracting
+  archives to disk (RUSTSEC-2026-0367/-0368/-0369) are ignored in `.cargo/audit.toml`: mail-auth
+  still needs zip 8, and neither it nor the spam check ever extracts an archive.
+
 ## 0.23.2
 
 0.23.1 was tagged but never built: the release stopped at the dependency audit. This release

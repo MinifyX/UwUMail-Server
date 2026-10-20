@@ -1,0 +1,11 @@
+# Advisories cargo audit lets through, each with why it doesn't reach UwUMail.
+[advisories]
+ignore = [
+    # zip 8 (SUID bits, symlinks out of the target, permissions through symlinks on extract): the
+    # fixes are only in zip 9, and mail-auth (DMARC/TLS reports) needs zip ^8.5 up to its latest
+    # 0.13.3. Neither mail-auth nor the spam check's attachment listing ever extracts an archive to
+    # disk; both only read entry names and contents into memory.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+]

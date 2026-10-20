@@ -22,8 +22,17 @@ pub const USER_SETTINGS_MAX_VALUE_SIZE: usize = 262_144;
 /// Longest address or domain in a list key.
 const ENTRY_MAX_CHARS: usize = 254;
 const DOMAIN_MAX_CHARS: usize = 253;
-const SIGNATURE_ID_MAX_CHARS: usize = 64;
+/// Longest id in a key like `signature:<id>`.
+const ID_MAX_CHARS: usize = 64;
 const SIGNATURE_NAME_MAX_CHARS: usize = 100;
+/// Longest folder path in a folder reference or a snoozed message.
+const FOLDER_MAX_CHARS: usize = 1024;
+/// How many accounts `accounts.order` may list.
+const ACCOUNTS_ORDER_MAX: usize = 200;
+/// Longest Message-ID of a snoozed message, the longest line RFC 5322 allows.
+const MESSAGE_ID_MAX_CHARS: usize = 998;
+const TEMPLATE_NAME_MAX_CHARS: usize = 100;
+const TEMPLATE_SUBJECT_MAX_CHARS: usize = 998;
 /// The portal's preferences may not grow past this (see `update_preferences`).
 const PREFERENCES_MAX_BYTES: usize = 16 * 1024;
 
@@ -179,6 +188,177 @@ fn signature(key: &str, value: &Value) -> Result<(), SettingProblem> {
     Ok(())
 }
 
+/// The id in a key like `signature:<id>`: 1 to 64 of `A-Z a-z 0-9 _ -`.
+fn is_id(id: &str) -> bool {
+    (1..=ID_MAX_CHARS).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn id_entry(key: &str, id: &str) -> Result<(), SettingProblem> {
+    if is_id(id) { Ok(()) } else { Err(invalid(format!("{key}: the id must be 1 to 64 of A-Z, a-z, 0-9, - and _"))) }
+}
+
+fn address_entry(key: &str, entry: &str) -> Result<(), SettingProblem> {
+    if is_list_entry_length(entry) && is_address(entry) {
+        Ok(())
+    } else {
+        Err(invalid(format!("{key}: the entry must be a lower-case address")))
+    }
+}
+
+/// An object with exactly these properties.
+fn object_with<'a>(key: &str, value: &'a Value, properties: &[&str]) -> Result<&'a Map<String, Value>, SettingProblem> {
+    let Some(object) = value.as_object() else {
+        return Err(invalid(format!("{key} must be an object")));
+    };
+    for property in object.keys() {
+        if !properties.contains(&property.as_str()) {
+            return Err(invalid(format!("{key} has an unknown property {property}")));
+        }
+    }
+    for property in properties {
+        if !object.contains_key(*property) {
+            return Err(invalid(format!("{key}: {property} is missing")));
+        }
+    }
+    Ok(object)
+}
+
+fn text<'a>(key: &str, object: &'a Map<String, Value>, property: &str) -> Result<&'a str, SettingProblem> {
+    object.get(property).and_then(Value::as_str).ok_or_else(|| invalid(format!("{key}: {property} must be a string")))
+}
+
+/// A string of `min..=max` characters without control characters.
+fn plain_text(
+    key: &str,
+    object: &Map<String, Value>,
+    property: &str,
+    min: usize,
+    max: usize,
+) -> Result<(), SettingProblem> {
+    let value = text(key, object, property)?;
+    if (min..=max).contains(&value.chars().count()) && !value.chars().any(char::is_control) {
+        Ok(())
+    } else {
+        Err(invalid(format!("{key}: {property} must be {min} to {max} characters without control characters")))
+    }
+}
+
+fn account_property(key: &str, object: &Map<String, Value>) -> Result<(), SettingProblem> {
+    let account = text(key, object, "account")?;
+    if is_list_entry_length(account) && is_address(account) {
+        Ok(())
+    } else {
+        Err(invalid(format!("{key}: account must be a lower-case address")))
+    }
+}
+
+/// `{ "account": <address>, "folder": <path> }`: a folder of one of the person's accounts.
+fn folder_ref(key: &str, value: &Value) -> Result<(), SettingProblem> {
+    let object = object_with(key, value, &["account", "folder"])?;
+    account_property(key, object)?;
+    plain_text(key, object, "folder", 1, FOLDER_MAX_CHARS)
+}
+
+/// The accounts in the order the person sorted them: unique lower-case addresses.
+fn accounts_order(key: &str, value: &Value) -> Result<(), SettingProblem> {
+    let Some(list) = value.as_array() else {
+        return Err(invalid(format!("{key} must be a list of addresses")));
+    };
+    if list.len() > ACCOUNTS_ORDER_MAX {
+        return Err(invalid(format!("{key} may list at most {ACCOUNTS_ORDER_MAX} accounts")));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for entry in list {
+        let Some(address) = entry.as_str().filter(|a| is_list_entry_length(a) && is_address(a)) else {
+            return Err(invalid(format!("{key} must list lower-case addresses")));
+        };
+        if !seen.insert(address) {
+            return Err(invalid(format!("{key} lists {address} twice")));
+        }
+    }
+    Ok(())
+}
+
+/// `HH:MM`, 00:00 to 23:59.
+fn is_clock_time(time: &str) -> bool {
+    let bytes = time.as_bytes();
+    bytes.len() == 5
+        && bytes[2] == b':'
+        && time[..2].bytes().chain(time[3..].bytes()).all(|b| b.is_ascii_digit())
+        && time[..2].parse::<u8>().is_ok_and(|hour| hour < 24)
+        && time[3..].parse::<u8>().is_ok_and(|minute| minute < 60)
+}
+
+/// `{ "enabled", "from": "HH:MM", "to": "HH:MM", "days": [0-6] }`; `from` after `to` runs over midnight.
+fn quiet_hours(key: &str, value: &Value) -> Result<(), SettingProblem> {
+    let object = object_with(key, value, &["enabled", "from", "to", "days"])?;
+    if !object["enabled"].is_boolean() {
+        return Err(invalid(format!("{key}: enabled must be true or false")));
+    }
+    for property in ["from", "to"] {
+        if !is_clock_time(text(key, object, property)?) {
+            return Err(invalid(format!("{key}: {property} must be a time HH:MM")));
+        }
+    }
+    let Some(days) = object["days"].as_array() else {
+        return Err(invalid(format!("{key}: days must be a list")));
+    };
+    let mut seen = [false; 7];
+    for day in days {
+        match day.as_u64().filter(|day| *day < 7) {
+            // Sunday is 0, as in JavaScript.
+            Some(day) if !seen[day as usize] => seen[day as usize] = true,
+            _ => return Err(invalid(format!("{key}: days must be different numbers from 0 (Sunday) to 6"))),
+        }
+    }
+    Ok(())
+}
+
+/// A UTC time like `2026-10-21T07:00:00Z`, with or without fractions of a second.
+fn is_utc_timestamp(time: &str) -> bool {
+    let bytes = time.as_bytes();
+    let shape = bytes.len() >= 20
+        && bytes.iter().enumerate().take(19).all(|(i, b)| match i {
+            4 | 7 => *b == b'-',
+            10 => *b == b'T',
+            13 | 16 => *b == b':',
+            _ => b.is_ascii_digit(),
+        })
+        && bytes[bytes.len() - 1] == b'Z'
+        && match &bytes[19..bytes.len() - 1] {
+            [] => true,
+            [b'.', fraction @ ..] => (1..=9).contains(&fraction.len()) && fraction.iter().all(u8::is_ascii_digit),
+            _ => false,
+        };
+    shape && chrono::DateTime::parse_from_rfc3339(time).is_ok()
+}
+
+/// A message put away until later: where it is now, where it came from, and when it comes back.
+fn snooze(key: &str, value: &Value) -> Result<(), SettingProblem> {
+    let object = object_with(key, value, &["account", "messageId", "folder", "until"])?;
+    account_property(key, object)?;
+    plain_text(key, object, "messageId", 1, MESSAGE_ID_MAX_CHARS)?;
+    let message_id = text(key, object, "messageId")?;
+    if message_id.contains(['<', '>']) || message_id.chars().any(char::is_whitespace) {
+        return Err(invalid(format!("{key}: messageId must be the Message-ID without <>")));
+    }
+    plain_text(key, object, "folder", 1, FOLDER_MAX_CHARS)?;
+    if !is_utc_timestamp(text(key, object, "until")?) {
+        return Err(invalid(format!("{key}: until must be a UTC time like 2026-10-21T07:00:00Z")));
+    }
+    Ok(())
+}
+
+/// A text snippet for the composer: `{ "name", "subject", "html" }`.
+fn template(key: &str, value: &Value) -> Result<(), SettingProblem> {
+    let object = object_with(key, value, &["name", "subject", "html"])?;
+    plain_text(key, object, "name", 1, TEMPLATE_NAME_MAX_CHARS)?;
+    plain_text(key, object, "subject", 0, TEMPLATE_SUBJECT_MAX_CHARS)?;
+    // Like a signature's: only stored, cleaned by every client, bounded by the size of the value.
+    text(key, object, "html")?;
+    Ok(())
+}
+
 /// Checks one key and its (non-null) value against the whitelist.
 pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> {
     // Measured as JSON, the way it is stored and sent.
@@ -194,7 +374,8 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         | "linkConfirm"
         | "darkImages"
         | "assist.refineEvents"
-        | "mail.detectEvents" => {
+        | "mail.detectEvents"
+        | "compose.attachmentReminder" => {
             return boolean(key, value);
         }
         "remoteImages" => return one_of(key, value, &["ask", "always"]),
@@ -207,6 +388,8 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
                 _ => Err(invalid("undoSendSeconds must be one of 0, 5, 10, 20, 30")),
             };
         }
+        "accounts.order" => return accounts_order(key, value),
+        "notify.quietHours" => return quiet_hours(key, value),
         _ => {}
     }
     let Some((prefix, rest)) = key.split_once(':') else {
@@ -221,9 +404,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
             only_true(key, value)
         }
         "senderAppearance" => {
-            if !is_list_entry_length(rest) || !is_address(rest) {
-                return Err(invalid(format!("{key}: the entry must be a lower-case address")));
-            }
+            address_entry(key, rest)?;
             one_of(key, value, &["light", "dark"])
         }
         "linkDomains" => {
@@ -233,12 +414,24 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
             only_true(key, value)
         }
         "signature" => {
-            let valid_id = (1..=SIGNATURE_ID_MAX_CHARS).contains(&rest.len())
-                && rest.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-            if !valid_id {
-                return Err(invalid(format!("{key}: the id must be 1 to 64 of A-Z, a-z, 0-9, - and _")));
-            }
+            id_entry(key, rest)?;
             signature(key, value)
+        }
+        "unified.hidden" | "notify.muted" => {
+            address_entry(key, rest)?;
+            only_true(key, value)
+        }
+        "unified.folders" | "folders.favorite" | "folders.hidden" => {
+            id_entry(key, rest)?;
+            folder_ref(key, value)
+        }
+        "snooze" => {
+            id_entry(key, rest)?;
+            snooze(key, value)
+        }
+        "template" => {
+            id_entry(key, rest)?;
+            template(key, value)
         }
         _ => Err(invalid(format!("{key} is not a known setting"))),
     }
@@ -568,6 +761,144 @@ mod tests {
         let mut huge = good;
         huge["html"] = json!("x".repeat(USER_SETTINGS_MAX_VALUE_SIZE));
         assert_eq!(check("signature:w", huge), Err(SettingProblem::TooLarge));
+    }
+
+    #[test]
+    fn account_and_folder_keys_check_entry_and_value() {
+        for key in ["unified.hidden", "notify.muted"] {
+            assert_eq!(check(&format!("{key}:mini@example.org"), json!(true)), Ok(()), "{key}");
+            assert!(check(&format!("{key}:mini@example.org"), json!(false)).is_err(), "{key}");
+            for bad in ["Mini@example.org", "@example.org", "mini", ""] {
+                assert!(check(&format!("{key}:{bad}"), json!(true)).is_err(), "{key}:{bad}");
+            }
+        }
+        assert_eq!(check("compose.attachmentReminder", json!(false)), Ok(()));
+        assert!(check("compose.attachmentReminder", json!("off")).is_err());
+
+        let folder = json!({ "account": "mini@example.org", "folder": "Archiv/2026" });
+        for key in ["unified.folders", "folders.favorite", "folders.hidden"] {
+            assert_eq!(check(&format!("{key}:0123abcd0123abcd"), folder.clone()), Ok(()), "{key}");
+            assert!(check(&format!("{key}:no/slash"), folder.clone()).is_err(), "{key}");
+            assert!(check(&format!("{key}:"), folder.clone()).is_err(), "{key}");
+            assert!(check(&format!("{key}:x"), json!(true)).is_err(), "{key}");
+        }
+        assert_eq!(
+            check("folders.hidden:x", json!({ "account": "mini@example.org", "folder": "f".repeat(1024) })),
+            Ok(())
+        );
+        for bad in [
+            json!({ "account": "Mini@example.org", "folder": "INBOX" }),
+            json!({ "account": "mini@example.org", "folder": "" }),
+            json!({ "account": "mini@example.org", "folder": "f".repeat(1025) }),
+            json!({ "account": "mini@example.org", "folder": "a\nb" }),
+            json!({ "account": "mini@example.org", "folder": 5 }),
+            json!({ "account": "mini@example.org" }),
+            json!({ "account": "mini@example.org", "folder": "INBOX", "extra": 1 }),
+        ] {
+            assert!(check("folders.favorite:x", bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn account_order_is_a_short_list_of_unique_addresses() {
+        assert_eq!(check("accounts.order", json!([])), Ok(()));
+        assert_eq!(check("accounts.order", json!(["mini@example.org", "nyu@example.net"])), Ok(()));
+        let most: Vec<String> = (0..200).map(|n| format!("a{n}@example.org")).collect();
+        assert_eq!(check("accounts.order", json!(most)), Ok(()));
+        let too_many: Vec<String> = (0..201).map(|n| format!("a{n}@example.org")).collect();
+        assert!(check("accounts.order", json!(too_many)).is_err());
+        for bad in [
+            json!(["mini@example.org", "mini@example.org"]),
+            json!(["Mini@example.org"]),
+            json!(["mini"]),
+            json!([1]),
+            json!("mini@example.org"),
+        ] {
+            assert!(check("accounts.order", bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn quiet_hours_take_times_and_days() {
+        let good = json!({ "enabled": true, "from": "22:00", "to": "07:30", "days": [0, 6, 3] });
+        assert_eq!(check("notify.quietHours", good.clone()), Ok(()));
+        assert_eq!(
+            check("notify.quietHours", json!({ "enabled": false, "from": "00:00", "to": "23:59", "days": [] })),
+            Ok(())
+        );
+        for (property, value) in [
+            ("enabled", json!("yes")),
+            ("from", json!("24:00")),
+            ("from", json!("7:00")),
+            ("to", json!("07:60")),
+            ("to", json!("07-00")),
+            ("days", json!([1, 1])),
+            ("days", json!([7])),
+            ("days", json!([-1])),
+            ("days", json!(["1"])),
+            ("days", json!(1)),
+            ("extra", json!(true)),
+        ] {
+            let mut bad = good.clone();
+            bad[property] = value;
+            assert!(check("notify.quietHours", bad).is_err(), "{property}");
+        }
+        let mut missing = good;
+        missing.as_object_mut().unwrap().remove("days");
+        assert!(check("notify.quietHours", missing).is_err());
+    }
+
+    #[test]
+    fn snoozes_say_where_and_until_when() {
+        let good = json!({ "account": "mini@example.org", "messageId": "abc.123@mail.example.org", "folder": "INBOX", "until": "2026-10-21T07:00:00Z" });
+        assert_eq!(check("snooze:a1B2c3D4e5F6g7H8", good.clone()), Ok(()));
+        let mut fraction = good.clone();
+        fraction["until"] = json!("2026-10-21T07:00:00.000Z");
+        assert_eq!(check("snooze:s", fraction), Ok(()));
+        assert!(check("snooze:", good.clone()).is_err());
+        assert!(check("snooze:a.b", good.clone()).is_err());
+        for (property, value) in [
+            ("account", json!("Mini@example.org")),
+            ("messageId", json!("<abc@mail.example.org>")),
+            ("messageId", json!("")),
+            ("messageId", json!("a b@example.org")),
+            ("messageId", json!("m".repeat(999))),
+            ("folder", json!("")),
+            ("until", json!("2026-10-21T07:00:00+02:00")),
+            ("until", json!("2026-10-21 07:00:00Z")),
+            ("until", json!("2026-02-30T07:00:00Z")),
+            ("until", json!("2026-10-21T07:00Z")),
+            ("until", json!("2026-10-21T07:00:00.Z")),
+            ("until", json!(1_792_998_000)),
+            ("extra", json!(1)),
+        ] {
+            let mut bad = good.clone();
+            bad[property] = value;
+            assert!(check("snooze:s", bad.clone()).is_err(), "{property}: {bad}");
+        }
+    }
+
+    #[test]
+    fn templates_have_a_name_a_subject_and_html() {
+        let good = json!({ "name": "Danke", "subject": "", "html": "<p>Hallo {firstName}</p>" });
+        assert_eq!(check("template:t1", good.clone()), Ok(()));
+        assert!(check("template:", good.clone()).is_err());
+        for (property, value) in [
+            ("name", json!("")),
+            ("name", json!("n".repeat(101))),
+            ("name", json!("a\tb")),
+            ("subject", json!("s".repeat(999))),
+            ("subject", json!("a\r\nBcc: x@example.org")),
+            ("html", json!(null)),
+            ("extra", json!(1)),
+        ] {
+            let mut bad = good.clone();
+            bad[property] = value;
+            assert!(check("template:t1", bad).is_err(), "{property}");
+        }
+        let mut huge = good;
+        huge["html"] = json!("x".repeat(USER_SETTINGS_MAX_VALUE_SIZE));
+        assert_eq!(check("template:t1", huge), Err(SettingProblem::TooLarge));
     }
 
     async fn account(store: &Store) -> i64 {

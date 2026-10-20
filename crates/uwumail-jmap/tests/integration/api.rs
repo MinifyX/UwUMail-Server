@@ -688,6 +688,56 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
     let preferences = server.store.preferences(id).await.unwrap();
     assert!(!preferences.contains_key("mailConversations"), "replaced away: {preferences:?}");
 
+    // The keys behind the unified inbox, favorites, quiet hours, snoozes and templates.
+    let folder = json!({ "account": "mini@example.org", "folder": "Rechnungen/2026" });
+    let quiet = json!({ "enabled": true, "from": "22:00", "to": "07:00", "days": [0, 6] });
+    let snooze = json!({ "account": "mini@example.org", "messageId": "a1@mail.example.org", "folder": "INBOX", "until": "2026-10-21T07:00:00Z" });
+    let template = json!({ "name": "Danke", "subject": "Danke!", "html": "<p>Danke, {firstName}</p>" });
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": {
+                    "values/unified.hidden:mini@example.org": true,
+                    "values/folders.favorite:0123abcd0123abcd": folder.clone(),
+                    "values/accounts.order": ["nyu@example.net", "mini@example.org"],
+                    "values/notify.quietHours": quiet,
+                    "values/compose.attachmentReminder": false,
+                    "values/snooze:s1": snooze,
+                    "values/template:t1": template.clone(),
+                    "values/language": null,
+                } } }, "0"],
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": {
+                    "values/accounts.order": ["mini@example.org", "mini@example.org"],
+                    "values/snooze:s2": { "account": "mini@example.org", "messageId": "<a1@mail.example.org>", "folder": "INBOX", "until": "2026-10-21T07:00:00Z" },
+                } } }, "1"],
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": {
+                    "values/snooze:s1": null,
+                    "values/notify.quietHours": null,
+                    "values/senderAppearance:news@shop.example": null,
+                    "values/assist.currency": null,
+                    "values/nyu.animations": null,
+                } } }, "2"],
+                ["UserSettings/get", { "accountId": account }, "3"],
+            ]),
+        )
+        .await;
+    assert_eq!(args(&responses, 0, "UserSettings/set")["updated"], json!({ "singleton": null }), "{responses:?}");
+    let refused = &args(&responses, 1, "UserSettings/set")["notUpdated"]["singleton"];
+    assert_eq!(refused["properties"], json!(["accounts.order", "snooze:s2"]));
+    assert_eq!(args(&responses, 2, "UserSettings/set")["updated"], json!({ "singleton": null }), "{responses:?}");
+    let get = args(&responses, 3, "UserSettings/get");
+    assert_eq!(
+        get["list"][0]["values"],
+        json!({
+            "unified.hidden:mini@example.org": true,
+            "folders.favorite:0123abcd0123abcd": folder,
+            "accounts.order": ["nyu@example.net", "mini@example.org"],
+            "compose.attachmentReminder": false,
+            "template:t1": template,
+        })
+    );
+
     // A change in the portal shows up here with a new state.
     let before = get["state"].clone();
     let change = json!({ "mailSenderPictures": "off" }).as_object().unwrap().clone();
