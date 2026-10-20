@@ -3,10 +3,18 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## 0.24.0 (unreleased)
+## 0.24.0
 
 ### Added
 
+- **Webmail 0.23.0 (`88dc6d4`): organising, snooze, templates and search operators.** Mailboxes
+  can be hidden from the unified views and counts, extra folders shown in the unified inbox,
+  mailboxes reordered, folders pinned as favorites or hidden, and everything marked as read
+  (Shift+I) with undo. Mail can be snoozed and comes back unread; text templates with
+  placeholders, a reminder for a mentioned but missing attachment, and search operators
+  (`from:`, `subject:`, `has:attachment`, `is:unread`, `before:`, `after:` …). Notifications can
+  be muted per mailbox and paused during quiet hours. All of it syncs with the UwUMail apps
+  (0.11.0-beta.4).
 - **More settings sync between the webmail and the apps.** The synced settings
   (docs/jmap-settings.md) take new keys: accounts left out of the unified views
   (`unified.hidden:<address>`), folders added to the unified inbox
