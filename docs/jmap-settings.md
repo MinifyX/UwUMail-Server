@@ -2,7 +2,7 @@
 
 UwUMail Server keeps one settings document per account, so the webmail and the
 UwUMail apps on every device show the same choices: theme, tone, trusted
-senders, signatures and so on. Theme, tone, language and five of the
+senders, signatures, favorite folders, snoozed mail and so on. Theme, tone, language and five of the
 webmail's mail choices are the same values the portal stores as preferences;
 a change in the portal shows up here, and a change here shows up in the
 portal.
@@ -140,12 +140,47 @@ is handed to the others.
 | `senderAppearance:<address>` | `"light"` or `"dark"`; `<address>` is a lower-case address, at most 254 characters |
 | `linkDomains:<domain>` | `true`; `<domain>` is a lower-case ASCII host name (IDNs in punycode), at most 253 characters |
 | `signature:<id>` | `{ "email", "name", "html", "forNew", "forReplies" }`, see below; `<id>` is 1 to 64 of `A-Z a-z 0-9 _ -` |
+| `compose.attachmentReminder` | `true` or `false`: warn before sending when the text mentions an attachment and there is none. Not set: on |
+| `accounts.order` | the person's accounts in the order they sorted them: a list of at most 200 different lower-case addresses. Not set: the default order |
+| `unified.hidden:<address>` | `true`: this account's mail stays out of the unified views (inbox, unread, flagged, drafts, sent) and their badges; `<address>` as for `senderAppearance` |
+| `notify.muted:<address>` | `true`: no notifications for this account |
+| `notify.quietHours` | `{ "enabled", "from", "to", "days" }`, see below. Not set: no quiet hours |
+| `unified.folders:<id>` | a folder reference, see below: this folder is also shown in the unified inbox |
+| `folders.favorite:<id>` | a folder reference: pinned to the favorites at the top of the sidebar |
+| `folders.hidden:<id>` | a folder reference: hidden in the sidebar |
+| `snooze:<id>` | `{ "account", "messageId", "folder", "until" }`, see below |
+| `template:<id>` | `{ "name", "subject", "html" }`, see below |
 
 A signature has exactly these properties: `email` a mail address or `""` for
 none, `name` at most 100 characters, `html` a string, `forNew` and
 `forReplies` booleans. The server stores `html` as it is; every client cleans
 it before use, like mail HTML, and images are only `data:` URIs. Its size is
 bounded by `maxValueSize` for the whole value.
+
+A folder reference is `{ "account", "folder" }`: `account` the account's
+lower-case address (an app's account without one uses its login, lower-cased),
+`folder` the folder's path with `/` between the levels, 1 to 1024 characters
+without control characters. Its `<id>` is derived from both, so every device
+writes the same key for the same folder: the first 16 hex digits of the
+SHA-256 of `account + "\n" + folder`. The ids of snoozes and templates are
+random, 16 characters. Every `<id>` is 1 to 64 of `A-Z a-z 0-9 _ -`.
+
+Quiet hours have exactly these properties: `enabled` a boolean, `from` and
+`to` times `"HH:MM"` (`00:00` to `23:59`; `from` after `to` runs over
+midnight), `days` a list of different weekdays from `0` (Sunday) to `6`. The
+devices hold notifications back themselves; the server does not.
+
+A snooze is a message put away until later. It has exactly these properties:
+`account` a lower-case address, `messageId` the message's Message-ID without
+`<>` (1 to 998 characters, no spaces), `folder` the path of the folder it came
+from, as in a folder reference, and `until` a UTC time like
+`2026-10-21T07:00:00Z` (fractions of a second are allowed). The message itself
+waits in the account's folder `Snoozed`. Whichever device or webmail sees
+`until` pass first moves it back, marks it unread and removes the key.
+
+A template is a text snippet for the composer with exactly these properties:
+`name` 1 to 100 characters, `subject` at most 998 characters (both without
+control characters), `html` a string, stored and cleaned like a signature's.
 
 Lists are one key per entry, so two devices adding to a list at the same time
 never overwrite each other; removing an entry is setting its key to `null`.

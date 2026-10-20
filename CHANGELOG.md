@@ -3,6 +3,25 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.24.0 (unreleased)
+
+### Added
+
+- **More settings sync between the webmail and the apps.** The synced settings
+  (docs/jmap-settings.md) take new keys: accounts left out of the unified views
+  (`unified.hidden:<address>`), folders added to the unified inbox
+  (`unified.folders:<id>`), the order of the accounts (`accounts.order`), favorite and
+  hidden folders (`folders.favorite:<id>`, `folders.hidden:<id>`), notifications muted per
+  account and quiet hours (`notify.muted:<address>`, `notify.quietHours`), the reminder
+  about a missing attachment (`compose.attachmentReminder`), snoozed mail (`snooze:<id>`)
+  and text templates (`template:<id>`). The server checks each value as strictly as the
+  existing keys.
+
+### Fixed
+
+- `assist.currency` and `nyu.animations` can be removed from the synced settings again;
+  setting them to `null` was refused as an invalid property.
+
 ## 0.23.2
 
 0.23.1 was tagged but never built: the release stopped at the dependency audit. This release

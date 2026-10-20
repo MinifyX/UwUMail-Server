@@ -125,14 +125,28 @@ fn validate_removal(key: &str) -> Result<(), SettingProblem> {
         "theme" => json!("system"),
         "tone" => json!("playful"),
         "language" => json!("system"),
-        "conversations" | "senderPictures" | "linkConfirm" | "darkImages" => json!(true),
         "remoteImages" => json!("ask"),
         "mailAppearance" => json!("auto"),
         "undoSendSeconds" => json!(0),
+        "assist.currency" => json!("EUR"),
+        "nyu.animations" => json!("on"),
+        "accounts.order" => json!([]),
+        "notify.quietHours" => json!({ "enabled": false, "from": "22:00", "to": "07:00", "days": [] }),
         _ if key.starts_with("senderAppearance:") => json!("light"),
         _ if key.starts_with("signature:") => {
             json!({ "email": "", "name": "", "html": "", "forNew": false, "forReplies": false })
         }
+        _ if key.starts_with("unified.folders:")
+            || key.starts_with("folders.favorite:")
+            || key.starts_with("folders.hidden:") =>
+        {
+            json!({ "account": "a@b.example", "folder": "INBOX" })
+        }
+        _ if key.starts_with("snooze:") => {
+            json!({ "account": "a@b.example", "messageId": "a@b.example", "folder": "INBOX", "until": "2026-01-01T00:00:00Z" })
+        }
+        _ if key.starts_with("template:") => json!({ "name": "t", "subject": "", "html": "" }),
+        // The booleans and the lists of `true`.
         _ => json!(true),
     };
     validate_setting(key, &sample)
