@@ -2,6 +2,8 @@
 //! it, signed with the rest, never on other addresses; kept from incoming mail only when a signature
 //! of the From domain covers it.
 
+use std::time::{Duration, Instant};
+
 use lettre::AsyncTransport;
 use uwumail_smtp::profile_pictures::{face_header, prepare, sample};
 use uwumail_store::{
@@ -67,8 +69,15 @@ async fn a_face_goes_out_signed_and_is_kept_when_dmarc_passes() {
     assert_eq!(remote.matches("dkim=pass").count(), 2, "the Face is signed with the rest: {remote}");
     assert!(remote.contains("dmarc=pass"), "{remote}");
 
-    // b.test keeps it for pictureUrl.
-    let kept = b.smtp.store().received_face("mini@a.test").await.unwrap().expect("kept");
+    // b.test keeps it for pictureUrl, just after the mail reached the inbox.
+    let started = Instant::now();
+    let kept = loop {
+        if let Some(kept) = b.smtp.store().received_face("mini@a.test").await.unwrap() {
+            break kept;
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "the Face is kept");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
     assert_eq!(kept.0, face);
     // The signature names the Face, so a receiver can tell that a.test sent it.
     let unfolded = remote.replace("\r\n\t", "").replace("\r\n ", "");

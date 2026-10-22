@@ -3,6 +3,20 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.24.2
+
+### Fixed
+
+- Mail to domains below `.me` or `.org` (and other zones amid a DNSSEC key rollover) no longer
+  stays in the queue with `DNSSEC: the MX records of … do not validate`. The DNSSEC lookups for
+  DANE now go over TCP: the zone's key set no longer fits a UDP answer, came back truncated, and
+  failed to decode, so every name below it looked bogus.
+
+### Security
+
+- rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.10: distrusted emSign
+  intermediates are no longer accepted (RUSTSEC-2026-0381, -0382, -0383).
+
 ## 0.24.1
 
 ### Fixed
