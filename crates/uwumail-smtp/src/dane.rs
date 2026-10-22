@@ -14,9 +14,12 @@ use std::time::{Duration, Instant};
 
 use aws_lc_rs::digest;
 use hickory_resolver::TokioResolver;
+use hickory_resolver::config::{ConnectionConfig, ResolverConfig};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
 use hickory_resolver::net::{DnsError, NetError};
 use hickory_resolver::proto::dnssec::Proof;
 use hickory_resolver::proto::rr::{RData, RecordType};
+use hickory_resolver::system_conf::read_system_conf;
 use mail_auth::ResolverCache;
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -289,12 +292,12 @@ impl Validator {
     async fn resolver(&self) -> Option<&TokioResolver> {
         self.resolver
             .get_or_init(|| async {
-                let built = TokioResolver::builder_tokio().and_then(|mut builder| {
-                    let options = builder.options_mut();
+                let built = read_system_conf().and_then(|(config, mut options)| {
                     options.validate = true;
-                    options.try_tcp_on_error = true;
                     options.timeout = Duration::from_secs(4);
-                    builder.build()
+                    TokioResolver::builder_with_config(over_tcp(config), TokioRuntimeProvider::default())
+                        .with_options(options)
+                        .build()
                 });
                 match built {
                     Ok(resolver) => Some(resolver),
@@ -378,6 +381,25 @@ impl Validator {
             Checked::Failed(_) => None,
         }
     }
+}
+
+/// The same resolvers, asked over TCP only. Signed answers often outgrow a UDP packet: the DNSKEY
+/// set of a zone amid a key rollover (`.me` and `.org` in October 2026) comes back truncated, cut
+/// off inside a record, and hickory then fails to decode it instead of retrying over TCP, so every
+/// name below that zone looked bogus and its mail was held back.
+fn over_tcp(config: ResolverConfig) -> ResolverConfig {
+    let (domain, search, servers) = config.into_parts();
+    let servers = servers
+        .into_iter()
+        .map(|mut server| {
+            let port = server.connections.first().map_or(53, |connection| connection.port);
+            let mut tcp = ConnectionConfig::tcp();
+            tcp.port = port;
+            server.connections = vec![tcp];
+            server
+        })
+        .collect();
+    ResolverConfig::from_parts(domain, search, servers)
 }
 
 fn valid_for(secs: u64) -> Instant {
@@ -486,6 +508,7 @@ pub(crate) async fn host_tlsa(ctx: &Context, host: &str) -> HostTlsa {
 
 #[cfg(test)]
 mod tests {
+    use hickory_resolver::config::{NameServerConfig, ProtocolConfig};
     use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair};
 
     use super::*;
@@ -624,6 +647,17 @@ mod tests {
         assert!(verify(&pkix, &chain.leaf, &[], &mx, now, &provider).is_err());
     }
 
+    #[test]
+    fn the_validator_asks_its_resolvers_over_tcp_only() {
+        let mut server = NameServerConfig::udp_and_tcp("192.0.2.53".parse().unwrap());
+        server.connections.iter_mut().for_each(|connection| connection.port = 5353);
+        let config = over_tcp(ResolverConfig::from_name_servers(vec![server]));
+        let connections = &config.name_servers()[0].connections;
+        assert_eq!(connections.len(), 1);
+        assert_eq!(connections[0].protocol, ProtocolConfig::Tcp);
+        assert_eq!(connections[0].port, 5353);
+    }
+
     /// Asks real DNS; run with `cargo test -p uwumail-smtp live_dane -- --ignored --nocapture`.
     #[tokio::test]
     #[ignore = "needs the internet"]
@@ -634,6 +668,8 @@ mod tests {
         assert!(validator.works().await, "signed answers validate here");
         assert_eq!(validator.security("ietf.org", RecordType::MX).await, Some(Security::Secure));
         assert_eq!(validator.security("example.com", RecordType::A).await, Some(Security::Secure));
+        // Bigger than a UDP packet while .org rolls its keys, so only TCP gets it whole.
+        assert_eq!(validator.security("org", RecordType::DNSKEY).await, Some(Security::Secure));
         let host = std::env::var("UWUMAIL_DANE_HOST").unwrap_or_else(|_| "mail2.ietf.org".into());
         match validator.lookup(&tlsa_name(&host), RecordType::TLSA).await {
             Checked::Secure(records, ttl) => println!("{host}: {records:?} for {ttl} s"),
