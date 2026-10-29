@@ -591,7 +591,13 @@
       "hostInvalid": "サーバー名が使えません。インターネット上のサーバーのみ使用できます。",
       "urlInvalid": "使用できる https アドレスではありません。",
       "domainMaskedOnly": "このドメインはマスクアドレス専用です。",
-      "noMailbox": "このアカウントにはメールボックスがありません。"
+      "noMailbox": "このアカウントにはメールボックスがありません。",
+      "notUwuauth": "このアドレスでペアリング可能な UwUAuth（0.4 以降）が応答しません。",
+      "pairingCodeInvalid": "このペアリングコードは不明、使用済み、取り消し済み、または期限切れです。UwUAuth で新しいコードを作成してください。",
+      "pairingTooMany": "UwUAuth がしばらく試行を拒否しています。少し待ってからもう一度お試しください。",
+      "pairingRefused": "UwUAuth がペアリングを拒否しました: {{detail}}",
+      "uwuauthUnreachable": "UwUAuth に接続できません: {{detail}}",
+      "uwuauthAddress": "このアドレスは使用できません: {{detail}}"
     }
   },
   "people": {
@@ -1717,7 +1723,8 @@
       "vpn": "VPN とプロキシ",
       "branding": "ブランディング",
       "login": "ログイン",
-      "assist": "AI アシスタント"
+      "assist": "AI アシスタント",
+      "uwuauth": "UwUAuth"
     },
     "mailIntro": "メールがサーバーから出ていく方法と、受け付ける内容です。変更は再起動なしですぐに反映されます。",
     "appsIntro": "メールアプリとブラウザーのメールボックスに適用される設定です。変更は再起動なしですぐに反映されます。"
@@ -2113,7 +2120,11 @@
       "adminClaim": "管理者クレーム",
       "adminClaimHint": "プロバイダーの応答のうち、グループやロールを列挙するクレーム。",
       "adminValue": "管理者の値",
-      "adminValueHint": "クレームにこの値を含む新しいアカウントは管理者になります。"
+      "adminValueHint": "クレームにこの値を含む新しいアカウントは管理者になります。",
+      "privateNetwork": "ログインサービスはローカルネットワーク内にあります",
+      "privateNetworkHint": "ログインサービスのホストにのみプライベートアドレスを許可します。サーバーが信頼する証明書による HTTPS は引き続き必要です。",
+      "syncAdmin": "管理者ロールをログインサービスから取得する",
+      "syncAdminHint": "ログインのたびに、下のクレームに従って管理者または一般ユーザーになります。"
     },
     "ldap": {
       "title": "LDAP ディレクトリー",
@@ -2140,6 +2151,33 @@
       "adminGroupDnHint": "このグループのメンバー（memberOf）である新しいアカウントは管理者になります。",
       "autoCreateHint": "ディレクトリーがアドレスを知っていて、そのドメインが下で許可されている場合。"
     }
+  },
+  "uwuauth": {
+    "intro": "UwUAuth とペアリングすると、ログイン、アカウント、ロックはそちらで管理されます。",
+    "pairTitle": "UwUAuth とペアリング",
+    "pairIntro": "UwUAuth で UwUMail をアプリとして追加し、ペアリングコードまたは QR コードのテキストをコピーしてください。",
+    "code": "ペアリングコード",
+    "codeHint": "QR コードのテキストでも構いません。その場合アドレスは不要です。",
+    "url": "UwUAuth のアドレス",
+    "pair": "ペアリング",
+    "paired": "UwUAuth とペアリングしました。",
+    "pairedTitle": "UwUAuth",
+    "pairedWith": "{{name}}（UwUAuth {{version}}）とペアリング済み",
+    "issuer": "発行者",
+    "pairedAt": "ペアリング",
+    "pairedBy": "{{when}}、{{who}} による",
+    "login": "ログイン",
+    "loginActive": "ログインページに UwUAuth ボタンがあります。",
+    "loginInactive": "オフ: ログイン設定は別の場所を指しています。",
+    "locked": "一部のログイン設定は設定ファイルから来ており、ペアリングでは変更されません。",
+    "manage": "UwUAuth で管理",
+    "unpair": "ペアリング解除",
+    "unpairTitle": "UwUAuth とのペアリングを解除しますか？",
+    "unpairBody": "UwUAuth でのログインはオフになり、UwUAuth はメールボックスを作成・変更できなくなります。メールボックスとメールは残ります。",
+    "unpaired": "UwUAuth とのペアリングを解除しました。",
+    "addresses": "UwUAuth 用のアドレス",
+    "scimUrl": "SCIM アドレス",
+    "docs": "ペアリングの仕組み"
   },
   "fetch": {
     "title": "取り込みメールボックス",

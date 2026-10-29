@@ -1095,6 +1095,9 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "auth.oidc.allowed_domains": { value: [], source: "default" },
   "auth.oidc.admin_group_claim": { value: null, source: "default" },
   "auth.oidc.admin_group_value": { value: null, source: "default" },
+  "auth.oidc.scopes": { value: [], source: "default" },
+  "auth.oidc.private_network": { value: false, source: "default" },
+  "auth.oidc.sync_admin": { value: false, source: "default" },
   "auth.ldap.enabled": { value: true, source: "database" },
   "auth.ldap.url": { value: "ldaps://ldap.example.com", source: "database" },
   "auth.ldap.starttls": { value: true, source: "default" },
@@ -1113,6 +1116,16 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "fetch.oauth.google_client_id": { value: "1234567890-mock.apps.googleusercontent.com", source: "database" },
   "fetch.oauth.google_client_secret": { value: null, source: "database", set: true },
 };
+
+let uwuauthPairing: Record<string, unknown> | null = null;
+const uwuauthView = () => ({
+  paired: uwuauthPairing !== null,
+  pairing: uwuauthPairing,
+  loginActive: uwuauthPairing !== null && settings["auth.oidc.enabled"]?.value === true,
+  scimUrl: "https://mail.uwu.example/scim/v2",
+  redirectUri: "https://mail.uwu.example/api/auth/oidc/callback",
+  locked: [],
+});
 
 const settingsView = () => ({
   settings: Object.entries(settings).map(([key, entry]) => ({
@@ -3215,6 +3228,54 @@ const routes: [string, RegExp, Handler][] = [
           redirectUri: "https://mail.uwu.example/api/auth/oidc/callback",
         },
       ];
+    },
+  ],
+  ["GET", /^\/api\/admin\/uwuauth$/, () => [200, uwuauthView()]],
+  [
+    "POST",
+    /^\/api\/admin\/uwuauth$/,
+    (body) => {
+      // "WRONG" in the code plays a code UwUAuth does not know, "down" in the address one that does not answer.
+      const { url, code, privateNetwork } = body as { url: string | null; code: string; privateNetwork: boolean };
+      const address = code.includes("#pair=") ? (code.split("#pair=")[0] ?? "") : (url ?? "");
+      if (!address.startsWith("https://")) return problem(409, "uwuauthAddress");
+      if (address.includes("down")) return problem(409, "uwuauthUnreachable");
+      if (code.includes("WRONG")) return problem(409, "pairingCodeInvalid");
+      const issuer = new URL(address).origin;
+      uwuauthPairing = {
+        url: address,
+        issuer,
+        name: "UwUAuth at home",
+        version: "0.5.0",
+        appId: "app-1",
+        manageUrl: `${issuer}/admin/apps/app-1`,
+        pairedAt: Math.floor(Date.now() / 1000),
+        pairedBy: "nyu@uwu.example",
+        privateNetwork,
+      };
+      const set = (key: string, value: unknown) => (settings[key] = { value, source: "database" });
+      set("auth.oidc.enabled", true);
+      set("auth.oidc.issuer", issuer);
+      set("auth.oidc.client_id", "uwumail-1");
+      settings["auth.oidc.client_secret"] = { value: null, source: "database", set: true };
+      set("auth.oidc.button_label", "UwUAuth");
+      set("auth.oidc.auto_create", false);
+      set("auth.oidc.admin_group_claim", "roles");
+      set("auth.oidc.admin_group_value", "admin");
+      set("auth.oidc.scopes", ["openid", "email", "profile", "groups", "roles"]);
+      set("auth.oidc.private_network", privateNetwork);
+      set("auth.oidc.sync_admin", true);
+      return [200, uwuauthView()];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/uwuauth$/,
+    () => {
+      if (!uwuauthPairing) return problem(404, "notFound");
+      uwuauthPairing = null;
+      settings["auth.oidc.enabled"] = { value: false, source: "database" };
+      return [204, null];
     },
   ],
   [

@@ -824,6 +824,13 @@ impl Dialer {
         self.connector.proxy.is_some()
     }
 
+    /// The same dialer, allowed to reach `reach`: for a server the admin named on purpose, like a UwUAuth
+    /// in the local network (docs/uwuauth.md). Addresses in the local network are then reached directly.
+    pub fn reaching(mut self, reach: Reach) -> Dialer {
+        self.connector.reach = reach;
+        self
+    }
+
     /// The same connections as a hyper connector, for an HTTPS client.
     pub fn https_connector(&self, tls: rustls::ClientConfig) -> HttpsConnector<DialerConnector> {
         hyper_rustls::HttpsConnectorBuilder::new()

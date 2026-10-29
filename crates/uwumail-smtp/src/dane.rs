@@ -292,12 +292,15 @@ impl Validator {
     async fn resolver(&self) -> Option<&TokioResolver> {
         self.resolver
             .get_or_init(|| async {
-                let built = read_system_conf().and_then(|(config, mut options)| {
+                // The system configuration fails with another error type on macOS and Windows
+                // than on Linux, hence the strings.
+                let built = read_system_conf().map_err(|err| err.to_string()).and_then(|(config, mut options)| {
                     options.validate = true;
                     options.timeout = Duration::from_secs(4);
                     TokioResolver::builder_with_config(over_tcp(config), TokioRuntimeProvider::default())
                         .with_options(options)
                         .build()
+                        .map_err(|err| err.to_string())
                 });
                 match built {
                     Ok(resolver) => Some(resolver),

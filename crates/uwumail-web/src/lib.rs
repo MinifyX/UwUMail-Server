@@ -380,8 +380,15 @@ impl Web {
     }
 
     /// The way to the OpenID Connect provider: the egress's route for the server's own requests,
-    /// https to public addresses only.
+    /// https to public addresses only, except for the provider's own host when the admin said it is in
+    /// the local network.
     pub(crate) fn oidc_transport(&self) -> Arc<dyn uwumail_dav::client::Transport> {
+        let lan = self.external_login().config().oidc.lan_host();
+        self.oidc_transport_for(lan.into_iter().collect())
+    }
+
+    /// The way to an OpenID Connect provider whose `lan_hosts` may be in the local network.
+    pub(crate) fn oidc_transport_for(&self, lan_hosts: Vec<String>) -> Arc<dyn uwumail_dav::client::Transport> {
         if let Some(transport) = self.inner.oidc_transport.get() {
             return transport.clone();
         }
@@ -389,7 +396,12 @@ impl Web {
             Some(egress) => egress.dialer(uwumail_smtp::egress::Purpose::Updates),
             None => uwumail_smtp::egress::Egress::direct().dialer(uwumail_smtp::egress::Purpose::Updates),
         };
-        Arc::new(uwumail_dav::client::HttpsTransport::new(&dialer))
+        let public = uwumail_dav::client::HttpsTransport::new(&dialer);
+        if lan_hosts.is_empty() {
+            return Arc::new(public);
+        }
+        let lan = uwumail_dav::client::HttpsTransport::new(&dialer.reaching(uwumail_smtp::egress::Reach::Lan));
+        Arc::new(external::LanRoute { hosts: lan_hosts, lan: Box::new(lan), public: Box::new(public) })
     }
 
     pub(crate) fn oauth_attempts(&self) -> &Mutex<HashMap<(&'static str, std::net::IpAddr), Vec<i64>>> {
@@ -491,6 +503,29 @@ impl Web {
                 get(routes::oauth::metadata).options(routes::oauth::preflight),
             )
             .route("/.well-known/openid-configuration", get(routes::oauth::metadata).options(routes::oauth::preflight))
+            .merge(
+                Router::new()
+                    .route("/scim/v2/ServiceProviderConfig", get(routes::scim::service_provider_config))
+                    .route("/scim/v2/ResourceTypes", get(routes::scim::resource_types))
+                    .route("/scim/v2/Schemas", get(routes::scim::schemas))
+                    .route("/scim/v2/Users", get(routes::scim::list_users).post(routes::scim::create_user))
+                    .route(
+                        "/scim/v2/Users/{id}",
+                        get(routes::scim::get_user)
+                            .put(routes::scim::put_user)
+                            .patch(routes::scim::patch_user)
+                            .delete(routes::scim::delete_user),
+                    )
+                    .route("/scim/v2/Groups", get(routes::scim::list_groups).post(routes::scim::create_group))
+                    .route(
+                        "/scim/v2/Groups/{id}",
+                        get(routes::scim::get_group)
+                            .put(routes::scim::put_group)
+                            .patch(routes::scim::patch_group)
+                            .delete(routes::scim::delete_group),
+                    )
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::scim::MAX_BODY)),
+            )
             .route("/oauth/token", post(routes::oauth::token).options(routes::oauth::preflight))
             .route("/oauth/register", post(routes::oauth::register).options(routes::oauth::preflight))
             .route("/oauth/revoke", post(routes::oauth::revoke).options(routes::oauth::preflight))
@@ -744,6 +779,10 @@ impl Web {
             .route("/api/admin/branding/palette", get(routes::branding::preview))
             .route("/api/admin/egress", get(routes::egress::show))
             .route("/api/admin/egress/test", post(routes::egress::test))
+            .route(
+                "/api/admin/uwuauth",
+                get(routes::uwuauth::status).post(routes::uwuauth::pair).delete(routes::uwuauth::unpair),
+            )
             .route("/api/admin/vpn", get(routes::vpn::show).put(routes::vpn::save))
             .route("/api/admin/vpn/apply", post(routes::vpn::apply))
             .route("/api/admin/vpn/stop", post(routes::vpn::stop))

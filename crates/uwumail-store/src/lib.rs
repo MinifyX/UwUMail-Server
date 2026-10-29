@@ -69,6 +69,7 @@ mod queue;
 mod reports;
 mod rules;
 mod sasl;
+mod scim;
 mod security;
 mod sender_lists;
 mod shared_mailboxes;
@@ -216,6 +217,7 @@ pub use rules::{
     RuleImport, RuleList, RulePage, RuleQuery, RuleScope, RuleSort, RuleState, RuleType, ScopeFilter,
 };
 pub use sasl::{SaslBearer, parse_oauthbearer, parse_xoauth2, sasl_bearer_error, sasl_user_matches};
+pub use scim::{SCIM_MAX_MEMBERS, ScimGroup, ScimGroupFilter, ScimGroupUpdate, ScimUser, ScimUserFilter};
 pub use security::{
     ALL_SCOPES, AppPassword, AppScope, CodeCheck, CreatedAppPassword, LiveLogin, MailAuth, MailAuthDenied,
     NewAppPassword, Passkey, SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,

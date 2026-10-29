@@ -2288,3 +2288,25 @@ export interface BimiView {
   /** The domain has a pixel logo for profile pictures. */
   domainLogo: boolean;
 }
+
+/** GET /api/admin/uwuauth: the pairing with UwUAuth (docs/uwuauth.md). */
+export interface UwuauthView {
+  paired: boolean;
+  pairing: {
+    url: string;
+    issuer: string;
+    name: string;
+    version: string;
+    appId: string;
+    manageUrl: string;
+    pairedAt: number;
+    pairedBy: string;
+    privateNetwork: boolean;
+  } | null;
+  /** The login button is on and points at the paired UwUAuth. */
+  loginActive: boolean;
+  scimUrl: string;
+  redirectUri: string;
+  /** Settings the config file holds: pairing cannot change them. */
+  locked: string[];
+}

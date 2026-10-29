@@ -44,6 +44,98 @@ pub struct OidcConfig {
     /// A claim, such as `groups`, whose value makes a new account an admin.
     pub admin_group_claim: String,
     pub admin_group_value: String,
+    /// The scopes asked for at login. Empty means `openid email profile`.
+    pub scopes: Vec<String>,
+    /// The provider lives in the local network (a UwUAuth at home): its host, and only its host, may
+    /// have a private address. https stays required.
+    pub private_network: bool,
+    /// The admin group claim decides at every login whether an account that logs in this way is an
+    /// admin, not only when it is made.
+    pub sync_admin: bool,
+}
+
+/// What is asked for when the settings name no scopes.
+pub const DEFAULT_SCOPES: &str = "openid email profile";
+
+impl OidcConfig {
+    /// The provider's host, when it may be in the local network.
+    pub fn lan_host(&self) -> Option<String> {
+        if !self.private_network {
+            return None;
+        }
+        url::Url::parse(self.issuer.trim()).ok()?.host_str().map(|host| host.to_ascii_lowercase())
+    }
+
+    /// The scopes asked for at login, `openid` always among them.
+    pub fn scope(&self) -> String {
+        let mut scopes: Vec<&str> = self.scopes.iter().map(|scope| scope.trim()).filter(|s| !s.is_empty()).collect();
+        if scopes.is_empty() {
+            return DEFAULT_SCOPES.to_owned();
+        }
+        if !scopes.contains(&"openid") {
+            scopes.insert(0, "openid");
+        }
+        // Each once, in the order first named.
+        let mut seen = std::collections::HashSet::new();
+        scopes.retain(|scope| seen.insert(*scope));
+        scopes.join(" ")
+    }
+}
+
+/// Checks an address at the provider: like every request of the server (https, no login in it, a
+/// public host), except that `lan`, the provider's own host when the admin said it is in the local
+/// network, may be a private address. The machine itself stays out of reach either way.
+pub fn checked_issuer_url(url: &str, lan: Option<&str>) -> Result<url::Url, String> {
+    use url::Host;
+    use uwumail_smtp::egress::Reach;
+    let parsed = url::Url::parse(url.trim()).map_err(|_| "that is not a web address".to_owned())?;
+    let host = parsed.host_str().map(str::to_ascii_lowercase);
+    let Some(lan) = lan.filter(|lan| host.as_deref() == Some(*lan)) else {
+        return uwumail_smtp::fetch::check_url(url, false);
+    };
+    if parsed.scheme() != "https" {
+        return Err(format!("{lan} needs https"));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("the address may not contain a login".into());
+    }
+    let allowed = match parsed.host() {
+        Some(Host::Ipv4(ip)) => Reach::Lan.allows(ip.into()),
+        Some(Host::Ipv6(ip)) => Reach::Lan.allows(ip.into()),
+        Some(Host::Domain(domain)) => {
+            let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+            domain != "localhost" && !domain.ends_with(".localhost")
+        }
+        None => false,
+    };
+    if !allowed {
+        return Err("the address points at this machine".into());
+    }
+    Ok(parsed)
+}
+
+/// Requests to the provider's host in the local network leave through one transport (allowed to
+/// reach it), everything else through the usual one.
+pub struct LanRoute {
+    pub hosts: Vec<String>,
+    pub lan: Box<dyn uwumail_dav::client::Transport>,
+    pub public: Box<dyn uwumail_dav::client::Transport>,
+}
+
+impl uwumail_dav::client::Transport for LanRoute {
+    fn send(
+        &self,
+        request: axum::http::Request<bytes::Bytes>,
+        max_bytes: usize,
+    ) -> uwumail_dav::client::BoxFuture<'_, Result<uwumail_dav::client::Answer, uwumail_dav::client::RemoteError>> {
+        let host =
+            request.uri().host().map(|host| host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase());
+        let local = request.uri().scheme_str() == Some("https")
+            && host.is_some_and(|host| {
+                self.hosts.iter().any(|lan| lan.trim_start_matches('[').trim_end_matches(']') == host)
+            });
+        if local { self.lan.send(request, max_bytes) } else { self.public.send(request, max_bytes) }
+    }
 }
 
 /// Logging in with the password of an LDAP directory.
@@ -100,7 +192,7 @@ impl AuthConfig {
     /// be saved while they are off.
     pub fn validate(&self) -> Result<(), String> {
         if self.oidc.enabled {
-            uwumail_smtp::fetch::check_url(&self.oidc.issuer, false)
+            checked_issuer_url(&self.oidc.issuer, self.oidc.lan_host().as_deref())
                 .map_err(|err| format!("`auth.oidc.issuer`: {err}"))?;
             if self.oidc.client_id.trim().is_empty() {
                 return Err("`auth.oidc.client_id` is needed to log in with OpenID Connect".into());
@@ -231,5 +323,74 @@ mod tests {
         assert!(config.validate().is_err(), "and a client id");
         config.oidc.client_id = "uwumail".into();
         assert!(config.validate().is_ok());
+        config.oidc.issuer = "https://192.168.1.20".into();
+        assert!(config.validate().is_err(), "a private address only when the admin says so");
+        config.oidc.private_network = true;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn only_the_providers_own_host_may_be_in_the_local_network() {
+        let lan = Some("auth.home.example");
+        assert!(checked_issuer_url("https://auth.home.example/x", lan).is_ok());
+        assert!(checked_issuer_url("https://AUTH.home.example/x", lan).is_ok());
+        assert!(checked_issuer_url("http://auth.home.example/x", lan).is_err(), "https stays required");
+        assert!(checked_issuer_url("https://user:pw@auth.home.example/", lan).is_err());
+        // Other hosts are checked as always.
+        assert!(checked_issuer_url("https://10.0.0.1/", lan).is_err());
+        assert!(checked_issuer_url("https://intranet/", lan).is_err());
+        assert!(checked_issuer_url("https://idp.example.net/", lan).is_ok());
+
+        assert!(checked_issuer_url("https://192.168.1.20/", Some("192.168.1.20")).is_ok());
+        assert!(checked_issuer_url("https://[fd00::1]/", Some("[fd00::1]")).is_ok());
+        assert!(checked_issuer_url("https://127.0.0.1/", Some("127.0.0.1")).is_err(), "never the machine itself");
+        assert!(checked_issuer_url("https://169.254.169.254/", Some("169.254.169.254")).is_err());
+        assert!(checked_issuer_url("https://localhost/", Some("localhost")).is_err());
+        assert!(checked_issuer_url("https://192.168.1.20/", None).is_err());
+    }
+
+    #[test]
+    fn scopes_always_ask_for_openid() {
+        let mut config = OidcConfig::default();
+        assert_eq!(config.scope(), "openid email profile");
+        config.scopes = vec!["email".into(), "roles".into()];
+        assert_eq!(config.scope(), "openid email roles");
+        config.scopes = vec!["openid".into(), "email".into(), "profile".into(), "groups".into(), "roles".into()];
+        assert_eq!(config.scope(), "openid email profile groups roles");
+        config.scopes = vec!["email".into(), "roles".into(), "email".into(), "openid".into(), " roles ".into()];
+        assert_eq!(config.scope(), "email roles openid");
+        config.issuer = "https://Auth.Home.example/".into();
+        assert_eq!(config.lan_host(), None);
+        config.private_network = true;
+        assert_eq!(config.lan_host().as_deref(), Some("auth.home.example"));
+    }
+
+    struct Named(&'static str);
+
+    impl uwumail_dav::client::Transport for Named {
+        fn send(
+            &self,
+            _: axum::http::Request<bytes::Bytes>,
+            _: usize,
+        ) -> uwumail_dav::client::BoxFuture<'_, Result<uwumail_dav::client::Answer, uwumail_dav::client::RemoteError>>
+        {
+            let body = bytes::Bytes::from_static(self.0.as_bytes());
+            Box::pin(async move { Ok(uwumail_dav::client::Answer { status: 200, headers: Default::default(), body }) })
+        }
+    }
+
+    #[tokio::test]
+    async fn the_lan_host_goes_its_own_way() {
+        let route = LanRoute {
+            hosts: vec!["auth.home.example".into(), "[fd00::1]".into()],
+            lan: Box::new(Named("lan")),
+            public: Box::new(Named("public")),
+        };
+        let to = |uri: &str| axum::http::Request::get(uri).body(bytes::Bytes::new()).unwrap();
+        use uwumail_dav::client::Transport;
+        assert_eq!(route.send(to("https://auth.home.example/x"), 10).await.unwrap().body, "lan");
+        assert_eq!(route.send(to("https://[fd00::1]/x"), 10).await.unwrap().body, "lan");
+        assert_eq!(route.send(to("https://idp.example.net/x"), 10).await.unwrap().body, "public");
+        assert_eq!(route.send(to("http://auth.home.example/x"), 10).await.unwrap().body, "public");
     }
 }

@@ -1,6 +1,7 @@
 //! Logging in at another OpenID Connect provider: the authorization code flow with PKCE, state and
 //! nonce (OpenID Connect Core 1.0 section 3.1). Every request to the provider leaves through the
-//! egress like other requests of the server, over https to public addresses only.
+//! egress like other requests of the server, over https to public addresses only — or, when the admin
+//! says the provider is in the local network (`auth.oidc.private_network`), to its own host there.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -13,9 +14,9 @@ use data_encoding::{BASE64, BASE64URL_NOPAD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
-use uwumail_dav::client::{Transport, checked_url};
+use uwumail_dav::client::Transport;
 
-use super::OidcConfig;
+use super::{OidcConfig, checked_issuer_url};
 use crate::jwt;
 
 /// A login at the provider has this long to come back.
@@ -48,6 +49,8 @@ pub struct OidcIdentity {
     pub name: String,
     /// The admin group claim has the admin group value.
     pub admin: bool,
+    /// The admin group claim was there at all, so `admin` says yes or no rather than "don't know".
+    pub admin_known: bool,
     /// Where to go afterwards, as the login page asked.
     pub next: Option<String>,
 }
@@ -111,8 +114,13 @@ async fn send(transport: &dyn Transport, request: Request<Bytes>) -> Result<Valu
     serde_json::from_slice(&answer.body).map_err(|_| "the provider's answer is not JSON".to_owned())
 }
 
-async fn get_json(transport: &dyn Transport, url: &str, bearer: Option<&str>) -> Result<Value, String> {
-    let url = checked_url(url).map_err(|err| err.to_string())?;
+async fn get_json(
+    transport: &dyn Transport,
+    url: &str,
+    bearer: Option<&str>,
+    lan: Option<&str>,
+) -> Result<Value, String> {
+    let url = checked_issuer_url(url, lan)?;
     let mut request = Request::builder()
         .method(Method::GET)
         .uri(url.as_str())
@@ -124,18 +132,18 @@ async fn get_json(transport: &dyn Transport, url: &str, bearer: Option<&str>) ->
     send(transport, request.body(Bytes::new()).map_err(|err| err.to_string())?).await
 }
 
-fn endpoint(document: &Value, name: &str) -> Result<String, String> {
+fn endpoint(document: &Value, name: &str, lan: Option<&str>) -> Result<String, String> {
     let url = document.get(name).and_then(Value::as_str).ok_or(format!("the provider names no {name}"))?;
-    checked_url(url).map_err(|err| format!("{name}: {err}"))?;
+    checked_issuer_url(url, lan).map_err(|err| format!("{name}: {err}"))?;
     Ok(url.to_owned())
 }
 
 /// Reads the provider's discovery document (OpenID Connect Discovery 1.0) and checks it names
-/// itself the way the settings do.
-pub async fn discover(transport: &dyn Transport, issuer: &str) -> Result<Discovery, String> {
+/// itself the way the settings do. `lan` is the provider's host when it may be in the local network.
+pub async fn discover(transport: &dyn Transport, issuer: &str, lan: Option<&str>) -> Result<Discovery, String> {
     let issuer = issuer.trim();
     let url = format!("{}/.well-known/openid-configuration", issuer.trim_end_matches('/'));
-    let document = get_json(transport, &url, None).await?;
+    let document = get_json(transport, &url, None, lan).await?;
     // The provider's own spelling counts, give or take the slash at the end that settings often
     // add or leave out; ID tokens are then checked against exactly that spelling.
     let named = document.get("issuer").and_then(Value::as_str).unwrap_or_default();
@@ -144,10 +152,10 @@ pub async fn discover(transport: &dyn Transport, issuer: &str) -> Result<Discove
     }
     Ok(Discovery {
         issuer: named.to_owned(),
-        authorization_endpoint: endpoint(&document, "authorization_endpoint")?,
-        token_endpoint: endpoint(&document, "token_endpoint")?,
-        jwks_uri: endpoint(&document, "jwks_uri")?,
-        userinfo_endpoint: endpoint(&document, "userinfo_endpoint").ok(),
+        authorization_endpoint: endpoint(&document, "authorization_endpoint", lan)?,
+        token_endpoint: endpoint(&document, "token_endpoint", lan)?,
+        jwks_uri: endpoint(&document, "jwks_uri", lan)?,
+        userinfo_endpoint: endpoint(&document, "userinfo_endpoint", lan).ok(),
         token_auth_methods: document
             .get("token_endpoint_auth_methods_supported")
             .and_then(Value::as_array)
@@ -158,9 +166,11 @@ pub async fn discover(transport: &dyn Transport, issuer: &str) -> Result<Discove
 
 /// Tries the settings: discovery and keys. Returns what the provider is, for the admin.
 pub async fn test(transport: &dyn Transport, config: &OidcConfig) -> Result<String, String> {
-    checked_url(config.issuer.trim()).map_err(|err| err.to_string())?;
-    let discovery = discover(transport, &config.issuer).await?;
-    let jwks = get_json(transport, &discovery.jwks_uri, None).await?;
+    let lan = config.lan_host();
+    let lan = lan.as_deref();
+    checked_issuer_url(config.issuer.trim(), lan)?;
+    let discovery = discover(transport, &config.issuer, lan).await?;
+    let jwks = get_json(transport, &discovery.jwks_uri, None, lan).await?;
     let keys = jwks.get("keys").and_then(Value::as_array).map_or(0, Vec::len);
     if keys == 0 {
         return Err("the provider publishes no signing keys".into());
@@ -178,8 +188,9 @@ impl super::ExternalLogin {
                 return Ok((cached.discovery.clone(), cached.jwks.clone()));
             }
         }
-        let discovery = discover(transport, &issuer).await?;
-        let jwks = get_json(transport, &discovery.jwks_uri, None).await?;
+        let lan = config.oidc.lan_host();
+        let discovery = discover(transport, &issuer, lan.as_deref()).await?;
+        let jwks = get_json(transport, &discovery.jwks_uri, None, lan.as_deref()).await?;
         *self.oidc().cache.lock().expect("oidc cache poisoned") =
             Some(Cached { at: Instant::now(), issuer, discovery: discovery.clone(), jwks: jwks.clone() });
         Ok((discovery, jwks))
@@ -223,7 +234,7 @@ impl super::ExternalLogin {
             .append_pair("response_type", "code")
             .append_pair("client_id", config.oidc.client_id.trim())
             .append_pair("redirect_uri", redirect_uri)
-            .append_pair("scope", "openid email profile")
+            .append_pair("scope", &config.oidc.scope())
             .append_pair("state", &state)
             .append_pair("nonce", &nonce)
             .append_pair("code_challenge", &challenge)
@@ -250,6 +261,8 @@ impl super::ExternalLogin {
         }
         let config = self.config();
         let failed = OidcFailure::Failed;
+        let lan = config.oidc.lan_host();
+        let lan = lan.as_deref();
         let (discovery, jwks) = self.discovery(transport, false).await.map_err(failed)?;
 
         let client_id = config.oidc.client_id.trim();
@@ -265,7 +278,7 @@ impl super::ExternalLogin {
         ];
         let mut request = Request::builder()
             .method(Method::POST)
-            .uri(checked_url(&discovery.token_endpoint).map_err(|err| failed(err.to_string()))?.as_str())
+            .uri(checked_issuer_url(&discovery.token_endpoint, lan).map_err(failed)?.as_str())
             .header(USER_AGENT, "UwUMail")
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded");
@@ -331,7 +344,7 @@ impl super::ExternalLogin {
         if (!facts.contains_key("email") || !has_claim(&facts, &config.oidc.admin_group_claim))
             && let (Some(userinfo), Some(access)) =
                 (&discovery.userinfo_endpoint, tokens.get("access_token").and_then(Value::as_str))
-            && let Ok(Value::Object(info)) = get_json(transport, userinfo, Some(access)).await
+            && let Ok(Value::Object(info)) = get_json(transport, userinfo, Some(access), lan).await
             && info.get("sub").and_then(Value::as_str) == Some(subject.as_str())
         {
             for (name, value) in info {
@@ -356,15 +369,24 @@ impl super::ExternalLogin {
             .to_owned();
         let group_claim = config.oidc.admin_group_claim.trim();
         let wanted = config.oidc.admin_group_value.trim();
-        let admin = !group_claim.is_empty()
-            && !wanted.is_empty()
+        let admin_known = !group_claim.is_empty() && !wanted.is_empty() && facts.contains_key(group_claim);
+        let admin = admin_known
             && match facts.get(group_claim) {
                 Some(Value::String(value)) => value == wanted,
                 Some(Value::Array(values)) => values.iter().any(|value| value.as_str() == Some(wanted)),
                 Some(Value::Bool(value)) => *value && wanted == "true",
                 _ => false,
             };
-        Ok(OidcIdentity { issuer: discovery.issuer, subject, email, email_verified, name, admin, next: pending.next })
+        Ok(OidcIdentity {
+            issuer: discovery.issuer,
+            subject,
+            email,
+            email_verified,
+            name,
+            admin,
+            admin_known,
+            next: pending.next,
+        })
     }
 }
 

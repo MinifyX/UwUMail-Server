@@ -21,7 +21,7 @@ const STATE_COOKIE: &str = "uwumail-oidc";
 const SECURE_STATE_COOKIE: &str = "__Host-uwumail-oidc";
 
 /// Where the provider sends the browser back to.
-fn redirect_uri(web: &Web) -> String {
+pub(crate) fn redirect_uri(web: &Web) -> String {
     format!("https://{}/api/auth/oidc/callback", web.settings().hostname)
 }
 
@@ -83,7 +83,7 @@ fn sent_state(headers: &HeaderMap, client: ClientInfo) -> Option<String> {
 }
 
 /// Whether accounts can be made on a domain: one of ours, and not one only for masked addresses.
-async fn takes_people(web: &Web, domain: &str) -> bool {
+pub(crate) async fn takes_people(web: &Web, domain: &str) -> bool {
     matches!(web.store().domain_kind(domain).await, Ok(uwumail_store::DomainKind::Mail))
 }
 
@@ -270,6 +270,7 @@ async fn finish_oidc(
     let Some(account) = account.filter(Account::can_use_portal) else {
         return Ok(failure("noAccount", clear));
     };
+    let account = sync_admin(web, &config.oidc, &identity, account, &ip).await?;
 
     let security = store.security_overview(account.id).await?;
     let next = identity.next.clone();
@@ -303,6 +304,48 @@ async fn finish_oidc(
     Ok(onward(&target, cookies))
 }
 
+/// With `auth.oidc.sync_admin`, the provider decides at every login whether an account that logs in
+/// there only is an admin: its role claim (UwUAuth's `roles`) has the admin value or not. A login
+/// whose token does not carry the claim at all changes nothing, and neither does one that would
+/// take the last admin's role away.
+async fn sync_admin(
+    web: &Web,
+    config: &crate::external::OidcConfig,
+    identity: &oidc::OidcIdentity,
+    account: Account,
+    ip: &str,
+) -> ApiResult<Account> {
+    if !config.sync_admin || !identity.admin_known || account.is_service() {
+        return Ok(account);
+    }
+    let wanted = if identity.admin { Role::Admin } else { Role::User };
+    if account.role == wanted || web.store().auth_source(account.id).await? != "oidc" {
+        return Ok(account);
+    }
+    let update = uwumail_store::AccountUpdate { role: Some(wanted), ..Default::default() };
+    match web.store().update_account(&account.login, update).await {
+        Ok(updated) => {
+            tracing::info!(login = %updated.login, admin = identity.admin, "role taken over from the login provider");
+            let entry = AuditEntry {
+                actor_id: None,
+                actor: "oidc".into(),
+                action: "account.role".into(),
+                target: updated.login.clone(),
+                details: json!({ "via": "oidc", "admin": identity.admin }),
+                ip: ip.to_owned(),
+            };
+            if let Err(err) = web.store().record_audit(entry).await {
+                tracing::error!(%err, "writing the change log failed");
+            }
+            Ok(updated)
+        }
+        Err(err) => {
+            tracing::warn!(login = %account.login, %err, "the provider's role was not taken over");
+            Ok(account)
+        }
+    }
+}
+
 /// Settings changes not saved yet, the way the Loki test takes them.
 #[derive(Deserialize)]
 pub struct Changes {
@@ -330,7 +373,7 @@ pub async fn test_ldap(State(web): State<Web>, _admin: Admin, Json(request): Jso
 /// Tries the provider settings: discovery document and keys.
 pub async fn test_oidc(State(web): State<Web>, _admin: Admin, Json(request): Json<Changes>) -> ApiResult<Json<Value>> {
     let config = settings_to_try(&web, &request.changes).await?;
-    let transport = web.oidc_transport();
+    let transport = web.oidc_transport_for(config.oidc.lan_host().into_iter().collect());
     let result = oidc::test(transport.as_ref(), &config.oidc).await.map_err(|err| ApiError::Rule("oidcFailed", err))?;
     Ok(Json(json!({ "ok": true, "detail": result, "redirectUri": redirect_uri(&web) })))
 }

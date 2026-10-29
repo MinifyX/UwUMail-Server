@@ -635,6 +635,16 @@ impl Store {
     }
 
     pub async fn create_account(&self, new: NewAccount) -> Result<Account> {
+        self.create_account_then(new, |_, _| Ok(())).await.map(|(account, ())| account)
+    }
+
+    /// Creates an account and runs `then` on it in the same transaction: if `then` fails, there is
+    /// no account either.
+    pub(crate) async fn create_account_then<T, F>(&self, new: NewAccount, then: F) -> Result<(Account, T)>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Transaction<'_>, &Account) -> Result<T> + Send + 'static,
+    {
         let (local, domain) = normalize_address(&new.address)?;
         if new.quota_bytes < 0 {
             return Err(StoreError::Invalid("the quota cannot be negative".into()));
@@ -703,7 +713,7 @@ impl Store {
             if protocols.has_mailbox() {
                 mail::create_default_mailboxes(tx, id)?;
             }
-            Ok(Account {
+            let account = Account {
                 id,
                 login,
                 display_name: new.display_name.trim().to_owned(),
@@ -718,7 +728,9 @@ impl Store {
                 redirect_to: String::new(),
                 webmail: true,
                 shared_mailbox: false,
-            })
+            };
+            let then = then(tx, &account)?;
+            Ok((account, then))
         })
         .await
     }
