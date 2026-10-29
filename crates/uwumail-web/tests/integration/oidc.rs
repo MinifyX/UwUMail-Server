@@ -193,6 +193,7 @@ async fn setup() -> Setup {
             allowed_domains: vec!["example.org".into()],
             admin_group_claim: "groups".into(),
             admin_group_value: "uwumail-admins".into(),
+            ..OidcConfig::default()
         },
         ..AuthConfig::default()
     });
@@ -400,4 +401,37 @@ async fn an_existing_account_links_once_and_keeps_its_second_factor() {
     setup.web.external_login().configure(config);
     let reply = finish(&setup, identity("sub-nobody", "nobody@example.org")).await;
     assert_eq!(onward(&reply.body), "/login?oidcError=noAccount");
+}
+
+#[tokio::test]
+async fn the_admin_role_follows_the_provider_when_asked_to() {
+    let setup = setup().await;
+    let mut config = (*setup.web.external_login().config()).clone();
+    config.oidc.sync_admin = true;
+    setup.web.external_login().configure(config);
+    let admin = |sub: &str, email: &str, admin: bool| {
+        let mut claims = identity(sub, email);
+        claims["groups"] = if admin { json!(["staff", "uwumail-admins"]) } else { json!(["staff"]) };
+        claims
+    };
+
+    // An account made by the provider: its admin right comes and goes with the claim.
+    finish(&setup, admin("sub-boss", "boss@example.org", true)).await;
+    finish(&setup, admin("sub-staff", "staff@example.org", true)).await;
+    assert_eq!(setup.store.account("boss@example.org").await.unwrap().unwrap().role, Role::Admin);
+    let reply = finish(&setup, admin("sub-boss", "boss@example.org", false)).await;
+    assert_eq!(onward(&reply.body), "/account/security");
+    assert_eq!(setup.store.account("boss@example.org").await.unwrap().unwrap().role, Role::User);
+    finish(&setup, admin("sub-boss", "boss@example.org", true)).await;
+    assert_eq!(setup.store.account("boss@example.org").await.unwrap().unwrap().role, Role::Admin);
+
+    // Without the claim the provider says nothing about it, and nothing changes.
+    let mut silent = identity("sub-boss", "boss@example.org");
+    silent.as_object_mut().unwrap().remove("groups");
+    finish(&setup, silent).await;
+    assert_eq!(setup.store.account("boss@example.org").await.unwrap().unwrap().role, Role::Admin);
+
+    // An account with its own password here keeps the role the admin gave it.
+    finish(&setup, admin("sub-mini", "mini@example.org", true)).await;
+    assert_eq!(setup.store.account("mini@example.org").await.unwrap().unwrap().role, Role::User);
 }

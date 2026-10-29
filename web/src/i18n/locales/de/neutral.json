@@ -603,7 +603,13 @@
       "hostInvalid": "Der Servername ist nicht verwendbar. Nur Server im Internet gehen.",
       "urlInvalid": "Die Adresse ist keine verwendbare https-Adresse.",
       "domainMaskedOnly": "Diese Domain nimmt nur maskierte Adressen.",
-      "noMailbox": "Dieses Konto hat kein Postfach."
+      "noMailbox": "Dieses Konto hat kein Postfach.",
+      "notUwuauth": "Unter dieser Adresse antwortet kein UwUAuth, das koppeln kann (0.4 oder neuer).",
+      "pairingCodeInvalid": "Dieser Kopplungscode ist unbekannt, benutzt, zurückgezogen oder abgelaufen. Erstelle in UwUAuth einen neuen.",
+      "pairingTooMany": "UwUAuth lehnt weitere Versuche eine Weile ab. Warte kurz und versuche es erneut.",
+      "pairingRefused": "UwUAuth hat die Kopplung abgelehnt: {{detail}}",
+      "uwuauthUnreachable": "UwUAuth ist nicht erreichbar: {{detail}}",
+      "uwuauthAddress": "Diese Adresse kann nicht verwendet werden: {{detail}}"
     }
   },
   "people": {
@@ -1751,7 +1757,8 @@
       "vpn": "VPN & Proxy",
       "branding": "Erscheinungsbild",
       "login": "Anmeldung",
-      "assist": "KI-Assistent"
+      "assist": "KI-Assistent",
+      "uwuauth": "UwUAuth"
     },
     "mailIntro": "Wie Mail den Server verlässt und was er annimmt. Änderungen wirken sofort, ohne Neustart.",
     "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart."
@@ -2164,7 +2171,11 @@
       "adminClaim": "Admin-Claim",
       "adminClaimHint": "Der Claim in der Antwort des Anbieters, der Gruppen oder Rollen auflistet.",
       "adminValue": "Admin-Wert",
-      "adminValueHint": "Neue Konten, deren Claim diesen Wert enthält, werden Admins."
+      "adminValueHint": "Neue Konten, deren Claim diesen Wert enthält, werden Admins.",
+      "privateNetwork": "Der Anmeldedienst ist im lokalen Netz",
+      "privateNetworkHint": "Erlaubt nur für den Host des Anmeldedienstes eine private Adresse. HTTPS mit einem Zertifikat, dem der Server vertraut, bleibt nötig.",
+      "syncAdmin": "Admin-Rolle vom Anmeldedienst übernehmen",
+      "syncAdminHint": "Jede Anmeldung macht die Person je nach Claim unten zum Admin oder zur normalen Person."
     },
     "ldap": {
       "title": "LDAP-Verzeichnis",
@@ -2191,6 +2202,33 @@
       "adminGroupDnHint": "Neue Konten, die Mitglied dieser Gruppe sind (memberOf), werden Admins.",
       "autoCreateHint": "Wenn das Verzeichnis die Adresse kennt und ihre Domain unten erlaubt ist."
     }
+  },
+  "uwuauth": {
+    "intro": "Mit UwUAuth koppeln: Anmeldung, Konten und Sperren werden dann dort verwaltet.",
+    "pairTitle": "Mit UwUAuth koppeln",
+    "pairIntro": "Füge UwUMail in UwUAuth als App hinzu und kopiere den Kopplungscode oder den Text seines QR-Codes.",
+    "code": "Kopplungscode",
+    "codeHint": "Der Text des QR-Codes geht auch; dann wird die Adresse nicht gebraucht.",
+    "url": "Adresse von UwUAuth",
+    "pair": "Koppeln",
+    "paired": "Mit UwUAuth gekoppelt.",
+    "pairedTitle": "UwUAuth",
+    "pairedWith": "Gekoppelt mit {{name}} (UwUAuth {{version}})",
+    "issuer": "Aussteller",
+    "pairedAt": "Gekoppelt",
+    "pairedBy": "{{when}} von {{who}}",
+    "login": "Anmeldung",
+    "loginActive": "Der UwUAuth-Knopf ist auf der Anmeldeseite.",
+    "loginInactive": "Aus: Die Anmeldeeinstellungen zeigen woandershin.",
+    "locked": "Einige Anmeldeeinstellungen kommen aus der Konfigurationsdatei; die Kopplung ändert sie nicht.",
+    "manage": "In UwUAuth verwalten",
+    "unpair": "Entkoppeln",
+    "unpairTitle": "Von UwUAuth entkoppeln?",
+    "unpairBody": "Die Anmeldung über UwUAuth wird ausgeschaltet und UwUAuth kann keine Postfächer mehr anlegen oder ändern. Postfächer und Mails bleiben.",
+    "unpaired": "Von UwUAuth entkoppelt.",
+    "addresses": "Adressen für UwUAuth",
+    "scimUrl": "SCIM-Adresse",
+    "docs": "So funktioniert die Kopplung"
   },
   "fetch": {
     "title": "Abrufkonten",

@@ -32,6 +32,9 @@ export const OIDC_SETTING_KEYS = [
   "auth.oidc.allowed_domains",
   "auth.oidc.admin_group_claim",
   "auth.oidc.admin_group_value",
+  "auth.oidc.scopes",
+  "auth.oidc.private_network",
+  "auth.oidc.sync_admin",
 ];
 
 export const LDAP_SETTING_KEYS = [
@@ -167,13 +170,27 @@ function OidcFields({ form }: { form: Form }) {
           />
           <ToggleField
             form={form}
+            settingKey="auth.oidc.private_network"
+            label={t("externalLogin.oidc.privateNetwork")}
+            hint={t("externalLogin.oidc.privateNetworkHint")}
+          />
+          <ToggleField
+            form={form}
             settingKey="auth.oidc.auto_create"
             label={t("externalLogin.autoCreate")}
             hint={t("externalLogin.oidc.autoCreateHint")}
           />
           {Boolean(form.value("auth.oidc.auto_create")) && (
+            <DomainsField form={form} settingKey="auth.oidc.allowed_domains" />
+          )}
+          <ToggleField
+            form={form}
+            settingKey="auth.oidc.sync_admin"
+            label={t("externalLogin.oidc.syncAdmin")}
+            hint={t("externalLogin.oidc.syncAdminHint")}
+          />
+          {(Boolean(form.value("auth.oidc.auto_create")) || Boolean(form.value("auth.oidc.sync_admin"))) && (
             <>
-              <DomainsField form={form} settingKey="auth.oidc.allowed_domains" />
               <div className="grid gap-4 sm:grid-cols-2">
                 <TextField
                   form={form}

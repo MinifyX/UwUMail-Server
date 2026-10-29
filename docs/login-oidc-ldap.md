@@ -14,6 +14,9 @@ Both are set under *Server → Settings → Login*, take effect at once without 
 restart, and can be tried with *Test connection* before they are saved. Logins
 at the server itself keep working next to them.
 
+With [UwUAuth](uwuauth.md), pairing fills in the OpenID Connect settings and adds SCIM, so the
+mailboxes come from UwUAuth as well.
+
 For the other direction, mail apps signing in *to this server* with OAuth, see
 [oauth.md](oauth.md).
 
@@ -44,6 +47,9 @@ Create an application (a "client") for the portal:
 | `auth.oidc.allowed_domains` | The domains such accounts may be made in (domains of this server). Empty: none |
 | `auth.oidc.admin_group_claim` | A claim such as `groups` … |
 | `auth.oidc.admin_group_value` | … whose value (or one of its values) makes a **new** account an admin, e.g. `uwumail-admins` |
+| `auth.oidc.sync_admin` | Applies the claim at **every** login: admin with it, user without it. A login whose token lacks the claim changes nothing |
+| `auth.oidc.scopes` | The scopes asked for, e.g. `openid email profile groups`; `openid` is always added. Empty: `openid email profile` |
+| `auth.oidc.private_network` | The issuer's host may have a private address ([uwuauth.md](uwuauth.md#uwuauth-in-the-local-network)). HTTPS stays mandatory |
 
 ### How a login goes
 

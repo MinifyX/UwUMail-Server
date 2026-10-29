@@ -603,7 +603,13 @@
       "hostInvalid": "The server name is not usable. Only servers on the internet can be used.",
       "urlInvalid": "The address is not a usable https address.",
       "domainMaskedOnly": "This domain takes masked addresses only.",
-      "noMailbox": "This account has no mailbox."
+      "noMailbox": "This account has no mailbox.",
+      "notUwuauth": "No UwUAuth that can pair (0.4 or newer) answers at this address.",
+      "pairingCodeInvalid": "This pairing code is unknown, used, withdrawn or expired. Create a new one in UwUAuth.",
+      "pairingTooMany": "UwUAuth refuses more tries for a while. Wait a moment and try again.",
+      "pairingRefused": "UwUAuth refused the pairing: {{detail}}",
+      "uwuauthUnreachable": "UwUAuth could not be reached: {{detail}}",
+      "uwuauthAddress": "This address cannot be used: {{detail}}"
     }
   },
   "people": {
@@ -1751,7 +1757,8 @@
       "vpn": "VPN & proxy",
       "branding": "Branding",
       "login": "Login",
-      "assist": "AI assistant"
+      "assist": "AI assistant",
+      "uwuauth": "UwUAuth"
     },
     "mailIntro": "How mail leaves the server and what it accepts. Changes take effect at once, without a restart.",
     "appsIntro": "What holds for mail apps and the mailbox in the browser. Changes take effect at once, without a restart."
@@ -2164,7 +2171,11 @@
       "adminClaim": "Admin claim",
       "adminClaimHint": "The claim in the provider's answer that lists groups or roles.",
       "adminValue": "Admin value",
-      "adminValueHint": "New accounts whose claim contains this value become admins."
+      "adminValueHint": "New accounts whose claim contains this value become admins.",
+      "privateNetwork": "The login service is in the local network",
+      "privateNetworkHint": "Allows a private address for the login service's host only. It still needs HTTPS with a certificate the server trusts.",
+      "syncAdmin": "Take the admin role from the login service",
+      "syncAdminHint": "Each login makes the person an admin or a user, according to the claim below."
     },
     "ldap": {
       "title": "LDAP directory",
@@ -2191,6 +2202,33 @@
       "adminGroupDnHint": "New accounts that are members of this group (memberOf) become admins.",
       "autoCreateHint": "When the directory knows the address and its domain is allowed below."
     }
+  },
+  "uwuauth": {
+    "intro": "Pair with UwUAuth: login, accounts and locks are then managed there.",
+    "pairTitle": "Pair with UwUAuth",
+    "pairIntro": "In UwUAuth, add UwUMail as an app and copy the pairing code, or the text of its QR code.",
+    "code": "Pairing code",
+    "codeHint": "The text of the QR code works as well; then the address is not needed.",
+    "url": "UwUAuth address",
+    "pair": "Pair",
+    "paired": "Paired with UwUAuth.",
+    "pairedTitle": "UwUAuth",
+    "pairedWith": "Paired with {{name}} (UwUAuth {{version}})",
+    "issuer": "Issuer",
+    "pairedAt": "Paired",
+    "pairedBy": "{{when}} by {{who}}",
+    "login": "Login",
+    "loginActive": "The UwUAuth button is on the login page.",
+    "loginInactive": "Off: the login settings point elsewhere.",
+    "locked": "Some login settings come from the config file; pairing does not change them.",
+    "manage": "Manage in UwUAuth",
+    "unpair": "Unpair",
+    "unpairTitle": "Unpair from UwUAuth?",
+    "unpairBody": "The UwUAuth login is switched off and UwUAuth can no longer create or change mailboxes. Mailboxes and mail stay.",
+    "unpaired": "Unpaired from UwUAuth.",
+    "addresses": "Addresses for UwUAuth",
+    "scimUrl": "SCIM address",
+    "docs": "How pairing works"
   },
   "fetch": {
     "title": "Fetched mailboxes",

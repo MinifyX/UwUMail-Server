@@ -31,4 +31,5 @@ mod settings;
 mod setup;
 mod sharing;
 mod spam;
+mod uwuauth;
 mod vpn;

@@ -591,7 +591,13 @@
       "hostInvalid": "服务器名称不可用。只能使用互联网上的服务器。",
       "urlInvalid": "该地址不是可用的 https 地址。",
       "domainMaskedOnly": "该域名仅用于隐藏地址。",
-      "noMailbox": "该账户没有邮箱。"
+      "noMailbox": "该账户没有邮箱。",
+      "notUwuauth": "此地址上没有可配对的 UwUAuth（0.4 或更新版本）响应。",
+      "pairingCodeInvalid": "此配对码未知、已使用、已撤回或已过期。请在 UwUAuth 中创建新的配对码。",
+      "pairingTooMany": "UwUAuth 暂时拒绝更多尝试。请稍候再试。",
+      "pairingRefused": "UwUAuth 拒绝了配对：{{detail}}",
+      "uwuauthUnreachable": "无法连接 UwUAuth：{{detail}}",
+      "uwuauthAddress": "无法使用此地址：{{detail}}"
     }
   },
   "people": {
@@ -1717,7 +1723,8 @@
       "vpn": "VPN 与代理",
       "branding": "品牌外观",
       "login": "登录",
-      "assist": "AI 助手"
+      "assist": "AI 助手",
+      "uwuauth": "UwUAuth"
     },
     "mailIntro": "邮件如何离开服务器，以及服务器接收哪些邮件。更改会立即生效，无需重启。",
     "appsIntro": "适用于邮件应用和浏览器中邮箱的设置。更改会立即生效，无需重启。"
@@ -2113,7 +2120,11 @@
       "adminClaim": "管理员声明",
       "adminClaimHint": "提供商应答中列出组或角色的声明。",
       "adminValue": "管理员值",
-      "adminValueHint": "声明中包含此值的新账户将成为管理员。"
+      "adminValueHint": "声明中包含此值的新账户将成为管理员。",
+      "privateNetwork": "登录服务位于本地网络",
+      "privateNetworkHint": "仅允许登录服务的主机使用私有地址。仍需使用服务器信任的证书进行 HTTPS。",
+      "syncAdmin": "从登录服务获取管理员角色",
+      "syncAdminHint": "每次登录都会根据下方的声明将此人设为管理员或普通用户。"
     },
     "ldap": {
       "title": "LDAP 目录",
@@ -2140,6 +2151,33 @@
       "adminGroupDnHint": "属于该组（memberOf）的新账户将成为管理员。",
       "autoCreateHint": "当目录知道该地址且其域名在下方被允许时。"
     }
+  },
+  "uwuauth": {
+    "intro": "与 UwUAuth 配对：登录、账户和锁定随后在那里管理。",
+    "pairTitle": "与 UwUAuth 配对",
+    "pairIntro": "在 UwUAuth 中将 UwUMail 添加为应用，然后复制配对码或其二维码的文本。",
+    "code": "配对码",
+    "codeHint": "也可以使用二维码的文本，此时无需填写地址。",
+    "url": "UwUAuth 地址",
+    "pair": "配对",
+    "paired": "已与 UwUAuth 配对。",
+    "pairedTitle": "UwUAuth",
+    "pairedWith": "已与 {{name}}（UwUAuth {{version}}）配对",
+    "issuer": "颁发者",
+    "pairedAt": "配对时间",
+    "pairedBy": "{{when}}，由 {{who}}",
+    "login": "登录",
+    "loginActive": "登录页面上有 UwUAuth 按钮。",
+    "loginInactive": "关闭：登录设置指向其他地方。",
+    "locked": "部分登录设置来自配置文件，配对不会更改它们。",
+    "manage": "在 UwUAuth 中管理",
+    "unpair": "取消配对",
+    "unpairTitle": "取消与 UwUAuth 的配对？",
+    "unpairBody": "将关闭通过 UwUAuth 登录，UwUAuth 也无法再创建或更改邮箱。邮箱和邮件将保留。",
+    "unpaired": "已取消与 UwUAuth 的配对。",
+    "addresses": "UwUAuth 使用的地址",
+    "scimUrl": "SCIM 地址",
+    "docs": "配对的工作方式"
   },
   "fetch": {
     "title": "收取的邮箱",

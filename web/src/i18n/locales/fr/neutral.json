@@ -614,7 +614,13 @@
       "hostInvalid": "Le nom de serveur est inutilisable. Seuls les serveurs sur Internet sont acceptés.",
       "urlInvalid": "L'adresse n'est pas une adresse https utilisable.",
       "domainMaskedOnly": "Ce domaine n'accepte que des adresses masquées.",
-      "noMailbox": "Ce compte n'a pas de boîte."
+      "noMailbox": "Ce compte n'a pas de boîte.",
+      "notUwuauth": "Aucun UwUAuth capable d'appairer (0.4 ou plus récent) ne répond à cette adresse.",
+      "pairingCodeInvalid": "Ce code d'appairage est inconnu, utilisé, retiré ou expiré. Créez-en un nouveau dans UwUAuth.",
+      "pairingTooMany": "UwUAuth refuse d'autres essais pendant un moment. Attendez un peu et réessayez.",
+      "pairingRefused": "UwUAuth a refusé l'appairage : {{detail}}",
+      "uwuauthUnreachable": "UwUAuth est injoignable : {{detail}}",
+      "uwuauthAddress": "Cette adresse ne peut pas être utilisée : {{detail}}"
     }
   },
   "people": {
@@ -1783,7 +1789,8 @@
       "vpn": "VPN et proxy",
       "branding": "Apparence",
       "login": "Connexion",
-      "assist": "Assistant IA"
+      "assist": "Assistant IA",
+      "uwuauth": "UwUAuth"
     },
     "mailIntro": "Comment le courrier quitte le serveur et ce qu'il accepte. Les modifications s'appliquent immédiatement, sans redémarrage.",
     "appsIntro": "Ce qui vaut pour les applis de messagerie et la boîte mail dans le navigateur. Les modifications s'appliquent immédiatement, sans redémarrage."
@@ -2213,7 +2220,11 @@
       "adminClaim": "Claim admin",
       "adminClaimHint": "Le claim de la réponse du fournisseur qui liste les groupes ou rôles.",
       "adminValue": "Valeur admin",
-      "adminValueHint": "Les nouveaux comptes dont le claim contient cette valeur deviennent admins."
+      "adminValueHint": "Les nouveaux comptes dont le claim contient cette valeur deviennent admins.",
+      "privateNetwork": "Le service de connexion est dans le réseau local",
+      "privateNetworkHint": "Autorise une adresse privée uniquement pour l'hôte du service de connexion. HTTPS avec un certificat reconnu par le serveur reste nécessaire.",
+      "syncAdmin": "Reprendre le rôle d'admin du service de connexion",
+      "syncAdminHint": "Chaque connexion rend la personne admin ou utilisatrice selon la revendication ci-dessous."
     },
     "ldap": {
       "title": "Annuaire LDAP",
@@ -2240,6 +2251,33 @@
       "adminGroupDnHint": "Les nouveaux comptes membres de ce groupe (memberOf) deviennent admins.",
       "autoCreateHint": "Si l'annuaire connaît l'adresse et que son domaine est autorisé ci-dessous."
     }
+  },
+  "uwuauth": {
+    "intro": "Appairer avec UwUAuth : connexion, comptes et blocages sont alors gérés là-bas.",
+    "pairTitle": "Appairer avec UwUAuth",
+    "pairIntro": "Dans UwUAuth, ajoutez UwUMail comme app et copiez le code d'appairage ou le texte de son code QR.",
+    "code": "Code d'appairage",
+    "codeHint": "Le texte du code QR fonctionne aussi ; l'adresse n'est alors pas nécessaire.",
+    "url": "Adresse d'UwUAuth",
+    "pair": "Appairer",
+    "paired": "Appairé avec UwUAuth.",
+    "pairedTitle": "UwUAuth",
+    "pairedWith": "Appairé avec {{name}} (UwUAuth {{version}})",
+    "issuer": "Émetteur",
+    "pairedAt": "Appairé",
+    "pairedBy": "{{when}} par {{who}}",
+    "login": "Connexion",
+    "loginActive": "Le bouton UwUAuth est sur la page de connexion.",
+    "loginInactive": "Désactivé : les réglages de connexion pointent ailleurs.",
+    "locked": "Certains réglages de connexion viennent du fichier de configuration ; l'appairage ne les change pas.",
+    "manage": "Gérer dans UwUAuth",
+    "unpair": "Désappairer",
+    "unpairTitle": "Désappairer d'UwUAuth ?",
+    "unpairBody": "La connexion via UwUAuth est désactivée et UwUAuth ne peut plus créer ni modifier de boîtes. Les boîtes et les e-mails restent.",
+    "unpaired": "Désappairé d'UwUAuth.",
+    "addresses": "Adresses pour UwUAuth",
+    "scimUrl": "Adresse SCIM",
+    "docs": "Comment fonctionne l'appairage"
   },
   "fetch": {
     "title": "Boîtes mail relevées",

@@ -603,7 +603,13 @@
       "hostInvalid": "De servernaam is niet bruikbaar. Alleen servers op internet kunnen.",
       "urlInvalid": "Het adres is geen bruikbaar https-adres.",
       "domainMaskedOnly": "Dit domein neemt alleen gemaskeerde adressen.",
-      "noMailbox": "Dit account heeft geen mailbox."
+      "noMailbox": "Dit account heeft geen mailbox.",
+      "notUwuauth": "Op dit adres antwoordt geen UwUAuth dat kan koppelen (0.4 of nieuwer).",
+      "pairingCodeInvalid": "Deze koppelcode is onbekend, gebruikt, ingetrokken of verlopen. Maak een nieuwe in UwUAuth.",
+      "pairingTooMany": "UwUAuth weigert even meer pogingen. Wacht kort en probeer het opnieuw.",
+      "pairingRefused": "UwUAuth weigerde de koppeling: {{detail}}",
+      "uwuauthUnreachable": "UwUAuth is niet bereikbaar: {{detail}}",
+      "uwuauthAddress": "Dit adres kan niet worden gebruikt: {{detail}}"
     }
   },
   "people": {
@@ -1751,7 +1757,8 @@
       "vpn": "VPN & proxy",
       "branding": "Uiterlijk",
       "login": "Inloggen",
-      "assist": "AI-assistent"
+      "assist": "AI-assistent",
+      "uwuauth": "UwUAuth"
     },
     "mailIntro": "Hoe mail de server verlaat en wat hij aanneemt. Wijzigingen werken meteen, zonder herstart.",
     "appsIntro": "Wat geldt voor mailapps en de mailbox in de browser. Wijzigingen werken meteen, zonder herstart."
@@ -2164,7 +2171,11 @@
       "adminClaim": "Admin-claim",
       "adminClaimHint": "De claim in het antwoord van de aanbieder die groepen of rollen opsomt.",
       "adminValue": "Admin-waarde",
-      "adminValueHint": "Nieuwe accounts waarvan de claim deze waarde bevat, worden admin."
+      "adminValueHint": "Nieuwe accounts waarvan de claim deze waarde bevat, worden admin.",
+      "privateNetwork": "De inlogdienst staat in het lokale netwerk",
+      "privateNetworkHint": "Staat alleen voor de host van de inlogdienst een privéadres toe. HTTPS met een certificaat dat de server vertrouwt blijft nodig.",
+      "syncAdmin": "Adminrol van de inlogdienst overnemen",
+      "syncAdminHint": "Elke login maakt de persoon admin of gebruiker, volgens de claim hieronder."
     },
     "ldap": {
       "title": "LDAP-directory",
@@ -2191,6 +2202,33 @@
       "adminGroupDnHint": "Nieuwe accounts die lid zijn van deze groep (memberOf), worden admin.",
       "autoCreateHint": "Als de directory het adres kent en het domein hieronder is toegestaan."
     }
+  },
+  "uwuauth": {
+    "intro": "Koppel met UwUAuth: inloggen, accounts en blokkeringen worden dan daar beheerd.",
+    "pairTitle": "Koppelen met UwUAuth",
+    "pairIntro": "Voeg UwUMail in UwUAuth toe als app en kopieer de koppelcode of de tekst van de QR-code.",
+    "code": "Koppelcode",
+    "codeHint": "De tekst van de QR-code werkt ook; dan is het adres niet nodig.",
+    "url": "Adres van UwUAuth",
+    "pair": "Koppelen",
+    "paired": "Gekoppeld met UwUAuth.",
+    "pairedTitle": "UwUAuth",
+    "pairedWith": "Gekoppeld met {{name}} (UwUAuth {{version}})",
+    "issuer": "Uitgever",
+    "pairedAt": "Gekoppeld",
+    "pairedBy": "{{when}} door {{who}}",
+    "login": "Inloggen",
+    "loginActive": "De UwUAuth-knop staat op de inlogpagina.",
+    "loginInactive": "Uit: de inloginstellingen wijzen ergens anders heen.",
+    "locked": "Sommige inloginstellingen komen uit het configuratiebestand; koppelen verandert ze niet.",
+    "manage": "Beheren in UwUAuth",
+    "unpair": "Ontkoppelen",
+    "unpairTitle": "Ontkoppelen van UwUAuth?",
+    "unpairBody": "Inloggen via UwUAuth wordt uitgeschakeld en UwUAuth kan geen mailboxen meer aanmaken of wijzigen. Mailboxen en mail blijven.",
+    "unpaired": "Ontkoppeld van UwUAuth.",
+    "addresses": "Adressen voor UwUAuth",
+    "scimUrl": "SCIM-adres",
+    "docs": "Zo werkt koppelen"
   },
   "fetch": {
     "title": "Opgehaalde mailboxen",

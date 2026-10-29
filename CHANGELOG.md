@@ -3,6 +3,24 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.25.0
+
+### Added
+
+- Pairing with UwUAuth under *Server → Settings → UwUAuth*: paste the pairing code (or the text of
+  its QR code), and the OpenID Connect login is set up without copying a client ID or secret.
+  Unpairing switches it off again. See [docs/uwuauth.md](docs/uwuauth.md).
+- SCIM 2.0 at `/scim/v2` for UwUAuth: people become mailboxes that log in with UwUAuth, are locked
+  and unlocked, made admins, and moved to the trash from there. Only addresses on domains of this
+  server; groups are kept but change nothing about mail.
+- OpenID Connect: `auth.oidc.sync_admin` applies the admin claim at every login,
+  `auth.oidc.scopes` sets the scopes asked for, and `auth.oidc.private_network` allows a login
+  service in the local network (its host only, HTTPS with a trusted certificate still required).
+
+### Fixed
+
+- The server builds on macOS again (the DANE resolver setup used a Linux-only error type).
+
 ## 0.24.2
 
 ### Fixed
