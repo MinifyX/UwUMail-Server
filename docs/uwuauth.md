@@ -43,7 +43,8 @@ What can go wrong: an unknown, used or expired code (*create a new one in UwUAut
 differs from the discovery document. Nothing is changed in those cases.
 
 Pairing again with **another** UwUAuth (another issuer) forgets what the last one said through SCIM
-first: the external ids, the groups and which locks were SCIM's.
+once the new pairing is saved: the external ids, the groups, which locks were SCIM's, and which
+mailboxes it made (they are then left alone like mailboxes from before).
 
 ### UwUAuth in the local network
 
@@ -62,8 +63,8 @@ Let's Encrypt with a DNS challenge for an internal name). A self-signed certific
 
 UwUAuth calls `https://<host>/scim/v2` with `Authorization: Bearer <token>`. The token is compared
 in constant time against the stored hash. Wrong tokens have a budget of their own per network (20
-in 15 minutes), apart from wrong passwords; past it the network gets `429` until the oldest
-refusal is 15 minutes old.
+in 15 minutes), apart from wrong passwords; past it wrong tokens get `429` until the oldest
+refusal is 15 minutes old. The right token is never held up, as UwUAuth may share the network.
 
 | Endpoint | |
 | --- | --- |
@@ -92,11 +93,14 @@ Answers are `application/scim+json`; errors use the SCIM error schema with `scim
   emptied. From then on the SCIM id answers `404`, as SCIM expects; the address stays taken, so a
   new user with the same address is `409` until the mailbox is restored or deleted for good.
 
-Only mailboxes UwUAuth made (`auth_source = oidc` and no password) follow it in all of this.
+Only mailboxes the paired UwUAuth made over SCIM follow it in all of this (the issuer that made
+them is noted with the SCIM id), and only while they log in there alone (`auth_source = oidc`, no
+password).
 
 ### Mailboxes from before
 
-Mailboxes made here, not by UwUAuth (a password, LDAP, or an admin), are listed too and get a SCIM
+Mailboxes made here, not by the paired UwUAuth over SCIM (by an admin, with a password, LDAP, at a
+first OpenID Connect login, or by a UwUAuth paired before), are listed too and get a SCIM
 id the first time UwUAuth looks. UwUAuth can set their `externalId`, but **nothing else**: `active`,
 roles and the name are answered `200` and left as they are, and a `DELETE` only lets go of the
 mailbox (the `externalId` is cleared, the mailbox stays). Nor does the `externalId` link the login:

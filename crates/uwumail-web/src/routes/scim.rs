@@ -175,9 +175,6 @@ impl FromRequestParts<Web> for Scim {
 
     async fn from_request_parts(parts: &mut Parts, web: &Web) -> Result<Self, Self::Rejection> {
         let ip = client(parts).ip;
-        if !web.oauth_attempt(REFUSED_TOKENS, ip, false) {
-            return Err(ScimError::new(StatusCode::TOO_MANY_REQUESTS, None, "Too many refused tokens. Wait a while."));
-        }
         let presented = parts
             .headers
             .get(header::AUTHORIZATION)
@@ -191,6 +188,11 @@ impl FromRequestParts<Web> for Scim {
         match pairing {
             Some(pairing) if !presented.is_empty() && same(&token_hash(presented), &pairing.scim_token_hash) => {
                 Ok(Scim { pairing })
+            }
+            // A right token is never held up: UwUAuth may share its network with whoever sends
+            // wrong ones. Only wrong tokens are counted, and refused alike once too many came.
+            _ if !web.oauth_attempt(REFUSED_TOKENS, ip, false) => {
+                Err(ScimError::new(StatusCode::TOO_MANY_REQUESTS, None, "Too many refused tokens. Wait a while."))
             }
             _ => {
                 web.oauth_attempt(REFUSED_TOKENS, ip, true);
@@ -426,12 +428,21 @@ async fn log(web: &Web, action: &str, target: &str, details: Value) {
     }
 }
 
-/// Whether the provider runs the account: SCIM made it (`oidc`, no password). Anything else was
-/// here before and only gets its `externalId` noted.
-async fn managed(web: &Web, account: &Account) -> ScimResult<bool> {
-    Ok(!account.is_service()
+/// Whether the provider runs the account: this provider (the paired issuer) created it over SCIM,
+/// and it still logs in only there (`oidc`, no password). Anything else was here before (also an
+/// account made at a first OpenID Connect login, or by an earlier provider) and only gets its
+/// `externalId` noted.
+async fn managed(web: &Web, pairing: &Pairing, user: &ScimUser) -> ScimResult<bool> {
+    let account = &user.account;
+    let ours = user.created_by.as_deref().is_some_and(|issuer| same_issuer(issuer, &pairing.issuer));
+    Ok(ours
+        && !account.is_service()
         && web.store().auth_source(account.id).await? == "oidc"
         && !web.store().has_password(account.id).await?)
+}
+
+fn same_issuer(a: &str, b: &str) -> bool {
+    a.trim_end_matches('/') == b.trim_end_matches('/')
 }
 
 /// Notes the provider's id for logging in: the OpenID Connect `sub` is the SCIM `externalId`.
@@ -469,6 +480,7 @@ pub async fn create_user(State(web): State<Web>, scim_auth: Scim, body: Bytes) -
     let user = web
         .store()
         .scim_create_account(
+            &scim_auth.pairing.issuer,
             NewAccount {
                 address: address.clone(),
                 display_name: name,
@@ -536,7 +548,7 @@ fn change_of(user: &ScimUser, change: &mut PersonChange, path: &str, value: &Val
 /// Puts a change into effect.
 async fn apply(web: &Web, pairing: &Pairing, user: ScimUser, change: PersonChange) -> ScimResult<ScimUser> {
     let account = &user.account;
-    if !managed(web, account).await? {
+    if !managed(web, pairing, &user).await? {
         // Taken over after a 409: the provider's id is noted, and that is all. The login link
         // comes with the first OpenID Connect login, which needs a verified email.
         if let Some(external) = change.external_id.filter(|external| *external != user.external_id) {
@@ -649,9 +661,9 @@ pub async fn put_user(
     Ok(scim(StatusCode::OK, user_json(&user, &base(&web))))
 }
 
-pub async fn delete_user(State(web): State<Web>, _scim: Scim, Path(id): Path<String>) -> ScimResult<Response> {
+pub async fn delete_user(State(web): State<Web>, scim_auth: Scim, Path(id): Path<String>) -> ScimResult<Response> {
     let user = user(&web, &id).await?;
-    if !managed(&web, &user.account).await? {
+    if !managed(&web, &scim_auth.pairing, &user).await? {
         // Not the provider's to remove: it lets go of the account and the mailbox stays.
         web.store().scim_set_external_id(&user.id, None).await?;
         tracing::info!(login = %user.account.login, "SCIM: let go of an account it did not make");

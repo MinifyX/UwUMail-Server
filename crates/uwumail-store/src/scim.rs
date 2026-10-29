@@ -17,6 +17,9 @@ pub struct ScimUser {
     pub external_id: Option<String>,
     /// The provider switched the account off (and only it switches it back on).
     pub disabled_by_scim: bool,
+    /// The issuer of the provider that created the account over SCIM; `None` for accounts that were
+    /// here before.
+    pub created_by: Option<String>,
     pub created: i64,
     pub updated: i64,
     pub account: Account,
@@ -61,7 +64,7 @@ pub struct ScimGroupUpdate {
 const VISIBLE: &str = "kind = 'person' AND shared_mailbox = 0 AND deleted_at IS NULL";
 
 const SCIM_JOIN: &str = "accounts JOIN (SELECT id AS s_id, account_id AS s_account, external_id AS s_ext, \
-     disabled_by_scim AS s_disabled, created AS s_created, updated AS s_updated FROM scim_users) ON s_account = accounts.id";
+     disabled_by_scim AS s_disabled, created AS s_created, updated AS s_updated, created_by AS s_created_by FROM scim_users) ON s_account = accounts.id";
 
 fn user_from_row(row: &Row<'_>) -> rusqlite::Result<ScimUser> {
     let account = account_from_row(row)?;
@@ -72,12 +75,13 @@ fn user_from_row(row: &Row<'_>) -> rusqlite::Result<ScimUser> {
         disabled_by_scim: row.get(at + 2)?,
         created: row.get(at + 3)?,
         updated: row.get(at + 4)?,
+        created_by: row.get(at + 5)?,
         account,
     })
 }
 
 fn user_columns() -> String {
-    format!("{ACCOUNT_COLUMNS}, s_id, s_ext, s_disabled, s_created, s_updated")
+    format!("{ACCOUNT_COLUMNS}, s_id, s_ext, s_disabled, s_created, s_updated, s_created_by")
 }
 
 /// Gives every person who has none yet a SCIM id.
@@ -211,15 +215,18 @@ impl Store {
     }
 
     /// A person the provider brings: an account without a password that logs in with OpenID
-    /// Connect, its SCIM id and the provider's id, and locked by SCIM if `disabled`. All or nothing:
-    /// an `externalId` another person has already leaves no account behind.
+    /// Connect, its SCIM id and the provider's id, and locked by SCIM if `disabled`, noted as made by
+    /// the provider `issuer`. All or nothing: an `externalId` another person has already leaves no
+    /// account behind.
     pub async fn scim_create_account(
         &self,
+        issuer: &str,
         new: NewAccount,
         external_id: Option<String>,
         disabled: bool,
     ) -> Result<ScimUser> {
         let new = NewAccount { password: None, ..new };
+        let issuer = issuer.to_owned();
         let (_, user) = self
             .create_account_then(new, move |tx, account| {
                 tx.execute(
@@ -228,8 +235,9 @@ impl Store {
                 )?;
                 ensure_ids(tx)?;
                 tx.execute(
-                    "UPDATE scim_users SET external_id = ?1, disabled_by_scim = ?2, updated = ?3 WHERE account_id = ?4",
-                    params![external_id, disabled, now(), account.id],
+                    "UPDATE scim_users SET external_id = ?1, disabled_by_scim = ?2, created_by = ?3, updated = ?4
+                     WHERE account_id = ?5",
+                    params![external_id, disabled, issuer, now(), account.id],
                 )
                 .map_err(|err| conflict_on_unique(err, "externalId".into()))?;
                 let id: String =
@@ -385,7 +393,7 @@ impl Store {
     pub async fn scim_forget(&self) -> Result<()> {
         self.write(|tx| {
             tx.execute("DELETE FROM scim_groups", [])?;
-            tx.execute("UPDATE scim_users SET external_id = NULL, disabled_by_scim = 0", [])?;
+            tx.execute("UPDATE scim_users SET external_id = NULL, disabled_by_scim = 0, created_by = NULL", [])?;
             Ok(())
         })
         .await

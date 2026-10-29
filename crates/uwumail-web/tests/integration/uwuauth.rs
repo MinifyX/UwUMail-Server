@@ -572,8 +572,11 @@ async fn refused_tokens_have_a_budget_of_their_own() {
         refused += 1;
         assert!(refused < 100, "no end to the tries");
     }
+    let (status, _, _) = scim(&setup.app, "GET", "/Users", None, "not-the-token").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "wrong tokens wait");
+    // UwUAuth may share the network: the right token is never held up.
     let (status, _, _) = scim(&setup.app, "GET", "/Users", None, SCIM_TOKEN).await;
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "the network waits, whatever it sends");
+    assert_eq!(status, StatusCode::OK);
     // Passwords are counted apart: the admin can still log in from the same network.
     let mut request = Request::post("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
@@ -621,6 +624,14 @@ async fn another_uwuauth_forgets_what_the_last_one_said() {
     assert_eq!(list["totalResults"], 0, "{list}");
     let (_, groups, _) = scim(&setup.app, "GET", "/Groups", None, SCIM_TOKEN).await;
     assert_eq!(groups["totalResults"], 0, "{groups}");
+    // Lena was the old UwUAuth's: the new one may note her, not run her.
+    let (_, list, _) =
+        scim(&setup.app, "GET", &format!("/Users{}", filter("userName", "lena@example.org")), None, SCIM_TOKEN).await;
+    assert!(list["Resources"][0]["externalId"].is_null(), "{list}");
+    let id = list["Resources"][0]["id"].as_str().unwrap().to_owned();
+    let (status, _, _) = scim(&setup.app, "DELETE", &format!("/Users/{id}"), None, SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(setup.store.account("lena@example.org").await.unwrap().is_some(), "not in the trash");
 }
 
 #[tokio::test]
@@ -629,6 +640,7 @@ async fn a_failed_create_leaves_no_account() {
     let lena = setup
         .store
         .scim_create_account(
+            ISSUER,
             NewAccount {
                 address: "lena@example.org".into(),
                 display_name: "Lena".into(),
@@ -643,6 +655,7 @@ async fn a_failed_create_leaves_no_account() {
         .await
         .unwrap();
     assert!(lena.disabled_by_scim && lena.account.disabled);
+    assert_eq!(lena.created_by.as_deref(), Some(ISSUER));
     assert_eq!(setup.store.auth_source(lena.account.id).await.unwrap(), "oidc");
     let again = NewAccount {
         address: "other@example.org".into(),
@@ -652,6 +665,55 @@ async fn a_failed_create_leaves_no_account() {
         quota_bytes: 0,
         protocols: None,
     };
-    assert!(setup.store.scim_create_account(again, Some("sub-lena".into()), false).await.is_err());
+    assert!(setup.store.scim_create_account(ISSUER, again, Some("sub-lena".into()), false).await.is_err());
     assert!(setup.store.account("other@example.org").await.unwrap().is_none());
+}
+
+/// Takes an account over the way UwUAuth adopts one, with everything else SCIM can say about it,
+/// and checks that only the `externalId` was noted.
+async fn adopt_and_check(setup: &Setup, login: &str, sub: &str) {
+    let app = &setup.app;
+    let account = setup.store.account(login).await.unwrap().unwrap();
+    let (status, _, _) =
+        scim(app, "POST", "/Users", Some(json!({ "userName": login, "externalId": sub })), SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, list, _) = scim(app, "GET", &format!("/Users{}", filter("userName", login)), None, SCIM_TOKEN).await;
+    let path = format!("/Users/{}", list["Resources"][0]["id"].as_str().unwrap());
+    let adopt = json!({ "Operations": [
+        { "op": "replace", "value": { "active": false, "displayName": "Someone", "externalId": sub } },
+        { "op": "replace", "path": "roles", "value": [{ "value": "admin" }] },
+    ] });
+    let (status, user, _) = scim(app, "PATCH", &path, Some(adopt), SCIM_TOKEN).await;
+    assert_eq!((status, user["externalId"].as_str()), (StatusCode::OK, Some(sub)), "{user}");
+    assert_eq!(setup.store.external_identity(ISSUER, sub).await.unwrap(), None, "{login}: not linked");
+    let now = setup.store.account_by_id(account.id).await.unwrap().unwrap();
+    assert_eq!((now.disabled, now.role, now.display_name), (false, account.role, account.display_name), "{login}");
+    let (status, _, _) = scim(app, "DELETE", &path, None, SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(setup.store.account_by_id(account.id).await.unwrap().unwrap().deleted_at.is_none(), "{login}");
+}
+
+#[tokio::test]
+async fn accounts_from_a_first_login_or_another_uwuauth_are_not_run_by_scim() {
+    let setup = paired().await;
+    // Made at a first OpenID Connect login (perhaps at another provider): oidc, no password.
+    let person = |address: &str| NewAccount {
+        address: address.into(),
+        display_name: "Kim".into(),
+        password: None,
+        role: Role::User,
+        quota_bytes: 0,
+        protocols: None,
+    };
+    setup.store.create_account(person("kim@example.org")).await.unwrap();
+    setup.store.set_auth_source("kim@example.org", "oidc").await.unwrap();
+    adopt_and_check(&setup, "kim@example.org", "sub-kim").await;
+
+    // Made over SCIM, but by a UwUAuth paired before.
+    setup
+        .store
+        .scim_create_account("https://old.example.net", person("jo@example.org"), Some("old-sub-jo".into()), false)
+        .await
+        .unwrap();
+    adopt_and_check(&setup, "jo@example.org", "sub-jo").await;
 }

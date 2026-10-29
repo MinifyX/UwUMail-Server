@@ -331,11 +331,8 @@ pub async fn pair(
         .filter(|scopes: &Vec<String>| !scopes.is_empty())
         .unwrap_or(scopes);
 
-    // 5. Into effect. Another UwUAuth than before: its people and groups are not the new one's.
+    // 5. Into effect.
     let before = pairing(&web).await?;
-    if before.is_some_and(|before| before.issuer.trim_end_matches('/') != discovery.issuer.trim_end_matches('/')) {
-        web.store().scim_forget().await?;
-    }
     let changes = paired_settings(&discovery.issuer, &client_id, &secret, &granted, private);
     let details = super::settings::merge_changes(backend, &mut overlay, &changes)?;
     backend.apply(&overlay).map_err(|err| ApiError::Rule("settingsInvalid", err))?;
@@ -353,6 +350,11 @@ pub async fn pair(
         private_network: private,
     };
     web.store().set_setting(PAIRING_KEY, &serde_json::to_string(&pairing).map_err(|_| ApiError::Internal)?).await?;
+    // Another UwUAuth than before: the last one's people and groups are not the new one's. Only
+    // now, so a pairing that failed above leaves the old one whole.
+    if before.is_some_and(|before| before.issuer.trim_end_matches('/') != pairing.issuer.trim_end_matches('/')) {
+        web.store().scim_forget().await?;
+    }
     audit(
         &web,
         &session,

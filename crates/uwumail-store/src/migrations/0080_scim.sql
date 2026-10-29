@@ -2,11 +2,15 @@
 -- id the provider keeps for an account; ids are made for every person when the provider first looks.
 -- `external_id` is the provider's own id of the person, which is also the OpenID Connect subject.
 -- `disabled_by_scim`: the provider switched the account off, so only the provider switches it back on.
+-- `created_by`: the issuer of the provider that created the account over SCIM; NULL for every account
+-- that was here before (made by an admin, a password, LDAP or a first OpenID Connect login). Only
+-- accounts the current provider created follow it.
 CREATE TABLE scim_users (
     id TEXT PRIMARY KEY,
     account_id INTEGER NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
     external_id TEXT,
     disabled_by_scim INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
     created INTEGER NOT NULL,
     updated INTEGER NOT NULL
 );
