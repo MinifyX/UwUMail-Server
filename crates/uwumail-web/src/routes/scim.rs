@@ -6,10 +6,14 @@
 //!   account; `active: true` unlocks only an account SCIM locked itself, never one an admin did.
 //!   `DELETE` moves it to the trash, where an admin can still restore it. The role `admin`
 //!   makes an admin. The address never changes this way.
+//! - Only such **managed** accounts (`oidc`, no password) follow the provider. An account that
+//!   was here before (a 409 on create, then a `PATCH` of `externalId`) keeps the `externalId`
+//!   but nothing else: no lock, role, name or trash, and no login link — that waits for the
+//!   first OpenID Connect login, which asks for a verified email.
 //! - **Groups** are kept so the provider gets proper answers, but mean nothing for mail.
 //!
 //! The token comes from the pairing; only its SHA-256 is kept and compared in constant time, and
-//! refused tokens count against the client's network like wrong passwords.
+//! refused tokens count against the client's network in a budget of their own.
 
 use axum::body::Bytes;
 use axum::extract::{FromRequestParts, Path, Query, State};
@@ -23,6 +27,7 @@ use uwumail_store::{
     ScimGroupUpdate, ScimUser, ScimUserFilter, StoreError,
 };
 
+use super::oauth::Budget;
 use super::uwuauth::{Pairing, pairing, token_hash};
 use crate::Web;
 use crate::session::{client, same};
@@ -37,6 +42,10 @@ const MAX_RESULTS: usize = 200;
 pub(crate) const MAX_BODY: usize = 1024 * 1024;
 /// Who SCIM is in the change log.
 const ACTOR: &str = "scim";
+/// Refused SCIM tokens per network before the endpoints wait; apart from wrong passwords.
+const REFUSED_TOKENS: Budget = Budget { name: "scim", max: 20, window: 15 * 60 };
+/// The largest `startIndex` taken; beyond it a page is empty anyway.
+const MAX_START: usize = 1 << 40;
 
 // ── Answers ───────────────────────────────────────────────
 
@@ -166,7 +175,7 @@ impl FromRequestParts<Web> for Scim {
 
     async fn from_request_parts(parts: &mut Parts, web: &Web) -> Result<Self, Self::Rejection> {
         let ip = client(parts).ip;
-        if web.limiter().is_blocked(ip) {
+        if !web.oauth_attempt(REFUSED_TOKENS, ip, false) {
             return Err(ScimError::new(StatusCode::TOO_MANY_REQUESTS, None, "Too many refused tokens. Wait a while."));
         }
         let presented = parts
@@ -184,7 +193,7 @@ impl FromRequestParts<Web> for Scim {
                 Ok(Scim { pairing })
             }
             _ => {
-                web.limiter().record_wrong_token(ip);
+                web.oauth_attempt(REFUSED_TOKENS, ip, true);
                 tracing::info!(%ip, "a SCIM request with a wrong token");
                 Err(ScimError::new(StatusCode::UNAUTHORIZED, None, "The SCIM token is missing or wrong."))
             }
@@ -282,7 +291,7 @@ pub struct ListQuery {
 impl ListQuery {
     /// The 1-based start, and how many to show.
     fn window(&self) -> (usize, usize) {
-        (self.start_index.unwrap_or(1).max(1), self.count.unwrap_or(MAX_RESULTS).min(MAX_RESULTS))
+        (self.start_index.unwrap_or(1).clamp(1, MAX_START), self.count.unwrap_or(MAX_RESULTS).min(MAX_RESULTS))
     }
 
     fn filter(&self) -> ScimResult<Option<(String, String)>> {
@@ -417,7 +426,16 @@ async fn log(web: &Web, action: &str, target: &str, details: Value) {
     }
 }
 
+/// Whether the provider runs the account: SCIM made it (`oidc`, no password). Anything else was
+/// here before and only gets its `externalId` noted.
+async fn managed(web: &Web, account: &Account) -> ScimResult<bool> {
+    Ok(!account.is_service()
+        && web.store().auth_source(account.id).await? == "oidc"
+        && !web.store().has_password(account.id).await?)
+}
+
 /// Notes the provider's id for logging in: the OpenID Connect `sub` is the SCIM `externalId`.
+/// Only for managed accounts; see [`managed`].
 async fn link_login(web: &Web, pairing: &Pairing, account: &Account, external_id: Option<&str>) -> ScimResult<()> {
     let Some(subject) = external_id else { return Ok(()) };
     if !web.store().link_external_identity(account.id, &pairing.issuer, subject, &account.login).await? {
@@ -447,29 +465,26 @@ pub async fn create_user(State(web): State<Web>, scim_auth: Scim, body: Bytes) -
     }
     let admin = names_admin(&body["roles"]).unwrap_or(false);
     let name = display_name(&body).unwrap_or_default();
-    let account = web
+    let disabled = boolean(&body["active"]) == Some(false);
+    let user = web
         .store()
-        .create_account(NewAccount {
-            address: address.clone(),
-            display_name: name,
-            password: None,
-            role: if admin { Role::Admin } else { Role::User },
-            quota_bytes: 0,
-            protocols: None,
-        })
+        .scim_create_account(
+            NewAccount {
+                address: address.clone(),
+                display_name: name,
+                password: None,
+                role: if admin { Role::Admin } else { Role::User },
+                quota_bytes: 0,
+                protocols: None,
+            },
+            external.clone(),
+            disabled,
+        )
         .await?;
-    web.store().set_auth_source(&account.login, "oidc").await?;
-    let user = web.store().scim_link(account.id, external.clone()).await?;
-    link_login(&web, &scim_auth.pairing, &account, external.as_deref()).await?;
-    if boolean(&body["active"]) == Some(false) {
-        web.store()
-            .update_account(&account.login, AccountUpdate { disabled: Some(true), ..Default::default() })
-            .await?;
-        web.store().scim_touch(&user.id, Some(true)).await?;
-    }
+    let account = &user.account;
+    link_login(&web, &scim_auth.pairing, account, external.as_deref()).await?;
     log(&web, "account.create", &account.login, json!({ "via": ACTOR, "admin": admin })).await;
     tracing::info!(login = %account.login, admin, "SCIM: account created");
-    let user = self::user(&web, &user.id).await?;
     let base = base(&web);
     Ok(created(user_json(&user, &base), &format!("{base}/Users/{}", user.id)))
 }
@@ -521,6 +536,15 @@ fn change_of(user: &ScimUser, change: &mut PersonChange, path: &str, value: &Val
 /// Puts a change into effect.
 async fn apply(web: &Web, pairing: &Pairing, user: ScimUser, change: PersonChange) -> ScimResult<ScimUser> {
     let account = &user.account;
+    if !managed(web, account).await? {
+        // Taken over after a 409: the provider's id is noted, and that is all. The login link
+        // comes with the first OpenID Connect login, which needs a verified email.
+        if let Some(external) = change.external_id.filter(|external| *external != user.external_id) {
+            web.store().scim_set_external_id(&user.id, external).await?;
+        }
+        web.store().scim_touch(&user.id, None).await?;
+        return self::user(web, &user.id).await;
+    }
     let mut update = AccountUpdate::default();
     let mut flag = None;
     match change.active {
@@ -627,6 +651,12 @@ pub async fn put_user(
 
 pub async fn delete_user(State(web): State<Web>, _scim: Scim, Path(id): Path<String>) -> ScimResult<Response> {
     let user = user(&web, &id).await?;
+    if !managed(&web, &user.account).await? {
+        // Not the provider's to remove: it lets go of the account and the mailbox stays.
+        web.store().scim_set_external_id(&user.id, None).await?;
+        tracing::info!(login = %user.account.login, "SCIM: let go of an account it did not make");
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    }
     web.store().trash_account(&user.account.login).await?;
     log(&web, "account.trash", &user.account.login, json!({ "via": ACTOR })).await;
     tracing::info!(login = %user.account.login, "SCIM: account moved to the trash");

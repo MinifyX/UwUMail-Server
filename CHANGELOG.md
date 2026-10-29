@@ -12,7 +12,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   Unpairing switches it off again. See [docs/uwuauth.md](docs/uwuauth.md).
 - SCIM 2.0 at `/scim/v2` for UwUAuth: people become mailboxes that log in with UwUAuth, are locked
   and unlocked, made admins, and moved to the trash from there. Only addresses on domains of this
-  server; groups are kept but change nothing about mail.
+  server; groups are kept but change nothing about mail. Mailboxes that were here before only get
+  UwUAuth's id noted: they are linked at the first UwUAuth login with a verified email, and SCIM
+  does not lock, promote or remove them. Wrong SCIM tokens have a limit of their own, apart from
+  wrong passwords. Pairing asks for the password on an older login.
 - OpenID Connect: `auth.oidc.sync_admin` applies the admin claim at every login,
   `auth.oidc.scopes` sets the scopes asked for, and `auth.oidc.private_network` allows a login
   service in the local network (its host only, HTTPS with a trusted certificate still required).

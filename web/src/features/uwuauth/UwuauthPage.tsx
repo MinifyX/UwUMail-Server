@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CopyButton } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, TextInput, Toggle } from "@/components/ui/Field";
+import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { api, type UwuauthView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -56,20 +57,26 @@ function PairForm() {
   const [url, setUrl] = useState("");
   const [code, setCode] = useState("");
   const [privateNetwork, setPrivateNetwork] = useState(false);
+  const { confirmed, dialog } = usePasswordConfirmation();
   // The whole text of the QR code carries the address: then the address field is not needed.
   const fromQr = code.includes("#pair=");
   const pair = useMutation({
+    // Pairing changes who may log in: an older login confirms with the password first.
     mutationFn: () =>
-      api<UwuauthView>("/api/admin/uwuauth", {
-        method: "POST",
-        body: { url: fromQr ? null : url.trim(), code: code.trim(), privateNetwork },
-      }),
+      confirmed((password) =>
+        api<UwuauthView>("/api/admin/uwuauth", {
+          method: "POST",
+          body: { url: fromQr ? null : url.trim(), code: code.trim(), privateNetwork, password },
+        }),
+      ),
     onSuccess: (view) => {
       queryClient.setQueryData(uwuauthKey, view);
       void queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
       toast(t("uwuauth.paired"), "success");
     },
-    onError: (error) => toast(errorText(error), "error"),
+    onError: (error) => {
+      if (!(error instanceof Cancelled)) toast(errorText(error), "error");
+    },
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -118,6 +125,7 @@ function PairForm() {
           </Button>
         </div>
       </form>
+      {dialog}
     </Card>
   );
 }

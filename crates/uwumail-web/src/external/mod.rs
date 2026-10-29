@@ -75,7 +75,9 @@ impl OidcConfig {
         if !scopes.contains(&"openid") {
             scopes.insert(0, "openid");
         }
-        scopes.dedup();
+        // Each once, in the order first named.
+        let mut seen = std::collections::HashSet::new();
+        scopes.retain(|scope| seen.insert(*scope));
         scopes.join(" ")
     }
 }
@@ -355,6 +357,8 @@ mod tests {
         assert_eq!(config.scope(), "openid email roles");
         config.scopes = vec!["openid".into(), "email".into(), "profile".into(), "groups".into(), "roles".into()];
         assert_eq!(config.scope(), "openid email profile groups roles");
+        config.scopes = vec!["email".into(), "roles".into(), "email".into(), "openid".into(), " roles ".into()];
+        assert_eq!(config.scope(), "email roles openid");
         config.issuer = "https://Auth.Home.example/".into();
         assert_eq!(config.lan_host(), None);
         config.private_network = true;

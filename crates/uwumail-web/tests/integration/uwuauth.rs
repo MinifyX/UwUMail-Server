@@ -72,7 +72,8 @@ async fn pair(State(seen): State<Arc<Mutex<Seen>>>, body: Bytes) -> impl IntoRes
     )
 }
 
-/// "The network": UwUAuth at its host, nothing anywhere else.
+/// "The network": UwUAuth at its host and at a second name (which it does not call its issuer),
+/// nothing anywhere else.
 struct Network(Router);
 
 impl Transport for Network {
@@ -82,7 +83,7 @@ impl Transport for Network {
             let host = parts.uri.host().map(str::to_owned);
             parts.uri = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/").parse().unwrap();
             let response = match host.as_deref() {
-                Some("auth.example.net") => {
+                Some("auth.example.net" | "lan.example.net") => {
                     self.0.clone().oneshot(Request::from_parts(parts, Body::from(body))).await.unwrap()
                 }
                 _ => StatusCode::NOT_FOUND.into_response(),
@@ -437,13 +438,13 @@ async fn people_become_mailboxes_and_go_to_the_trash() {
     let (status, _, _) = scim(app, "PATCH", &path, Some(json!({ "op": "replace" })), SCIM_TOKEN).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "a PATCH without Operations");
 
-    // The last admin cannot be taken away by UwUAuth.
+    // The admin with a password is not UwUAuth's to lock.
     let nyu = setup.store.account("nyu@example.org").await.unwrap().unwrap();
     let (_, list, _) =
         scim(app, "GET", &format!("/Users{}", filter("userName", "nyu@example.org")), None, SCIM_TOKEN).await;
     let nyu_id = list["Resources"][0]["id"].as_str().unwrap().to_owned();
-    let (status, error, _) = scim(app, "PATCH", &format!("/Users/{nyu_id}"), Some(active(false)), SCIM_TOKEN).await;
-    assert_eq!((status, error["scimType"].as_str()), (StatusCode::CONFLICT, Some("mutability")), "{error}");
+    let (status, user, _) = scim(app, "PATCH", &format!("/Users/{nyu_id}"), Some(active(false)), SCIM_TOKEN).await;
+    assert_eq!((status, user["active"].as_bool()), (StatusCode::OK, Some(true)), "{user}");
     assert!(!setup.store.account_by_id(nyu.id).await.unwrap().unwrap().disabled);
 
     // Deleted: in the trash, where an admin can still restore it.
@@ -492,4 +493,165 @@ async fn groups_are_kept_for_the_provider() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _, _) = scim(app, "DELETE", &path, None, SCIM_TOKEN).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn accounts_from_before_are_noted_but_not_taken_over() {
+    let setup = paired().await;
+    let app = &setup.app;
+    let mini = setup
+        .store
+        .create_account(NewAccount {
+            address: "mini@example.org".into(),
+            display_name: "Mini".into(),
+            password: Some("schnurrhaar-456".into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+
+    // How UwUAuth adopts: create, 409, find by userName, PATCH everything with the externalId.
+    let person = json!({ "userName": "mini@example.org", "externalId": "sub-mini", "displayName": "Someone" });
+    let (status, _, _) = scim(app, "POST", "/Users", Some(person), SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, list, _) =
+        scim(app, "GET", &format!("/Users{}", filter("userName", " MINI@Example.ORG ")), None, SCIM_TOKEN).await;
+    assert_eq!(list["totalResults"], 1, "the userName is matched in its normal form: {list}");
+    let id = list["Resources"][0]["id"].as_str().unwrap().to_owned();
+    let path = format!("/Users/{id}");
+    let adopt = json!({ "Operations": [
+        { "op": "replace", "value": { "active": false, "displayName": "Someone", "externalId": "sub-mini" } },
+        { "op": "replace", "path": "roles", "value": [{ "value": "admin" }] },
+    ] });
+    let (status, user, _) = scim(app, "PATCH", &path, Some(adopt), SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::OK, "{user}");
+    assert_eq!((user["externalId"].as_str(), user["active"].as_bool()), (Some("sub-mini"), Some(true)), "{user}");
+
+    // Noted, but no login link: that waits for a login with a verified email.
+    assert_eq!(setup.store.external_identity(ISSUER, "sub-mini").await.unwrap(), None);
+    let account = setup.store.account_by_id(mini.id).await.unwrap().unwrap();
+    assert_eq!((account.disabled, account.role, account.display_name.as_str()), (false, Role::User, "Mini"));
+    assert!(setup.store.has_password(mini.id).await.unwrap());
+    let put = json!({ "userName": "mini@example.org", "active": false, "externalId": "sub-mini", "roles": ["admin"] });
+    let (status, _, _) = scim(app, "PUT", &path, Some(put), SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::OK);
+    let account = setup.store.account_by_id(mini.id).await.unwrap().unwrap();
+    assert_eq!((account.disabled, account.role), (false, Role::User));
+
+    // A DELETE lets go of the account; the mailbox stays.
+    let (status, _, _) = scim(app, "DELETE", &path, None, SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(setup.store.account_by_id(mini.id).await.unwrap().unwrap().deleted_at.is_none());
+    let (_, list, _) = scim(app, "GET", &format!("/Users{}", filter("externalId", "sub-mini")), None, SCIM_TOKEN).await;
+    assert_eq!(list["totalResults"], 0, "{list}");
+}
+
+#[tokio::test]
+async fn pages_far_out_are_empty() {
+    let setup = paired().await;
+    for path in ["/Users", "/Groups"] {
+        let query = format!("{path}?startIndex={}&count={}", usize::MAX, usize::MAX);
+        let (status, list, _) = scim(&setup.app, "GET", &query, None, SCIM_TOKEN).await;
+        assert_eq!(status, StatusCode::OK, "{path}: {list}");
+        assert_eq!(list["Resources"], json!([]), "{path}");
+    }
+}
+
+#[tokio::test]
+async fn refused_tokens_have_a_budget_of_their_own() {
+    let setup = paired().await;
+    let mut refused = 0;
+    loop {
+        let (status, _, _) = scim(&setup.app, "GET", "/Users", None, "not-the-token").await;
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            break;
+        }
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        refused += 1;
+        assert!(refused < 100, "no end to the tries");
+    }
+    let (status, _, _) = scim(&setup.app, "GET", "/Users", None, SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "the network waits, whatever it sends");
+    // Passwords are counted apart: the admin can still log in from the same network.
+    let mut request = Request::post("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" }).to_string()))
+        .unwrap();
+    request.extensions_mut().insert(ClientInfo { ip: "203.0.113.7".parse().unwrap(), https: true });
+    assert_eq!(setup.app.clone().oneshot(request).await.unwrap().status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn in_the_local_network_the_issuer_is_the_host_typed() {
+    let setup = setup().await;
+    // lan.example.net answers, but names auth.example.net as the issuer.
+    let body = json!({ "url": "https://lan.example.net", "code": CODE, "privateNetwork": true });
+    let (status, answer) = admin(&setup, "POST", Some(body)).await;
+    assert_eq!((status, answer["code"].as_str()), (StatusCode::CONFLICT, Some("uwuauthAddress")), "{answer}");
+    assert!(!setup.seen.lock().unwrap().code_used, "the code was not sent");
+
+    let body = json!({ "url": ISSUER, "code": CODE, "privateNetwork": true });
+    let (status, view) = admin(&setup, "POST", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert!(setup.web.external_login().config().oidc.private_network);
+}
+
+#[tokio::test]
+async fn another_uwuauth_forgets_what_the_last_one_said() {
+    let setup = paired().await;
+    let person = json!({ "userName": "lena@example.org", "externalId": "sub-lena", "active": false });
+    let (status, _, _) = scim(&setup.app, "POST", "/Users", Some(person), SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _, _) = scim(&setup.app, "POST", "/Groups", Some(json!({ "displayName": "Staff" })), SCIM_TOKEN).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Paired before with another UwUAuth.
+    let stored = setup.store.setting("uwuauth.pairing").await.unwrap().unwrap();
+    let mut pairing: Value = serde_json::from_str(&stored).unwrap();
+    pairing["issuer"] = json!("https://old.example.net");
+    setup.store.set_setting("uwuauth.pairing", &pairing.to_string()).await.unwrap();
+    setup.seen.lock().unwrap().code_used = false;
+    let (status, view) = admin(&setup, "POST", Some(json!({ "url": ISSUER, "code": CODE }))).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+
+    let (_, list, _) =
+        scim(&setup.app, "GET", &format!("/Users{}", filter("externalId", "sub-lena")), None, SCIM_TOKEN).await;
+    assert_eq!(list["totalResults"], 0, "{list}");
+    let (_, groups, _) = scim(&setup.app, "GET", "/Groups", None, SCIM_TOKEN).await;
+    assert_eq!(groups["totalResults"], 0, "{groups}");
+}
+
+#[tokio::test]
+async fn a_failed_create_leaves_no_account() {
+    let setup = paired().await;
+    let lena = setup
+        .store
+        .scim_create_account(
+            NewAccount {
+                address: "lena@example.org".into(),
+                display_name: "Lena".into(),
+                password: None,
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            },
+            Some("sub-lena".into()),
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(lena.disabled_by_scim && lena.account.disabled);
+    assert_eq!(setup.store.auth_source(lena.account.id).await.unwrap(), "oidc");
+    let again = NewAccount {
+        address: "other@example.org".into(),
+        display_name: String::new(),
+        password: None,
+        role: Role::User,
+        quota_bytes: 0,
+        protocols: None,
+    };
+    assert!(setup.store.scim_create_account(again, Some("sub-lena".into()), false).await.is_err());
+    assert!(setup.store.account("other@example.org").await.unwrap().is_none());
 }

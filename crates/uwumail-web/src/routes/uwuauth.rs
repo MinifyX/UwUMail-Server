@@ -134,6 +134,9 @@ pub struct PairRequest {
     /// UwUAuth lives in the local network: its host may have a private address.
     #[serde(default)]
     private_network: bool,
+    /// The admin's password, unless the login is fresh (as for every security change).
+    #[serde(default)]
+    password: Option<String>,
 }
 
 /// UwUAuth's address and the code from what the admin typed: the address field, or the whole text
@@ -227,6 +230,7 @@ pub async fn pair(
     Admin(session): Admin,
     Json(request): Json<PairRequest>,
 ) -> ApiResult<Json<Value>> {
+    super::security::confirm_identity(&web, &session, request.password.as_deref()).await?;
     let (base, code) = pairing_input(request.url.as_deref(), &request.code).map_err(ApiError::Invalid)?;
     let backend = backend(&web)?;
     let private = request.private_network;
@@ -244,7 +248,15 @@ pub async fn pair(
     }
     let issuer = text(&server, "issuer");
     let issuer_host = host_of(&issuer).ok_or_else(|| ApiError::Rule("notUwuauth", "UwUAuth names no issuer".into()))?;
-    let lan_hosts: Vec<String> = if private { vec![base_host.clone(), issuer_host.clone()] } else { Vec::new() };
+    // In the local network only the host the admin typed may be private: an issuer elsewhere would
+    // let UwUAuth's answer point this server at any machine in the network.
+    if private && issuer_host != base_host {
+        return Err(ApiError::Rule(
+            "uwuauthAddress",
+            format!("UwUAuth names {issuer_host} as its issuer; in the local network it has to be {base_host}"),
+        ));
+    }
+    let lan_hosts: Vec<String> = if private { vec![base_host.clone()] } else { Vec::new() };
     let transport = web.oidc_transport_for(lan_hosts);
     let issuer_lan = private.then_some(issuer_host.as_str());
 
@@ -319,7 +331,11 @@ pub async fn pair(
         .filter(|scopes: &Vec<String>| !scopes.is_empty())
         .unwrap_or(scopes);
 
-    // 5. Into effect.
+    // 5. Into effect. Another UwUAuth than before: its people and groups are not the new one's.
+    let before = pairing(&web).await?;
+    if before.is_some_and(|before| before.issuer.trim_end_matches('/') != discovery.issuer.trim_end_matches('/')) {
+        web.store().scim_forget().await?;
+    }
     let changes = paired_settings(&discovery.issuer, &client_id, &secret, &granted, private);
     let details = super::settings::merge_changes(backend, &mut overlay, &changes)?;
     backend.apply(&overlay).map_err(|err| ApiError::Rule("settingsInvalid", err))?;

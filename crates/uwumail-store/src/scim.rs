@@ -4,8 +4,8 @@
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row};
-use crate::{Account, Result, Store, StoreError, now};
+use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row, login_key};
+use crate::{Account, NewAccount, Result, Store, StoreError, now};
 
 /// At most this many members in one group.
 pub const SCIM_MAX_MEMBERS: usize = 10_000;
@@ -81,6 +81,11 @@ fn user_columns() -> String {
 }
 
 /// Gives every person who has none yet a SCIM id.
+/// A count or offset as SQLite takes it: anything past `i64::MAX` is `i64::MAX`.
+fn sql_int(n: usize) -> i64 {
+    i64::try_from(n).unwrap_or(i64::MAX)
+}
+
 fn ensure_ids(conn: &Connection) -> Result<()> {
     let at = now();
     conn.execute(
@@ -165,7 +170,7 @@ impl Store {
             let (condition, value) = match &filter {
                 ScimUserFilter::All => ("1 = 1", String::new()),
                 ScimUserFilter::Id(id) => ("s_id = ?1", id.clone()),
-                ScimUserFilter::UserName(name) => ("login = ?1", name.trim().to_lowercase()),
+                ScimUserFilter::UserName(name) => ("login = ?1", login_key(name).unwrap_or_else(|_| name.trim().to_lowercase())),
                 ScimUserFilter::ExternalId(id) => ("s_ext = ?1", id.clone()),
             };
             let bind = |stmt: &mut rusqlite::Statement<'_>| -> rusqlite::Result<()> {
@@ -181,8 +186,8 @@ impl Store {
             let mut stmt = tx.prepare(&format!(
                 "SELECT {} FROM {SCIM_JOIN} WHERE {VISIBLE} AND {condition} ORDER BY s_created, s_id LIMIT {} OFFSET {}",
                 user_columns(),
-                count,
-                start
+                sql_int(count),
+                sql_int(start)
             ))?;
             bind(&mut stmt)?;
             let mut rows = stmt.raw_query();
@@ -203,6 +208,36 @@ impl Store {
             find_user(tx, &id, with_trash)
         })
         .await
+    }
+
+    /// A person the provider brings: an account without a password that logs in with OpenID
+    /// Connect, its SCIM id and the provider's id, and locked by SCIM if `disabled`. All or nothing:
+    /// an `externalId` another person has already leaves no account behind.
+    pub async fn scim_create_account(
+        &self,
+        new: NewAccount,
+        external_id: Option<String>,
+        disabled: bool,
+    ) -> Result<ScimUser> {
+        let new = NewAccount { password: None, ..new };
+        let (_, user) = self
+            .create_account_then(new, move |tx, account| {
+                tx.execute(
+                    "UPDATE accounts SET auth_source = 'oidc', disabled = ?1 WHERE id = ?2",
+                    params![disabled, account.id],
+                )?;
+                ensure_ids(tx)?;
+                tx.execute(
+                    "UPDATE scim_users SET external_id = ?1, disabled_by_scim = ?2, updated = ?3 WHERE account_id = ?4",
+                    params![external_id, disabled, now(), account.id],
+                )
+                .map_err(|err| conflict_on_unique(err, "externalId".into()))?;
+                let id: String =
+                    tx.query_row("SELECT id FROM scim_users WHERE account_id = ?1", [account.id], |row| row.get(0))?;
+                find_user(tx, &id, false)?.ok_or_else(|| StoreError::NotFound(format!("user {id}")))
+            })
+            .await?;
+        Ok(user)
     }
 
     /// The SCIM id of an account, made now if it has none, with the provider's id for the person.
@@ -275,7 +310,9 @@ impl Store {
             let total: i64 = total.raw_query().next()?.map(|row| row.get(0)).transpose()?.unwrap_or(0);
             let total = usize::try_from(total).unwrap_or(0);
             let mut stmt = conn.prepare(&format!(
-                "SELECT {GROUP_COLUMNS} FROM scim_groups WHERE {condition} ORDER BY created, id LIMIT {count} OFFSET {start}"
+                "SELECT {GROUP_COLUMNS} FROM scim_groups WHERE {condition} ORDER BY created, id LIMIT {} OFFSET {}",
+                sql_int(count),
+                sql_int(start)
             ))?;
             bind(&mut stmt)?;
             let mut rows = stmt.raw_query();

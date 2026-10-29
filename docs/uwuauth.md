@@ -15,7 +15,8 @@ with it, UwUMail gets two things at once:
 2. In UwUMail, open *Server → Settings → UwUAuth*, paste the code, and type UwUAuth's address. The
    text of the QR code (`https://auth.example.com/#pair=CODE`) holds both: pasted into the code
    field, the address is not needed.
-3. *Pair*. UwUMail asks `GET /uwu/v1/server` whether a UwUAuth that can pair answers there, reads
+3. *Pair*. A login older than a few minutes confirms with the password first, as for every
+   security change. UwUMail asks `GET /uwu/v1/server` whether a UwUAuth that can pair answers there, reads
    its OpenID Connect discovery document, and redeems the code with `POST /uwu/v1/pair`. It sends
    its redirect URI (`https://<host>/api/auth/oidc/callback`), its SCIM address
    (`https://<host>/scim/v2`) and the roles it knows (`admin`, `user`).
@@ -41,13 +42,18 @@ What can go wrong: an unknown, used or expired code (*create a new one in UwUAut
 (UwUAuth's own limit), an address where no UwUAuth 0.4 or newer answers, or an answer whose issuer
 differs from the discovery document. Nothing is changed in those cases.
 
+Pairing again with **another** UwUAuth (another issuer) forgets what the last one said through SCIM
+first: the external ids, the groups and which locks were SCIM's.
+
 ### UwUAuth in the local network
 
 Normally the login service must have a public address: the server refuses private, loopback and
 link-local addresses for every outgoing request, so a link cannot make it reach into the local
 network. *The login service is in the local network* (`auth.oidc.private_network`) lifts this for
 **the issuer's host only**, and only for the login (discovery, keys, tokens) and pairing. Everything
-else stays guarded.
+else stays guarded. When pairing this way, UwUAuth's issuer has to be on the host typed as its
+address; an issuer elsewhere is refused (`uwuauthAddress`), so UwUAuth's answer cannot point the
+server at another machine in the network.
 
 HTTPS stays mandatory, and the certificate must be one the server trusts: a public CA (for example
 Let's Encrypt with a DNS challenge for an internal name). A self-signed certificate does not work.
@@ -55,8 +61,9 @@ Let's Encrypt with a DNS challenge for an internal name). A self-signed certific
 ## SCIM
 
 UwUAuth calls `https://<host>/scim/v2` with `Authorization: Bearer <token>`. The token is compared
-in constant time against the stored hash; wrong tokens count towards the same per-address limit as
-wrong passwords, and a blocked address gets `429`.
+in constant time against the stored hash. Wrong tokens have a budget of their own per network (20
+in 15 minutes), apart from wrong passwords; past it the network gets `429` until the oldest
+refusal is 15 minutes old.
 
 | Endpoint | |
 | --- | --- |
@@ -73,8 +80,9 @@ Answers are `application/scim+json`; errors use the SCIM error schema with `scim
   invalidValue`). The mailbox gets `auth_source = oidc` and no password: the person logs in with
   UwUAuth. `externalId` is UwUAuth's id of the person, which is also the OpenID Connect `sub`; the
   login is linked to the mailbox at once. An address that already has a mailbox, or an `externalId`
-  that belongs to another one, is `409 uniqueness`. UwUAuth then finds the mailbox with a filter
-  (`userName`, `externalId` or `id`) and links it.
+  that belongs to another one, is `409 uniqueness`, and nothing is created. UwUAuth then finds the
+  mailbox with a filter (`userName` in any case, `externalId` or `id`) and sets its `externalId`
+  (see *Mailboxes from before* below).
 - **`active: false`** locks the mailbox (no login, no IMAP/SMTP/JMAP). `active: true` unlocks it
   only if SCIM locked it: a mailbox an admin locked here stays locked.
 - **Roles:** `admin` makes the person an admin, anything else a user. The last admin cannot be
@@ -83,8 +91,19 @@ Answers are `application/scim+json`; errors use the SCIM error schema with `scim
 - **Delete** moves the mailbox to the trash, where an admin can restore it until the trash is
   emptied. From then on the SCIM id answers `404`, as SCIM expects; the address stays taken, so a
   new user with the same address is `409` until the mailbox is restored or deleted for good.
-- Mailboxes made here, not by UwUAuth, are listed too and get a SCIM id the first time UwUAuth
-  looks, so UwUAuth can take them over.
+
+Only mailboxes UwUAuth made (`auth_source = oidc` and no password) follow it in all of this.
+
+### Mailboxes from before
+
+Mailboxes made here, not by UwUAuth (a password, LDAP, or an admin), are listed too and get a SCIM
+id the first time UwUAuth looks. UwUAuth can set their `externalId`, but **nothing else**: `active`,
+roles and the name are answered `200` and left as they are, and a `DELETE` only lets go of the
+mailbox (the `externalId` is cleared, the mailbox stays). Nor does the `externalId` link the login:
+a person at UwUAuth may have an email that nobody checked, so the mailbox is linked at the first
+UwUAuth login, which needs `email_verified` like every OpenID Connect login (see
+[login-oidc-ldap.md](login-oidc-ldap.md)). Locking, roles and removing such a mailbox stay with
+the admins here.
 
 ### Groups
 

@@ -40,9 +40,9 @@ const FAILURES: Budget = Budget { name: "failures", max: 30, window: 15 * 60 };
 /// How many of something a network may do in a while.
 #[derive(Clone, Copy)]
 pub(crate) struct Budget {
-    name: &'static str,
-    max: usize,
-    window: i64,
+    pub(crate) name: &'static str,
+    pub(crate) max: usize,
+    pub(crate) window: i64,
 }
 /// When no scope is asked for: reading and sending mail.
 const DEFAULT_SCOPES: &str = "mail smtp";
