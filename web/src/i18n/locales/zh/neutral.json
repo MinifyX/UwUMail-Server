@@ -80,7 +80,23 @@
     "moving": "搬家",
     "more": "更多",
     "updates": "更新",
-    "assist": "AI 助手"
+    "assist": "AI 助手",
+    "groups": {
+      "account": "账户",
+      "mail": "邮件",
+      "extras": "更多功能"
+    },
+    "codes": "验证码",
+    "new": "新",
+    "mode": "区域",
+    "home": "前往概览",
+    "openMailbox": "打开邮箱",
+    "tabs": {
+      "server": "服务器",
+      "people": "账户",
+      "queue": "队列",
+      "codes": "验证码"
+    }
   },
   "userMenu": {
     "open": "打开账户菜单",
@@ -4850,5 +4866,39 @@
       "deleted": "迁移已删除。",
       "uploaded_other": "已导入 {{count}} 条。"
     }
+  },
+  "codes": {
+    "title": "验证码",
+    "intro": "识别邮件中的一次性验证码，复制它们，之后再清理。",
+    "card": {
+      "title": "邮件中的验证码",
+      "intro": "适用于网页邮箱和 UwUMail 应用。"
+    },
+    "detect": {
+      "label": "自动识别验证码 (DE/EN)",
+      "description": "在德语和英语邮件中查找类似“Your code is 482913”的验证码。识别出的验证码可以复制，但绝不会被自动填入。"
+    },
+    "cleanup": {
+      "label": "清理已过期的验证码",
+      "options": {
+        "off": "关闭",
+        "now": "立即",
+        "24h": "24 小时后",
+        "7d": "7 天后"
+      },
+      "description": {
+        "off": "含验证码的邮件保留在收件箱中。",
+        "now": "验证码一过期，邮件就会移到废纸篓。",
+        "24h": "过期一天后，邮件会移到废纸篓。(默认)",
+        "7d": "过期一周后，邮件会移到废纸篓。"
+      }
+    },
+    "signed": "UwUMail 始终显示来源经过签名的验证码 (标头 {{header}}，已通过 DKIM 验证)。只有这些验证码可以由应用自动填入，且仅限于对应的网站。",
+    "preview": {
+      "title": "预览",
+      "left": "剩余 {{time}}",
+      "caption": "验证码会这样显示在邮件列表上方。"
+    },
+    "localOnly": "目前这些设置仅在此浏览器中生效。"
   }
 }

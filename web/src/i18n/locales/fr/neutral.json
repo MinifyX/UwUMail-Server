@@ -80,7 +80,23 @@
     "moving": "Déménagement",
     "more": "Plus",
     "updates": "Mises à jour",
-    "assist": "Assistant IA"
+    "assist": "Assistant IA",
+    "groups": {
+      "account": "Compte",
+      "mail": "Courrier",
+      "extras": "Extras"
+    },
+    "codes": "Codes de vérification",
+    "new": "Nouveau",
+    "mode": "Espace",
+    "home": "Aller à l’aperçu",
+    "openMailbox": "Ouvrir la boîte mail",
+    "tabs": {
+      "server": "Serveur",
+      "people": "Comptes",
+      "queue": "File",
+      "codes": "Codes"
+    }
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -5042,5 +5058,39 @@
       "uploaded_many": "{{count}} entrées importées.",
       "uploaded_other": "{{count}} entrées importées."
     }
+  },
+  "codes": {
+    "title": "Codes de vérification",
+    "intro": "Repérer les codes à usage unique dans les mails, les copier puis faire le ménage.",
+    "card": {
+      "title": "Codes dans les mails",
+      "intro": "S’applique au webmail et aux apps UwUMail."
+    },
+    "detect": {
+      "label": "Détecter les codes automatiquement (DE/EN)",
+      "description": "Cherche des codes comme « Your code is 482913 » dans les mails allemands et anglais. Tu peux copier les codes ainsi trouvés, mais ils ne sont jamais insérés automatiquement."
+    },
+    "cleanup": {
+      "label": "Ranger les codes expirés",
+      "options": {
+        "off": "Non",
+        "now": "Tout de suite",
+        "24h": "Après 24 h",
+        "7d": "Après 7 jours"
+      },
+      "description": {
+        "off": "Les mails avec des codes restent dans la boîte de réception.",
+        "now": "Dès qu’un code expire, le mail part à la corbeille.",
+        "24h": "Un jour après l’expiration, le mail part à la corbeille. (Par défaut)",
+        "7d": "Une semaine après l’expiration, le mail part à la corbeille."
+      }
+    },
+    "signed": "UwUMail affiche toujours les codes d’origine signée (en-tête {{header}}, DKIM vérifié). Seuls ceux-ci peuvent être insérés par les apps, et uniquement sur le site correspondant.",
+    "preview": {
+      "title": "Aperçu",
+      "left": "encore {{time}}",
+      "caption": "Voici comment un code apparaît au-dessus de la liste des mails."
+    },
+    "localOnly": "Pour l’instant, ces réglages ne valent que dans ce navigateur."
   }
 }

@@ -80,7 +80,23 @@
     "moving": "Moving",
     "more": "More",
     "updates": "Updates",
-    "assist": "AI assistant"
+    "assist": "AI assistant",
+    "groups": {
+      "account": "Account",
+      "mail": "Mail",
+      "extras": "Extras"
+    },
+    "codes": "Verification codes",
+    "new": "New",
+    "mode": "Area",
+    "home": "Go to overview",
+    "openMailbox": "Open mailbox",
+    "tabs": {
+      "server": "Server",
+      "people": "Accounts",
+      "queue": "Queue",
+      "codes": "Codes"
+    }
   },
   "userMenu": {
     "open": "Open account menu",
@@ -4949,5 +4965,39 @@
       "uploaded_one": "{{count}} entry imported.",
       "uploaded_other": "{{count}} entries imported."
     }
+  },
+  "codes": {
+    "title": "Verification codes",
+    "intro": "Spot one-time codes in mail, copy them and tidy up afterwards.",
+    "card": {
+      "title": "Codes in mail",
+      "intro": "Applies to webmail and the UwUMail apps."
+    },
+    "detect": {
+      "label": "Detect codes automatically (DE/EN)",
+      "description": "Looks for codes like “Your code is 482913” in German and English mail. You can copy codes found this way, but they are never filled in automatically."
+    },
+    "cleanup": {
+      "label": "Clean up expired codes",
+      "options": {
+        "off": "Off",
+        "now": "Right away",
+        "24h": "After 24 h",
+        "7d": "After 7 days"
+      },
+      "description": {
+        "off": "Mail with codes stays in the inbox.",
+        "now": "As soon as a code expires, the mail moves to the trash.",
+        "24h": "A day after it expires, the mail moves to the trash. (Default)",
+        "7d": "A week after it expires, the mail moves to the trash."
+      }
+    },
+    "signed": "UwUMail always shows codes with a signed origin (header {{header}}, DKIM verified). Only these may be filled in by apps, and only on the matching site.",
+    "preview": {
+      "title": "Preview",
+      "left": "{{time}} left",
+      "caption": "This is how a code appears above the mail list."
+    },
+    "localOnly": "For now these settings only apply in this browser."
   }
 }

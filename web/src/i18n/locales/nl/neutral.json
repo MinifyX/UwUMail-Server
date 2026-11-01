@@ -80,7 +80,23 @@
     "moving": "Verhuizen",
     "more": "Meer",
     "updates": "Updates",
-    "assist": "AI-assistent"
+    "assist": "AI-assistent",
+    "groups": {
+      "account": "Account",
+      "mail": "Mail",
+      "extras": "Extra’s"
+    },
+    "codes": "Verificatiecodes",
+    "new": "Nieuw",
+    "mode": "Onderdeel",
+    "home": "Naar het overzicht",
+    "openMailbox": "Postvak openen",
+    "tabs": {
+      "server": "Server",
+      "people": "Accounts",
+      "queue": "Wachtrij",
+      "codes": "Codes"
+    }
   },
   "userMenu": {
     "open": "Accountmenu openen",
@@ -4949,5 +4965,39 @@
       "uploaded_one": "{{count}} item geïmporteerd.",
       "uploaded_other": "{{count}} items geïmporteerd."
     }
+  },
+  "codes": {
+    "title": "Verificatiecodes",
+    "intro": "Eenmalige codes in mail herkennen, kopiëren en daarna opruimen.",
+    "card": {
+      "title": "Codes in mail",
+      "intro": "Geldt voor webmail en de UwUMail-apps."
+    },
+    "detect": {
+      "label": "Codes automatisch herkennen (DE/EN)",
+      "description": "Zoekt in Duitse en Engelse mail naar codes zoals „Your code is 482913”. Zo gevonden codes kun je kopiëren, maar ze worden nooit automatisch ingevuld."
+    },
+    "cleanup": {
+      "label": "Verlopen codes opruimen",
+      "options": {
+        "off": "Uit",
+        "now": "Meteen",
+        "24h": "Na 24 u",
+        "7d": "Na 7 dagen"
+      },
+      "description": {
+        "off": "Mail met codes blijft in het postvak IN.",
+        "now": "Zodra een code verloopt, gaat de mail naar de prullenbak.",
+        "24h": "Een dag na het verlopen gaat de mail naar de prullenbak. (Standaard)",
+        "7d": "Een week na het verlopen gaat de mail naar de prullenbak."
+      }
+    },
+    "signed": "Codes met een ondertekende herkomst (header {{header}}, DKIM gecontroleerd) toont UwUMail altijd. Alleen deze mogen apps automatisch invullen, en alleen op de juiste site.",
+    "preview": {
+      "title": "Voorbeeld",
+      "left": "nog {{time}}",
+      "caption": "Zo verschijnt een code boven de maillijst."
+    },
+    "localOnly": "Deze instellingen gelden voorlopig alleen in deze browser."
   }
 }

@@ -9,29 +9,27 @@ import {
   Ellipsis,
   Forward,
   Inbox,
+  KeyRound,
   ScrollText,
   Send,
   Settings,
   LayoutDashboard,
   LogOut,
   MailWarning,
-  Menu as MenuIcon,
   Palette,
-  Server,
   ShieldBan,
   Sparkles,
   ShieldCheck,
   Truck,
-  UserRound,
   Users,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 import { Wordmark } from "@/components/ui/Logo";
 import { Menu } from "@/components/ui/Menu";
+import { Tag } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { Link, usePath } from "@/lib/router";
@@ -45,10 +43,17 @@ interface NavItem {
   icon: LucideIcon;
   /** Further addresses this entry stands for, such as the tabs of a page gathered under it. */
   also?: string[];
+  /** A small word beside the label, such as "New". */
+  tag?: string;
+}
+
+interface NavGroup {
+  title?: string;
+  items: NavItem[];
 }
 
 /** Whether a menu entry is the page one is on, or the section it belongs to. */
-function isCurrent(item: NavItem, path: string): boolean {
+export function isCurrent(item: Pick<NavItem, "to" | "also">, path: string): boolean {
   // The overviews only light up on their own pages, sections also on their sub-pages.
   const overview = item.to === "/admin" || item.to === "/account";
   return (
@@ -58,127 +63,121 @@ function isCurrent(item: NavItem, path: string): boolean {
   );
 }
 
-const OPEN_SECTIONS_KEY = "uwumail-portal-nav";
+/** The two halves of the portal: one's own account, and (for admins) the server. */
+export type Mode = "account" | "server";
 
-/** Which menu groups this browser last left open. A group nobody touched is not in here. */
-function storedOpen(): Record<string, boolean> {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(OPEN_SECTIONS_KEY) ?? "{}");
-    if (!raw || typeof raw !== "object") return {};
-    return Object.fromEntries(
-      Object.entries(raw as Record<string, unknown>).filter(([, value]) => typeof value === "boolean"),
-    ) as Record<string, boolean>;
-  } catch {
-    // Private windows may refuse storage; then every group simply starts at its default.
-    return {};
-  }
+export function modeOf(path: string): Mode {
+  return path === "/admin" || path.startsWith("/admin/") ? "server" : "account";
 }
 
-function rememberOpen(name: string, open: boolean) {
-  try {
-    localStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify({ ...storedOpen(), [name]: open }));
-  } catch {
-    // See above: without storage the choice holds for this visit only.
-  }
-}
-
-function NavSection({
-  name,
-  title,
-  icon: Icon,
-  items,
-  path,
-  onNavigate,
-  collapsible,
-  startsOpen,
-}: {
-  /** How this group is remembered; only needed when it can be folded away. */
-  name?: string;
-  title: string;
-  icon: LucideIcon;
-  items: NavItem[];
-  path: string;
-  onNavigate: () => void;
-  collapsible?: boolean;
-  startsOpen?: boolean;
-}) {
-  const { t } = useT();
-  const here = items.some((item) => isCurrent(item, path) || path.startsWith(`${item.to}/`));
-  // What this browser last chose wins; otherwise the group opens if the current page is in it.
-  const [open, setOpen] = useState(() => {
-    const remembered = name ? storedOpen()[name] : undefined;
-    return remembered ?? (here || (startsOpen ?? true));
-  });
-  // Landing inside a folded group unfolds it, so the current page is never hidden. Only the
-  // arrival counts: staying here after folding it away by hand leaves it folded.
-  const [wasHere, setWasHere] = useState(here);
-  if (here !== wasHere) {
-    setWasHere(here);
-    if (here) setOpen(true);
-  }
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    if (name) rememberOpen(name, next);
-  };
-  const heading = (
-    <>
-      <Icon className="size-3.5" aria-hidden />
-      {title}
-    </>
-  );
-
+function NavRow({ item, path, onNavigate }: { item: NavItem; path: string; onNavigate: () => void }) {
+  const active = isCurrent(item, path);
   return (
-    <div className="flex flex-col gap-0.5">
-      {collapsible ? (
-        <button
-          type="button"
-          onClick={toggle}
-          aria-expanded={open}
-          aria-label={t(open ? "nav.collapse" : "nav.expand", { group: title })}
-          className="flex items-center gap-2 rounded-full px-3 pt-4 pb-1.5 text-[12px] font-semibold tracking-wide text-faint uppercase hover:text-muted"
-        >
-          {heading}
-          <ChevronDown className={clsx("size-3.5 transition-transform", !open && "-rotate-90")} aria-hidden />
-        </button>
-      ) : (
-        <p className="flex items-center gap-2 px-3 pt-4 pb-1.5 text-[12px] font-semibold tracking-wide text-faint uppercase">
-          {heading}
-        </p>
+    <Link
+      to={item.to}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      className={clsx(
+        "flex h-9 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors",
+        active ? "bg-pink-tint text-pink-ink" : "text-muted hover:bg-pink-tint/50 hover:text-ink",
       )}
-      {open &&
-        items.map((item) => {
-          const active = isCurrent(item, path);
-          return (
-            <Link
-              key={item.to}
-              to={item.to}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
+    >
+      <item.icon className="size-[18px] shrink-0" strokeWidth={2} aria-hidden />
+      <span className="truncate">{item.label}</span>
+      {item.tag && (
+        <Tag tone="pink" className="ml-auto h-[18px] px-1.5 text-[10px]">
+          {item.tag}
+        </Tag>
+      )}
+    </Link>
+  );
+}
+
+function NavGroups({ groups, path, onNavigate }: { groups: NavGroup[]; path: string; onNavigate: () => void }) {
+  return (
+    <>
+      {groups.map((group, index) => (
+        <div key={group.title ?? index} className="flex flex-col gap-0.5">
+          {group.title && (
+            <p
               className={clsx(
-                "flex h-10 items-center gap-3 rounded-full px-3 text-sm font-semibold transition-colors",
-                active ? "bg-pink-tint text-pink-ink" : "text-muted hover:bg-pink-tint/50 hover:text-ink",
+                "px-3 pb-1.5 text-[12px] font-bold tracking-wide text-muted uppercase",
+                index === 0 ? "pt-1" : "pt-4",
               )}
             >
-              <item.icon className="size-[18px]" strokeWidth={2} aria-hidden />
-              {item.label}
-            </Link>
-          );
-        })}
-    </div>
+              {group.title}
+            </p>
+          )}
+          {group.items.map((item) => (
+            <NavRow key={item.to} item={item} path={path} onNavigate={onNavigate} />
+          ))}
+        </div>
+      ))}
+    </>
   );
 }
 
-export function PortalShell({ session, children }: { session: Session; children: ReactNode }) {
+/** "My account | Server" at the top of the menu; only admins have the second half. */
+function ModeSwitch({ mode, onNavigate }: { mode: Mode; onNavigate: () => void }) {
   const { t } = useT();
-  const path = usePath();
-  const logout = useLogout();
-  const [drawer, setDrawer] = useState(false);
-  /** Counts up whenever the phone menu opens, which makes Nyu hop once at the top of it. */
-  const [hops, setHops] = useState(0);
-  const [appearance, setAppearance] = useState(false);
+  const options: { value: Mode; label: string; to: string }[] = [
+    { value: "account", label: t("nav.account"), to: "/account" },
+    { value: "server", label: t("nav.server"), to: "/admin" },
+  ];
+  return (
+    <nav aria-label={t("nav.mode")} className="flex rounded-full bg-canvas p-1">
+      {options.map((option) => (
+        <Link
+          key={option.value}
+          to={option.to}
+          onClick={onNavigate}
+          aria-current={mode === option.value ? "true" : undefined}
+          className={clsx(
+            "flex h-8 flex-1 items-center justify-center rounded-full px-3 text-[13px] font-semibold whitespace-nowrap transition-colors",
+            mode === option.value ? "bg-surface text-pink-ink shadow-sm" : "text-muted hover:text-ink",
+          )}
+        >
+          {option.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+function useNavigation(session: Session) {
+  const { t } = useT();
   const isAdmin = session.account.role === "admin";
   const calm = isAdmin && adminViewOf(session.preferences) === "simple";
+
+  const account: NavGroup[] = [
+    {
+      title: t("nav.groups.account"),
+      items: [
+        { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+        { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
+        { to: "/account/masked", label: t("nav.masked"), icon: EyeOff },
+        { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
+      ],
+    },
+    {
+      title: t("nav.groups.mail"),
+      items: [
+        { to: "/account/mail", label: t("nav.mail"), icon: Forward },
+        { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
+        { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
+        { to: "/account/moving", label: t("nav.moving"), icon: Truck },
+        { to: "/account/codes", label: t("nav.codes"), icon: KeyRound, tag: t("nav.new") },
+      ],
+    },
+    {
+      title: t("nav.groups.extras"),
+      items: [
+        { to: "/account/calendars", label: t("nav.calendars"), icon: CalendarDays },
+        { to: "/account/assist", label: t("nav.assist"), icon: Sparkles },
+      ],
+    },
+  ];
+
   const serverItems: NavItem[] = [
     {
       to: "/admin",
@@ -198,169 +197,229 @@ export function PortalShell({ session, children }: { session: Session; children:
     { to: "/admin/updates", label: t("nav.updates"), icon: CircleFadingArrowUp },
     { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
   ];
+  // The calm view keeps the rest one click away instead of hiding it.
+  const server: NavGroup[] = calm
+    ? [
+        { items: serverItems.filter((item) => inCalmNav(item.to)) },
+        { title: t("nav.more"), items: serverItems.filter((item) => !inCalmNav(item.to)) },
+      ]
+    : [{ items: serverItems }];
+
+  return { isAdmin, account, server };
+}
+
+function UserMenu({
+  session,
+  onAppearance,
+  onNavigate,
+}: {
+  session: Session;
+  onAppearance: () => void;
+  onNavigate: () => void;
+}) {
+  const { t } = useT();
+  const logout = useLogout();
+  const name = session.account.name || session.account.login;
+  const icon = (Icon: LucideIcon, text: string) => (
+    <span className="flex items-center gap-2">
+      <Icon className="size-4" aria-hidden />
+      {text}
+    </span>
+  );
+  return (
+    <Menu
+      align="start"
+      className="w-full [&>[role=menu]]:top-auto [&>[role=menu]]:bottom-[calc(100%+6px)]"
+      items={[
+        // A real address, not a route: the webmail is its own app under /mail.
+        ...(session.webmail
+          ? [{ label: icon(Inbox, t("nav.openMailbox")), onSelect: () => window.location.assign("/mail") }]
+          : []),
+        {
+          label: icon(Palette, t("userMenu.appearance")),
+          onSelect: () => {
+            onNavigate();
+            onAppearance();
+          },
+        },
+        { label: icon(LogOut, t("userMenu.logout")), onSelect: () => logout.mutate() },
+      ]}
+      trigger={(props) => (
+        <button
+          type="button"
+          onClick={props.toggle}
+          aria-haspopup={props["aria-haspopup"]}
+          aria-expanded={props["aria-expanded"]}
+          aria-controls={props["aria-controls"]}
+          aria-label={t("userMenu.open")}
+          className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-hairline p-2 text-left transition-colors hover:bg-pink-tint/50"
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-pink-tint text-sm font-bold text-pink-ink">
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate text-sm font-semibold">{name}</span>
+            <span className="block truncate text-[12px] text-muted">
+              {session.account.role === "admin" ? t(`userMenu.role.admin`) : session.account.login}
+            </span>
+          </span>
+          <ChevronsUpDown className="size-4 text-faint" aria-hidden />
+        </button>
+      )}
+    />
+  );
+}
+
+interface TabItem {
+  to?: string;
+  label: string;
+  icon: LucideIcon;
+  current: boolean;
+}
+
+/** The phone's tab bar: the most used pages of the current half, and "More" for everything. */
+function TabBar({ items, onMore, moreOpen }: { items: TabItem[]; onMore: () => void; moreOpen: boolean }) {
+  const { t } = useT();
+  return (
+    <nav
+      aria-label={t("nav.label")}
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-tabbar pb-[env(safe-area-inset-bottom)] min-[700px]:hidden"
+    >
+      <ul className="mx-auto flex max-w-[520px] px-[max(8px,env(safe-area-inset-left))]">
+        {items.map((item) => {
+          const content = (
+            <>
+              <span
+                className={clsx(
+                  "flex h-7 w-14 items-center justify-center rounded-full transition-colors",
+                  item.current && "bg-pink-tint",
+                )}
+              >
+                <item.icon className="size-[22px]" strokeWidth={item.current ? 2.3 : 2} aria-hidden />
+              </span>
+              <span className="truncate">{item.label}</span>
+            </>
+          );
+          const className = clsx(
+            "flex min-h-14 w-full flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-[11px] font-semibold",
+            item.current ? "text-pink-ink" : "text-muted",
+          );
+          return (
+            <li key={item.label} className="flex-1">
+              {item.to ? (
+                <Link to={item.to} aria-current={item.current ? "page" : undefined} className={className}>
+                  {content}
+                </Link>
+              ) : (
+                <button type="button" onClick={onMore} aria-expanded={moreOpen} aria-label={t("nav.more")} className={className}>
+                  {content}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+export function PortalShell({ session, children }: { session: Session; children: ReactNode }) {
+  const { t } = useT();
+  const path = usePath();
+  const [more, setMore] = useState(false);
+  const [appearance, setAppearance] = useState(false);
+  const { isAdmin, account, server } = useNavigation(session);
+  const mode: Mode = isAdmin ? modeOf(path) : "account";
+  const groups = mode === "server" ? server : account;
+  const close = () => setMore(false);
+
   useEffect(() => {
-    if (!drawer) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setDrawer(false);
+    if (!more) return;
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setMore(false);
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [drawer]);
+  }, [more]);
 
-  const sidebar = (
-    <nav aria-label={t("nav.label")} className="flex h-full flex-col px-3 pt-5 pb-3">
-      <div className="flex items-center justify-between px-3">
-        <Link to="/account" onClick={() => setDrawer(false)} className="rounded-full">
-          <Wordmark className="text-lg" hop={hops} />
-        </Link>
-        <IconButton icon={X} label={t("nav.closeMenu")} className="lg:hidden" onClick={() => setDrawer(false)} />
+  const tabTargets: { to: string; label: string; icon: LucideIcon; also?: string[] }[] =
+    mode === "server"
+      ? [
+          { to: "/admin", label: t("nav.tabs.server"), icon: LayoutDashboard, also: server[0]?.items[0]?.also },
+          { to: "/admin/people", label: t("nav.tabs.people"), icon: Users, also: server[0]?.items[1]?.also },
+          { to: "/admin/queue", label: t("nav.tabs.queue"), icon: Send },
+        ]
+      : [
+          { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+          { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
+          { to: "/account/codes", label: t("nav.tabs.codes"), icon: KeyRound },
+        ];
+  const tabs: TabItem[] = tabTargets.map((target) => ({ ...target, current: !more && isCurrent(target, path) }));
+  const inTabs = tabs.some((tab) => tab.current);
+  tabs.push({ label: t("nav.more"), icon: Ellipsis, current: more || !inTabs });
+
+  const menu = (inSheet: boolean) => (
+    <div className="flex h-full flex-col">
+      {isAdmin && (
+        <div className="px-0.5 pb-4">
+          <ModeSwitch mode={mode} onNavigate={close} />
+        </div>
+      )}
+      <nav aria-label={t("nav.label")} className={clsx("flex flex-col", !inSheet && "flex-1 overflow-y-auto")}>
+        <NavGroups groups={groups} path={path} onNavigate={close} />
+      </nav>
+      <div className="mt-auto pt-3">
+        <UserMenu session={session} onAppearance={() => setAppearance(true)} onNavigate={close} />
       </div>
-      <div className="mt-2 flex-1 overflow-y-auto">
-        {session.webmail && (
-          // A real link, not a route: the webmail is its own app under /mail.
-          <a
-            href="/mail"
-            onClick={() => setDrawer(false)}
-            className="mt-2 flex h-10 items-center gap-3 rounded-full bg-pink-tint px-3 text-sm font-semibold text-pink-ink transition-colors hover:bg-pink-tint/70"
-          >
-            <Inbox className="size-[18px]" strokeWidth={2} aria-hidden />
-            {t("nav.mailbox")}
-          </a>
-        )}
-        <NavSection
-          name="account"
-          title={t("nav.account")}
-          icon={UserRound}
-          path={path}
-          collapsible={isAdmin}
-          onNavigate={() => setDrawer(false)}
-          items={[
-            { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
-            { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
-            { to: "/account/masked", label: t("nav.masked"), icon: EyeOff },
-            { to: "/account/calendars", label: t("nav.calendars"), icon: CalendarDays },
-            { to: "/account/mail", label: t("nav.mail"), icon: Forward },
-            { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
-            { to: "/account/moving", label: t("nav.moving"), icon: Truck },
-            { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
-            { to: "/account/assist", label: t("nav.assist"), icon: Sparkles },
-            { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
-          ]}
-        />
-        {isAdmin && (
-          <NavSection
-            name="server"
-            title={t("nav.server")}
-            icon={Server}
-            path={path}
-            collapsible
-            startsOpen={false}
-            onNavigate={() => setDrawer(false)}
-            items={calm ? serverItems.filter((item) => inCalmNav(item.to)) : serverItems}
-          />
-        )}
-        {isAdmin && calm && (
-          // The calm view keeps the rest one click away instead of hiding it.
-          <NavSection
-            name="serverMore"
-            title={t("nav.more")}
-            icon={Ellipsis}
-            path={path}
-            collapsible
-            startsOpen={false}
-            onNavigate={() => setDrawer(false)}
-            items={serverItems.filter((item) => !inCalmNav(item.to))}
-          />
-        )}
-      </div>
-      <Menu
-        align="start"
-        className="w-full [&>[role=menu]]:top-auto [&>[role=menu]]:bottom-[calc(100%+6px)]"
-        items={[
-          {
-            label: (
-              <span className="flex items-center gap-2">
-                <Palette className="size-4" aria-hidden />
-                {t("userMenu.appearance")}
-              </span>
-            ),
-            onSelect: () => {
-              setDrawer(false);
-              setAppearance(true);
-            },
-          },
-          {
-            label: (
-              <span className="flex items-center gap-2">
-                <LogOut className="size-4" aria-hidden />
-                {t("userMenu.logout")}
-              </span>
-            ),
-            onSelect: () => logout.mutate(),
-          },
-        ]}
-        trigger={(props) => (
-          <button
-            type="button"
-            onClick={props.toggle}
-            aria-haspopup={props["aria-haspopup"]}
-            aria-expanded={props["aria-expanded"]}
-            aria-controls={props["aria-controls"]}
-            aria-label={t("userMenu.open")}
-            className="flex w-full items-center gap-3 rounded-2xl p-2 text-left transition-colors hover:bg-pink-tint/50"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-pink-tint text-sm font-bold text-pink-ink">
-              {(session.account.name || session.account.login).slice(0, 1).toUpperCase()}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">
-                {session.account.name || session.account.login}
-              </span>
-              <span className="block truncate text-[12px] text-muted">
-                {t(`userMenu.role.${session.account.role}`)}
-              </span>
-            </span>
-            <ChevronsUpDown className="size-4 text-faint" aria-hidden />
-          </button>
-        )}
-      />
-    </nav>
+    </div>
   );
 
   return (
-    <div className="min-h-screen lg:pl-[264px]">
-      <aside className="fixed inset-y-0 left-0 hidden w-[264px] border-r border-hairline bg-surface lg:block">
-        {sidebar}
+    <div className="min-h-screen min-[700px]:pl-64">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-hairline bg-surface px-3 pt-[18px] pb-3 min-[700px]:flex">
+        <Link
+          to={mode === "server" ? "/admin" : "/account"}
+          className="mb-4 self-start rounded-full px-2.5"
+          aria-label={t("nav.home")}
+        >
+          <Wordmark className="text-lg" />
+        </Link>
+        <div className="min-h-0 flex-1">{menu(false)}</div>
       </aside>
 
-      {drawer && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+      <main
+        className={clsx(
+          "mx-auto w-full max-w-[1080px] px-4 sm:px-6 min-[700px]:py-8 lg:px-10",
+          // On the phone: below the status bar and above the tab bar.
+          "max-[699px]:pt-[max(16px,env(safe-area-inset-top))] max-[699px]:pb-[calc(88px+env(safe-area-inset-bottom))]",
+          "max-[699px]:pr-[max(16px,env(safe-area-inset-right))] max-[699px]:pl-[max(16px,env(safe-area-inset-left))]",
+        )}
+      >
+        {children}
+      </main>
+
+      <TabBar items={tabs} moreOpen={more} onMore={() => setMore((open) => !open)} />
+
+      {more && (
+        <div className="fixed inset-0 z-40 min-[700px]:hidden">
           <button
             type="button"
             aria-label={t("nav.closeMenu")}
-            className="absolute inset-0 animate-fade bg-[#1c1420]/35"
-            onClick={() => setDrawer(false)}
+            className="absolute inset-0 animate-fade bg-scrim"
+            onClick={close}
           />
-          <aside className="absolute inset-y-0 left-0 w-[min(300px,85vw)] animate-drawer bg-surface shadow-float">
-            {sidebar}
-          </aside>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("nav.more")}
+            className="absolute inset-x-0 bottom-0 flex max-h-[85svh] animate-slide-up flex-col rounded-t-dialog bg-surface px-3 pt-2 pb-[calc(12px+env(safe-area-inset-bottom))] shadow-float"
+          >
+            <div className="flex items-center justify-between px-2.5 pb-3">
+              <Wordmark className="text-base" />
+              <IconButton icon={X} label={t("nav.closeMenu")} onClick={close} />
+            </div>
+            <div className="min-h-0 overflow-y-auto">{menu(true)}</div>
+          </div>
         </div>
       )}
-
-      <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-hairline bg-canvas/85 px-4 backdrop-blur sm:px-6">
-        <IconButton
-          icon={MenuIcon}
-          label={t("nav.openMenu")}
-          className="lg:hidden"
-          onClick={() => {
-            setDrawer(true);
-            setHops((count) => count + 1);
-          }}
-        />
-        <Link to="/account" className="rounded-full lg:hidden">
-          <Wordmark className="text-base" />
-        </Link>
-      </header>
-
-      <main className="mx-auto w-full max-w-[1080px] px-4 py-6 sm:px-6 sm:py-8">{children}</main>
       <AppearanceDialog open={appearance} onClose={() => setAppearance(false)} />
     </div>
   );
