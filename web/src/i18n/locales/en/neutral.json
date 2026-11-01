@@ -2505,6 +2505,19 @@
       "undoSeconds": "{{seconds}} seconds",
       "saved": "Saved"
     },
+    "verification": {
+      "title": "Verification codes",
+      "intro": "Sign-in and confirmation codes that arrive by mail are shown in your mail app, ready to use. A code its sender signed does not wait in the greylist either.",
+      "heuristics": "Also recognise codes without a label",
+      "heuristicsHint": "Looks for a code in mail without the Verification-Info header. That is only a guess and never skips the greylist.",
+      "cleanup": "Clean up expired codes",
+      "cleanupHint": "When a mail whose code expired moves from the inbox to the trash. Flagged mail stays where it is.",
+      "cleanupOff": "Never",
+      "cleanupImmediately": "Right after it expires",
+      "cleanup24h": "A day after it expires",
+      "cleanup7d": "A week after it expires",
+      "saved": "Saved"
+    },
     "signatures": {
       "title": "Signatures",
       "intro": "Pick a domain and write one signature for all your addresses there. Mail apps and the webmail insert it as you write.",

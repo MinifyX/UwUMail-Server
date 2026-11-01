@@ -2505,6 +2505,19 @@
       "undoSeconds": "{{seconds}} Sekunden",
       "saved": "Gespeichert"
     },
+    "verification": {
+      "title": "Bestätigungscodes",
+      "intro": "Codes zum Anmelden oder Bestätigen, die per Mail kommen, zeigt dir die Mail-App gleich zum Übernehmen an. Ein Code, den der Absender signiert hat, wartet auch nicht in der Greylist.",
+      "heuristics": "Auch Codes ohne Kennzeichnung erkennen",
+      "heuristicsHint": "Sucht in Mails ohne den Verification-Info-Header nach einem Code. Das ist nur eine Vermutung und hilft nie an der Greylist vorbei.",
+      "cleanup": "Abgelaufene Codes aufräumen",
+      "cleanupHint": "Wann eine Mail mit abgelaufenem Code aus dem Posteingang in den Papierkorb wandert. Markierte Mails bleiben liegen.",
+      "cleanupOff": "Nie",
+      "cleanupImmediately": "Sofort nach Ablauf",
+      "cleanup24h": "Einen Tag nach Ablauf",
+      "cleanup7d": "Eine Woche nach Ablauf",
+      "saved": "Gespeichert"
+    },
     "signatures": {
       "title": "Signaturen",
       "intro": "Wähle eine Domain und schreib eine Signatur für alle deine Adressen dort. Mail-Apps und die Webmail fügen sie beim Schreiben ein.",

@@ -2448,6 +2448,19 @@
       "undoSeconds": "{{seconds}} 秒",
       "saved": "已保存"
     },
+    "verification": {
+      "title": "验证码",
+      "intro": "通过邮件收到的登录码和确认码会在邮件应用中直接显示，随时可用。经发件人签名的验证码也不会在灰名单中等待。",
+      "heuristics": "也识别未标注的验证码",
+      "heuristicsHint": "在没有 Verification-Info 头的邮件中查找验证码。这只是推测，绝不会绕过灰名单。",
+      "cleanup": "清理过期验证码",
+      "cleanupHint": "验证码过期后，邮件何时从收件箱移到废纸篓。已加旗标的邮件保持原位。",
+      "cleanupOff": "从不",
+      "cleanupImmediately": "过期后立即",
+      "cleanup24h": "过期一天后",
+      "cleanup7d": "过期一周后",
+      "saved": "已保存"
+    },
     "signatures": {
       "title": "签名",
       "intro": "选择一个域名，为你在该域名下的所有地址写一个签名。邮件应用和网页邮箱会在撰写时插入它。",

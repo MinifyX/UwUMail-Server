@@ -2505,6 +2505,19 @@
       "undoSeconds": "{{seconds}} seconden",
       "saved": "Opgeslagen"
     },
+    "verification": {
+      "title": "Verificatiecodes",
+      "intro": "Inlog- en bevestigingscodes die per mail binnenkomen, toont je mail-app meteen klaar voor gebruik. Een code die de afzender heeft ondertekend, wacht ook niet in de greylist.",
+      "heuristics": "Ook codes zonder markering herkennen",
+      "heuristicsHint": "Zoekt een code in mail zonder de Verification-Info-header. Dat is alleen een gok en helpt nooit langs de greylist.",
+      "cleanup": "Verlopen codes opruimen",
+      "cleanupHint": "Wanneer een mail met een verlopen code van de inbox naar de prullenbak gaat. Gemarkeerde mail blijft staan.",
+      "cleanupOff": "Nooit",
+      "cleanupImmediately": "Meteen na het verlopen",
+      "cleanup24h": "Een dag na het verlopen",
+      "cleanup7d": "Een week na het verlopen",
+      "saved": "Opgeslagen"
+    },
     "signatures": {
       "title": "Handtekeningen",
       "intro": "Kies een domein en schrijf één handtekening voor al je adressen daar. Mail-apps en de webmail voegen hem in tijdens het schrijven.",

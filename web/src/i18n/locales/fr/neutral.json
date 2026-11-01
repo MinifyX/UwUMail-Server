@@ -2556,6 +2556,19 @@
       "undoSeconds": "{{seconds}} secondes",
       "saved": "Enregistré"
     },
+    "verification": {
+      "title": "Codes de vérification",
+      "intro": "Les codes de connexion ou de confirmation reçus par e-mail s’affichent dans votre application de messagerie, prêts à l’emploi. Un code signé par son expéditeur n’attend pas non plus dans la liste grise.",
+      "heuristics": "Reconnaître aussi les codes sans marquage",
+      "heuristicsHint": "Cherche un code dans les messages sans en-tête Verification-Info. Ce n’est qu’une supposition, qui ne contourne jamais la liste grise.",
+      "cleanup": "Ranger les codes expirés",
+      "cleanupHint": "Quand un message dont le code a expiré passe de la boîte de réception à la corbeille. Les messages marqués restent en place.",
+      "cleanupOff": "Jamais",
+      "cleanupImmediately": "Dès l’expiration",
+      "cleanup24h": "Un jour après l’expiration",
+      "cleanup7d": "Une semaine après l’expiration",
+      "saved": "Enregistré"
+    },
     "signatures": {
       "title": "Signatures",
       "intro": "Choisissez un domaine et rédigez une seule signature pour toutes vos adresses de ce domaine. Les applications de messagerie et le webmail l'insèrent lors de la rédaction.",

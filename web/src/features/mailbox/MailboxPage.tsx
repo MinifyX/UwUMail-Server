@@ -12,6 +12,7 @@ import { useErrorText } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { toast } from "@/state/toasts";
 import { SendingCard } from "./SendingCard";
+import { VerificationCard } from "./VerificationCard";
 
 const forwardingKey = ["account", "forwarding"] as const;
 const vacationKey = ["account", "vacation"] as const;
@@ -261,6 +262,7 @@ export function MailboxPage() {
           <VacationForm key={JSON.stringify(vacation.data)} vacation={vacation.data} />
         </Card>
         <SendingCard />
+        <VerificationCard />
       </div>
     </div>
   );
