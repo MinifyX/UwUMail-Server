@@ -763,3 +763,59 @@ async fn the_servers_own_way_out_takes_public_https_addresses_only() {
         assert_eq!(responses[0][1]["notCreated"]["k"]["properties"], json!(["url"]), "{url}");
     }
 }
+
+#[tokio::test]
+async fn verification_codes_go_encrypted_to_those_who_asked_for_them() {
+    use uwumail_store::verification::{Detected, Kind, Purpose, Source};
+    let mut setup = setup().await;
+    let account = setup.server.account_id(MINI).await;
+    let device = Device::new();
+    let everything = Device::new();
+    setup.subscribe(MINI, "codes", Some(&device), json!(["VerificationCode"])).await;
+    setup.subscribe(MINI, "plain", None, json!(["VerificationCode"])).await;
+    setup.subscribe(MINI, "all", Some(&everything), Value::Null).await;
+
+    let email = setup.server.deliver(MINI, &mail("Dein Code")).await;
+    let number = email[1..].parse().unwrap();
+    let expires_at = unix_now() + 600;
+    let found = Detected {
+        kind: Kind::Otp,
+        origin: "login.example.net".into(),
+        code: Some("482913".into()),
+        url: None,
+        purpose: Purpose::Login,
+        expires_at,
+        source: Source::Header,
+        autofill: true,
+    };
+    let id = setup.server.id(MINI).await;
+    setup.server.store.record_verification(id, vec![number], &found, "example.net").await.unwrap();
+
+    // Only the subscription that named the type and gave keys gets the code, right away; the
+    // one asking for everything only hears that mail changed.
+    let mut pushes = Vec::new();
+    loop {
+        let pushed = setup.next().await;
+        let done = pushed.name == "all";
+        pushes.push(pushed);
+        if done {
+            break;
+        }
+    }
+    assert_eq!(pushes.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["codes", "all"]);
+    let pushed = &pushes[0];
+    assert_eq!(header(pushed, "urgency"), "high");
+    let ttl: i64 = header(pushed, "ttl").parse().unwrap();
+    assert!((590..=600).contains(&ttl), "{ttl}");
+    let body = device.decrypt(&pushed.body);
+    assert_eq!(body["@type"], "VerificationCode");
+    assert_eq!((body["accountId"].as_str(), body["emailId"].as_str()), (Some(account.as_str()), Some(email.as_str())));
+    assert_eq!(body["verification"]["code"], "482913");
+    assert_eq!(body["verification"]["origin"], "login.example.net");
+    let change = everything.decrypt(&pushes[1].body);
+    assert_eq!(change["@type"], "StateChange", "{change}");
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+}

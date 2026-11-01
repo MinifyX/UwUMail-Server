@@ -3,7 +3,9 @@
 //! so an app hears of new mail while it is closed. See docs/jmap-push.md.
 //!
 //! Only the state strings leave the server, never content: encrypted for the device when it gave
-//! keys (RFC 8291), and signed with the server's VAPID key (RFC 8292, RFC 9749). Changes are
+//! keys (RFC 8291), and signed with the server's VAPID key (RFC 8292, RFC 9749). The one exception
+//! is a verification code, and only to a subscription that asked for `VerificationCode` and gave
+//! keys, so the push service never sees it (docs/jmap-verification.md). Changes are
 //! collected for a moment and a subscription gets at most one push every few seconds; a push
 //! service that answers 404 or 410 ends the subscription, and one that fails is asked again later.
 
@@ -48,6 +50,10 @@ const STATE_TTL_SECS: u32 = 12 * 3600;
 const ALERT_TTL_SECS: u32 = 3600;
 /// The verification code is only of use while the subscription is young (it goes after a day).
 const VERIFICATION_TTL_SECS: u32 = 24 * 3600;
+/// A verification code is kept by the push service until it expires, but at least a minute (a
+/// code about to expire is still worth showing) and at most a day.
+const CODE_TTL_MIN_SECS: i64 = 60;
+const CODE_TTL_MAX_SECS: i64 = 24 * 3600;
 /// A later StateChange replaces an earlier one still waiting at the push service (RFC 8030, 5.4).
 const TOPIC: &str = "jmap-state";
 /// Expired subscriptions and those whose login ended are dropped this often.
@@ -337,6 +343,7 @@ impl Jmap {
         let store = self.inner.store.clone();
         let mut changes = store.subscribe_changes();
         let mut alerts = store.subscribe_calendar_alerts();
+        let mut codes = store.subscribe_verifications();
         let mut pending = Pending::default();
         let mut held: HashMap<i64, Held> = HashMap::new();
         let mut last_sent: HashMap<i64, Instant> = HashMap::new();
@@ -367,6 +374,12 @@ impl Jmap {
                 },
                 alert = alerts.recv() => match alert {
                     Ok(alert) => push.alert(&store, &alert).await,
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => return,
+                },
+                // Not bundled with the changes: a code is wanted now, the StateChange follows anyway.
+                found = codes.recv() => match found {
+                    Ok(found) => push.code(&store, &found).await,
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => return,
                 },
@@ -498,6 +511,22 @@ impl WebPush {
         }
     }
 
+    /// Pushes a new verification code to the account's subscriptions that asked for
+    /// `VerificationCode` by name and gave keys: the code is content, and without keys the push
+    /// service would read it. Urgent, replacing nothing, and kept no longer than the code is good.
+    async fn code(&self, store: &Store, found: &uwumail_store::VerificationFound) {
+        let Ok(targets) = store.push_targets(vec![found.account_id]).await else { return };
+        let body = code_json(found);
+        let ttl = code_ttl(found.detected.expires_at, crate::methods::unix_now());
+        for target in targets.into_iter().filter(wants_codes) {
+            let (push, body) = (self.clone(), body.clone());
+            tokio::spawn(async move {
+                let outcome = push.send(&target, &body, "high", ttl, None).await;
+                push.note(&target, outcome).await;
+            });
+        }
+    }
+
     /// Pushes what was held back and is due now, to the subscriptions that are still there.
     async fn release(&self, store: &Store, held: &mut HashMap<i64, Held>, last_sent: &mut HashMap<i64, Instant>) {
         let now = Instant::now();
@@ -547,6 +576,27 @@ fn wanted_by(target: &PushTarget, changed: &Map<String, Value>) -> Map<String, V
     out
 }
 
+/// Whether a subscription gets verification codes: only when it named the type, never through
+/// "all types", and only encrypted.
+fn wants_codes(target: &PushTarget) -> bool {
+    target.keys.is_some() && target.types.as_ref().is_some_and(|types| types.iter().any(|t| t == "VerificationCode"))
+}
+
+/// The push for a new code: which email, and the same object as its `verification` property.
+fn code_json(found: &uwumail_store::VerificationFound) -> Value {
+    json!({
+        "@type": "VerificationCode",
+        "accountId": ids::account(found.account_id),
+        "emailId": ids::email(found.email_id),
+        "verification": found.detected.to_json(),
+    })
+}
+
+/// How long the push service keeps a code: until it expires, within a minute and a day.
+fn code_ttl(expires_at: i64, now: i64) -> u32 {
+    (expires_at - now).clamp(CODE_TTL_MIN_SECS, CODE_TTL_MAX_SECS) as u32
+}
+
 /// Adds `newer` to `into`: per account, the newer state of each type wins.
 fn merge(into: &mut Map<String, Value>, newer: Map<String, Value>) {
     for (account, states) in newer {
@@ -574,6 +624,17 @@ mod tests {
             verification_code: String::new(),
             may_use_dav: true,
         }
+    }
+
+    #[test]
+    fn codes_go_only_to_subscriptions_that_named_them_and_gave_keys() {
+        let keys = || Some(uwumail_store::PushKeys { p256dh: "p".into(), auth: "a".into() });
+        assert!(!wants_codes(&target(None)), "all types does not include codes");
+        assert!(!wants_codes(&PushTarget { keys: keys(), ..target(None) }));
+        assert!(!wants_codes(&target(Some(vec!["VerificationCode"]))), "not without keys");
+        assert!(!wants_codes(&PushTarget { keys: keys(), ..target(Some(vec!["Email"])) }));
+        assert!(wants_codes(&PushTarget { keys: keys(), ..target(Some(vec!["Email", "VerificationCode"])) }));
+        assert_eq!((code_ttl(1_000, 990), code_ttl(1_000, 100), code_ttl(1_000_000, 0)), (60, 900, 86_400));
     }
 
     #[test]

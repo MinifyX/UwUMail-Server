@@ -60,6 +60,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         options.budget -= email_json::body_value_bytes(&json);
         list.push(json);
     }
+    super::verification::fill(ctx, &properties, &mut list).await?;
     Ok(json!({ "accountId": ctx.account_id(), "state": state, "list": list, "notFound": not_found }))
 }
 

@@ -161,9 +161,14 @@ pub(crate) enum Pushed {
 }
 
 /// All push types, for a client that asks for everything: the data types, `EmailDelivery` and the
-/// `CalendarAlert` pseudo-type.
+/// pseudo-types `CalendarAlert` and `VerificationCode`. The last only reaches Web Push
+/// subscriptions that name it (docs/jmap-verification.md).
 pub(crate) fn all_types() -> Vec<String> {
-    TYPES.iter().map(|t| t.to_string()).chain(["EmailDelivery".to_owned(), "CalendarAlert".to_owned()]).collect()
+    TYPES
+        .iter()
+        .map(|t| t.to_string())
+        .chain(["EmailDelivery", "CalendarAlert", "VerificationCode"].map(str::to_owned))
+        .collect()
 }
 
 impl Watcher {

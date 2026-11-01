@@ -27,6 +27,7 @@ mod suggest;
 mod thread;
 pub(crate) mod unsubscribe;
 mod vacation;
+mod verification;
 
 use std::collections::HashMap;
 
@@ -37,8 +38,8 @@ use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
     ASSIST, AVAILABILITY, BIRTHDAYS, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED, PROFILE,
-    SENDERS, SETTINGS, SIEVE, SIGNATURES, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID,
-    WEBSOCKET,
+    SENDERS, SETTINGS, SIEVE, SIGNATURES, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, VERIFICATION, WEBMAIL,
+    WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -67,6 +68,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     BIRTHDAYS,
     ASSIST,
     SIGNATURES,
+    VERIFICATION,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
@@ -247,6 +249,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "MaskedEmail" => MASKED,
         "ProfilePicture" => PROFILE,
         "SignatureSettings" => SIGNATURES,
+        "VerificationCode" => VERIFICATION,
         "Birthdays" => BIRTHDAYS,
         "Assist" | "AssistProvider" | "AssistSettings" | "AssistLabel" => ASSIST,
         _ => return Err(MethodError::kind("unknownMethod")),
@@ -303,6 +306,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Email/parse" => single(email::parse(ctx, &args).await?),
         "Email/unsubscribe" => single(unsubscribe::unsubscribe(ctx, &args).await?),
         "Email/imageText" => single(image_text::image_text(ctx, &args).await?),
+        "VerificationCode/query" => single(verification::query(ctx, &args).await?),
         "SearchSnippet/get" => single(snippet::get(ctx, &args).await?),
         "Identity/get" => single(identity::get(ctx, &args).await?),
         "Identity/changes" => single(changes(ctx, &args, "Identity", 'i').await?),
