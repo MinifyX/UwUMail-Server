@@ -23,6 +23,9 @@ their new state strings. Never a sender, a subject or a single word of a mail.
 The one other push is a `CalendarAlert` for a subscription whose `types` are
 `null` or name `CalendarAlert`: which event's alert went off, by ids and uid
 (see [jmap-calendars.md](jmap-calendars.md#alerts)).
+A subscription that came with keys and whose `types` name `VerificationCode`
+(`null` is not enough) also gets each new sign-in code, encrypted, as soon as
+it arrives (see [jmap-verification.md](jmap-verification.md#web-push)).
 
 ```json
 {

@@ -3,6 +3,24 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.26.0
+
+### Added
+
+- Verification codes (OMXP draft, Phase 1): the server finds sign-in codes and confirmation links
+  in incoming mail, from a `Verification-Info` header its sender signed with DKIM (and DMARC
+  passed), or otherwise by a careful guess from the text. At most 10 per sender and hour. A
+  signed code skips greylisting within that limit. See
+  [docs/verification-codes.md](docs/verification-codes.md).
+- JMAP `urn:uwumail:jmap:verification`: the Email property `verification`,
+  `VerificationCode/query` for the codes still valid, and an encrypted Web Push with the code for
+  subscriptions that name `VerificationCode`, with high urgency and a TTL until it expires. See
+  [docs/jmap-verification.md](docs/jmap-verification.md).
+- Portal: *Mailbox → Verification codes* switches the guess off and sets when mail with an expired
+  code moves to the Trash (never, right away, after a day or a week; a day unless changed). Both
+  sync to the apps as `verificationHeuristics` and `verificationCleanup`.
+- Outgoing mail signs `Verification-Info` with DKIM (oversigned), so it can't be added on the way.
+
 ## 0.25.0
 
 ### Added
