@@ -360,6 +360,7 @@ pub async fn run(
     // Once a day is over, the domains mail went to hear how TLS went (RFC 8460).
     tasks.spawn(uwumail_smtp::run_tls_reports(smtp.clone(), tls_report_egress, shutdown_rx.clone()));
     tasks.spawn(flush_stats(store.clone(), shutdown_rx.clone()));
+    tasks.spawn(clean_up_verifications(store.clone(), shutdown_rx.clone()));
     tasks.spawn(backups.clone().run(shutdown_rx.clone()));
 
     tracing::info!("ready ✉");
@@ -383,6 +384,22 @@ async fn flush_stats(store: Store, mut shutdown: watch::Receiver<bool>) {
         }
         if let Err(err) = store.flush_stats().await {
             tracing::warn!(%err, "writing down the statistics failed");
+        }
+    }
+}
+
+/// Moves expired code mails out of the inbox every five minutes, as each person chose
+/// (docs/verification-codes.md). Its own tick: "immediately" would mean an hour on the garbage one.
+async fn clean_up_verifications(store: Store, mut shutdown: watch::Receiver<bool>) {
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(300)) => {}
+            _ = shutdown.changed() => return,
+        }
+        match store.clean_up_verifications().await {
+            Ok(0) => {}
+            Ok(moved) => tracing::info!(moved, "moved expired verification codes to the trash"),
+            Err(err) => tracing::warn!(%err, "cleaning up verification codes failed"),
         }
     }
 }
