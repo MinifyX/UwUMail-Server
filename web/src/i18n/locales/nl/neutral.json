@@ -170,6 +170,55 @@
       "login": "Login",
       "role": "Rol",
       "created": "Aangemaakt op"
+    },
+    "tiles": {
+      "addresses_one": "1 adres",
+      "addresses_other": "{{count}} adressen",
+      "addressesNote": "op dit account",
+      "masked_one": "1 gemaskeerd actief",
+      "masked_other": "{{count}} gemaskeerd actief",
+      "storageOf": "van {{quota}}",
+      "storageUnlimited": "gebruikt, geen limiet",
+      "secondFactor": "Tweestapsaanmelding",
+      "secondFactorOn": "2FA aan",
+      "secondFactorOff": "2FA uit",
+      "passkeys_one": "1 passkey",
+      "passkeys_other": "{{count}} passkeys",
+      "since": "Account sinds"
+    },
+    "next": {
+      "title": "Hierna",
+      "intro": "Kleine dingen die je account beter maken.",
+      "codes": {
+        "title": "Verificatiecodes instellen",
+        "text": "Codes uit mail boven de maillijst tonen"
+      },
+      "secondFactor": {
+        "title": "Tweede factor instellen",
+        "text": "Passkey of authenticator-app"
+      },
+      "masked": {
+        "title": "Gemaskeerd adres aanmaken",
+        "text": "Voor webwinkels en nieuwsbrieven"
+      },
+      "device": {
+        "title": "Nog een apparaat koppelen",
+        "text": "IMAP, JMAP of Apple-profiel"
+      }
+    },
+    "status": {
+      "title": "Status",
+      "allGood": "Alles in orde.",
+      "open_one": "Eén punt vraagt je aandacht.",
+      "open_other": "{{count}} punten vragen je aandacht.",
+      "storageOk": "Opslag voor {{percent}} % gebruikt",
+      "storageFilling": "Opslag raakt vol: {{percent}} % gebruikt",
+      "storageFull": "Opslag bijna vol: {{percent}} % gebruikt",
+      "secondFactorOn": "Tweestapsaanmelding aan",
+      "secondFactorOff": "Tweestapsaanmelding uit",
+      "fetchOk_one": "1 ophaalaccount loopt",
+      "fetchOk_other": "{{count}} ophaalaccounts lopen",
+      "fetchFailed": "Ophaalaccount {{address}}: laatste keer ophalen mislukt"
     }
   },
   "admin": {

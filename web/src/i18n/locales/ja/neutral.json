@@ -169,6 +169,50 @@
       "login": "ログイン名",
       "role": "役割",
       "created": "作成日"
+    },
+    "tiles": {
+      "addresses_other": "{{count}} 件のアドレス",
+      "addressesNote": "このアカウント",
+      "masked_other": "マスク {{count}} 件が有効",
+      "storageOf": "/ {{quota}}",
+      "storageUnlimited": "使用中、上限なし",
+      "secondFactor": "2 要素サインイン",
+      "secondFactorOn": "2FA オン",
+      "secondFactorOff": "2FA オフ",
+      "passkeys_other": "パスキー {{count}} 件",
+      "since": "アカウント作成日"
+    },
+    "next": {
+      "title": "次にやること",
+      "intro": "アカウントをより良くするちょっとしたこと。",
+      "codes": {
+        "title": "確認コードを設定",
+        "text": "メールのコードをメール一覧の上に表示"
+      },
+      "secondFactor": {
+        "title": "2 つ目の要素を設定",
+        "text": "パスキーまたは認証アプリ"
+      },
+      "masked": {
+        "title": "マスクアドレスを作成",
+        "text": "ショップやニュースレター用"
+      },
+      "device": {
+        "title": "別のデバイスを接続",
+        "text": "IMAP、JMAP または Apple プロファイル"
+      }
+    },
+    "status": {
+      "title": "状態",
+      "allGood": "問題ありません。",
+      "open_other": "確認が必要な項目が {{count}} 件あります。",
+      "storageOk": "ストレージ使用率 {{percent}} %",
+      "storageFilling": "ストレージが残り少なくなっています: {{percent}} % 使用",
+      "storageFull": "ストレージがほぼいっぱいです: {{percent}} % 使用",
+      "secondFactorOn": "2 要素サインイン オン",
+      "secondFactorOff": "2 要素サインイン オフ",
+      "fetchOk_other": "{{count}} 件の取得アカウントが動作中",
+      "fetchFailed": "取得アカウント {{address}}: 前回の取得に失敗しました"
     }
   },
   "admin": {

@@ -170,6 +170,55 @@
       "login": "Identifiant",
       "role": "Rôle",
       "created": "Créé le"
+    },
+    "tiles": {
+      "addresses_one": "1 adresse",
+      "addresses_other": "{{count}} adresses",
+      "addressesNote": "sur ce compte",
+      "masked_one": "1 masquée active",
+      "masked_other": "{{count}} masquées actives",
+      "storageOf": "sur {{quota}}",
+      "storageUnlimited": "utilisés, sans limite",
+      "secondFactor": "Connexion à deux facteurs",
+      "secondFactorOn": "2FA activée",
+      "secondFactorOff": "2FA désactivée",
+      "passkeys_one": "1 clé d’accès",
+      "passkeys_other": "{{count}} clés d’accès",
+      "since": "Compte depuis"
+    },
+    "next": {
+      "title": "Et ensuite",
+      "intro": "Petites choses qui améliorent ton compte.",
+      "codes": {
+        "title": "Configurer les codes de vérification",
+        "text": "Afficher les codes des mails au-dessus de la liste"
+      },
+      "secondFactor": {
+        "title": "Configurer un second facteur",
+        "text": "Clé d’accès ou app d’authentification"
+      },
+      "masked": {
+        "title": "Créer une adresse masquée",
+        "text": "Pour les boutiques et les newsletters"
+      },
+      "device": {
+        "title": "Connecter un autre appareil",
+        "text": "IMAP, JMAP ou profil Apple"
+      }
+    },
+    "status": {
+      "title": "État",
+      "allGood": "Tout va bien.",
+      "open_one": "Un point demande ton attention.",
+      "open_other": "{{count}} points demandent ton attention.",
+      "storageOk": "Stockage utilisé à {{percent}} %",
+      "storageFilling": "Le stockage se remplit : {{percent}} % utilisés",
+      "storageFull": "Stockage presque plein : {{percent}} % utilisés",
+      "secondFactorOn": "Connexion à deux facteurs activée",
+      "secondFactorOff": "Connexion à deux facteurs désactivée",
+      "fetchOk_one": "1 compte relevé fonctionne",
+      "fetchOk_other": "{{count}} comptes relevés fonctionnent",
+      "fetchFailed": "Compte relevé {{address}} : la dernière relève a échoué"
     }
   },
   "admin": {

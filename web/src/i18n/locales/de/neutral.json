@@ -170,6 +170,55 @@
       "login": "Anmeldename",
       "role": "Rolle",
       "created": "Angelegt am"
+    },
+    "tiles": {
+      "addresses_one": "1 Adresse",
+      "addresses_other": "{{count}} Adressen",
+      "addressesNote": "auf diesem Konto",
+      "masked_one": "1 maskierte aktiv",
+      "masked_other": "{{count}} maskierte aktiv",
+      "storageOf": "von {{quota}}",
+      "storageUnlimited": "belegt, ohne Limit",
+      "secondFactor": "Zwei-Faktor-Anmeldung",
+      "secondFactorOn": "2FA an",
+      "secondFactorOff": "2FA aus",
+      "passkeys_one": "1 Passkey",
+      "passkeys_other": "{{count}} Passkeys",
+      "since": "Konto seit"
+    },
+    "next": {
+      "title": "Als Nächstes",
+      "intro": "Kleine Dinge, die dein Konto besser machen.",
+      "codes": {
+        "title": "Verifizierungscodes einrichten",
+        "text": "Codes aus Mails über der Mailliste zeigen"
+      },
+      "secondFactor": {
+        "title": "Zweiten Faktor einrichten",
+        "text": "Passkey oder Authenticator-App"
+      },
+      "masked": {
+        "title": "Maskierte Adresse anlegen",
+        "text": "Für Shops und Newsletter"
+      },
+      "device": {
+        "title": "Weiteres Gerät verbinden",
+        "text": "IMAP, JMAP oder Apple-Profil"
+      }
+    },
+    "status": {
+      "title": "Status",
+      "allGood": "Alles in Ordnung.",
+      "open_one": "Ein Punkt braucht dich.",
+      "open_other": "{{count}} Punkte brauchen dich.",
+      "storageOk": "Speicher zu {{percent}} % belegt",
+      "storageFilling": "Speicher wird knapp: {{percent}} % belegt",
+      "storageFull": "Speicher fast voll: {{percent}} % belegt",
+      "secondFactorOn": "Zwei-Faktor-Anmeldung an",
+      "secondFactorOff": "Zwei-Faktor-Anmeldung aus",
+      "fetchOk_one": "1 Abrufkonto läuft",
+      "fetchOk_other": "{{count}} Abrufkonten laufen",
+      "fetchFailed": "Abrufkonto {{address}}: letzter Abruf fehlgeschlagen"
     }
   },
   "admin": {

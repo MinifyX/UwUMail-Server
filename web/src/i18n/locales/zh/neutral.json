@@ -169,6 +169,50 @@
       "login": "登录名",
       "role": "角色",
       "created": "创建于"
+    },
+    "tiles": {
+      "addresses_other": "{{count}} 个地址",
+      "addressesNote": "在此账户上",
+      "masked_other": "{{count}} 个隐藏地址已启用",
+      "storageOf": "共 {{quota}}",
+      "storageUnlimited": "已用，无上限",
+      "secondFactor": "双重验证登录",
+      "secondFactorOn": "2FA 已开启",
+      "secondFactorOff": "2FA 已关闭",
+      "passkeys_other": "{{count}} 个通行密钥",
+      "since": "账户创建于"
+    },
+    "next": {
+      "title": "下一步",
+      "intro": "让你的账户更好用的小事。",
+      "codes": {
+        "title": "设置验证码",
+        "text": "在邮件列表上方显示邮件中的验证码"
+      },
+      "secondFactor": {
+        "title": "设置第二重验证",
+        "text": "通行密钥或身份验证器应用"
+      },
+      "masked": {
+        "title": "创建隐藏地址",
+        "text": "用于网店和订阅邮件"
+      },
+      "device": {
+        "title": "连接其他设备",
+        "text": "IMAP、JMAP 或 Apple 描述文件"
+      }
+    },
+    "status": {
+      "title": "状态",
+      "allGood": "一切正常。",
+      "open_other": "有 {{count}} 项需要你处理。",
+      "storageOk": "存储已用 {{percent}} %",
+      "storageFilling": "存储空间渐满：已用 {{percent}} %",
+      "storageFull": "存储空间几乎已满：已用 {{percent}} %",
+      "secondFactorOn": "双重验证登录已开启",
+      "secondFactorOff": "双重验证登录已关闭",
+      "fetchOk_other": "{{count}} 个收取账户正在运行",
+      "fetchFailed": "收取账户 {{address}}：上次收取失败"
     }
   },
   "admin": {
