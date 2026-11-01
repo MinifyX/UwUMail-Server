@@ -23,15 +23,13 @@ export function Toaster() {
           <div
             key={item.id}
             role={item.tone === "error" ? "alert" : "status"}
-            className="pointer-events-auto flex w-full animate-slide-up items-center gap-3 rounded-2xl bg-[#1c1420] py-2.5 pr-2 pl-4 text-[13px] font-medium text-white shadow-float dark:bg-[#f8f2f6] dark:text-[#1c1420]"
+            className="pointer-events-auto flex w-full animate-slide-up items-center gap-3 rounded-2xl bg-toast py-2.5 pr-2 pl-4 text-[13px] font-medium text-toast-ink shadow-float"
           >
             <span className="relative shrink-0">
               <Icon
                 className={clsx(
                   "size-[18px]",
-                  item.tone === "error"
-                    ? "text-[#ff8096] dark:text-danger"
-                    : "text-(--uwu-toast-accent) dark:text-pink-solid",
+                  item.tone === "error" ? "text-toast-danger" : "text-toast-accent",
                 )}
                 aria-hidden
               />
@@ -50,7 +48,7 @@ export function Toaster() {
                   dismiss(item.id);
                   item.action?.run();
                 }}
-                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-(--uwu-toast-accent) hover:bg-white/10 dark:text-pink-ink dark:hover:bg-black/5"
+                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-toast-accent hover:bg-toast-ink/10"
               >
                 {item.action.label}
               </button>
@@ -59,7 +57,7 @@ export function Toaster() {
               type="button"
               aria-label={t("common.close")}
               onClick={() => dismiss(item.id)}
-              className="grid size-7 place-items-center rounded-full opacity-70 hover:bg-white/10 hover:opacity-100 dark:hover:bg-black/10"
+              className="grid size-7 place-items-center rounded-full opacity-70 hover:bg-toast-ink/10 hover:opacity-100"
             >
               <X className="size-4" aria-hidden />
             </button>
