@@ -769,6 +769,7 @@ mod tests {
             from_address: None,
             from_verified: dmarc_passed,
             face_signed: false,
+            verification_signed: false,
         }
     }
 

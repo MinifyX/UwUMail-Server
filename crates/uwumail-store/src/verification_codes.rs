@@ -42,9 +42,8 @@ fn cleanup_delay(preference: Option<&str>) -> Option<i64> {
 }
 
 fn preference(conn: &Connection, account_id: i64, name: &str) -> Result<Option<String>> {
-    let raw: Option<String> = conn
-        .query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
-        .optional()?;
+    let raw: Option<String> =
+        conn.query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0)).optional()?;
     let preferences: Value = raw.and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default();
     Ok(preferences.get(name).and_then(Value::as_str).map(str::to_owned))
 }
@@ -352,7 +351,10 @@ mod tests {
         // The hour's share from one sender, then mail without codes.
         for _ in 1..VERIFICATION_LIMIT_PER_HOUR {
             let email = deliver(&store, account).await;
-            assert_eq!(store.record_verification(account, vec![email], &detected, "shop.example").await.unwrap().len(), 1);
+            assert_eq!(
+                store.record_verification(account, vec![email], &detected, "shop.example").await.unwrap().len(),
+                1
+            );
         }
         assert!(!store.verification_within_limit(account, "shop.example").await.unwrap());
         let over = deliver(&store, account).await;

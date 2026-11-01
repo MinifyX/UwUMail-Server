@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
+use uwumail_store::verification;
 use uwumail_store::{
     Account, AppScope, GroupDelivery, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget,
     MaskedDelivery, MaskedState, NewQueueRecipient, NewSpamLogEntry, ReportKind, SpamAction, SpamLogHit,
@@ -1759,6 +1760,29 @@ pub(crate) async fn receive(
     // same message from the same server lands on the same value when it comes back.
     let raw_hash = live.spam.greylist_hold.then(|| uwumail_store::BlobHash::of(&raw).as_str().to_owned());
 
+    // A one-time code or sign-in link (docs/verification-codes.md), worked out once for all
+    // recipients from the message as the sender wrote it. Only with a verdict: without one nothing
+    // says who sent it, and a code from nobody in particular is no code to show.
+    let verification = match &verdict {
+        Some(verdict) => {
+            let auth = verification::Authenticity {
+                header_signed: verdict.verification_signed,
+                dmarc_passed: verdict.dmarc_passed,
+                from_domain: verdict.from_domain.clone(),
+            };
+            let author = verdict.from_domain.as_deref().and_then(verification::registrable_domain);
+            let original = raw.clone();
+            let found = tokio::task::spawn_blocking(move || verification::detect(&original, &auth, crate::now()))
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::warn!(%id, %err, "looking for a verification code failed");
+                    None
+                });
+            found.zip(author)
+        }
+        None => None,
+    };
+
     // Our verdict replaces whatever the message brought along — also when the filter did not look:
     // a sender's own `X-Spam-Status: No, score=-50` would otherwise be the only verdict stored, and
     // the AI spam check would take it for ours (client review C-1, checked on the server).
@@ -1803,6 +1827,15 @@ pub(crate) async fn receive(
             // they never come back -- which is exactly what a trap must not do, because then it
             // never sees what it was built to collect.
             if recipient.trap {
+                continue;
+            }
+            // Nor does a code its sender signed for itself: it is useless in half an hour. Only within
+            // the limit per sender, so the fast lane cannot carry a flood past greylisting.
+            if let Some((found, author)) = &verification
+                && found.source == verification::Source::Header
+                && let Some(account) = recipient.local_account
+                && ctx.store.verification_within_limit(account, author).await.unwrap_or(false)
+            {
                 continue;
             }
             let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
@@ -2139,6 +2172,15 @@ pub(crate) async fn receive(
                 if !junk && kept {
                     labels::log(&ctx, account_id, &email_ids, &labeled).await;
                     queue_for_labels(&ctx, account_id, &email_ids).await;
+                }
+                // The code, for the notification and autofill. Never in the way of the delivery
+                // either: past the limit or failing, the mail is simply one without a code.
+                if !junk
+                    && kept
+                    && let Some((found, author)) = &verification
+                    && let Err(err) = ctx.store.record_verification(account_id, email_ids.clone(), found, author).await
+                {
+                    tracing::warn!(%id, account = account_id, %err, "keeping a verification code failed");
                 }
                 note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, mailbox);
                 delivered += 1;

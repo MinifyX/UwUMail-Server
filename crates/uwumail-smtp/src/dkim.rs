@@ -53,6 +53,9 @@ const SIGNED_HEADERS: &[&str] = &[
     // The picture speaks for the From address; a receiver keeps it only when it is signed.
     "Face",
     "Face",
+    // A code in it is shown and offered for autofill only when it is signed (docs/verification-codes.md).
+    "Verification-Info",
+    "Verification-Info",
 ];
 
 pub struct GeneratedKey {

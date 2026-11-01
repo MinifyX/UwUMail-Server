@@ -158,10 +158,7 @@ impl Detected {
 
 /// `2026-11-01T17:05:00Z`.
 fn utc(seconds: i64) -> String {
-    chrono::DateTime::from_timestamp(seconds, 0)
-        .unwrap_or_default()
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string()
+    chrono::DateTime::from_timestamp(seconds, 0).unwrap_or_default().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 /// What the SMTP checks found out about the sender, which decides what is believed.
@@ -500,8 +497,12 @@ fn code_of(text: &str) -> Option<String> {
     }
     if let Some((left, right)) = text.split_once('-') {
         let joined = format!("{left}{right}");
-        return (all_digits(left) && all_digits(right) && left.len() >= 2 && right.len() >= 2 && (4..=8).contains(&joined.len()))
-            .then_some(joined);
+        return (all_digits(left)
+            && all_digits(right)
+            && left.len() >= 2
+            && right.len() >= 2
+            && (4..=8).contains(&joined.len()))
+        .then_some(joined);
     }
     let alphanumeric = text.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
     let digit = text.bytes().any(|b| b.is_ascii_digit());
@@ -552,9 +553,7 @@ fn plausible(words: &[Word<'_>], first: usize, last: usize, code: &str) -> bool 
     if before.is_some_and(is_numeric) || after.is_some_and(is_numeric) {
         return false;
     }
-    let currency = |word: &Word<'_>| {
-        CURRENCIES.contains(&word.lower.as_str()) || word.text.contains(['€', '$', '£'])
-    };
+    let currency = |word: &Word<'_>| CURRENCIES.contains(&word.lower.as_str()) || word.text.contains(['€', '$', '£']);
     if before.is_some_and(currency) || after.is_some_and(currency) {
         return false;
     }
@@ -747,7 +746,8 @@ mod tests {
 
     #[test]
     fn a_header_expiry_is_held_to_a_day() {
-        let raw = with_header("Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2027-01-01T00:00:00Z");
+        let raw =
+            with_header("Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2027-01-01T00:00:00Z");
         assert_eq!(detect(&raw, &signed(), NOW).unwrap().expires_at, NOW + MAX_VALIDITY);
         // Dated in the past: a day after the Date, not after arrival.
         let found = detect(&raw, &signed(), NOW + 3 * 3600).unwrap();
@@ -757,11 +757,19 @@ mod tests {
     #[test]
     fn codes_are_found_in_german_and_english() {
         let cases: &[(&str, &str, &str)] = &[
-            ("Dein Bestätigungscode", "Hallo,\n\ndein Bestätigungscode lautet: 482913\n\nEr ist 10 Minuten gültig.", "482913"),
+            (
+                "Dein Bestätigungscode",
+                "Hallo,\n\ndein Bestätigungscode lautet: 482913\n\nEr ist 10 Minuten gültig.",
+                "482913",
+            ),
             ("Anmeldung bei Shop", "Ihr Sicherheitscode:\n\n  482 913\n\nNicht weitergeben.", "482913"),
             ("482913 ist dein Einmalcode", "Gib ihn in der App ein.", "482913"),
             ("Your verification code", "Your verification code is 7391.\nIt expires in 10 minutes.", "7391"),
-            ("Sign in to Shop", "Use this one-time code to sign in:\n\nQX7T2M\n\nIf this wasn't you, ignore it.", "QX7T2M"),
+            (
+                "Sign in to Shop",
+                "Use this one-time code to sign in:\n\nQX7T2M\n\nIf this wasn't you, ignore it.",
+                "QX7T2M",
+            ),
             ("Security alert", "Your security code: 123-456", "123456"),
             ("Login", "Anmeldecode (gültig für 5 Minuten): 90817265", "90817265"),
             ("2FA", "Your 2FA code is 556677.", "556677"),
@@ -776,7 +784,10 @@ mod tests {
         let found = detect(&mail("Reset", "Your code: 123456. Valid for 48 hours."), &unsigned(), NOW).unwrap();
         assert_eq!((found.purpose, found.expires_at), (Purpose::ResetPassword, NOW + MAX_VALIDITY));
         let found = detect(&mail("Willkommen", "Bestätigungscode: 123456"), &unsigned(), NOW).unwrap();
-        assert_eq!((found.purpose, found.expires_at, found.origin.as_str()), (Purpose::Other, NOW + DEFAULT_VALIDITY, "shop.example"));
+        assert_eq!(
+            (found.purpose, found.expires_at, found.origin.as_str()),
+            (Purpose::Other, NOW + DEFAULT_VALIDITY, "shop.example")
+        );
     }
 
     #[test]
@@ -827,7 +838,10 @@ mod tests {
             state
         };
         let alphabet: &[u8] = b"0123456789 -:;=\r\n\t\"<>@#%ABCDEZaeiou\xc3\xa4\xe2\x82\xac\xff.CodeVerification-Info";
-        let seeds = [with_header("Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2026-11-01T17:05:00Z"), mail("Code", "Code: 482913")];
+        let seeds = [
+            with_header("Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2026-11-01T17:05:00Z"),
+            mail("Code", "Code: 482913"),
+        ];
         for round in 0..1500 {
             let mut raw = if round % 3 == 0 {
                 (0..(next() % 600)).map(|_| alphabet[(next() % alphabet.len() as u64) as usize]).collect::<Vec<u8>>()

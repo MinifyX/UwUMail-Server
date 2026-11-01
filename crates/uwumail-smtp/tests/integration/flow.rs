@@ -1020,7 +1020,7 @@ async fn forged_mail_from_a_domain_that_quarantines_it_goes_to_junk() {
 /// address the relay got the message from, so the filter has something to count without asking
 /// blocklists. The reverse name of that address may or may not resolve here; the thresholds in the
 /// tests hold either way.
-async fn spam_test_server(spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
+pub(crate) async fn spam_test_server(spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
     spam_test_server_for(&["mini"], spam, dmarc).await
 }
 
