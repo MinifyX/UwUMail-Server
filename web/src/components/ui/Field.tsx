@@ -156,7 +156,7 @@ export function Segmented<T extends string>({ value, onChange, options, label, d
       role="radiogroup"
       aria-label={label}
       aria-describedby={describedBy}
-      className="inline-flex max-w-full self-start [scrollbar-width:none] overflow-x-auto rounded-full bg-canvas p-1"
+      className="inline-flex max-w-full [scrollbar-width:none] self-start overflow-x-auto rounded-full bg-canvas p-1"
     >
       {options.map((option) => (
         <button

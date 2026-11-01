@@ -311,7 +311,13 @@ function TabBar({ items, onMore, moreOpen }: { items: TabItem[]; onMore: () => v
                   {content}
                 </Link>
               ) : (
-                <button type="button" onClick={onMore} aria-expanded={moreOpen} aria-label={t("nav.more")} className={className}>
+                <button
+                  type="button"
+                  onClick={onMore}
+                  aria-expanded={moreOpen}
+                  aria-label={t("nav.more")}
+                  className={className}
+                >
                   {content}
                 </button>
               )}
@@ -387,7 +393,7 @@ export function PortalShell({ session, children }: { session: Session; children:
 
       <main
         className={clsx(
-          "mx-auto w-full max-w-[1080px] px-4 sm:px-6 min-[700px]:py-8 lg:px-10",
+          "mx-auto w-full max-w-[1080px] px-4 min-[700px]:py-8 sm:px-6 lg:px-10",
           // On the phone: below the status bar and above the tab bar.
           "max-[699px]:pt-[max(16px,env(safe-area-inset-top))] max-[699px]:pb-[calc(88px+env(safe-area-inset-bottom))]",
           "max-[699px]:pr-[max(16px,env(safe-area-inset-right))] max-[699px]:pl-[max(16px,env(safe-area-inset-left))]",

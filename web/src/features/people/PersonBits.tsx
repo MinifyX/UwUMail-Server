@@ -1,4 +1,6 @@
 import clsx from "clsx";
+import { Tag, type TagTone } from "@/components/ui/Pill";
+import { MeterBar } from "@/components/ui/StatTile";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
@@ -47,66 +49,40 @@ export function PersonAvatar({
   );
 }
 
-const STATUS_STYLES: Record<PersonStatus, string> = {
-  active: "bg-success-tint text-success",
-  invited: "bg-pink-tint text-pink-ink",
-  disabled: "bg-warning-tint text-warning",
-  deleted: "bg-danger-tint text-danger",
+const STATUS_TONES: Record<PersonStatus, TagTone> = {
+  active: "success",
+  invited: "pink",
+  disabled: "warning",
+  deleted: "danger",
 };
 
 export function StatusPill({ status }: { status: PersonStatus }) {
   const { t } = useT();
-  return (
-    <span
-      className={clsx(
-        "inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-semibold",
-        STATUS_STYLES[status],
-      )}
-    >
-      {t(`people.status.${status}`)}
-    </span>
-  );
+  return <Tag tone={STATUS_TONES[status]}>{t(`people.status.${status}`)}</Tag>;
 }
 
 /** Says that this mailbox belongs to a program, not a person. */
 export function ServicePill() {
   const { t } = useT();
-  return (
-    <span className="inline-flex h-6 items-center rounded-full border border-line px-2.5 text-[12px] font-semibold text-muted">
-      {t("people.service")}
-    </span>
-  );
+  return <Tag tone="neutral">{t("people.service")}</Tag>;
 }
 
 export function AdminPill() {
   const { t } = useT();
-  return (
-    <span className="inline-flex h-6 items-center rounded-full border border-line px-2.5 text-[12px] font-semibold text-muted">
-      {t("people.admin")}
-    </span>
-  );
+  return <Tag tone="pink">{t("people.admin")}</Tag>;
 }
 
-/** A thin bar for storage; without a limit only the used amount is shown. */
+/** A thin bar for storage with the amount beside it; without a limit only the used amount is shown. */
 export function StorageLine({ person }: { person: Pick<Person, "usedBytes" | "quotaBytes"> }) {
   const { t, i18n } = useT();
   const used = formatBytes(person.usedBytes, i18n.language);
   if (person.quotaBytes <= 0)
-    return <span className="text-[13px] text-muted">{t("people.storageUsed", { used })}</span>;
-  const share = Math.min(1, person.usedBytes / person.quotaBytes);
+    return <span className="text-[13px] text-muted tabular-nums">{t("people.storageUsed", { used })}</span>;
   return (
-    <span className="flex min-w-0 flex-col gap-1">
-      <span className="text-[13px] text-muted">
+    <span className="flex min-w-0 items-center gap-2">
+      <MeterBar share={person.usedBytes / person.quotaBytes} className="min-w-12 flex-1" />
+      <span className="shrink-0 text-[13px] text-muted tabular-nums">
         {t("people.storageOf", { used, quota: formatBytes(person.quotaBytes, i18n.language) })}
-      </span>
-      <span className="h-1.5 w-full overflow-hidden rounded-full bg-canvas">
-        <span
-          className={clsx(
-            "block h-full rounded-full",
-            share > 0.9 ? "bg-danger" : share > 0.75 ? "bg-warning" : "bg-pink",
-          )}
-          style={{ width: `${share > 0 ? Math.max(share * 100, 3) : 0}%` }}
-        />
       </span>
     </span>
   );

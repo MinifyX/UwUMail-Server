@@ -275,7 +275,8 @@
         "title": "最近の変更",
         "none": "まだ変更はありません"
       }
-    }
+    },
+    "versionShort": "バージョン {{version}}"
   },
   "adminView": {
     "label": "表示",

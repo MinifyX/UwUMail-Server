@@ -70,7 +70,8 @@
   /* The focus ring: opaque, 3:1 against every surface (WCAG 1.4.11). */
   --uwu-focus: 0 0 0 3px var(--uwu-pink-solid);
 
-  --uwu-font: "UwU Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  --uwu-font:
+    "UwU Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif;
   --uwu-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   --tracking-ui: -0.008em;
 

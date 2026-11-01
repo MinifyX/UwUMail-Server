@@ -286,7 +286,8 @@
         "title": "Laatste wijziging",
         "none": "Nog niets gewijzigd"
       }
-    }
+    },
+    "versionShort": "Versie {{version}}"
   },
   "adminView": {
     "label": "Weergave",

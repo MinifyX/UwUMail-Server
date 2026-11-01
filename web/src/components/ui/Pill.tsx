@@ -52,7 +52,15 @@ const TAG_TONES: Record<TagTone, string> = {
 };
 
 /** A short state word beside something, such as "Admin", "Locked" or "New". The word carries it, not the colour. */
-export function Tag({ tone = "neutral", className, children }: { tone?: TagTone; className?: string; children: ReactNode }) {
+export function Tag({
+  tone = "neutral",
+  className,
+  children,
+}: {
+  tone?: TagTone;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
     <span
       className={clsx(
@@ -67,7 +75,13 @@ export function Tag({ tone = "neutral", className, children }: { tone?: TagTone;
 }
 
 /** A state as a dot and a word: never colour alone. */
-export function StatusDot({ tone, className }: { tone: "success" | "warning" | "danger" | "offline"; className?: string }) {
+export function StatusDot({
+  tone,
+  className,
+}: {
+  tone: "success" | "warning" | "danger" | "offline";
+  className?: string;
+}) {
   const color = { success: "bg-success", warning: "bg-warning", danger: "bg-danger", offline: "bg-offline" }[tone];
   return <span className={clsx("inline-block size-2 shrink-0 rounded-full", color, className)} aria-hidden />;
 }

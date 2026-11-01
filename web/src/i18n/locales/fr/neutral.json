@@ -291,7 +291,8 @@
         "title": "Dernière modification",
         "none": "Rien n'a encore changé"
       }
-    }
+    },
+    "versionShort": "Version {{version}}"
   },
   "adminView": {
     "label": "Affichage",

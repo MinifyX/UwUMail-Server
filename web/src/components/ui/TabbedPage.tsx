@@ -13,6 +13,8 @@ export function TabbedPage<T extends string>({
   value,
   tabs,
   children,
+  large,
+  actions,
 }: {
   title: ReactNode;
   intro?: ReactNode;
@@ -21,10 +23,14 @@ export function TabbedPage<T extends string>({
   value: T;
   tabs: Tab<T>[];
   children: ReactNode;
+  /** The big title, for an overview. */
+  large?: boolean;
+  /** The page's main action beside the title. */
+  actions?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={title} intro={intro} />
+      <PageHeader title={title} intro={intro} large={large} actions={actions} />
       <Tabs<T> label={label} value={value} tabs={tabs} />
       {children}
     </div>

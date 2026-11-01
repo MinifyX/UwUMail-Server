@@ -27,10 +27,7 @@ export function Toaster() {
           >
             <span className="relative shrink-0">
               <Icon
-                className={clsx(
-                  "size-[18px]",
-                  item.tone === "error" ? "text-toast-danger" : "text-toast-accent",
-                )}
+                className={clsx("size-[18px]", item.tone === "error" ? "text-toast-danger" : "text-toast-accent")}
                 aria-hidden
               />
               {item.effect === "sent" && mascot && (

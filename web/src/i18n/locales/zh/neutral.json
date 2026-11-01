@@ -275,7 +275,8 @@
         "title": "最近更改",
         "none": "尚无更改"
       }
-    }
+    },
+    "versionShort": "版本 {{version}}"
   },
   "adminView": {
     "label": "视图",

@@ -286,7 +286,8 @@
         "title": "Letzte Änderung",
         "none": "Noch nichts geändert"
       }
-    }
+    },
+    "versionShort": "Version {{version}}"
   },
   "adminView": {
     "label": "Ansicht",

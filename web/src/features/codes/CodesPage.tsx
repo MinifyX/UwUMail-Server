@@ -50,7 +50,10 @@ export function CodesPage() {
               description={t("codes.detect.description")}
             />
             <div className="border-t border-hairline" />
-            <SettingRow label={t("codes.cleanup.label")} description={t(`codes.cleanup.description.${settings.cleanup}`)}>
+            <SettingRow
+              label={t("codes.cleanup.label")}
+              description={t(`codes.cleanup.description.${settings.cleanup}`)}
+            >
               {({ describedBy }) => (
                 <Segmented
                   label={t("codes.cleanup.label")}
@@ -61,9 +64,7 @@ export function CodesPage() {
                 />
               )}
             </SettingRow>
-            <Hint icon={ShieldCheck}>
-              {t("codes.signed", { header: "Verification-Info" })}
-            </Hint>
+            <Hint icon={ShieldCheck}>{t("codes.signed", { header: "Verification-Info" })}</Hint>
             <CodeChipPreview />
           </div>
         </Card>
