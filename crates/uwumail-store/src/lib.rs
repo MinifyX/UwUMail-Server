@@ -83,6 +83,8 @@ mod suggestions;
 mod tls_rpt;
 pub mod tnef;
 mod user_settings;
+pub mod verification;
+mod verification_codes;
 mod web;
 mod word_lists;
 
@@ -122,6 +124,7 @@ pub use blobs::{BlobCleanupPause, BlobHash};
 pub use blocks::BLOCK_EXEMPT_LIMIT;
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
 pub use calendar_alerts::{CalendarAlertFired, DueAlert, PlannedAlert};
+pub use verification_codes::{VERIFICATION_LIMIT_PER_HOUR, VerificationFound};
 pub use calendar_notifications::{
     Author, CalendarNotification, EventAuthor, KEPT_SECS as CALENDAR_NOTIFICATIONS_KEPT_SECS,
     MAX_NOTIFICATIONS as MAX_CALENDAR_NOTIFICATIONS,
@@ -310,6 +313,8 @@ struct Inner {
     changes: broadcast::Sender<StateChange>,
     /// Calendar alerts that went off, for push (calendar_alerts.rs).
     calendar_alerts: broadcast::Sender<CalendarAlertFired>,
+    /// Codes found in delivered mail, for push (verification_codes.rs).
+    verifications: broadcast::Sender<VerificationFound>,
     queue_wakeup: Notify,
     /// Wakes the AI assistant's label worker when delivered mail was queued for it.
     assist_wakeup: Notify,
@@ -340,6 +345,7 @@ impl Store {
         let blobs = blobs::BlobStore::open(data_dir.join("blobs")).await?;
         let (changes, _) = broadcast::channel(1024);
         let (calendar_alerts, _) = broadcast::channel(256);
+        let (verifications, _) = broadcast::channel(256);
         let store = Store {
             inner: Arc::new(Inner {
                 db,
@@ -348,6 +354,7 @@ impl Store {
                 blob_cleanup_paused: Default::default(),
                 changes,
                 calendar_alerts,
+                verifications,
                 queue_wakeup: Notify::new(),
                 assist_wakeup: Notify::new(),
                 label_counts: Arc::default(),

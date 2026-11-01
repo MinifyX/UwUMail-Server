@@ -17,6 +17,8 @@ data-encoding.workspace = true
 hex.workspace = true
 idna = "1"
 mail-parser.workspace = true
+# Registrable domains for the origin of verification codes (src/verification.rs).
+psl.workspace = true
 memchr.workspace = true
 regex.workspace = true
 getrandom.workspace = true

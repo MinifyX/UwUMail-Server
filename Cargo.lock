@@ -4802,6 +4802,7 @@ dependencies = [
  "idna",
  "mail-parser",
  "memchr",
+ "psl",
  "regex",
  "rusqlite",
  "serde",
