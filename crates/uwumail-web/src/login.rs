@@ -28,6 +28,23 @@ pub struct PendingLogin {
     pub via: &'static str,
 }
 
+/// One try at a second factor, counted before it is checked: see [`LoginState::attempt`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub struct Attempt {
+    /// Whether this try, if it is wrong, is the one that locks the account.
+    locks: bool,
+}
+
+/// Why a second factor is not even looked at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refused {
+    /// The pending login is gone, ran out, or used up its tries.
+    Expired,
+    /// The account's second factor is locked for a while.
+    Locked,
+}
+
 #[derive(Default)]
 pub struct LoginState {
     pending: Mutex<HashMap<String, PendingLogin>>,
@@ -80,30 +97,46 @@ impl LoginState {
         }
     }
 
-    /// Counts a wrong second factor. After too many, the login has to start over; after too many
-    /// for the account, whichever login they came from, its second factor is locked for a while.
-    /// Returns true for the one that locks it, so its owner can be told.
-    pub fn failed(&self, token: &str) -> bool {
-        let account_id = {
-            let mut pending = self.pending.lock().expect("pending logins poisoned");
-            let Some(login) = pending.get_mut(token) else { return false };
-            login.attempts += 1;
-            let account_id = login.account_id;
-            if login.attempts >= MAX_ATTEMPTS {
-                pending.remove(token);
-            }
-            account_id
+    /// Takes one try at the second factor for the pending login `token`, before the code or passkey
+    /// is checked. The try counts for the login and for the account right away, both under one lock,
+    /// so tries sent side by side cannot all slip past the limits while the first are still being
+    /// checked (security audit 2026-11 M-03). A right code then forgives the account its count
+    /// ([`LoginState::second_factor_passed`]); a wrong one is reported with [`LoginState::wrong`].
+    pub fn attempt(&self, token: &str) -> Result<Attempt, Refused> {
+        let mut pending = self.pending.lock().expect("pending logins poisoned");
+        let Some(login) = pending.get_mut(token).filter(|login| login.created.elapsed() < PENDING_LIFETIME) else {
+            return Err(Refused::Expired);
         };
+        if login.attempts >= MAX_ATTEMPTS {
+            return Err(Refused::Expired);
+        }
         let mut failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
         failures.retain(|_, (_, last)| last.elapsed() < SECOND_FACTOR_LOCK);
-        let (count, last) = failures.entry(account_id).or_insert((0, Instant::now()));
+        let (count, last) = failures.entry(login.account_id).or_insert((0, Instant::now()));
+        if *count >= MAX_ACCOUNT_ATTEMPTS {
+            return Err(Refused::Locked);
+        }
+        login.attempts += 1;
         *count += 1;
         *last = Instant::now();
-        *count == MAX_ACCOUNT_ATTEMPTS
+        Ok(Attempt { locks: *count == MAX_ACCOUNT_ATTEMPTS })
+    }
+
+    /// The try was wrong. After the login's last try it has to start over; after too many for the
+    /// account, whichever login they came from, its second factor stays locked for a while.
+    /// Returns true for the try that locked it, so its owner can be told.
+    pub fn wrong(&self, token: &str, attempt: Attempt) -> bool {
+        let mut pending = self.pending.lock().expect("pending logins poisoned");
+        if pending.get(token).is_some_and(|login| login.attempts >= MAX_ATTEMPTS) {
+            pending.remove(token);
+        }
+        attempt.locks
     }
 
     /// Whether the account's second factor is locked: no code, passkey or recovery code is even
-    /// looked at until the lock runs out. Another account's success does not lift it.
+    /// looked at until the lock runs out. Another account's success does not lift it. The routes
+    /// learn it from [`LoginState::attempt`].
+    #[cfg(test)]
     pub fn second_factor_locked(&self, account_id: i64) -> bool {
         let failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
         failures
@@ -158,11 +191,14 @@ mod tests {
         let state = LoginState::default();
         let token = state.start(7);
         for _ in 0..4 {
-            state.failed(&token);
+            let attempt = state.attempt(&token).unwrap();
+            state.wrong(&token, attempt);
         }
         assert_eq!(state.get(&token).map(|login| login.account_id), Some(7));
-        state.failed(&token);
+        let attempt = state.attempt(&token).unwrap();
+        state.wrong(&token, attempt);
         assert!(state.get(&token).is_none());
+        assert_eq!(state.attempt(&token), Err(Refused::Expired));
         let token = state.start(7);
         assert!(state.finish(&token).is_some());
         assert!(state.finish(&token).is_none(), "a login finishes once");
@@ -178,7 +214,8 @@ mod tests {
             let token = state.start(7);
             for _ in 0..MAX_ATTEMPTS {
                 assert!(!state.second_factor_locked(7));
-                locked.push(state.failed(&token));
+                let attempt = state.attempt(&token).unwrap();
+                locked.push(state.wrong(&token, attempt));
             }
         }
         assert!(state.second_factor_locked(7), "ten wrong codes over two logins lock the account");
@@ -188,5 +225,37 @@ mod tests {
         assert!(state.second_factor_locked(7), "nor does another account's success lift it");
         state.second_factor_passed(7);
         assert!(!state.second_factor_locked(7));
+    }
+
+    #[test]
+    fn tries_side_by_side_are_counted_before_they_are_checked() {
+        // Security audit 2026-11 M-03: tries that are still being checked count already, so a
+        // burst of them gets no further than the same tries one after another.
+        let state = LoginState::default();
+        let token = state.start(7);
+        let taken: Vec<_> = (0..MAX_ATTEMPTS + 3).map(|_| state.attempt(&token)).collect();
+        assert_eq!(taken.iter().filter(|taken| taken.is_ok()).count(), MAX_ATTEMPTS as usize);
+        assert!(taken[MAX_ATTEMPTS as usize..].iter().all(|taken| *taken == Err(Refused::Expired)));
+        // Over several pending logins, the account's limit holds the same way.
+        let mut taken = 0;
+        let mut locking = 0;
+        for _ in 0..4 {
+            let token = state.start(7);
+            for _ in 0..MAX_ATTEMPTS {
+                match state.attempt(&token) {
+                    Ok(attempt) => {
+                        taken += 1;
+                        locking += usize::from(attempt.locks);
+                    }
+                    Err(refused) => assert_eq!(refused, Refused::Locked),
+                }
+            }
+        }
+        assert_eq!(taken + MAX_ATTEMPTS, MAX_ACCOUNT_ATTEMPTS);
+        assert_eq!(locking, 1);
+        assert!(state.second_factor_locked(7));
+        // A right code among them forgives the account, as one alone would.
+        state.second_factor_passed(7);
+        assert!(state.attempt(&state.start(7)).is_ok());
     }
 }
