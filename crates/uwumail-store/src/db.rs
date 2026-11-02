@@ -88,6 +88,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0079_n_shared_networks.sql"),
     include_str!("migrations/0080_scim.sql"),
     include_str!("migrations/0081_verification.sql"),
+    include_str!("migrations/0082_fetch_sender_proof.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

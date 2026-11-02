@@ -512,7 +512,9 @@ impl Smtp {
             received_at: None,
         };
         ctx.store.ingest(request).await.map_err(stored_error)?;
-        // The sender is an authenticated local account, so it is verified.
+        // The sender is an authenticated local account and every From address was checked to be its
+        // own -- a fetched one only once it has proven it (security audit 2026-11 M-01) -- so it is
+        // verified.
         vacation::maybe_reply(ctx, account_id, mail_from, true, signed).await;
         // Calendar apps that send invitations themselves reach people here too; the From address
         // was checked to be the sender's own.
