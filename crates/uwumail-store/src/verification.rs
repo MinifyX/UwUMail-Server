@@ -30,6 +30,9 @@ const MAX_PARAMS: usize = 8;
 const MAX_URL: usize = 2048;
 /// How much of subject and text the guess reads: codes sit at the top of a mail.
 const MAX_TEXT: usize = 16 * 1024;
+/// The largest message looked at at all (security-audit-0.26.0 VC-09). A code mail is a few
+/// kilobytes; parsing a big one in full again only for this is not worth it.
+pub const MAX_MESSAGE: usize = 1024 * 1024;
 /// A code is never valid for longer, whatever the sender writes.
 pub const MAX_VALIDITY: i64 = 24 * 3600;
 /// How long a guessed code counts as valid when the text says nothing about it.
@@ -195,8 +198,19 @@ fn is_host(host: &str) -> bool {
 }
 
 /// Finds the code or link in `raw`, received at `received_at` (Unix seconds). The signed header
-/// wins; otherwise the guess. Never panics, whatever the bytes.
+/// wins; otherwise the guess, and that only when DMARC passed (security-audit-0.26.0 VC-03): a
+/// guess from mail anyone could have written would carry a domain it may not come from. A code
+/// that has already expired is no code (VC-08), and a message over [`MAX_MESSAGE`] is not looked
+/// at (VC-09). Never panics, whatever the bytes.
 pub fn detect(raw: &[u8], auth: &Authenticity, received_at: i64) -> Option<Detected> {
+    if raw.len() > MAX_MESSAGE {
+        return None;
+    }
+    let found = find(raw, auth, received_at)?;
+    (found.expires_at > received_at).then_some(found)
+}
+
+fn find(raw: &[u8], auth: &Authenticity, received_at: i64) -> Option<Detected> {
     let message = MessageParser::default().parse(raw)?;
     let from_domain = auth.from_domain.as_deref().and_then(registrable_domain)?;
 
@@ -213,6 +227,9 @@ pub fn detect(raw: &[u8], auth: &Authenticity, received_at: i64) -> Option<Detec
                 return Some(found);
             }
         }
+    }
+    if !auth.dmarc_passed {
+        return None;
     }
 
     let mut text = String::new();
@@ -233,7 +250,8 @@ pub fn detect(raw: &[u8], auth: &Authenticity, received_at: i64) -> Option<Detec
         purpose,
         expires_at: received_at.saturating_add(validity),
         source: Source::Heuristic,
-        autofill: auth.dmarc_passed,
+        // Only ever reached with DMARC passed, see above.
+        autofill: true,
     })
 }
 
@@ -314,9 +332,11 @@ fn from_header(value: &str, from_domain: &str, sent: Option<i64>, received_at: i
     })
 }
 
-/// 4 to 12 characters of `[0-9A-Z-]`.
+/// 4 to 12 characters of `[0-9A-Z-]`, at least one of them not a hyphen (VC-11).
 fn is_code(code: &str) -> bool {
-    (4..=12).contains(&code.len()) && code.bytes().all(|b| b.is_ascii_digit() || b.is_ascii_uppercase() || b == b'-')
+    (4..=12).contains(&code.len())
+        && code.bytes().all(|b| b.is_ascii_digit() || b.is_ascii_uppercase() || b == b'-')
+        && code.bytes().any(|b| b != b'-')
 }
 
 /// `url` when it is an `https` link to `origin` or a host below it, without user name or password.
@@ -721,15 +741,17 @@ mod tests {
         let good = "Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2026-11-01T17:05:00Z";
         let found = detect(&with_header(good), &unsigned(), NOW).unwrap();
         assert_eq!((found.source, found.code.as_deref()), (Source::Heuristic, Some("482913")));
+        // Without DMARC neither the header nor a guess (VC-03).
         let no_dmarc = Authenticity { dmarc_passed: false, ..signed() };
-        let found = detect(&with_header(good), &no_dmarc, NOW).unwrap();
-        assert_eq!(found.source, Source::Heuristic);
-        assert!(!found.autofill, "no autofill without DMARC");
+        assert!(detect(&with_header(good), &no_dmarc, NOW).is_none());
+        let no_dmarc = Authenticity { dmarc_passed: false, ..unsigned() };
+        assert!(detect(&with_header(good), &no_dmarc, NOW).is_none());
 
         for bad in [
             "Verification-Info: kind=otp; origin=bank.example; code=777111; expires=2026-11-01T17:05:00Z",
             "Verification-Info: kind=otp; origin=shop.example; code=777 111; expires=2026-11-01T17:05:00Z",
             "Verification-Info: kind=otp; origin=shop.example; code=abc123; expires=2026-11-01T17:05:00Z",
+            "Verification-Info: kind=otp; origin=shop.example; code=----; expires=2026-11-01T17:05:00Z",
             "Verification-Info: kind=otp; origin=shop.example; code=777111",
             "Verification-Info: kind=otp; origin=shop.example; code=777111; expires=morgen",
             "Verification-Info: kind=otp; origin=shop.example; code=777111; code=777112; expires=2026-11-01T17:05:00Z",
@@ -752,6 +774,21 @@ mod tests {
         // Dated in the past: a day after the Date, not after arrival.
         let found = detect(&raw, &signed(), NOW + 3 * 3600).unwrap();
         assert_eq!(found.expires_at, NOW + MAX_VALIDITY);
+    }
+
+    #[test]
+    fn expired_codes_and_big_messages_are_no_codes() {
+        // VC-08: expired on arrival, also when the text has a code the guess would find.
+        let raw =
+            with_header("Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2026-11-01T16:00:00Z");
+        assert!(detect(&raw, &signed(), NOW).is_none());
+        let raw =
+            with_header("Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2027-01-01T00:00:00Z");
+        assert!(detect(&raw, &signed(), NOW + MAX_VALIDITY + 1).is_none(), "a day after the Date");
+        // VC-09: too big to look at.
+        let big = mail("Dein Code", &format!("Dein Code: 482913\r\n{}", "x".repeat(MAX_MESSAGE)));
+        assert!(detect(&big, &unsigned(), NOW).is_none());
+        assert!(detect(&mail("Dein Code", "Dein Code: 482913"), &unsigned(), NOW).is_some());
     }
 
     #[test]

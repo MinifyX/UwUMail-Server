@@ -257,7 +257,7 @@ pub use user_settings::{
     DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE,
     USER_SETTINGS_MAX_VALUE_SIZE, UserSettings, validate_setting,
 };
-pub use verification_codes::{VERIFICATION_LIMIT_PER_HOUR, VerificationFound};
+pub use verification_codes::{VERIFICATION_FAST_LANE_PER_HOUR, VERIFICATION_LIMIT_PER_HOUR, VerificationFound};
 pub use web::{NewWebSession, ServerCounts, WebSession};
 pub use word_lists::{
     CompiledWord, PATTERN_SIZE_LIMIT, RefusedWord, WORD_LIST_ADMIN_LIMIT, WORD_LIST_PERSONAL_LIMIT, WORD_POINTS,

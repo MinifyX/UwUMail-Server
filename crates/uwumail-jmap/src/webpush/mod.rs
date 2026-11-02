@@ -12,7 +12,7 @@
 pub(crate) mod ece;
 pub(crate) mod vapid;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use serde_json::{Map, Value, json};
-use tokio::sync::{OnceCell, broadcast, watch};
+use tokio::sync::{OnceCell, Semaphore, broadcast, watch};
 use uwumail_smtp::egress::Egress;
 use uwumail_store::{PushTarget, Store};
 
@@ -54,6 +54,14 @@ const VERIFICATION_TTL_SECS: u32 = 24 * 3600;
 /// code about to expire is still worth showing) and at most a day.
 const CODE_TTL_MIN_SECS: i64 = 60;
 const CODE_TTL_MAX_SECS: i64 = 24 * 3600;
+/// Code pushes skip the bundling and go out urgent, so they have limits of their own
+/// (security-audit-0.26.0 VC-04): per account at most this many a minute and an hour, whatever the
+/// senders; the codes past them are in the mailbox all the same.
+const CODE_PUSHES_PER_MINUTE: usize = 20;
+const CODE_PUSHES_PER_HOUR: usize = 60;
+/// And at most this many code pushes on the way at once, all accounts together. Past that a code
+/// is not pushed; the StateChange still tells the device about the mail.
+const CODE_PUSHES_IN_FLIGHT: usize = 32;
 /// A later StateChange replaces an earlier one still waiting at the push service (RFC 8030, 5.4).
 const TOPIC: &str = "jmap-state";
 /// Expired subscriptions and those whose login ended are dropped this often.
@@ -119,7 +127,37 @@ pub(crate) struct WebPush {
     subject: String,
     /// New subscriptions per account in the current hour.
     creates: Arc<Mutex<HashMap<i64, (u32, Instant)>>>,
+    /// Code pushes per account in the last hour (VC-04).
+    code_budget: Arc<Mutex<CodeBudget>>,
+    /// Code pushes on the way (VC-04).
+    code_sends: Arc<Semaphore>,
     timing: PushTiming,
+}
+
+/// When each account last had codes pushed, within the hour: the limits of [`CODE_PUSHES_PER_MINUTE`]
+/// and [`CODE_PUSHES_PER_HOUR`].
+#[derive(Debug, Default)]
+struct CodeBudget(HashMap<i64, VecDeque<Instant>>);
+
+impl CodeBudget {
+    /// Whether `account_id` may have another code pushed at `now`, and counts it if so.
+    fn take(&mut self, account_id: i64, now: Instant) -> bool {
+        const MINUTE: Duration = Duration::from_secs(60);
+        const HOUR: Duration = Duration::from_secs(3600);
+        self.0.retain(|_, sent| {
+            while sent.front().is_some_and(|at| now.duration_since(*at) >= HOUR) {
+                sent.pop_front();
+            }
+            !sent.is_empty()
+        });
+        let sent = self.0.entry(account_id).or_default();
+        let last_minute = sent.iter().rev().take_while(|at| now.duration_since(**at) < MINUTE).count();
+        if sent.len() >= CODE_PUSHES_PER_HOUR || last_minute >= CODE_PUSHES_PER_MINUTE {
+            return false;
+        }
+        sent.push_back(now);
+        true
+    }
 }
 
 /// What became of a push.
@@ -139,6 +177,8 @@ impl WebPush {
             vapid: Arc::default(),
             subject: format!("https://{hostname}"),
             creates: Arc::default(),
+            code_budget: Arc::default(),
+            code_sends: Arc::new(Semaphore::new(CODE_PUSHES_IN_FLIGHT)),
             timing: PushTiming::default(),
         }
     }
@@ -514,15 +554,30 @@ impl WebPush {
     /// Pushes a new verification code to the account's subscriptions that asked for
     /// `VerificationCode` by name and gave keys: the code is content, and without keys the push
     /// service would read it. Urgent, replacing nothing, and kept no longer than the code is good.
+    /// Within the limits per account and on the way at once (VC-04).
     async fn code(&self, store: &Store, found: &uwumail_store::VerificationFound) {
         let Ok(targets) = store.push_targets(vec![found.account_id]).await else { return };
+        let targets: Vec<PushTarget> = targets.into_iter().filter(wants_codes).collect();
+        if targets.is_empty() {
+            return;
+        }
+        let allowed = self.code_budget.lock().unwrap_or_else(|e| e.into_inner()).take(found.account_id, Instant::now());
+        if !allowed {
+            tracing::debug!(account = found.account_id, "too many verification code pushes, this one is left out");
+            return;
+        }
         let body = code_json(found);
         let ttl = code_ttl(found.detected.expires_at, crate::methods::unix_now());
-        for target in targets.into_iter().filter(wants_codes) {
+        for target in targets {
+            let Ok(permit) = self.code_sends.clone().try_acquire_owned() else {
+                tracing::debug!(account = found.account_id, "too many verification code pushes on the way");
+                return;
+            };
             let (push, body) = (self.clone(), body.clone());
             tokio::spawn(async move {
                 let outcome = push.send(&target, &body, "high", ttl, None).await;
                 push.note(&target, outcome).await;
+                drop(permit);
             });
         }
     }
@@ -635,6 +690,26 @@ mod tests {
         assert!(!wants_codes(&PushTarget { keys: keys(), ..target(Some(vec!["Email"])) }));
         assert!(wants_codes(&PushTarget { keys: keys(), ..target(Some(vec!["Email", "VerificationCode"])) }));
         assert_eq!((code_ttl(1_000, 990), code_ttl(1_000, 100), code_ttl(1_000_000, 0)), (60, 900, 86_400));
+    }
+
+    #[test]
+    fn code_pushes_are_limited_per_account_per_minute_and_hour() {
+        let mut budget = CodeBudget::default();
+        let start = Instant::now();
+        for _ in 0..CODE_PUSHES_PER_MINUTE {
+            assert!(budget.take(1, start));
+        }
+        assert!(!budget.take(1, start), "a minute's share");
+        assert!(budget.take(2, start), "other accounts are not affected");
+        let mut at = start;
+        for _ in CODE_PUSHES_PER_MINUTE..CODE_PUSHES_PER_HOUR {
+            at += Duration::from_secs(4);
+            assert!(budget.take(1, at + Duration::from_secs(60)));
+        }
+        assert!(!budget.take(1, start + Duration::from_secs(1800)), "an hour's share");
+        assert!(budget.take(1, start + Duration::from_secs(3600)), "the first ones of the hour are gone");
+        // Accounts with nothing left in the hour are forgotten.
+        assert!(!budget.0.contains_key(&2));
     }
 
     #[test]

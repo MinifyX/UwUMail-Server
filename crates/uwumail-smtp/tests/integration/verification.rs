@@ -1,24 +1,31 @@
 //! Verification codes (docs/verification-codes.md): a code its sender signed is kept for autofill
-//! and skips greylisting, within the limit per sender; a header nobody signed is only a guess.
+//! and skips greylisting, within the limits per sender and per account; a header nobody signed is
+//! only a guess; and nobody here can send one that our own signature would vouch for.
 
 use uwumail_smtp::SpamConfig;
 use uwumail_store::verification::Source;
-use uwumail_store::{DkimKey, VERIFICATION_LIMIT_PER_HOUR};
+use uwumail_store::{DkimKey, VERIFICATION_FAST_LANE_PER_HOUR, VERIFICATION_LIMIT_PER_HOUR};
 
-use crate::flow::{RawSession, TestServer, spam_test_server};
+use crate::flow::{RawSession, TestServer, spam_test_server_for, start};
 
 /// Every judged message is suspicious, so every stranger waits once for the greylist.
 async fn greylisting_server() -> TestServer {
     let spam = SpamConfig { greylist_score: -100.0, junk_score: 100.0, ..SpamConfig::default() };
-    spam_test_server(spam, Some("v=DMARC1; p=none")).await
+    spam_test_server_for(&["mini", "ami"], spam, Some("v=DMARC1; p=none")).await
 }
 
-/// Hands in `message` the way the relay received it from 203.0.113.7.
+/// Hands in `message` for mini@a.test the way the relay received it from 203.0.113.7.
 async fn relay(server: &TestServer, from: &str, helo: &str, message: &str) -> String {
+    relay_to(server, &["mini@a.test"], from, helo, message).await
+}
+
+async fn relay_to(server: &TestServer, recipients: &[&str], from: &str, helo: &str, message: &str) -> String {
     let mut session = RawSession::connect(server.mx).await;
     assert!(session.command("EHLO relay.local").await.starts_with("250"));
     assert!(session.command(&format!("MAIL FROM:<{from}>")).await.starts_with("250"));
-    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    for recipient in recipients {
+        assert!(session.command(&format!("RCPT TO:<{recipient}>")).await.starts_with("250"));
+    }
     assert!(session.command("DATA").await.starts_with("354"));
     session
         .command(&format!(
@@ -51,18 +58,24 @@ async fn codes(server: &TestServer) -> Vec<Option<uwumail_store::verification::D
     ids.iter().map(|id| found.remove(id)).collect()
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn signed_codes_skip_the_greylist_within_the_limit() {
-    let a = greylisting_server().await;
-    // sender.test is a stranger here: its keys live in a store of its own.
+/// The DKIM keys of sender.test, published to `server`. sender.test is a stranger there: its keys
+/// live in a store of its own.
+async fn sender_keys(server: &TestServer) -> (Vec<DkimKey>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let sender = uwumail_store::Store::open(dir.path()).await.unwrap();
     sender.create_domain("sender.test").await.unwrap();
     let keys = uwumail_smtp::dkim::ensure_domain_keys(&sender, "sender.test").await.unwrap();
     for key in &keys {
         let (name, value) = key.dns_record();
-        a.smtp.dns_cache().pin_txt(&name, &value).unwrap();
+        server.smtp.dns_cache().pin_txt(&name, &value).unwrap();
     }
+    (keys, dir)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signed_codes_skip_the_greylist_within_the_limit() {
+    let a = greylisting_server().await;
+    let (keys, _dir) = sender_keys(&a).await;
 
     let limit = VERIFICATION_LIMIT_PER_HOUR as usize;
     for number in 0..limit {
@@ -106,4 +119,52 @@ async fn a_header_without_a_signature_over_it_is_only_a_guess() {
         (found.source, found.code.as_deref(), found.origin.as_str(), found.autofill),
         (Source::Heuristic, Some("482911"), "other.test", true)
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_fast_lane_lifts_greylisting_only_for_its_own_recipients() {
+    let a = greylisting_server().await;
+    let (keys, _dir) = sender_keys(&a).await;
+    // ami already had the hour's share of signed codes, from many senders (VC-02).
+    let store = a.smtp.store();
+    let ami = store.account("ami@a.test").await.unwrap().unwrap().id;
+    for n in 0..VERIFICATION_FAST_LANE_PER_HOUR {
+        assert!(store.take_verification_fast_lane(ami, &format!("sender{n}.example")).await.unwrap());
+    }
+    assert!(!store.take_verification_fast_lane(ami, "sender.test").await.unwrap());
+
+    // mini may still have one, but that does not carry the mail past greylisting for ami.
+    let message = code_mail("sender.test", 1, &keys);
+    let both = ["mini@a.test", "ami@a.test"];
+    let reply = relay_to(&a, &both, "no-reply@sender.test", "mail.sender.test", &message).await;
+    assert!(reply.starts_with("451 4.7.1"), "{reply}");
+    // To mini alone it goes through at once.
+    let reply = relay(&a, "no-reply@sender.test", "mail.sender.test", &code_mail("sender.test", 2, &keys)).await;
+    assert!(reply.starts_with("250"), "{reply}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_local_sender_cannot_send_a_verification_info_header() {
+    use uwumail_smtp::{Submission, SubmissionRecipient};
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    // Our DKIM signature covers the header: kept, it would vouch for any code mini wrote (VC-01).
+    let raw = "From: mini@a.test\r\nTo: ami@a.test\r\nSubject: Dein Code\r\n\
+               Verification-Info: kind=otp; origin=login.a.test; code=777111;\r\n expires=2099-01-01T00:00:00Z\r\n\
+               \r\nHallo\r\n";
+    let submission = Submission {
+        account,
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test")],
+        raw: raw.as_bytes().to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    a.smtp.submit(submission).await.unwrap();
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
+    let delivered = a.raw(&inbox[0]).await;
+    // Only the DKIM signature names it, oversigned: as absent.
+    let lines = delivered.to_ascii_lowercase();
+    assert!(!lines.lines().any(|line| line.starts_with("verification-info:")), "{delivered}");
+    assert!(!delivered.contains("777111"), "{delivered}");
 }

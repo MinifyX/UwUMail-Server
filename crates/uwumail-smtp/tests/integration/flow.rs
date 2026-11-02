@@ -1024,7 +1024,7 @@ pub(crate) async fn spam_test_server(spam: SpamConfig, dmarc: Option<&str>) -> T
     spam_test_server_for(&["mini"], spam, dmarc).await
 }
 
-async fn spam_test_server_for(users: &[&str], spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
+pub(crate) async fn spam_test_server_for(users: &[&str], spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
     let config = SmtpConfig { trusted_relays: vec!["127.0.0.1".into()], ..SmtpConfig::default() };
     let spam = SpamConfig { blocklists: false, greylist_delay_secs: 0, ..spam };
     let a = start_with_spam("a.test", users, &[], config, spam).await;

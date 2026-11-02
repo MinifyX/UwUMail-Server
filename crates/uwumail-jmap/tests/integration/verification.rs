@@ -94,3 +94,37 @@ async fn the_query_lists_the_codes_newest_first_and_only_valid_ones_unless_asked
     let responses = server.api_using(MINI, &[CORE, MAIL], query(Value::Null)).await;
     assert_eq!(responses[0][1]["type"], "unknownMethod");
 }
+
+#[tokio::test]
+async fn the_query_pages_in_the_database() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let old = deliver_with(&server, "Alt", Some(code("111111", now() - 60))).await;
+    let first = deliver_with(&server, "Erster", Some(code("222222", now() + 600))).await;
+    let second = deliver_with(&server, "Zweiter", Some(code("333333", now() + 600))).await;
+    let third = deliver_with(&server, "Dritter", Some(code("444444", now() + 600))).await;
+
+    let using = [CORE, MAIL, VERIFICATION];
+    let query = |args: Value| {
+        let mut args = args;
+        args["accountId"] = json!(account);
+        args["calculateTotal"] = json!(true);
+        json!([["VerificationCode/query", args, "0"]])
+    };
+    let page = server.api_using(MINI, &using, query(json!({ "position": 1, "limit": 1 }))).await;
+    assert_eq!(page[0][1]["ids"], json!([second]), "{}", page[0]);
+    assert_eq!((page[0][1]["position"].as_u64(), page[0][1]["total"].as_u64()), (Some(1), Some(3)));
+    let page = server.api_using(MINI, &using, query(json!({ "position": -1 }))).await;
+    assert_eq!(page[0][1]["ids"], json!([first]), "{}", page[0]);
+    assert_eq!(page[0][1]["position"], 2);
+    let page = server.api_using(MINI, &using, query(json!({ "anchor": first, "anchorOffset": -1, "limit": 2 }))).await;
+    assert_eq!(page[0][1]["ids"], json!([second, first]), "{}", page[0]);
+    assert_eq!(page[0][1]["position"], 1);
+    let page = server.api_using(MINI, &using, query(json!({ "position": 5 }))).await;
+    assert_eq!(page[0][1]["ids"], json!([]), "{}", page[0]);
+    // The expired code is not in the default list, so it is no anchor there.
+    let page = server.api_using(MINI, &using, query(json!({ "anchor": old }))).await;
+    assert_eq!(page[0][1]["type"], "anchorNotFound", "{}", page[0]);
+    let page = server.api_using(MINI, &using, query(json!({ "anchor": third }))).await;
+    assert_eq!((page[0][1]["position"].as_u64(), &page[0][1]["ids"][0]), (Some(0), &json!(third)));
+}

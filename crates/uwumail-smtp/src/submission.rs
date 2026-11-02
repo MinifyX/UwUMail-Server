@@ -222,8 +222,9 @@ impl Smtp {
         let ctx = &self.inner;
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
-        // Labels are this server's to write too (security review 0.22 submission low).
-        let raw = headers::strip_label_headers(&headers::strip_faces(&raw));
+        // Labels are this server's to write too (security review 0.22 submission low), and so is
+        // `Verification-Info`, which the DKIM signature would vouch for (security-audit-0.26.0 VC-01).
+        let raw = headers::strip_verification_info(&headers::strip_label_headers(&headers::strip_faces(&raw)));
         // Verdicts are this server's to write. A local sender's own `Authentication-Results` in our
         // name or `X-Spam-Status` would reach local recipients as if we had checked the mail
         // (client review C-1, checked on the server).

@@ -36,11 +36,22 @@ error: the mail then goes through the guess below like every other.
 
 Whatever the sender writes, a code is never valid for longer than 24 hours,
 counted from when the mail was written or when it arrived, whichever is
-earlier.
+earlier. A code that has already expired when the mail arrives is no code: the
+mail is delivered without one, and nothing is pushed.
 
 UwUMail Server signs `Verification-Info` in its own outgoing mail, oversigned
 like `From` and `Subject`, so a header added on the way breaks the signature
-instead of riding along.
+instead of riding along. Because the domain key vouches for it, the header is
+removed from everything users submit, like `Face`: otherwise anyone with an
+address under a hosted domain could hand out codes the whole domain stands
+behind. There is no exception per account yet, so a service on a hosted
+domain that wants to send the header has to send through its own signer.
+
+A signed code mail stays valid when it is forwarded: DKIM signs the mail, not
+who it is for. Someone who receives a code from a service and forwards it gets
+the code shown at the next recipient as well, bound to the same origin. That is
+inherent to DKIM; the code only helps whoever holds the account it was sent
+for.
 
 ## The guess
 
@@ -52,10 +63,14 @@ customer number is left alone; newsletters with discount codes stay
 newsletters. A guessed code is valid for 15 minutes unless the text says
 otherwise, and its `origin` is the registrable From domain.
 
-A guess is marked `source: "heuristic"`. It is offered for autofill only when
-DMARC passed, so the domain it is bound to is really the sender's. Someone who
-would rather have no guesses at all switches them off in the portal (see
-below); signed headers are still read.
+A guess is marked `source: "heuristic"` and is only made when DMARC passed, so
+the domain it is bound to is really the sender's: forged mail neither shows a
+code nor uses up the real sender's limit. Someone who would rather have no
+guesses at all switches them off in the portal (see below); signed headers are
+still read.
+
+Mail over 1 MiB is not looked at: a code mail is small, and reading every big
+mail again would cost more than it finds.
 
 ## Limits and greylisting
 
@@ -64,15 +79,31 @@ hour. A service that sends more is either broken or abused to flood someone's
 notifications; mail past the limit arrives as normal mail without a code.
 
 A code from a signed header skips greylisting ([spam-filter.md](spam-filter.md)):
-it is useless after the retry half an hour later. Only within the same limit, so
-the fast lane cannot carry a flood past the greylist. Guessed codes wait like
+it is useless after the retry half an hour later. Each pass counts the moment it
+is granted, whether the mail then lands in the Inbox, in Junk, is discarded or
+forwarded, and two sessions at once cannot both take the last one. At most 10
+passes per account and sender within an hour, and 30 per account across all
+senders, so many domains do not multiply the limit. A pass lifts greylisting
+only when every recipient of the mail gets one; with one recipient past the
+limit or without a code, the mail waits for all of them. Guessed codes wait like
 any other mail.
+
+Pushes of codes ([jmap-verification.md](jmap-verification.md)) are limited too:
+at most 20 a minute and 60 an hour per account, and a bounded number on the way
+at once. The codes past that are kept and shown all the same, just not pushed.
 
 ## Clean-up
 
 Once a code expired, its mail moves from the Inbox to the Trash after the delay
 the person chose. Flagged mail and mail moved to another folder stay where they
-are. The server looks every five minutes.
+are. Only codes the server trusts are cleaned up: signed headers and guesses
+from mail that passed DMARC (today every kept guess), so a false positive or a
+phishing mail never takes itself out of sight. The server looks every five
+minutes and moves at most 500 mails per transaction.
+
+With clean-up `off`, codes are marked as handled all the same, so switching it
+on later does not move old mail at once. A code is forgotten 30 days after its
+mail came in; the mail itself stays.
 
 ## Settings
 

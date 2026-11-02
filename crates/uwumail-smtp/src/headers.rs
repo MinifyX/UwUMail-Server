@@ -325,6 +325,14 @@ pub fn strip_faces(raw: &[u8]) -> Vec<u8> {
     without(raw, |h| h.name.eq_ignore_ascii_case("Face"))
 }
 
+/// Removes `Verification-Info:` headers (security-audit-0.26.0 VC-01). The DKIM signature covers
+/// that header, so a receiver would take a code in it as vouched for by the domain; whoever may
+/// send from a hosted domain could then plant autofill codes for any origin under it. Nobody here
+/// may add one: there is no allowlist, see docs/verification-codes.md.
+pub fn strip_verification_info(raw: &[u8]) -> Vec<u8> {
+    without(raw, |h| h.name.eq_ignore_ascii_case("Verification-Info"))
+}
+
 /// Converts bare LF line endings to CRLF.
 pub fn normalize_line_endings(raw: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(raw.len() + raw.len() / 50);
@@ -353,6 +361,13 @@ mod tests {
         assert_eq!(&MESSAGE[body..], b"body\r\n");
         assert_eq!(count(MESSAGE, "authentication-results"), 2);
         assert_eq!(first_value(MESSAGE, "subject").as_deref(), Some("Hi"));
+    }
+
+    #[test]
+    fn strips_verification_info() {
+        let raw = b"Subject: Hi\r\nverification-info: kind=otp; origin=a.test;\r\n code=1234\r\nFace: x\r\n\r\nVerification-Info: body\r\n";
+        let stripped = String::from_utf8(strip_verification_info(raw)).unwrap();
+        assert_eq!(stripped, "Subject: Hi\r\nFace: x\r\n\r\nVerification-Info: body\r\n");
     }
 
     #[test]

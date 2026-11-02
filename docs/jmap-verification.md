@@ -64,7 +64,7 @@ The "codes" view: the ids of the emails with a code, newest first. Standard
 | --- | --- |
 | `filter` | `null` or `{ "expired": … }`. `false` (the default): only codes still valid; `true`: only expired ones; `null`: all |
 | `sort` | must be absent or empty; codes are always newest first |
-| `position`, `anchor`, `anchorOffset`, `limit`, `calculateTotal` | as usual; at most 256 ids per call |
+| `position`, `anchor`, `anchorOffset`, `limit`, `calculateTotal` | as usual; at most 256 ids per call. An `anchor` not in the filtered list is `anchorNotFound` |
 
 ```json
 ["VerificationCode/query", { "accountId": "a1", "calculateTotal": true }, "0"]
@@ -117,3 +117,8 @@ and with a `TTL` until the code expires, at least a minute and at most a day:
 a code nobody could use any more is not delivered late. It has no `Topic`, so
 two codes in a row do not replace each other at the push service. The usual
 `StateChange` for the new Email comes as well.
+
+At most 20 code pushes a minute and 60 an hour go to an account, and only a
+bounded number are on the way at once; past that a code is not pushed, but
+the `StateChange` still is and the code is in `VerificationCode/query`. Codes
+are forgotten 30 days after the mail came in: the property is `null` then.
