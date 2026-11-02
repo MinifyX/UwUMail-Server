@@ -148,9 +148,17 @@ interface SegmentedProps<T extends string> {
   label: string;
   /** Ties the group to a visible description, e.g. that of a SettingRow. */
   describedBy?: string;
+  disabled?: boolean;
 }
 
-export function Segmented<T extends string>({ value, onChange, options, label, describedBy }: SegmentedProps<T>) {
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  describedBy,
+  disabled,
+}: SegmentedProps<T>) {
   return (
     <div
       role="radiogroup"
@@ -164,9 +172,10 @@ export function Segmented<T extends string>({ value, onChange, options, label, d
           type="button"
           role="radio"
           aria-checked={value === option.value}
+          disabled={disabled}
           onClick={() => onChange(option.value)}
           className={clsx(
-            "h-8 shrink-0 rounded-full px-4 text-[13px] font-semibold whitespace-nowrap transition-colors",
+            "h-8 shrink-0 rounded-full px-4 text-[13px] font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60",
             value === option.value ? "bg-surface text-pink-ink shadow-sm" : "text-muted hover:text-ink",
           )}
         >

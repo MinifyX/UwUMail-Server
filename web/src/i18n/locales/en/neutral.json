@@ -2571,19 +2571,6 @@
       "undoSeconds": "{{seconds}} seconds",
       "saved": "Saved"
     },
-    "verification": {
-      "title": "Verification codes",
-      "intro": "Sign-in and confirmation codes that arrive by mail are shown in your mail app, ready to use. A code its sender signed does not wait in the greylist either.",
-      "heuristics": "Also recognise codes without a label",
-      "heuristicsHint": "Looks for a code in mail without the Verification-Info header. That is only a guess and never skips the greylist.",
-      "cleanup": "Clean up expired codes",
-      "cleanupHint": "When a mail whose code expired moves from the inbox to the trash. Flagged mail stays where it is.",
-      "cleanupOff": "Never",
-      "cleanupImmediately": "Right after it expires",
-      "cleanup24h": "A day after it expires",
-      "cleanup7d": "A week after it expires",
-      "saved": "Saved"
-    },
     "signatures": {
       "title": "Signatures",
       "intro": "Pick a domain and write one signature for all your addresses there. Mail apps and the webmail insert it as you write.",
@@ -5044,13 +5031,13 @@
       "label": "Clean up expired codes",
       "options": {
         "off": "Off",
-        "now": "Right away",
+        "immediately": "Right away",
         "24h": "After 24 h",
         "7d": "After 7 days"
       },
       "description": {
         "off": "Mail with codes stays in the inbox.",
-        "now": "As soon as a code expires, the mail moves to the trash.",
+        "immediately": "As soon as a code expires, the mail moves to the trash.",
         "24h": "A day after it expires, the mail moves to the trash. (Default)",
         "7d": "A week after it expires, the mail moves to the trash."
       }
@@ -5061,6 +5048,6 @@
       "left": "{{time}} left",
       "caption": "This is how a code appears above the mail list."
     },
-    "localOnly": "For now these settings only apply in this browser."
+    "saved": "Saved"
   }
 }

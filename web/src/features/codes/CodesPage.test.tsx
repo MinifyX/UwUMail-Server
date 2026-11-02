@@ -6,18 +6,21 @@ const api = vi.fn();
 let preferences: Record<string, unknown> = {};
 vi.mock("@/lib/api", () => ({ api: (...args: unknown[]) => api(...args) }));
 vi.mock("@/features/session/session", () => ({ useSession: () => ({ data: { preferences } }) }));
+vi.mock("@/lib/errors", () => ({ useErrorText: () => (error: unknown) => String(error) }));
 vi.mock("@/i18n", () => ({ useT: () => ({ t: (key: string) => key, i18n: { language: "en" } }) }));
 
-const { VerificationCard } = await import("./VerificationCard");
+const { CodesPage } = await import("./CodesPage");
 
 function show() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <VerificationCard />
+      <CodesPage />
     </QueryClientProvider>,
   );
 }
+
+const radio = (value: string) => screen.getByRole("radio", { name: `codes.cleanup.options.${value}` });
 
 beforeEach(() => {
   api.mockReset();
@@ -26,13 +29,12 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("verification codes", () => {
+describe("CodesPage", () => {
   it("starts with the server's defaults and saves each change as a preference", async () => {
     show();
     const toggle = screen.getByRole("switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-    const select = screen.getByLabelText("mailbox.verification.cleanup") as HTMLSelectElement;
-    expect(select.value).toBe("24h");
+    expect(radio("24h").getAttribute("aria-checked")).toBe("true");
 
     fireEvent.click(toggle);
     await waitFor(() =>
@@ -41,8 +43,8 @@ describe("verification codes", () => {
         body: { mailVerificationHeuristics: "off" },
       }),
     );
-    await waitFor(() => expect(select.disabled).toBe(false));
-    fireEvent.change(select, { target: { value: "immediately" } });
+    await waitFor(() => expect((radio("immediately") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(radio("immediately"));
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith("/api/account/preferences", {
         method: "PATCH",
@@ -55,6 +57,14 @@ describe("verification codes", () => {
     preferences = { mailVerificationHeuristics: "off", mailVerificationCleanup: "7d" };
     show();
     expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
-    expect((screen.getByLabelText("mailbox.verification.cleanup") as HTMLSelectElement).value).toBe("7d");
+    expect(radio("7d").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("goes back to the stored value when saving fails", async () => {
+    api.mockImplementation(() => Promise.reject(new Error("nope")));
+    show();
+    fireEvent.click(radio("off"));
+    await waitFor(() => expect(api).toHaveBeenCalled());
+    await waitFor(() => expect(radio("24h").getAttribute("aria-checked")).toBe("true"));
   });
 });

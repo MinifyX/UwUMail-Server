@@ -1,60 +1,35 @@
-import { create } from "zustand";
+/**
+ * Verification code settings are account preferences (`PATCH /api/account/preferences`, read back in
+ * `session.preferences`). The server accepts exactly these values (routes/account.rs) and mirrors them
+ * to apps as JMAP UserSettings `verificationHeuristics` / `verificationCleanup` (docs/verification-codes.md).
+ */
 
-/** What happens to a mail once its code has expired: it stays, or goes to the trash after a while. */
-export type CodeCleanup = "off" | "now" | "24h" | "7d";
-
-export const CODE_CLEANUPS: readonly CodeCleanup[] = ["off", "now", "24h", "7d"];
+/** When a mail whose code expired moves from the inbox to the trash. */
+export const CODE_CLEANUPS = ["off", "immediately", "24h", "7d"] as const;
+export type CodeCleanup = (typeof CODE_CLEANUPS)[number];
 
 export interface CodeSettings {
-  /** Look for codes in German and English mails without a signed Verification-Info header. */
+  /** Also guess codes in mail without a signed Verification-Info header. */
   detect: boolean;
   cleanup: CodeCleanup;
 }
 
+/** What the server uses when nobody chose. */
 export const DEFAULT_CODE_SETTINGS: CodeSettings = { detect: true, cleanup: "24h" };
 
-/** Keeps only known fields with allowed values. */
-export function sanitizeCodeSettings(raw: unknown): CodeSettings {
-  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+/** Reads the settings from the stored preferences; unknown or missing values mean the default. */
+export function codeSettingsFromPreferences(preferences: Record<string, unknown> | undefined): CodeSettings {
+  const cleanup = preferences?.mailVerificationCleanup;
   return {
-    detect: typeof value.detect === "boolean" ? value.detect : DEFAULT_CODE_SETTINGS.detect,
-    cleanup: CODE_CLEANUPS.includes(value.cleanup as CodeCleanup)
-      ? (value.cleanup as CodeCleanup)
-      : DEFAULT_CODE_SETTINGS.cleanup,
+    detect: preferences?.mailVerificationHeuristics !== "off",
+    cleanup: CODE_CLEANUPS.includes(cleanup as CodeCleanup) ? (cleanup as CodeCleanup) : DEFAULT_CODE_SETTINGS.cleanup,
   };
 }
 
-/*
- * TODO(main session): the server has no API for this yet. Proposed: the account preferences
- * (`PATCH /api/account/preferences`, read back in `session.preferences`) get
- *   verificationCodes.detect: boolean            (default true)
- *   verificationCodes.cleanup: "off" | "now" | "24h" | "7d"   (default "24h"; expired → trash)
- * Until then the choice lives in this browser only, and the page says so.
- */
-const STORAGE_KEY = "uwumail-portal-codes";
-
-function load(): CodeSettings {
-  try {
-    return sanitizeCodeSettings(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}"));
-  } catch {
-    return DEFAULT_CODE_SETTINGS;
-  }
+/** The preference fields to send for a change. */
+export function codeSettingsPatch(changes: Partial<CodeSettings>): Record<string, string> {
+  const patch: Record<string, string> = {};
+  if (changes.detect !== undefined) patch.mailVerificationHeuristics = changes.detect ? "on" : "off";
+  if (changes.cleanup !== undefined) patch.mailVerificationCleanup = changes.cleanup;
+  return patch;
 }
-
-interface CodeSettingsState extends CodeSettings {
-  set: (changes: Partial<CodeSettings>) => void;
-}
-
-export const useCodeSettings = create<CodeSettingsState>((set) => ({
-  ...load(),
-  set: (changes) =>
-    set((state) => {
-      const next = sanitizeCodeSettings({ detect: state.detect, cleanup: state.cleanup, ...changes });
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // Private windows may refuse storage; the choice then holds for this visit.
-      }
-      return next;
-    }),
-}));

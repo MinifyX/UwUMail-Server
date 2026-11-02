@@ -2571,19 +2571,6 @@
       "undoSeconds": "{{seconds}} Sekunden",
       "saved": "Gespeichert"
     },
-    "verification": {
-      "title": "Bestätigungscodes",
-      "intro": "Codes zum Anmelden oder Bestätigen, die per Mail kommen, zeigt dir die Mail-App gleich zum Übernehmen an. Ein Code, den der Absender signiert hat, wartet auch nicht in der Greylist.",
-      "heuristics": "Auch Codes ohne Kennzeichnung erkennen",
-      "heuristicsHint": "Sucht in Mails ohne den Verification-Info-Header nach einem Code. Das ist nur eine Vermutung und hilft nie an der Greylist vorbei.",
-      "cleanup": "Abgelaufene Codes aufräumen",
-      "cleanupHint": "Wann eine Mail mit abgelaufenem Code aus dem Posteingang in den Papierkorb wandert. Markierte Mails bleiben liegen.",
-      "cleanupOff": "Nie",
-      "cleanupImmediately": "Sofort nach Ablauf",
-      "cleanup24h": "Einen Tag nach Ablauf",
-      "cleanup7d": "Eine Woche nach Ablauf",
-      "saved": "Gespeichert"
-    },
     "signatures": {
       "title": "Signaturen",
       "intro": "Wähle eine Domain und schreib eine Signatur für alle deine Adressen dort. Mail-Apps und die Webmail fügen sie beim Schreiben ein.",
@@ -5044,13 +5031,13 @@
       "label": "Abgelaufene Codes aufräumen",
       "options": {
         "off": "Aus",
-        "now": "Sofort",
+        "immediately": "Sofort",
         "24h": "Nach 24 h",
         "7d": "Nach 7 Tagen"
       },
       "description": {
         "off": "Mails mit Codes bleiben im Posteingang.",
-        "now": "Sobald ein Code abläuft, wandert die Mail in den Papierkorb.",
+        "immediately": "Sobald ein Code abläuft, wandert die Mail in den Papierkorb.",
         "24h": "Einen Tag nach Ablauf wandert die Mail in den Papierkorb. (Standard)",
         "7d": "Eine Woche nach Ablauf wandert die Mail in den Papierkorb."
       }
@@ -5061,6 +5048,6 @@
       "left": "noch {{time}}",
       "caption": "So erscheint ein Code über der Mailliste."
     },
-    "localOnly": "Diese Einstellungen gelten vorerst nur in diesem Browser."
+    "saved": "Gespeichert"
   }
 }

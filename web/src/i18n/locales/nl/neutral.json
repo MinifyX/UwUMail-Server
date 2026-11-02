@@ -2571,19 +2571,6 @@
       "undoSeconds": "{{seconds}} seconden",
       "saved": "Opgeslagen"
     },
-    "verification": {
-      "title": "Verificatiecodes",
-      "intro": "Inlog- en bevestigingscodes die per mail binnenkomen, toont je mail-app meteen klaar voor gebruik. Een code die de afzender heeft ondertekend, wacht ook niet in de greylist.",
-      "heuristics": "Ook codes zonder markering herkennen",
-      "heuristicsHint": "Zoekt een code in mail zonder de Verification-Info-header. Dat is alleen een gok en helpt nooit langs de greylist.",
-      "cleanup": "Verlopen codes opruimen",
-      "cleanupHint": "Wanneer een mail met een verlopen code van de inbox naar de prullenbak gaat. Gemarkeerde mail blijft staan.",
-      "cleanupOff": "Nooit",
-      "cleanupImmediately": "Meteen na het verlopen",
-      "cleanup24h": "Een dag na het verlopen",
-      "cleanup7d": "Een week na het verlopen",
-      "saved": "Opgeslagen"
-    },
     "signatures": {
       "title": "Handtekeningen",
       "intro": "Kies een domein en schrijf één handtekening voor al je adressen daar. Mail-apps en de webmail voegen hem in tijdens het schrijven.",
@@ -5044,13 +5031,13 @@
       "label": "Verlopen codes opruimen",
       "options": {
         "off": "Uit",
-        "now": "Meteen",
+        "immediately": "Meteen",
         "24h": "Na 24 u",
         "7d": "Na 7 dagen"
       },
       "description": {
         "off": "Mail met codes blijft in het postvak IN.",
-        "now": "Zodra een code verloopt, gaat de mail naar de prullenbak.",
+        "immediately": "Zodra een code verloopt, gaat de mail naar de prullenbak.",
         "24h": "Een dag na het verlopen gaat de mail naar de prullenbak. (Standaard)",
         "7d": "Een week na het verlopen gaat de mail naar de prullenbak."
       }
@@ -5061,6 +5048,6 @@
       "left": "nog {{time}}",
       "caption": "Zo verschijnt een code boven de maillijst."
     },
-    "localOnly": "Deze instellingen gelden voorlopig alleen in deze browser."
+    "saved": "Opgeslagen"
   }
 }

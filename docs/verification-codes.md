@@ -107,12 +107,12 @@ mail came in; the mail itself stays.
 
 ## Settings
 
-In the portal under *Mailbox → Verification codes*, synced to apps as
+In the portal on the page *Verification codes* (`/account/codes`), synced to apps as
 `UserSettings` ([jmap-settings.md](jmap-settings.md)):
 
 | Portal | Sync key | Values | Default |
 | --- | --- | --- | --- |
-| Also recognise codes without a label | `verificationHeuristics` | on / off | on |
+| Detect codes automatically (DE/EN) | `verificationHeuristics` | on / off | on |
 | Clean up expired codes | `verificationCleanup` | `off`, `immediately`, `24h`, `7d` | `24h` |
 
 ## For clients
