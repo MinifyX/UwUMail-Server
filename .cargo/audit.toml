@@ -8,4 +8,8 @@ ignore = [
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+    # zip 8 aborts the process in `ZipArchive::extract` on a symlink entry with a huge declared
+    # size; fixed only in zip 9 as well. The same holds: nothing here calls `extract` (security
+    # audit 2026-11 M-19).
+    "RUSTSEC-2026-0429",
 ]
