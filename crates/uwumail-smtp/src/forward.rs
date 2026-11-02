@@ -125,7 +125,13 @@ pub(crate) async fn send(
                     }
                 }
             }
-            None => remote.push(NewQueueRecipient { address: address.clone(), notify_flags: 0, orcpt: None }),
+            // A sender nothing proved may be forged: a forward that fails then goes quiet
+            // instead of bouncing to whoever was named (security audit 2026-11 N-09).
+            None => remote.push(NewQueueRecipient {
+                address: address.clone(),
+                notify_flags: if forwarder.proof.envelope { 0 } else { smtp_proto::RCPT_NOTIFY_NEVER },
+                orcpt: None,
+            }),
         }
     }
 

@@ -671,6 +671,9 @@ where
                     // A phone still using the right account password should not lock out its network.
                     MailAuthDenied::AppPasswordRequired => {}
                     MailAuthDenied::UnknownLogin => self.store.unknown_login(self.peer.ip(), username, "imap").await,
+                    // A token names its login itself; the name beside it is only believed for a
+                    // real account (security audit 2026-11 N-09).
+                    _ if challenge.is_some() => self.store.token_refused(self.peer.ip(), username).await,
                     _ => self.imap.limiter.record_failure(self.peer.ip(), username),
                 }
                 self.auth_failures += 1;

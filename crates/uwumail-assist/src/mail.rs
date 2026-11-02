@@ -1,7 +1,8 @@
 //! A mail made ready for a model: its text without the quoted history, cut to size, with the few
 //! headers that matter. Only what a feature needs leaves the server.
 
-use mail_parser::{MessageParser, PartType};
+use mail_parser::PartType;
+use uwumail_store::mime_limits;
 use uwumail_store::tnef::{self, decoder::safelinks};
 use uwumail_store::{EmailAddress, EmailRecord};
 
@@ -50,7 +51,8 @@ impl MailText {
     /// Reads a message that is not stored, from its bytes alone: for evaluation tools that judge
     /// mail outside a mailbox.
     pub fn parse(raw: &[u8], max_chars: usize) -> MailText {
-        let parsed = MessageParser::default().parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
+        // Through the MIME limits like every message from outside (security audit 2026-11 N-09).
+        let parsed = mime_limits::parse_message(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
         let list = |address: Option<&mail_parser::Address<'_>>| -> Vec<EmailAddress> {
             address
                 .into_iter()
@@ -111,7 +113,7 @@ fn body(raw: &[u8]) -> (String, Vec<String>, Vec<(String, String)>) {
     // read as if whole (client review C4-1, checked on the server).
     let headers_cut = raw.len() > MAX_PARSE_BYTES && !header_block_ends(&raw[..MAX_PARSE_BYTES]);
     let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
-    let parsed = MessageParser::default().parse(raw);
+    let parsed = mime_limits::parse_message(raw);
     match &parsed {
         Some(message) => {
             let mut text = message.body_text(0).map(|text| text.into_owned()).unwrap_or_default();

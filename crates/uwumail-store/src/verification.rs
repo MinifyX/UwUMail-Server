@@ -19,7 +19,6 @@
 
 use std::sync::LazyLock;
 
-use mail_parser::MessageParser;
 use regex::Regex;
 
 /// The longest header value read; a real one is well under 300 bytes.
@@ -211,7 +210,7 @@ pub fn detect(raw: &[u8], auth: &Authenticity, received_at: i64) -> Option<Detec
 }
 
 fn find(raw: &[u8], auth: &Authenticity, received_at: i64) -> Option<Detected> {
-    let message = MessageParser::default().parse(raw)?;
+    let message = crate::mime_limits::parse_message(raw)?;
     let from_domain = auth.from_domain.as_deref().and_then(registrable_domain)?;
 
     if auth.header_signed && auth.dmarc_passed {
