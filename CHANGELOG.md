@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.26.1
+
+First published release with verification codes: the 0.26.0 tag never produced a release, because the image scan stopped it before anything was pushed. Everything listed under 0.26.0 ships here.
+
+### Security
+
+- The container image now uses a distroless base with OpenSSL 3.5.7-1~deb13u3, which fixes CVE-2026-75804 and CVE-2026-84782. UwUMail itself uses rustls, and nothing in the image uses QUIC or DTLS. The accepted findings for these two are gone from `.trivyignore`.
+
 ## 0.26.0
 
 ### Added
