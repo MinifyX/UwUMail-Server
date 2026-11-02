@@ -25,6 +25,12 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ### Changed
 
+- **Webmail 0.24.0 (`74b1be3`): redesign, code bar and security fixes.** The webmail follows
+  UwUSuite-Design 1.9: an icon bar, a top bar with global search (⌘K; the command palette moved to
+  ⌘⇧K), list and reader in one card, the list grouped by day, and a tab bar on phones. A bar above
+  the list shows the active verification codes with sender, countdown and a copy button. Also in
+  this webmail: a font rewrite that a mail could stall no longer can, stricter frames for reader
+  and print, and more attachment types count as programs.
 - Portal redesign: UwU Sans and JetBrains Mono bundled, tokens from UwUSuite-Design 1.9, a sidebar
   with a switch between *My account* and *Server* (a tab bar on narrow screens), large page titles,
   an account overview with tiles and next steps, and a server overview with status, accounts with
