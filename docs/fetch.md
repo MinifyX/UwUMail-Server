@@ -371,6 +371,18 @@ Two things follow from that:
   opening it is. So a mailbox that was just set up carries its outgoing server
   from the start and gets the switch after its first run — the dialog for a new
   mailbox says so instead of offering a switch that would be refused.
+* **And the address has to show it is the account's.** A fetch that works
+  proves the login, not the address typed in next to it. So once sending is
+  switched on, the next run mails the address itself a message with a secret
+  code (from `postmaster@` of the account's domain, with the null sender, so it
+  bounces to nobody). When a later run brings that message in, the address is
+  taken as the account's and only then may it be sent from — through the
+  provider and to people here alike. Nobody types the code: the fetcher finds
+  it in the `X-UwUMail-Sender-Proof` header or the text. Until then the row's
+  `senderVerified` is `false` and sending as the address is refused as if the
+  switch were off; the code is mailed again at most once a day. Rows that could
+  send before this check existed start out unproven and get their code the same
+  way (security audit 2026-11 M-01).
 
 Mail from such an address then goes out through the provider whoever it is
 addressed to — before the server's own smarthost, if one is configured, because
