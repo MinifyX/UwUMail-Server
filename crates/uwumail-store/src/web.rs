@@ -11,6 +11,9 @@ use crate::{Account, Result, Store, StoreError, now, random_bytes};
 
 /// A session is only written back when it was last seen longer ago than this.
 const TOUCH_INTERVAL_SECS: i64 = 300;
+/// However often it is used, a session ends this long after the login that began it: a stolen
+/// cookie does not stay good for ever (security audit 2026-11 N-09).
+const WEB_SESSION_MAX_AGE_SECS: i64 = 30 * 24 * 3600;
 
 /// A freshly created session. `token` goes into the cookie and is never stored.
 #[derive(Clone)]
@@ -86,8 +89,9 @@ impl Store {
         Ok(session)
     }
 
-    /// Looks up a session by its cookie token and extends it. Expired sessions and
-    /// sessions of accounts that may not log in count as missing.
+    /// Looks up a session by its cookie token and extends it, though never past
+    /// [`WEB_SESSION_MAX_AGE_SECS`] after it began. Expired sessions and sessions of accounts that
+    /// may not log in count as missing.
     pub async fn web_session(&self, token: &str, lifetime_secs: i64) -> Result<Option<WebSession>> {
         let hash = token_hash(token);
         let lookup_hash = hash.clone();
@@ -121,12 +125,13 @@ impl Store {
         let now = now();
         // A service never has a session, and one it had from before stops counting the moment it
         // becomes one.
-        if expires_at <= now || !account.can_use_portal() {
+        let ends_at = created_at.saturating_add(WEB_SESSION_MAX_AGE_SECS);
+        if expires_at <= now || ends_at <= now || !account.can_use_portal() {
             return Ok(None);
         }
-        let mut session = WebSession { account, csrf_token, created_at, expires_at };
+        let mut session = WebSession { account, csrf_token, created_at, expires_at: expires_at.min(ends_at) };
         if now - last_seen_at >= TOUCH_INTERVAL_SECS {
-            session.expires_at = now + lifetime_secs;
+            session.expires_at = now.saturating_add(lifetime_secs).min(ends_at);
             let expires_at = session.expires_at;
             self.write(move |tx| {
                 tx.execute(
@@ -245,8 +250,11 @@ mod tests {
         assert!(!shown.contains("cookie-token") && !shown.contains("csrf-token"), "{shown}");
     }
 
+    use rusqlite::params;
+
+    use super::{TOUCH_INTERVAL_SECS, WEB_SESSION_MAX_AGE_SECS, token_hash};
     use crate::test_support::store;
-    use crate::{NewAccount, Role};
+    use crate::{NewAccount, Role, now};
 
     async fn account(store: &crate::Store) -> crate::Account {
         store.create_domain("example.org").await.unwrap();
@@ -283,6 +291,26 @@ mod tests {
 
         let expired = store.create_web_session(nyu.id, -1, "", "").await.unwrap();
         assert!(store.web_session(&expired.token, 3600).await.unwrap().is_none());
+
+        // In use every day, a session still ends a while after its login.
+        let old = store.create_web_session(nyu.id, 3600, "", "").await.unwrap();
+        let age = |days: i64| {
+            let hash = token_hash(&old.token);
+            let began = now() - days * 24 * 3600;
+            store.write(move |tx| {
+                tx.execute(
+                    "UPDATE web_sessions SET created_at = ?1, last_seen_at = ?2 WHERE token_hash = ?3",
+                    params![began, now() - TOUCH_INTERVAL_SECS, hash],
+                )?;
+                Ok(())
+            })
+        };
+        age(29).await.unwrap();
+        let found = store.web_session(&old.token, 14 * 24 * 3600).await.unwrap().expect("still young enough");
+        assert!(found.expires_at <= found.created_at + WEB_SESSION_MAX_AGE_SECS, "extended only up to the end");
+        age(31).await.unwrap();
+        assert!(store.web_session(&old.token, 3600).await.unwrap().is_none(), "too old, however busy");
+        store.delete_web_session(&old.token).await.unwrap();
 
         let other = store.create_web_session(nyu.id, 3600, "", "").await.unwrap();
         assert_eq!(store.delete_web_sessions(nyu.id).await.unwrap(), 1);

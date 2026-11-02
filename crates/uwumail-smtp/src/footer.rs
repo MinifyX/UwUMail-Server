@@ -18,8 +18,8 @@ use mail_parser::decoders::base64::base64_decode;
 use mail_parser::decoders::charsets::map::charset_decoder;
 use mail_parser::decoders::html::html_to_text;
 use mail_parser::decoders::quoted_printable::quoted_printable_decode;
-use mail_parser::{Encoding, Message, MessageParser, MimeHeaders, PartType};
-use uwumail_store::{SignatureText, escape_html};
+use mail_parser::{Encoding, Message, MimeHeaders, PartType};
+use uwumail_store::{SignatureText, escape_html, mime_limits};
 
 use crate::headers;
 
@@ -279,7 +279,8 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
     if footer.is_empty() {
         return Footer::AlreadyThere;
     }
-    let Some(message) = MessageParser::new().parse(raw) else {
+    // Through the MIME limits like every message from outside (security audit 2026-11 N-09).
+    let Some(message) = mime_limits::parse_message(raw) else {
         return Footer::Skipped("not a message");
     };
     if message.parts.is_empty() {
@@ -365,7 +366,7 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
     }
     // Whatever the text held, the message the recipients get has the structure every check before
     // saw (security review 0.22 SIG-1).
-    match MessageParser::new().parse(&out) {
+    match mime_limits::parse_message(&out) {
         Some(changed) if shape(&changed, &changed_parts) == shape(&message, &changed_parts) => Footer::Added(out),
         _ => Footer::Skipped("the footer would change the message structure"),
     }
@@ -373,6 +374,8 @@ pub fn append(raw: &[u8], footer: &SignatureText) -> Footer {
 
 #[cfg(test)]
 mod tests {
+    use mail_parser::MessageParser;
+
     use super::*;
 
     fn footer() -> SignatureText {
@@ -459,6 +462,14 @@ mod tests {
 
         let raw = "From: mini@example.org\nContent-Type: text/plain; charset=x-unknown-thing\n\nHallo\n";
         assert!(matches!(append(raw.replace('\n', "\r\n").as_bytes(), &footer()), Footer::Skipped(_)));
+
+        // A message the MIME limits refuse is not taken apart here either (security audit 2026-11 N-09).
+        let mut deep = b"From: mini@example.org\r\n".to_vec();
+        for _ in 0..=uwumail_store::mime_limits::MAX_MIME_DEPTH {
+            deep.extend_from_slice(b"Content-Type: message/rfc822\r\n\r\nSubject: layer\r\n");
+        }
+        deep.extend_from_slice(b"\r\nHallo\r\n");
+        assert!(matches!(append(&deep, &footer()), Footer::Skipped("not a message")));
     }
 
     #[test]
