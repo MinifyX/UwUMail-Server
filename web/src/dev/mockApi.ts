@@ -1037,6 +1037,8 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "delivery.max_lifetime_hours": { value: 120, source: "default" },
   "smtp.max_message_size": { value: 52_428_800, source: "default" },
   "smtp.max_recipients": { value: 100, source: "default" },
+  "smtp.max_recipients_per_hour": { value: 500, source: "default" },
+  "smtp.max_recipients_per_day": { value: 2000, source: "default" },
   "smtp.verify_senders": { value: true, source: "default" },
   "smtp.enforce_dmarc_reject": { value: true, source: "default" },
   "smtp.require_tls_for_auth": { value: true, source: "default" },

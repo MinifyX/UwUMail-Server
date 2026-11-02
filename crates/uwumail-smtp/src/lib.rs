@@ -43,6 +43,7 @@ mod reports;
 mod rules;
 pub mod scheduling;
 mod scheduling_texts;
+mod send_limit;
 mod sender_lists;
 pub mod servercheck;
 pub mod sieve;
@@ -155,6 +156,8 @@ pub(crate) struct Context {
     brand: RwLock<Arc<BrandConfig>>,
     /// Signing in at Microsoft and Google for fetched mailboxes, and their tokens.
     pub(crate) provider_oauth: provider_oauth::ProviderOAuth,
+    /// Recipients each account sent to lately, for `smtp.max_recipients_per_hour` and `_per_day`.
+    pub(crate) send_limits: send_limit::SendLimits,
 }
 
 /// The settings in effect right now. Take a snapshot per connection or delivery.
@@ -253,6 +256,7 @@ impl Smtp {
                 connector: RwLock::new(None),
                 brand: RwLock::new(Arc::new(BrandConfig::default())),
                 provider_oauth: provider_oauth::ProviderOAuth::default(),
+                send_limits: send_limit::SendLimits::default(),
             }),
         })
     }

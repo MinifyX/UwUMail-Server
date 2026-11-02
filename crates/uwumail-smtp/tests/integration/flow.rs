@@ -294,6 +294,41 @@ async fn a_bcc_after_a_malformed_header_line_is_never_sent() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_account_sends_to_only_so_many_people_an_hour() {
+    // Security audit 2026-11 M-02: a taken-over login is not a spam cannon, on any door.
+    use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
+    let config = SmtpConfig { max_recipients_per_hour: 3, max_recipients_per_day: 50, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "ami", "bea"], &[], config).await;
+    let mailer = a.mailer("mini@a.test", PASSWORD, false);
+    mailer.send(mail("mini@a.test", &["ami@a.test", "bea@a.test"], "eins")).await.unwrap();
+    // Two more do not fit into the hour: asked to come back later, and nobody gets it.
+    let refused = mailer.send(mail("mini@a.test", &["ami@a.test", "bea@a.test"], "zwei")).await;
+    let refused = refused.expect_err("over the hourly limit");
+    assert!(refused.is_transient() && refused.to_string().contains("Sending limit"), "{refused}");
+    // One more still fits, then the hour is full on every door.
+    mailer.send(mail("mini@a.test", &["ami@a.test"], "drei")).await.unwrap();
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let submit = || Submission {
+        account: account.clone(),
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("bea@a.test")],
+        raw: b"From: mini@a.test\r\nTo: bea@a.test\r\nSubject: vier\r\n\r\nHallo\r\n".to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    // A message held for later is not refused for the hour it was written in.
+    a.smtp.check_submission(&submit()).await.unwrap();
+    assert!(matches!(a.smtp.submit(submit()).await, Err(SubmitError::RateLimited("hour"))));
+    assert_eq!(a.wait_for_inbox("ami@a.test", 2).await.len(), 2);
+    assert_eq!(a.wait_for_inbox("bea@a.test", 1).await.len(), 1);
+    // Someone else's budget is their own.
+    a.mailer("ami@a.test", PASSWORD, false)
+        .send(mail("ami@a.test", &["mini@a.test", "bea@a.test"], "x"))
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_size_limit_holds_with_the_company_footer_in() {
     use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
     use uwumail_store::{CompanySignature, CompanySignatureMode};

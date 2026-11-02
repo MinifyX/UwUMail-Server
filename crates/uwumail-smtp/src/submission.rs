@@ -59,6 +59,10 @@ pub enum SubmitError {
     AccountLocked,
     #[error("too many recipients")]
     TooManyRecipients,
+    /// The account sent to as many people as it may within this window ("hour" or "day"); later
+    /// it may again.
+    #[error("this account sent to too many recipients in the last {0}, please try again later")]
+    RateLimited(&'static str),
     #[error("the message is larger than this server accepts")]
     TooLarge,
     #[error("the message has a malformed header block")]
@@ -147,6 +151,7 @@ impl Smtp {
             tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
             return Err(SubmitError::Virus(name));
         }
+        self.take_send_budget(&account, recipients.len())?;
         self.submit_checked(account, mail_from, recipients, raw, env_id, trace, from).await
     }
 
@@ -206,6 +211,26 @@ impl Smtp {
             return Err(SubmitError::TooLarge);
         }
         Ok(())
+    }
+
+    /// Counts `recipients` against the account's hourly and daily limit, or refuses for now. Only
+    /// [`Smtp::submit`] counts: a message held for later is checked when it actually goes, since
+    /// the limit is about the hour it is sent in (security audit 2026-11 M-02).
+    fn take_send_budget(&self, account: &Account, recipients: usize) -> Result<(), SubmitError> {
+        let live = self.inner.live();
+        let (per_hour, per_day) = (live.smtp.max_recipients_per_hour, live.smtp.max_recipients_per_day);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        self.inner.send_limits.take(account.id, recipients, per_hour, per_day, now).map_err(|window| {
+            tracing::warn!(
+                login = %account.login,
+                recipients,
+                window = window.name(),
+                per_hour,
+                per_day,
+                "refused to send for now, the account reached its sending limit"
+            );
+            SubmitError::RateLimited(window.name())
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
