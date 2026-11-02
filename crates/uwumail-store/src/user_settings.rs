@@ -56,6 +56,10 @@ const MIRRORED: &[(&str, &str, Mirror)] = &[
     ("mailAppearance", "mailAppearance", Mirror::Text),
     ("senderPictures", "mailSenderPictures", Mirror::OnOff),
     ("undoSendSeconds", "mailUndoSend", Mirror::Number),
+    // Codes guessed from the text, and when mail with an expired code goes to the Trash
+    // (docs/verification-codes.md).
+    ("verificationHeuristics", "mailVerificationHeuristics", Mirror::OnOff),
+    ("verificationCleanup", "mailVerificationCleanup", Mirror::Text),
 ];
 
 /// How long a message waits before it goes, when the person has not chosen: long enough to
@@ -371,6 +375,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         "language" => return one_of(key, value, &["system", "de", "en", "fr", "nl", "ja", "zh"]),
         "conversations"
         | "senderPictures"
+        | "verificationHeuristics"
         | "linkConfirm"
         | "darkImages"
         | "assist.refineEvents"
@@ -382,6 +387,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         "assist.currency" => return one_of(key, value, &["EUR", "USD"]),
         "nyu.animations" => return one_of(key, value, &["on", "reduced", "off"]),
         "mailAppearance" => return one_of(key, value, &["auto", "light", "dark"]),
+        "verificationCleanup" => return one_of(key, value, &["off", "immediately", "24h", "7d"]),
         "undoSendSeconds" => {
             return match value.as_u64() {
                 Some(0 | 5 | 10 | 20 | 30) => Ok(()),
@@ -678,6 +684,8 @@ mod tests {
             ("mailAppearance", json!("auto"), json!("system")),
             ("senderPictures", json!(false), json!(0)),
             ("undoSendSeconds", json!(20), json!(15)),
+            ("verificationHeuristics", json!(false), json!("off")),
+            ("verificationCleanup", json!("7d"), json!("1h")),
             ("linkConfirm", json!(true), json!(null)),
             ("darkImages", json!(false), json!("on")),
             ("assist.currency", json!("USD"), json!("usd")),

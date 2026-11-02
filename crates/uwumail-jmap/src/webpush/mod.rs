@@ -3,14 +3,16 @@
 //! so an app hears of new mail while it is closed. See docs/jmap-push.md.
 //!
 //! Only the state strings leave the server, never content: encrypted for the device when it gave
-//! keys (RFC 8291), and signed with the server's VAPID key (RFC 8292, RFC 9749). Changes are
+//! keys (RFC 8291), and signed with the server's VAPID key (RFC 8292, RFC 9749). The one exception
+//! is a verification code, and only to a subscription that asked for `VerificationCode` and gave
+//! keys, so the push service never sees it (docs/jmap-verification.md). Changes are
 //! collected for a moment and a subscription gets at most one push every few seconds; a push
 //! service that answers 404 or 410 ends the subscription, and one that fails is asked again later.
 
 pub(crate) mod ece;
 pub(crate) mod vapid;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -19,7 +21,7 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use serde_json::{Map, Value, json};
-use tokio::sync::{OnceCell, broadcast, watch};
+use tokio::sync::{OnceCell, Semaphore, broadcast, watch};
 use uwumail_smtp::egress::Egress;
 use uwumail_store::{PushTarget, Store};
 
@@ -48,6 +50,18 @@ const STATE_TTL_SECS: u32 = 12 * 3600;
 const ALERT_TTL_SECS: u32 = 3600;
 /// The verification code is only of use while the subscription is young (it goes after a day).
 const VERIFICATION_TTL_SECS: u32 = 24 * 3600;
+/// A verification code is kept by the push service until it expires, but at least a minute (a
+/// code about to expire is still worth showing) and at most a day.
+const CODE_TTL_MIN_SECS: i64 = 60;
+const CODE_TTL_MAX_SECS: i64 = 24 * 3600;
+/// Code pushes skip the bundling and go out urgent, so they have limits of their own
+/// (security-audit-0.26.0 VC-04): per account at most this many a minute and an hour, whatever the
+/// senders; the codes past them are in the mailbox all the same.
+const CODE_PUSHES_PER_MINUTE: usize = 20;
+const CODE_PUSHES_PER_HOUR: usize = 60;
+/// And at most this many code pushes on the way at once, all accounts together. Past that a code
+/// is not pushed; the StateChange still tells the device about the mail.
+const CODE_PUSHES_IN_FLIGHT: usize = 32;
 /// A later StateChange replaces an earlier one still waiting at the push service (RFC 8030, 5.4).
 const TOPIC: &str = "jmap-state";
 /// Expired subscriptions and those whose login ended are dropped this often.
@@ -113,7 +127,37 @@ pub(crate) struct WebPush {
     subject: String,
     /// New subscriptions per account in the current hour.
     creates: Arc<Mutex<HashMap<i64, (u32, Instant)>>>,
+    /// Code pushes per account in the last hour (VC-04).
+    code_budget: Arc<Mutex<CodeBudget>>,
+    /// Code pushes on the way (VC-04).
+    code_sends: Arc<Semaphore>,
     timing: PushTiming,
+}
+
+/// When each account last had codes pushed, within the hour: the limits of [`CODE_PUSHES_PER_MINUTE`]
+/// and [`CODE_PUSHES_PER_HOUR`].
+#[derive(Debug, Default)]
+struct CodeBudget(HashMap<i64, VecDeque<Instant>>);
+
+impl CodeBudget {
+    /// Whether `account_id` may have another code pushed at `now`, and counts it if so.
+    fn take(&mut self, account_id: i64, now: Instant) -> bool {
+        const MINUTE: Duration = Duration::from_secs(60);
+        const HOUR: Duration = Duration::from_secs(3600);
+        self.0.retain(|_, sent| {
+            while sent.front().is_some_and(|at| now.duration_since(*at) >= HOUR) {
+                sent.pop_front();
+            }
+            !sent.is_empty()
+        });
+        let sent = self.0.entry(account_id).or_default();
+        let last_minute = sent.iter().rev().take_while(|at| now.duration_since(**at) < MINUTE).count();
+        if sent.len() >= CODE_PUSHES_PER_HOUR || last_minute >= CODE_PUSHES_PER_MINUTE {
+            return false;
+        }
+        sent.push_back(now);
+        true
+    }
 }
 
 /// What became of a push.
@@ -133,6 +177,8 @@ impl WebPush {
             vapid: Arc::default(),
             subject: format!("https://{hostname}"),
             creates: Arc::default(),
+            code_budget: Arc::default(),
+            code_sends: Arc::new(Semaphore::new(CODE_PUSHES_IN_FLIGHT)),
             timing: PushTiming::default(),
         }
     }
@@ -337,6 +383,7 @@ impl Jmap {
         let store = self.inner.store.clone();
         let mut changes = store.subscribe_changes();
         let mut alerts = store.subscribe_calendar_alerts();
+        let mut codes = store.subscribe_verifications();
         let mut pending = Pending::default();
         let mut held: HashMap<i64, Held> = HashMap::new();
         let mut last_sent: HashMap<i64, Instant> = HashMap::new();
@@ -367,6 +414,12 @@ impl Jmap {
                 },
                 alert = alerts.recv() => match alert {
                     Ok(alert) => push.alert(&store, &alert).await,
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => return,
+                },
+                // Not bundled with the changes: a code is wanted now, the StateChange follows anyway.
+                found = codes.recv() => match found {
+                    Ok(found) => push.code(&store, &found).await,
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => return,
                 },
@@ -498,6 +551,37 @@ impl WebPush {
         }
     }
 
+    /// Pushes a new verification code to the account's subscriptions that asked for
+    /// `VerificationCode` by name and gave keys: the code is content, and without keys the push
+    /// service would read it. Urgent, replacing nothing, and kept no longer than the code is good.
+    /// Within the limits per account and on the way at once (VC-04).
+    async fn code(&self, store: &Store, found: &uwumail_store::VerificationFound) {
+        let Ok(targets) = store.push_targets(vec![found.account_id]).await else { return };
+        let targets: Vec<PushTarget> = targets.into_iter().filter(wants_codes).collect();
+        if targets.is_empty() {
+            return;
+        }
+        let allowed = self.code_budget.lock().unwrap_or_else(|e| e.into_inner()).take(found.account_id, Instant::now());
+        if !allowed {
+            tracing::debug!(account = found.account_id, "too many verification code pushes, this one is left out");
+            return;
+        }
+        let body = code_json(found);
+        let ttl = code_ttl(found.detected.expires_at, crate::methods::unix_now());
+        for target in targets {
+            let Ok(permit) = self.code_sends.clone().try_acquire_owned() else {
+                tracing::debug!(account = found.account_id, "too many verification code pushes on the way");
+                return;
+            };
+            let (push, body) = (self.clone(), body.clone());
+            tokio::spawn(async move {
+                let outcome = push.send(&target, &body, "high", ttl, None).await;
+                push.note(&target, outcome).await;
+                drop(permit);
+            });
+        }
+    }
+
     /// Pushes what was held back and is due now, to the subscriptions that are still there.
     async fn release(&self, store: &Store, held: &mut HashMap<i64, Held>, last_sent: &mut HashMap<i64, Instant>) {
         let now = Instant::now();
@@ -547,6 +631,27 @@ fn wanted_by(target: &PushTarget, changed: &Map<String, Value>) -> Map<String, V
     out
 }
 
+/// Whether a subscription gets verification codes: only when it named the type, never through
+/// "all types", and only encrypted.
+fn wants_codes(target: &PushTarget) -> bool {
+    target.keys.is_some() && target.types.as_ref().is_some_and(|types| types.iter().any(|t| t == "VerificationCode"))
+}
+
+/// The push for a new code: which email, and the same object as its `verification` property.
+fn code_json(found: &uwumail_store::VerificationFound) -> Value {
+    json!({
+        "@type": "VerificationCode",
+        "accountId": ids::account(found.account_id),
+        "emailId": ids::email(found.email_id),
+        "verification": found.detected.to_json(),
+    })
+}
+
+/// How long the push service keeps a code: until it expires, within a minute and a day.
+fn code_ttl(expires_at: i64, now: i64) -> u32 {
+    (expires_at - now).clamp(CODE_TTL_MIN_SECS, CODE_TTL_MAX_SECS) as u32
+}
+
 /// Adds `newer` to `into`: per account, the newer state of each type wins.
 fn merge(into: &mut Map<String, Value>, newer: Map<String, Value>) {
     for (account, states) in newer {
@@ -574,6 +679,37 @@ mod tests {
             verification_code: String::new(),
             may_use_dav: true,
         }
+    }
+
+    #[test]
+    fn codes_go_only_to_subscriptions_that_named_them_and_gave_keys() {
+        let keys = || Some(uwumail_store::PushKeys { p256dh: "p".into(), auth: "a".into() });
+        assert!(!wants_codes(&target(None)), "all types does not include codes");
+        assert!(!wants_codes(&PushTarget { keys: keys(), ..target(None) }));
+        assert!(!wants_codes(&target(Some(vec!["VerificationCode"]))), "not without keys");
+        assert!(!wants_codes(&PushTarget { keys: keys(), ..target(Some(vec!["Email"])) }));
+        assert!(wants_codes(&PushTarget { keys: keys(), ..target(Some(vec!["Email", "VerificationCode"])) }));
+        assert_eq!((code_ttl(1_000, 990), code_ttl(1_000, 100), code_ttl(1_000_000, 0)), (60, 900, 86_400));
+    }
+
+    #[test]
+    fn code_pushes_are_limited_per_account_per_minute_and_hour() {
+        let mut budget = CodeBudget::default();
+        let start = Instant::now();
+        for _ in 0..CODE_PUSHES_PER_MINUTE {
+            assert!(budget.take(1, start));
+        }
+        assert!(!budget.take(1, start), "a minute's share");
+        assert!(budget.take(2, start), "other accounts are not affected");
+        let mut at = start;
+        for _ in CODE_PUSHES_PER_MINUTE..CODE_PUSHES_PER_HOUR {
+            at += Duration::from_secs(4);
+            assert!(budget.take(1, at + Duration::from_secs(60)));
+        }
+        assert!(!budget.take(1, start + Duration::from_secs(1800)), "an hour's share");
+        assert!(budget.take(1, start + Duration::from_secs(3600)), "the first ones of the hour are gone");
+        // Accounts with nothing left in the hour are forgotten.
+        assert!(!budget.0.contains_key(&2));
     }
 
     #[test]

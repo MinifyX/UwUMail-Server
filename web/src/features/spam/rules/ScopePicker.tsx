@@ -103,7 +103,7 @@ export function ScopePicker({
         <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden />
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-[14px] border border-line bg-surface p-2 shadow-float">
+        <div className="absolute z-30 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-menu border border-line bg-surface p-2 shadow-float">
           <label className="mb-1 flex items-center gap-2 rounded-control border border-line px-2.5">
             <Search className="size-3.5 text-muted" aria-hidden />
             <input

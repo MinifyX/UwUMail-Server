@@ -140,6 +140,8 @@ is handed to the others.
 | `senderAppearance:<address>` | `"light"` or `"dark"`; `<address>` is a lower-case address, at most 254 characters |
 | `linkDomains:<domain>` | `true`; `<domain>` is a lower-case ASCII host name (IDNs in punycode), at most 253 characters |
 | `signature:<id>` | `{ "email", "name", "html", "forNew", "forReplies" }`, see below; `<id>` is 1 to 64 of `A-Z a-z 0-9 _ -` |
+| `verificationHeuristics` | `true` or `false`: also recognise codes in mail without a signed `Verification-Info` header; the server applies it ([verification-codes.md](verification-codes.md)). Not set: on |
+| `verificationCleanup` | `"off"`, `"immediately"`, `"24h"` or `"7d"`: how long after its code expired a mail moves from the Inbox to the Trash; the server applies it. Not set: `"24h"` |
 | `compose.attachmentReminder` | `true` or `false`: warn before sending when the text mentions an attachment and there is none. Not set: on |
 | `accounts.order` | the person's accounts in the order they sorted them: a list of at most 200 different lower-case addresses. Not set: the default order |
 | `unified.hidden:<address>` | `true`: this account's mail stays out of the unified views (inbox, unread, flagged, drafts, sent) and their badges; `<address>` as for `senderAppearance` |

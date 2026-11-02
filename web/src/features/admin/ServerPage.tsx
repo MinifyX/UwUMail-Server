@@ -1,12 +1,20 @@
-import { ArrowLeftRight, ChartColumn, DatabaseBackup, LayoutDashboard, MailWarning } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeftRight, ChartColumn, DatabaseBackup, LayoutDashboard, MailWarning, UserPlus } from "lucide-react";
+import { useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { StatusDot } from "@/components/ui/Pill";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { BackupsPage } from "@/features/backups/BackupsPage";
 import { MicrosoftPage } from "@/features/microsoft/MicrosoftPage";
 import { MailFlowPage } from "@/features/setup/SetupPage";
 import { StatsPage } from "@/features/stats/StatsPage";
 import { useT } from "@/i18n";
-import type { Session } from "@/lib/api";
+import { CreatePersonDialog } from "@/features/people/CreatePersonDialog";
+import { api, type HealthLevel, type Overview, type Session } from "@/lib/api";
 import { AdminHome } from "./AdminHome";
+import { useAlerts } from "./AlertsCard";
+import { calmLevel } from "./calm";
+import { useHealth } from "./HealthCard";
 
 /**
  * Server → Overview: how the server is doing, what happened, how mail comes and goes, whether
@@ -35,12 +43,60 @@ const INTROS: Record<ServerTab, string> = {
   backups: "backups.intro",
 };
 
+const DOTS: Record<HealthLevel, "success" | "warning" | "danger" | "offline"> = {
+  ok: "success",
+  unknown: "offline",
+  warning: "warning",
+  problem: "danger",
+};
+
+/**
+ * Under the big title: how the server is doing as a dot and in words, its name and version. The
+ * same light as the simple view, from the same queries, so both views agree.
+ */
+function StatusLine() {
+  const { t } = useT();
+  const health = useHealth();
+  const alerts = useAlerts();
+  const overview = useQuery({
+    queryKey: ["admin", "overview"],
+    queryFn: () => api<Overview>("/api/admin/overview"),
+    refetchInterval: 30_000,
+  });
+  const level = calmLevel(health.data, alerts.data);
+  const server = overview.data?.server;
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5" aria-live="polite">
+      <StatusDot tone={DOTS[level]} />
+      <span className="font-semibold text-ink">{t(`adminView.headline.${level}`)}</span>
+      {server && (
+        <>
+          <span aria-hidden>·</span>
+          <span className="font-mono text-[13px]">{server.hostname}</span>
+          <span aria-hidden>·</span>
+          <span>{t("admin.versionShort", { version: server.version })}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 export function ServerPage({ tab = "overview", session }: { tab?: ServerTab; session: Session }) {
   const { t } = useT();
+  const [creating, setCreating] = useState(false);
+  const overview = tab === "overview";
   return (
     <TabbedPage<ServerTab>
       title={t("admin.title")}
-      intro={t(INTROS[tab])}
+      large={overview}
+      intro={overview ? <StatusLine /> : t(INTROS[tab])}
+      actions={
+        overview && (
+          <Button variant="primary" icon={UserPlus} onClick={() => setCreating(true)}>
+            {t("people.add")}
+          </Button>
+        )
+      }
       label={t("admin.tab")}
       value={tab}
       tabs={(Object.keys(SERVER_PATHS) as ServerTab[]).map((value) => ({
@@ -55,6 +111,7 @@ export function ServerPage({ tab = "overview", session }: { tab?: ServerTab; ses
       {tab === "mailFlow" && <MailFlowPage session={session} />}
       {tab === "microsoft" && <MicrosoftPage />}
       {tab === "backups" && <BackupsPage />}
+      {overview && <CreatePersonDialog open={creating} onClose={() => setCreating(false)} />}
     </TabbedPage>
   );
 }

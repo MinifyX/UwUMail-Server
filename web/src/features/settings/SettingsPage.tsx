@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
+import { Field, Segmented, Select, SettingRow, TextInput, Toggle } from "@/components/ui/Field";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -132,13 +132,21 @@ export function ChoiceField<T extends string>({
   const locked = form.locked(settingKey);
   const value = String(form.value(settingKey) ?? "") as T;
   return (
-    <Field label={label} hint={locked ? <LockedHint /> : hint}>
-      {(id) =>
+    <SettingRow label={label} description={locked ? <LockedHint /> : hint}>
+      {({ id, describedBy }) =>
         segmented && !locked ? (
-          <Segmented<T> label={label} value={value} onChange={(next) => form.set(settingKey, next)} options={options} />
+          <Segmented<T>
+            label={label}
+            describedBy={describedBy}
+            value={value}
+            onChange={(next) => form.set(settingKey, next)}
+            options={options}
+          />
         ) : (
           <Select
             id={id}
+            aria-describedby={describedBy}
+            className="w-full sm:w-64"
             value={value}
             disabled={locked}
             onChange={(event) => form.set(settingKey, event.target.value)}
@@ -151,7 +159,7 @@ export function ChoiceField<T extends string>({
           </Select>
         )
       }
-    </Field>
+    </SettingRow>
   );
 }
 

@@ -3,6 +3,39 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.26.0
+
+### Added
+
+- Verification codes (OMXP draft, Phase 1): the server finds sign-in codes and confirmation links
+  in incoming mail, from a `Verification-Info` header its sender signed with DKIM (and DMARC
+  passed), or otherwise by a careful guess from the text of mail that passed DMARC. At most 10
+  per sender and hour. A signed code skips greylisting within that limit and at most 30 times
+  per account and hour. Codes are forgotten after 30 days. See
+  [docs/verification-codes.md](docs/verification-codes.md).
+- JMAP `urn:uwumail:jmap:verification`: the Email property `verification`,
+  `VerificationCode/query` for the codes still valid, and an encrypted Web Push with the code for
+  subscriptions that name `VerificationCode`, with high urgency and a TTL until it expires. See
+  [docs/jmap-verification.md](docs/jmap-verification.md).
+- Portal: the page *Verification codes* (`/account/codes`) switches the guess off and sets when mail
+  with an expired code moves to the Trash (never, right away, after a day or a week; a day unless
+  changed). Both sync to the apps as `verificationHeuristics` and `verificationCleanup`.
+- Outgoing mail signs `Verification-Info` with DKIM (oversigned), so it can't be added on the way,
+  and submission removes the header, so users can't have the domain vouch for codes of their own.
+
+### Changed
+
+- **Webmail 0.24.0 (`74b1be3`): redesign, code bar and security fixes.** The webmail follows
+  UwUSuite-Design 1.9: an icon bar, a top bar with global search (⌘K; the command palette moved to
+  ⌘⇧K), list and reader in one card, the list grouped by day, and a tab bar on phones. A bar above
+  the list shows the active verification codes with sender, countdown and a copy button. Also in
+  this webmail: a font rewrite that a mail could stall no longer can, stricter frames for reader
+  and print, and more attachment types count as programs.
+- Portal redesign: UwU Sans and JetBrains Mono bundled, tokens from UwUSuite-Design 1.9, a sidebar
+  with a switch between *My account* and *Server* (a tab bar on narrow screens), large page titles,
+  an account overview with tiles and next steps, and a server overview with status, accounts with
+  tags and storage bars.
+
 ## 0.25.0
 
 ### Added

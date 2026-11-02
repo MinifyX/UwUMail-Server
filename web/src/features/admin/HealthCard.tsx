@@ -104,8 +104,9 @@ function AreaTile({ area }: { area: HealthArea }) {
     <div className="rounded-control border border-hairline bg-canvas/60 p-3">
       <h3 className="flex items-center gap-2 text-[13px] font-bold">
         <span className={clsx("size-2.5 shrink-0 rounded-full", level.dot)} aria-hidden />
-        {t(`health.areas.${area.area}`)}
-        <span className="sr-only">: {t(`health.level.${area.level}`)}</span>
+        <span className="min-w-0 flex-1">{t(`health.areas.${area.area}`)}</span>
+        <span className="sr-only">: </span>
+        <span className="shrink-0 text-[12px] font-semibold text-muted">{t(`health.level.${area.level}`)}</span>
       </h3>
       <ul className="mt-1.5 flex flex-col gap-2 pl-[18px]">
         {area.findings.map((finding, index) => (

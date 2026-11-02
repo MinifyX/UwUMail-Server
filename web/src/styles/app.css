@@ -1,11 +1,13 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./fonts.css";
 @import "../components/nyu/nyu.css";
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
-  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--uwu-font);
+  --font-mono: var(--uwu-mono);
 
   --color-canvas: var(--uwu-canvas);
   --color-surface: var(--uwu-surface);
@@ -15,6 +17,15 @@
   --color-faint: var(--uwu-faint);
   --color-hairline: var(--uwu-hairline);
   --color-line: var(--uwu-border);
+  --color-control: var(--uwu-control);
+  --color-offline: var(--uwu-offline);
+  --color-toast: var(--uwu-toast);
+  --color-toast-ink: var(--uwu-toast-ink);
+  --color-toast-accent: var(--uwu-toast-accent);
+  --color-toast-danger: var(--uwu-toast-danger);
+  --color-backdrop: var(--uwu-backdrop);
+  --color-scrim: var(--uwu-scrim);
+  --color-tabbar: var(--uwu-tabbar);
 
   --color-pink: var(--uwu-pink);
   --color-pink-solid: var(--uwu-pink-solid);
@@ -25,18 +36,24 @@
   --color-pink-tint-strong: var(--uwu-pink-tint-strong);
 
   --color-danger: var(--uwu-danger);
+  --color-danger-ink: var(--uwu-danger-ink);
   --color-danger-tint: var(--uwu-danger-tint);
   --color-success: var(--uwu-success);
+  --color-success-ink: var(--uwu-success-ink);
   --color-success-tint: var(--uwu-success-tint);
   --color-warning: var(--uwu-warning);
+  --color-warning-ink: var(--uwu-warning-ink);
   --color-warning-tint: var(--uwu-warning-tint);
   --color-chart: var(--uwu-chart);
 
   --shadow-float: var(--uwu-shadow-float);
   --shadow-focus: var(--uwu-focus);
+  --shadow-primary: var(--uwu-shadow-primary);
 
-  --radius-control: 10px;
-  --radius-card: 16px;
+  --radius-control: var(--uwu-radius-control);
+  --radius-card: var(--uwu-radius-card);
+  --radius-dialog: var(--uwu-radius-dialog);
+  --radius-menu: var(--uwu-radius-card);
 
   --animate-pop: uwu-pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
   --animate-fade: uwu-fade 160ms ease-out;
@@ -109,6 +126,7 @@
   body {
     @apply bg-canvas font-sans text-ink antialiased;
     font-size: 14px;
+    letter-spacing: var(--tracking-ui);
     overflow-wrap: break-word;
   }
 
@@ -125,6 +143,13 @@
   :focus-visible {
     outline: none;
     box-shadow: var(--uwu-focus);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--uwu-mono);
   }
 
   ::selection {

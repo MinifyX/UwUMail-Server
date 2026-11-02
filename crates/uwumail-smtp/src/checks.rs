@@ -45,6 +45,11 @@ pub struct Verdict {
     /// header, and From names one address: only then does a Face speak for that address. DMARC
     /// alone does not say so, as it passes on SPF or on a signature that leaves `Face` out.
     pub face_signed: bool,
+    /// The same for the `Verification-Info` header (OMXP verification, `docs/verification-codes.md`):
+    /// a DKIM signature of the From domain (or one related to it) holds and covers it, with one From
+    /// address. Only then may a code in that header be offered for autofill; anyone else could write
+    /// the header into a message that is otherwise signed.
+    pub verification_signed: bool,
 }
 
 /// A verdict that refuses the message outright, before any SPF/DKIM/DMARC result. Used for a header
@@ -92,6 +97,7 @@ fn rejecting(hostname: &str, reason: &str) -> Verdict {
         from_address: None,
         from_verified: false,
         face_signed: false,
+        verification_signed: false,
     }
 }
 
@@ -116,6 +122,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             from_address: None,
             from_verified: false,
             face_signed: false,
+            verification_signed: false,
         };
     };
 
@@ -175,6 +182,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         })
         || (spf.result() == SpfResult::Pass && related(mail_from_domain));
     let face_signed = face_signed(&message, &dkim, from_address.as_deref());
+    let verification_signed = verification_signed(&message, &dkim, from_address.as_deref());
 
     Verdict {
         header,
@@ -188,18 +196,41 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         from_address,
         from_verified,
         face_signed,
+        verification_signed,
     }
 }
 
 /// Whether a signature that holds for the From domain covers the `Face` header, with one From
 /// address to keep it for. See [`Verdict::face_signed`].
 fn face_signed(message: &AuthenticatedMessage<'_>, dkim: &[DkimOutput<'_>], from_address: Option<&str>) -> bool {
+    signed_for_from(message, dkim, from_address, "Face")
+}
+
+/// Whether a signature that holds for the From domain covers `Verification-Info`, with one From
+/// address. See [`Verdict::verification_signed`].
+fn verification_signed(
+    message: &AuthenticatedMessage<'_>,
+    dkim: &[DkimOutput<'_>],
+    from_address: Option<&str>,
+) -> bool {
+    signed_for_from(message, dkim, from_address, "Verification-Info")
+}
+
+/// Whether one From names a single address and a DKIM signature that holds for its domain (or one
+/// related to it) lists `header` in `h=`: the header then speaks for the sender, not for whoever
+/// relayed or forwarded the message on the way.
+fn signed_for_from(
+    message: &AuthenticatedMessage<'_>,
+    dkim: &[DkimOutput<'_>],
+    from_address: Option<&str>,
+    header: &str,
+) -> bool {
     message.from.len() == 1
         && dkim.iter().any(|output| {
             output.result() == &DkimResult::Pass
                 && output.signature().is_some_and(|signature| {
                     related_to_from(from_address, &signature.d)
-                        && signature.h.iter().any(|name| name.eq_ignore_ascii_case("Face"))
+                        && signature.h.iter().any(|name| name.eq_ignore_ascii_case(header))
                 })
         })
 }
@@ -247,6 +278,7 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
         from_address: None,
         from_verified: false,
         face_signed: false,
+        verification_signed: false,
     };
     let Some(message) = AuthenticatedMessage::parse(raw) else {
         return verdict;
@@ -273,6 +305,7 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
     verdict.dmarc_passed = signed_by_sender;
     verdict.from_verified = signed_by_sender;
     verdict.face_signed = face_signed(&message, &dkim, verdict.from_address.as_deref());
+    verdict.verification_signed = verification_signed(&message, &dkim, verdict.from_address.as_deref());
     verdict
 }
 

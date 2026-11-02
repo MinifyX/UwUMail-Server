@@ -26,5 +26,6 @@ mod suggestions;
 mod tnef;
 mod tokens;
 mod unsubscribe;
+mod verification;
 mod web_push;
 mod websocket;

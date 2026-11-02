@@ -48,7 +48,7 @@ export function Dialog({
       className={clsx(
         // svh, not vh: on a phone `vh` is the height with the address bar hidden, so a dialog sized
         // by it reaches below the visible area and takes its buttons with it.
-        "m-auto max-h-[min(720px,calc(100svh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-[22px] border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-[#1c1420]/35 backdrop:backdrop-blur-[2px] open:flex open:animate-pop open:flex-col",
+        "m-auto max-h-[min(720px,calc(100svh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-dialog border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-backdrop backdrop:backdrop-blur-[2px] open:flex open:animate-pop open:flex-col",
         width === "sm" && "max-w-[420px]",
         width === "md" && "max-w-[560px]",
         width === "lg" && "max-w-[860px]",

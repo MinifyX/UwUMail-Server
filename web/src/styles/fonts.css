@@ -1,0 +1,11 @@
+/*
+ * UwU Sans, the suite's interface font (UwUSuite-Design fonts/, OFL), and JetBrains Mono for codes,
+ * addresses and values. Both are bundled: the portal loads no font from the network.
+ */
+@font-face {
+  font-family: "UwU Sans";
+  src: url("../assets/fonts/UwUSans[wght].woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}

@@ -95,6 +95,9 @@ has room for, with links to the guides.
   ([jmap-remote.md](jmap-remote.md)).
 - **One-click unsubscribes** go out through the server too, only for links the
   sender's DKIM signature covers ([jmap-unsubscribe.md](jmap-unsubscribe.md)).
+- **Verification codes.** Sign-in codes are found when mail arrives, shown in
+  the notification and offered for autofill only when the sender vouched for
+  them, and tidied away once they expired ([verification-codes.md](verification-codes.md)).
 - **Text in pictures.** Tesseract reads the text in a mail's pictures (posters,
   tickets) so dates in them can be found ([jmap-image-text.md](jmap-image-text.md)).
 - **Profile pictures.** A picture for everyone, services, groups and a logo per

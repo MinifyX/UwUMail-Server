@@ -1,32 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import { useState } from "react";
+import {
+  AtSign,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  EyeOff,
+  HardDrive,
+  Inbox,
+  KeyRound,
+  MonitorSmartphone,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { buttonClass } from "@/components/ui/Button";
 import { Card, CopyButton, KeyValue, PageHeader } from "@/components/ui/Card";
+import { StatusDot } from "@/components/ui/Pill";
+import { MeterBar, StatTile } from "@/components/ui/StatTile";
 import { LoadError, Loading } from "@/components/StatusViews";
+import { useSecurity } from "@/features/security/queries";
 import { useT } from "@/i18n";
-import { api, type Profile, type Session } from "@/lib/api";
+import {
+  api,
+  type FetchView,
+  type MaskedAddressesView,
+  type Profile,
+  type SecurityView,
+  type Session,
+} from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
+import { Link } from "@/lib/router";
 import { PictureCard } from "@/features/pictures/PictureCard";
 import { AppleProfile } from "./AppleProfile";
-
-function StorageBar({ used, quota }: { used: number; quota: number }) {
-  const share = quota > 0 ? Math.min(1, used / quota) : 0;
-  return (
-    <div className="h-2.5 overflow-hidden rounded-full bg-canvas" aria-hidden>
-      <div
-        className={
-          share > 0.9
-            ? "h-full rounded-full bg-danger"
-            : share > 0.75
-              ? "h-full rounded-full bg-warning"
-              : "h-full rounded-full bg-pink"
-        }
-        style={{ width: `${Math.max(share * 100, quota > 0 ? 2 : 0)}%` }}
-      />
-    </div>
-  );
-}
-
 /** How many addresses the card shows before somebody asks for the rest. */
 const SHOWN_ADDRESSES = 3;
 
@@ -70,36 +76,250 @@ function AddressList({ addresses }: { addresses: string[] }) {
   );
 }
 
+type Tone = "success" | "warning" | "danger";
+
+/** One line of the status card: a dot and what it means, so the colour is never the only hint. */
+interface StatusLine {
+  tone: Tone;
+  text: string;
+}
+
+const storageShare = (profile: Profile) => (profile.quotaBytes > 0 ? profile.usedBytes / profile.quotaBytes : 0);
+
+/**
+ * What the overview can say about the account, from what the pages already load: storage, the
+ * second factor and the fetched mail. A part that did not load says nothing rather than guessing.
+ */
+function useStatusLines(profile: Profile, security: SecurityView | undefined, fetch: FetchView | undefined) {
+  const { t } = useT();
+  const lines: StatusLine[] = [];
+  const share = storageShare(profile);
+  const percent = Math.round(share * 100);
+  if (profile.quotaBytes > 0) {
+    lines.push(
+      share > 0.9
+        ? { tone: "danger", text: t("account.status.storageFull", { percent }) }
+        : share > 0.75
+          ? { tone: "warning", text: t("account.status.storageFilling", { percent }) }
+          : { tone: "success", text: t("account.status.storageOk", { percent }) },
+    );
+  }
+  if (security) {
+    lines.push(
+      security.secondFactor
+        ? { tone: "success", text: t("account.status.secondFactorOn") }
+        : { tone: "warning", text: t("account.status.secondFactorOff") },
+    );
+  }
+  const running = (fetch?.accounts ?? []).filter((account) => account.enabled);
+  for (const account of running.filter((account) => account.lastError)) {
+    lines.push({ tone: "danger", text: t("account.status.fetchFailed", { address: account.address }) });
+  }
+  const fine = running.filter((account) => !account.lastError).length;
+  if (fine > 0) lines.push({ tone: "success", text: t("account.status.fetchOk", { count: fine }) });
+  return lines;
+}
+
+function StatusCard({ lines }: { lines: StatusLine[] }) {
+  const { t } = useT();
+  const open = lines.filter((line) => line.tone !== "success").length;
+  return (
+    <Card
+      title={t("account.status.title")}
+      intro={open === 0 ? t("account.status.allGood") : t("account.status.open", { count: open })}
+    >
+      <ul className="flex flex-col gap-2.5">
+        {lines.map((line) => (
+          <li key={line.text} className="flex items-center gap-2.5 text-[13px]">
+            <StatusDot tone={line.tone} />
+            <span className="min-w-0">{line.text}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function NextRow({
+  icon: Icon,
+  title,
+  text,
+  to,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: ReactNode;
+  text: ReactNode;
+  to?: string;
+  onClick?: () => void;
+}) {
+  const className =
+    "flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-hairline px-3 py-2 text-left hover:bg-elevated";
+  const body = (
+    <>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-pink-tint text-pink-ink">
+        <Icon className="size-4" aria-hidden />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="text-sm font-semibold">{title}</span>
+        <span className="text-[12px] text-muted">{text}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-muted" aria-hidden />
+    </>
+  );
+  return to ? (
+    <Link to={to} className={className}>
+      {body}
+    </Link>
+  ) : (
+    <button type="button" className={className} onClick={onClick}>
+      {body}
+    </button>
+  );
+}
+
+/** Small things that make the account better; the second factor only while it is off. */
+function NextCard({ security }: { security: SecurityView | undefined }) {
+  const { t } = useT();
+  return (
+    <Card title={t("account.next.title")} intro={t("account.next.intro")}>
+      <div className="flex flex-col gap-2">
+        <NextRow
+          icon={KeyRound}
+          to="/account/codes"
+          title={t("account.next.codes.title")}
+          text={t("account.next.codes.text")}
+        />
+        {security && !security.secondFactor && (
+          <NextRow
+            icon={ShieldCheck}
+            to="/account/security"
+            title={t("account.next.secondFactor.title")}
+            text={t("account.next.secondFactor.text")}
+          />
+        )}
+        <NextRow
+          icon={EyeOff}
+          to="/account/masked"
+          title={t("account.next.masked.title")}
+          text={t("account.next.masked.text")}
+        />
+        <NextRow
+          icon={MonitorSmartphone}
+          title={t("account.next.device.title")}
+          text={t("account.next.device.text")}
+          onClick={() => document.getElementById("apps")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        />
+      </div>
+    </Card>
+  );
+}
+
 export function AccountHome({ session }: { session: Session }) {
   const { t, i18n } = useT();
   const profile = useQuery({ queryKey: ["account"], queryFn: () => api<Profile>("/api/account") });
+  // The same queries as the security, masked and fetch pages, so going there later is instant.
+  const security = useSecurity();
+  const masked = useQuery({
+    queryKey: ["account", "masked"],
+    queryFn: () => api<MaskedAddressesView>("/api/account/masked"),
+  });
+  const fetch = useQuery({ queryKey: ["account", "fetch"], queryFn: () => api<FetchView>("/api/account/fetch") });
   const hostname = session.server.hostname;
   const name = session.account.name || session.account.login.split("@")[0];
+  const language = i18n.language;
+  const lines = useStatusLines(profile.data ?? EMPTY_PROFILE, security.data, fetch.data);
 
   if (profile.isPending) return <Loading />;
   if (profile.isError) return <LoadError error={profile.error} onRetry={() => void profile.refetch()} />;
   const data = profile.data;
-  const language = i18n.language;
+  const share = storageShare(data);
+  const maskedActive = masked.data?.addresses.filter((address) => address.state === "enabled").length;
+  const today = new Intl.DateTimeFormat(language, { weekday: "long", day: "numeric", month: "long" }).format(
+    new Date(),
+  );
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={t("account.greeting", { name })} intro={t("account.intro")} />
+      <PageHeader
+        large
+        eyebrow={today}
+        title={t("account.greeting", { name })}
+        intro={t("account.intro")}
+        actions={
+          session.webmail && (
+            <a href="/mail" className={buttonClass("primary", "lg")}>
+              <Inbox className="size-4" strokeWidth={2.2} aria-hidden />
+              {t("nav.openMailbox")}
+            </a>
+          )
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile
+          icon={AtSign}
+          value={t("account.tiles.addresses", { count: data.addresses.length })}
+          label={
+            maskedActive === undefined
+              ? t("account.tiles.addressesNote")
+              : t("account.tiles.masked", { count: maskedActive })
+          }
+        />
+        <StatTile
+          icon={HardDrive}
+          tone={share > 0.9 ? "danger" : share > 0.75 ? "warning" : "normal"}
+          value={formatBytes(data.usedBytes, language)}
+          label={
+            data.quotaBytes > 0
+              ? t("account.tiles.storageOf", { quota: formatBytes(data.quotaBytes, language) })
+              : t("account.tiles.storageUnlimited")
+          }
+        >
+          {data.quotaBytes > 0 && <MeterBar share={share} />}
+        </StatTile>
+        <StatTile
+          icon={ShieldCheck}
+          tone={security.data && !security.data.secondFactor ? "warning" : "normal"}
+          value={
+            security.data
+              ? security.data.secondFactor
+                ? t("account.tiles.secondFactorOn")
+                : t("account.tiles.secondFactorOff")
+              : "–"
+          }
+          label={
+            security.data
+              ? t("account.tiles.passkeys", { count: security.data.passkeys.length })
+              : t("account.tiles.secondFactor")
+          }
+        />
+        <StatTile icon={CalendarDays} value={formatDate(data.createdAt, language)} label={t("account.tiles.since")} />
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
+        <NextCard security={security.data} />
+        <StatusCard lines={lines} />
+      </div>
 
       <div className="grid gap-5 md:grid-cols-2">
         <AddressList addresses={data.addresses} />
 
-        <Card title={t("account.storage.title")}>
-          <div className="flex flex-col gap-3">
-            <StorageBar used={data.usedBytes} quota={data.quotaBytes} />
-            <p className="text-sm text-muted">
-              {data.quotaBytes > 0
+        <Card title={t("account.details.title")}>
+          <KeyValue label={t("account.details.login")} value={data.login} />
+          <KeyValue label={t("account.details.role")} value={t(`userMenu.role.${data.role}`)} />
+          <KeyValue label={t("account.details.created")} value={formatDate(data.createdAt, language)} />
+          <KeyValue
+            label={t("account.storage.title")}
+            value={
+              data.quotaBytes > 0
                 ? t("account.storage.usedOf", {
                     used: formatBytes(data.usedBytes, language),
                     quota: formatBytes(data.quotaBytes, language),
                   })
-                : t("account.storage.used", { used: formatBytes(data.usedBytes, language) })}
-            </p>
-          </div>
+                : t("account.storage.used", { used: formatBytes(data.usedBytes, language) })
+            }
+          />
         </Card>
 
         <PictureCard
@@ -110,7 +330,7 @@ export function AccountHome({ session }: { session: Session }) {
           className="md:col-span-2"
         />
 
-        <Card title={t("account.apps.title")} className="md:col-span-2">
+        <Card id="apps" title={t("account.apps.title")} className="scroll-mt-6 md:col-span-2">
           <KeyValue label={t("account.apps.server")} value={hostname} copy={hostname} />
           <KeyValue label={t("account.apps.jmap")} value={`https://${hostname}`} copy={`https://${hostname}`} />
           <KeyValue label={t("account.apps.imap")} value={t("account.apps.imapValue", { hostname })} />
@@ -118,13 +338,17 @@ export function AccountHome({ session }: { session: Session }) {
           <KeyValue label={t("account.apps.username")} value={data.login} copy={data.login} />
           <AppleProfile />
         </Card>
-
-        <Card title={t("account.details.title")} className="md:col-span-2">
-          <KeyValue label={t("account.details.login")} value={data.login} />
-          <KeyValue label={t("account.details.role")} value={t(`userMenu.role.${data.role}`)} />
-          <KeyValue label={t("account.details.created")} value={formatDate(data.createdAt, language)} />
-        </Card>
       </div>
     </div>
   );
 }
+
+const EMPTY_PROFILE: Profile = {
+  login: "",
+  name: "",
+  role: "user",
+  addresses: [],
+  quotaBytes: 0,
+  usedBytes: 0,
+  createdAt: 0,
+};

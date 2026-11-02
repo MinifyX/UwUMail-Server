@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
+use uwumail_store::verification;
 use uwumail_store::{
     Account, AppScope, GroupDelivery, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget,
     MaskedDelivery, MaskedState, NewQueueRecipient, NewSpamLogEntry, ReportKind, SpamAction, SpamLogHit,
@@ -1759,6 +1760,30 @@ pub(crate) async fn receive(
     // same message from the same server lands on the same value when it comes back.
     let raw_hash = live.spam.greylist_hold.then(|| uwumail_store::BlobHash::of(&raw).as_str().to_owned());
 
+    // A one-time code or sign-in link (docs/verification-codes.md), worked out once for all
+    // recipients from the message as the sender wrote it. Only with a verdict: without one nothing
+    // says who sent it, and a code from nobody in particular is no code to show. A big message is
+    // not parsed a second time for it (security-audit-0.26.0 VC-09).
+    let verification = match &verdict {
+        Some(verdict) if raw.len() <= verification::MAX_MESSAGE => {
+            let auth = verification::Authenticity {
+                header_signed: verdict.verification_signed,
+                dmarc_passed: verdict.dmarc_passed,
+                from_domain: verdict.from_domain.clone(),
+            };
+            let author = verdict.from_domain.as_deref().and_then(verification::registrable_domain);
+            let original = raw.clone();
+            let found = tokio::task::spawn_blocking(move || verification::detect(&original, &auth, crate::now()))
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::warn!(%id, %err, "looking for a verification code failed");
+                    None
+                });
+            found.zip(author)
+        }
+        _ => None,
+    };
+
     // Our verdict replaces whatever the message brought along — also when the filter did not look:
     // a sender's own `X-Spam-Status: No, score=-50` would otherwise be the only verdict stored, and
     // the AI spam check would take it for ours (client review C-1, checked on the server).
@@ -1794,6 +1819,9 @@ pub(crate) async fn receive(
         && let Some((ip, _)) = &client
     {
         let mut waiting = Vec::new();
+        // Recipients a signed code might carry past greylisting; decided below, once it is clear
+        // that nothing else lets the message through.
+        let mut fast_lane = Vec::new();
         for (recipient, decision) in recipients.iter().zip(&decisions) {
             // An allowed sender never waits, and neither does the message for the others then.
             if matches!(decision, Decision::Allow(_)) {
@@ -1805,6 +1833,41 @@ pub(crate) async fn receive(
             if recipient.trap {
                 continue;
             }
+            // Nor, perhaps, does a code its sender signed for itself: it is useless in half an hour.
+            if verification.as_ref().is_some_and(|(found, _)| found.source == verification::Source::Header)
+                && let Some(account) = recipient.local_account
+            {
+                fast_lane.push((recipient, account));
+                continue;
+            }
+            let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
+            if let Some(seconds) = wait {
+                waiting.push(seconds);
+            }
+        }
+        // The fast lane lifts greylisting only for its own recipients, never for the others of the
+        // mail, and only within the limits per sender and per account. Each pass is counted the
+        // moment it is taken, whatever then becomes of the mail (security-audit-0.26.0 VC-02). So it
+        // is only tried when the code's recipients are all that is left: with any other recipient the
+        // message is either held for it anyway or let through by it, and the code recipients go
+        // through greylisting as usual.
+        let others = recipients.iter().filter(|recipient| !recipient.trap).count() - fast_lane.len();
+        let mut lane_open = others == 0;
+        let mut laned = 0;
+        let mut taken = Vec::new();
+        for (recipient, account) in fast_lane {
+            if lane_open
+                && let Some((_, author)) = &verification
+                && (taken.contains(&account)
+                    || ctx.store.take_verification_fast_lane(account, author).await.unwrap_or(false))
+            {
+                taken.push(account);
+                laned += 1;
+                continue;
+            }
+            // Past a limit the lane is closed for the rest of this mail too: one waiting recipient
+            // holds it anyway, and passes taken for the others would be wasted.
+            lane_open = false;
             let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
             if let Some(seconds) = wait {
                 waiting.push(seconds);
@@ -1814,11 +1877,12 @@ pub(crate) async fn receive(
         // while every recipient that can wait still is. A trap never waits and must not, on its
         // own, stop the real recipients from being greylisted (security-audit-0.5.2 S-17). Once one
         // recipient may have it, delivering to all keeps the retry from arriving twice.
+        // A recipient the fast lane let through does not lift greylisting for the others (VC-02).
         let any_allowed = decisions.iter().any(|decision| matches!(decision, Decision::Allow(_)));
         let eligible = recipients.iter().filter(|recipient| !recipient.trap).count();
         if !any_allowed
             && eligible > 0
-            && waiting.len() == eligible
+            && waiting.len() + laned == eligible
             && let Some(seconds) = waiting.into_iter().min()
         {
             let minutes = ((seconds + 59) / 60).max(1);
@@ -2139,6 +2203,15 @@ pub(crate) async fn receive(
                 if !junk && kept {
                     labels::log(&ctx, account_id, &email_ids, &labeled).await;
                     queue_for_labels(&ctx, account_id, &email_ids).await;
+                }
+                // The code, for the notification and autofill. Never in the way of the delivery
+                // either: past the limit or failing, the mail is simply one without a code.
+                if !junk
+                    && kept
+                    && let Some((found, author)) = &verification
+                    && let Err(err) = ctx.store.record_verification(account_id, email_ids.clone(), found, author).await
+                {
+                    tracing::warn!(%id, account = account_id, %err, "keeping a verification code failed");
                 }
                 note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, mailbox);
                 delivered += 1;
