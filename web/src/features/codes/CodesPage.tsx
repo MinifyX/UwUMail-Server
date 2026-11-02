@@ -63,7 +63,12 @@ function useCodeSettings() {
       toast(errorText(error), "error");
     },
   });
-  return { ...stored, ...pending, saving: save.isPending, set: (changes: Partial<CodeSettings>) => save.mutate(changes) };
+  return {
+    ...stored,
+    ...pending,
+    saving: save.isPending,
+    set: (changes: Partial<CodeSettings>) => save.mutate(changes),
+  };
 }
 
 export function CodesPage() {
