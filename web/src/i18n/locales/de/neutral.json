@@ -80,7 +80,23 @@
     "moving": "Umzug",
     "more": "Mehr",
     "updates": "Updates",
-    "assist": "KI-Assistent"
+    "assist": "KI-Assistent",
+    "groups": {
+      "account": "Konto",
+      "mail": "Mail",
+      "extras": "Extras"
+    },
+    "codes": "Verifizierungscodes",
+    "new": "Neu",
+    "mode": "Bereich",
+    "home": "Zur Übersicht",
+    "openMailbox": "Postfach öffnen",
+    "tabs": {
+      "server": "Server",
+      "people": "Konten",
+      "queue": "Queue",
+      "codes": "Codes"
+    }
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -154,6 +170,55 @@
       "login": "Anmeldename",
       "role": "Rolle",
       "created": "Angelegt am"
+    },
+    "tiles": {
+      "addresses_one": "1 Adresse",
+      "addresses_other": "{{count}} Adressen",
+      "addressesNote": "auf diesem Konto",
+      "masked_one": "1 maskierte aktiv",
+      "masked_other": "{{count}} maskierte aktiv",
+      "storageOf": "von {{quota}}",
+      "storageUnlimited": "belegt, ohne Limit",
+      "secondFactor": "Zwei-Faktor-Anmeldung",
+      "secondFactorOn": "2FA an",
+      "secondFactorOff": "2FA aus",
+      "passkeys_one": "1 Passkey",
+      "passkeys_other": "{{count}} Passkeys",
+      "since": "Konto seit"
+    },
+    "next": {
+      "title": "Als Nächstes",
+      "intro": "Kleine Dinge, die dein Konto besser machen.",
+      "codes": {
+        "title": "Verifizierungscodes einrichten",
+        "text": "Codes aus Mails über der Mailliste zeigen"
+      },
+      "secondFactor": {
+        "title": "Zweiten Faktor einrichten",
+        "text": "Passkey oder Authenticator-App"
+      },
+      "masked": {
+        "title": "Maskierte Adresse anlegen",
+        "text": "Für Shops und Newsletter"
+      },
+      "device": {
+        "title": "Weiteres Gerät verbinden",
+        "text": "IMAP, JMAP oder Apple-Profil"
+      }
+    },
+    "status": {
+      "title": "Status",
+      "allGood": "Alles in Ordnung.",
+      "open_one": "Ein Punkt braucht dich.",
+      "open_other": "{{count}} Punkte brauchen dich.",
+      "storageOk": "Speicher zu {{percent}} % belegt",
+      "storageFilling": "Speicher wird knapp: {{percent}} % belegt",
+      "storageFull": "Speicher fast voll: {{percent}} % belegt",
+      "secondFactorOn": "Zwei-Faktor-Anmeldung an",
+      "secondFactorOff": "Zwei-Faktor-Anmeldung aus",
+      "fetchOk_one": "1 Abrufkonto läuft",
+      "fetchOk_other": "{{count}} Abrufkonten laufen",
+      "fetchFailed": "Abrufkonto {{address}}: letzter Abruf fehlgeschlagen"
     }
   },
   "admin": {
@@ -221,7 +286,8 @@
         "title": "Letzte Änderung",
         "none": "Noch nichts geändert"
       }
-    }
+    },
+    "versionShort": "Version {{version}}"
   },
   "adminView": {
     "label": "Ansicht",
@@ -4962,5 +5028,39 @@
       "uploaded_one": "{{count}} Eintrag importiert.",
       "uploaded_other": "{{count}} Einträge importiert."
     }
+  },
+  "codes": {
+    "title": "Verifizierungscodes",
+    "intro": "Einmalcodes aus Mails erkennen, kopieren und später aufräumen.",
+    "card": {
+      "title": "Codes in Mails",
+      "intro": "Gilt für Webmail und die UwUMail-Apps."
+    },
+    "detect": {
+      "label": "Codes automatisch erkennen (DE/EN)",
+      "description": "Sucht in deutschen und englischen Mails nach Codes wie „Dein Code lautet 482913“. So erkannte Codes kannst du kopieren, sie werden aber nie automatisch eingefügt."
+    },
+    "cleanup": {
+      "label": "Abgelaufene Codes aufräumen",
+      "options": {
+        "off": "Aus",
+        "now": "Sofort",
+        "24h": "Nach 24 h",
+        "7d": "Nach 7 Tagen"
+      },
+      "description": {
+        "off": "Mails mit Codes bleiben im Posteingang.",
+        "now": "Sobald ein Code abläuft, wandert die Mail in den Papierkorb.",
+        "24h": "Einen Tag nach Ablauf wandert die Mail in den Papierkorb. (Standard)",
+        "7d": "Eine Woche nach Ablauf wandert die Mail in den Papierkorb."
+      }
+    },
+    "signed": "Codes mit signierter Herkunft (Header {{header}}, DKIM geprüft) zeigt UwUMail immer an. Nur diese dürfen Apps automatisch einfügen, und nur auf der passenden Seite.",
+    "preview": {
+      "title": "Vorschau",
+      "left": "noch {{time}}",
+      "caption": "So erscheint ein Code über der Mailliste."
+    },
+    "localOnly": "Diese Einstellungen gelten vorerst nur in diesem Browser."
   }
 }

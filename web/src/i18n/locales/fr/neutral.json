@@ -80,7 +80,23 @@
     "moving": "Déménagement",
     "more": "Plus",
     "updates": "Mises à jour",
-    "assist": "Assistant IA"
+    "assist": "Assistant IA",
+    "groups": {
+      "account": "Compte",
+      "mail": "Courrier",
+      "extras": "Extras"
+    },
+    "codes": "Codes de vérification",
+    "new": "Nouveau",
+    "mode": "Espace",
+    "home": "Aller à l’aperçu",
+    "openMailbox": "Ouvrir la boîte mail",
+    "tabs": {
+      "server": "Serveur",
+      "people": "Comptes",
+      "queue": "File",
+      "codes": "Codes"
+    }
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -154,6 +170,55 @@
       "login": "Identifiant",
       "role": "Rôle",
       "created": "Créé le"
+    },
+    "tiles": {
+      "addresses_one": "1 adresse",
+      "addresses_other": "{{count}} adresses",
+      "addressesNote": "sur ce compte",
+      "masked_one": "1 masquée active",
+      "masked_other": "{{count}} masquées actives",
+      "storageOf": "sur {{quota}}",
+      "storageUnlimited": "utilisés, sans limite",
+      "secondFactor": "Connexion à deux facteurs",
+      "secondFactorOn": "2FA activée",
+      "secondFactorOff": "2FA désactivée",
+      "passkeys_one": "1 clé d’accès",
+      "passkeys_other": "{{count}} clés d’accès",
+      "since": "Compte depuis"
+    },
+    "next": {
+      "title": "Et ensuite",
+      "intro": "Petites choses qui améliorent ton compte.",
+      "codes": {
+        "title": "Configurer les codes de vérification",
+        "text": "Afficher les codes des mails au-dessus de la liste"
+      },
+      "secondFactor": {
+        "title": "Configurer un second facteur",
+        "text": "Clé d’accès ou app d’authentification"
+      },
+      "masked": {
+        "title": "Créer une adresse masquée",
+        "text": "Pour les boutiques et les newsletters"
+      },
+      "device": {
+        "title": "Connecter un autre appareil",
+        "text": "IMAP, JMAP ou profil Apple"
+      }
+    },
+    "status": {
+      "title": "État",
+      "allGood": "Tout va bien.",
+      "open_one": "Un point demande ton attention.",
+      "open_other": "{{count}} points demandent ton attention.",
+      "storageOk": "Stockage utilisé à {{percent}} %",
+      "storageFilling": "Le stockage se remplit : {{percent}} % utilisés",
+      "storageFull": "Stockage presque plein : {{percent}} % utilisés",
+      "secondFactorOn": "Connexion à deux facteurs activée",
+      "secondFactorOff": "Connexion à deux facteurs désactivée",
+      "fetchOk_one": "1 compte relevé fonctionne",
+      "fetchOk_other": "{{count}} comptes relevés fonctionnent",
+      "fetchFailed": "Compte relevé {{address}} : la dernière relève a échoué"
     }
   },
   "admin": {
@@ -226,7 +291,8 @@
         "title": "Dernière modification",
         "none": "Rien n'a encore changé"
       }
-    }
+    },
+    "versionShort": "Version {{version}}"
   },
   "adminView": {
     "label": "Affichage",
@@ -5055,5 +5121,39 @@
       "uploaded_many": "{{count}} entrées importées.",
       "uploaded_other": "{{count}} entrées importées."
     }
+  },
+  "codes": {
+    "title": "Codes de vérification",
+    "intro": "Repérer les codes à usage unique dans les mails, les copier puis faire le ménage.",
+    "card": {
+      "title": "Codes dans les mails",
+      "intro": "S’applique au webmail et aux apps UwUMail."
+    },
+    "detect": {
+      "label": "Détecter les codes automatiquement (DE/EN)",
+      "description": "Cherche des codes comme « Your code is 482913 » dans les mails allemands et anglais. Tu peux copier les codes ainsi trouvés, mais ils ne sont jamais insérés automatiquement."
+    },
+    "cleanup": {
+      "label": "Ranger les codes expirés",
+      "options": {
+        "off": "Non",
+        "now": "Tout de suite",
+        "24h": "Après 24 h",
+        "7d": "Après 7 jours"
+      },
+      "description": {
+        "off": "Les mails avec des codes restent dans la boîte de réception.",
+        "now": "Dès qu’un code expire, le mail part à la corbeille.",
+        "24h": "Un jour après l’expiration, le mail part à la corbeille. (Par défaut)",
+        "7d": "Une semaine après l’expiration, le mail part à la corbeille."
+      }
+    },
+    "signed": "UwUMail affiche toujours les codes d’origine signée (en-tête {{header}}, DKIM vérifié). Seuls ceux-ci peuvent être insérés par les apps, et uniquement sur le site correspondant.",
+    "preview": {
+      "title": "Aperçu",
+      "left": "encore {{time}}",
+      "caption": "Voici comment un code apparaît au-dessus de la liste des mails."
+    },
+    "localOnly": "Pour l’instant, ces réglages ne valent que dans ce navigateur."
   }
 }

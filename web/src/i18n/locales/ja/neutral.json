@@ -80,7 +80,23 @@
     "moving": "引っ越し",
     "more": "その他",
     "updates": "アップデート",
-    "assist": "AI アシスタント"
+    "assist": "AI アシスタント",
+    "groups": {
+      "account": "アカウント",
+      "mail": "メール",
+      "extras": "その他の機能"
+    },
+    "codes": "確認コード",
+    "new": "新着",
+    "mode": "表示する領域",
+    "home": "概要へ",
+    "openMailbox": "メールボックスを開く",
+    "tabs": {
+      "server": "サーバー",
+      "people": "アカウント",
+      "queue": "キュー",
+      "codes": "コード"
+    }
   },
   "userMenu": {
     "open": "アカウントメニューを開く",
@@ -153,6 +169,50 @@
       "login": "ログイン名",
       "role": "役割",
       "created": "作成日"
+    },
+    "tiles": {
+      "addresses_other": "{{count}} 件のアドレス",
+      "addressesNote": "このアカウント",
+      "masked_other": "マスク {{count}} 件が有効",
+      "storageOf": "/ {{quota}}",
+      "storageUnlimited": "使用中、上限なし",
+      "secondFactor": "2 要素サインイン",
+      "secondFactorOn": "2FA オン",
+      "secondFactorOff": "2FA オフ",
+      "passkeys_other": "パスキー {{count}} 件",
+      "since": "アカウント作成日"
+    },
+    "next": {
+      "title": "次にやること",
+      "intro": "アカウントをより良くするちょっとしたこと。",
+      "codes": {
+        "title": "確認コードを設定",
+        "text": "メールのコードをメール一覧の上に表示"
+      },
+      "secondFactor": {
+        "title": "2 つ目の要素を設定",
+        "text": "パスキーまたは認証アプリ"
+      },
+      "masked": {
+        "title": "マスクアドレスを作成",
+        "text": "ショップやニュースレター用"
+      },
+      "device": {
+        "title": "別のデバイスを接続",
+        "text": "IMAP、JMAP または Apple プロファイル"
+      }
+    },
+    "status": {
+      "title": "状態",
+      "allGood": "問題ありません。",
+      "open_other": "確認が必要な項目が {{count}} 件あります。",
+      "storageOk": "ストレージ使用率 {{percent}} %",
+      "storageFilling": "ストレージが残り少なくなっています: {{percent}} % 使用",
+      "storageFull": "ストレージがほぼいっぱいです: {{percent}} % 使用",
+      "secondFactorOn": "2 要素サインイン オン",
+      "secondFactorOff": "2 要素サインイン オフ",
+      "fetchOk_other": "{{count}} 件の取得アカウントが動作中",
+      "fetchFailed": "取得アカウント {{address}}: 前回の取得に失敗しました"
     }
   },
   "admin": {
@@ -215,7 +275,8 @@
         "title": "最近の変更",
         "none": "まだ変更はありません"
       }
-    }
+    },
+    "versionShort": "バージョン {{version}}"
   },
   "adminView": {
     "label": "表示",
@@ -4863,5 +4924,39 @@
       "deleted": "移行を削除しました。",
       "uploaded_other": "{{count}} 件を取り込みました。"
     }
+  },
+  "codes": {
+    "title": "確認コード",
+    "intro": "メール内のワンタイムコードを見つけてコピーし、あとで片付けます。",
+    "card": {
+      "title": "メール内のコード",
+      "intro": "Webメールと UwUMail アプリに適用されます。"
+    },
+    "detect": {
+      "label": "コードを自動で検出 (DE/EN)",
+      "description": "ドイツ語と英語のメールから「Your code is 482913」のようなコードを探します。見つかったコードはコピーできますが、自動で入力されることはありません。"
+    },
+    "cleanup": {
+      "label": "期限切れのコードを片付ける",
+      "options": {
+        "off": "オフ",
+        "now": "すぐに",
+        "24h": "24 時間後",
+        "7d": "7 日後"
+      },
+      "description": {
+        "off": "コード付きのメールは受信トレイに残ります。",
+        "now": "コードの期限が切れるとすぐ、メールはゴミ箱へ移動します。",
+        "24h": "期限切れの 1 日後に、メールはゴミ箱へ移動します。(既定)",
+        "7d": "期限切れの 1 週間後に、メールはゴミ箱へ移動します。"
+      }
+    },
+    "signed": "署名された送信元 (ヘッダー {{header}}、DKIM 検証済み) を持つコードは常に表示されます。アプリが自動入力できるのはこれらだけで、対応するサイトでのみです。",
+    "preview": {
+      "title": "プレビュー",
+      "left": "残り {{time}}",
+      "caption": "メール一覧の上にはこのようにコードが表示されます。"
+    },
+    "localOnly": "現在、これらの設定はこのブラウザーでのみ有効です。"
   }
 }

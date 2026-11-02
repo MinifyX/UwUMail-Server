@@ -14,7 +14,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-pink-solid text-on-pink hover:bg-pink-solid-hover shadow-[0_2px_10px_rgb(225_29_116/0.25)]",
+  primary: "bg-pink-solid text-on-pink hover:bg-pink-solid-hover shadow-primary",
   secondary: "bg-surface text-ink border border-line hover:bg-elevated hover:border-faint/50",
   ghost: "text-ink hover:bg-pink-tint/60",
   danger: "bg-surface text-danger border border-line hover:bg-danger-tint",
@@ -28,6 +28,17 @@ const SIZES: Record<Size, string> = {
   lg: "h-12 px-6 text-[15px] gap-2 max-sm:h-auto max-sm:min-h-12",
 };
 
+/** The look of a button, for a link that leads somewhere outside the portal (such as the webmail). */
+export function buttonClass(variant: Variant = "secondary", size: Size = "md", className?: string): string {
+  return clsx(
+    "inline-flex shrink-0 items-center justify-center rounded-full font-semibold whitespace-nowrap transition-[background,box-shadow,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-55",
+    "max-sm:shrink max-sm:py-2 max-sm:text-center max-sm:whitespace-normal",
+    VARIANTS[variant],
+    SIZES[size],
+    className,
+  );
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = "secondary", size = "md", icon: Icon, busy, className, children, disabled, ...rest },
   ref,
@@ -36,13 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       type="button"
-      className={clsx(
-        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold whitespace-nowrap transition-[background,box-shadow,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-55",
-        "max-sm:shrink max-sm:py-2 max-sm:text-center max-sm:whitespace-normal",
-        VARIANTS[variant],
-        SIZES[size],
-        className,
-      )}
+      className={buttonClass(variant, size, className)}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       {...rest}

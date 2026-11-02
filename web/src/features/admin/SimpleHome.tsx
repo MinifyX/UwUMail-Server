@@ -1,11 +1,9 @@
 import clsx from "clsx";
-import { ChevronRight, DatabaseBackup, Globe, RotateCw, UserPlus, Users } from "lucide-react";
+import { ChevronRight, DatabaseBackup, Globe, RotateCw, Send, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Nyu } from "@/components/nyu/Nyu";
 import { Button } from "@/components/ui/Button";
-import { CreatePersonDialog } from "@/features/people/CreatePersonDialog";
 import { useT } from "@/i18n";
 import { api, type Health, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -91,7 +89,6 @@ export function SimpleHome() {
   const alertText = useAlertText();
   const errorText = useErrorText();
   const queryClient = useQueryClient();
-  const [creating, setCreating] = useState(false);
   const check = useMutation({
     mutationFn: () => api<Health>("/api/admin/health/check", { method: "POST" }),
     onSuccess: (data) => queryClient.setQueryData(["admin", "health"], data),
@@ -181,12 +178,11 @@ export function SimpleHome() {
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <QuickAction icon={Users} label={t("adminView.quick.people")} to="/admin/people" />
-          <QuickAction icon={UserPlus} label={t("adminView.quick.addPerson")} onClick={() => setCreating(true)} />
+          <QuickAction icon={Send} label={t("nav.queue")} to="/admin/queue" />
           <QuickAction icon={Globe} label={t("adminView.quick.domains")} to="/admin/domains" />
           <QuickAction icon={DatabaseBackup} label={t("adminView.quick.backups")} to="/admin/backups" />
         </div>
       </section>
-      <CreatePersonDialog open={creating} onClose={() => setCreating(false)} />
     </div>
   );
 }

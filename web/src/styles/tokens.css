@@ -1,4 +1,11 @@
-/* UwUMail design tokens, kept identical to the UwUMail app (apps/desktop/src/styles/tokens.css). */
+/*
+ * UwUMail design tokens, kept equal to UwUSuite-Design 1.9 (src/css/tokens.css) for what the portal
+ * uses. Components never use raw colours: a missing one becomes a token here.
+ * - Text on a pink fill uses --uwu-pink-solid; --uwu-pink is for dots, badges, selection and bars.
+ * - State colours: the plain token for dots and icons, -ink for text, -tint for backgrounds.
+ * - What takes input (fields, switches off) is outlined with --uwu-control (3:1, WCAG 1.4.11).
+ * An admin's accent colour (/branding.css) overrides the pinks; the focus ring follows it.
+ */
 
 :root {
   --uwu-canvas: #f8f4f6;
@@ -9,6 +16,7 @@
   --uwu-faint: #a69ba5;
   --uwu-hairline: #f2e8ee;
   --uwu-border: #e9dde4;
+  --uwu-control: #8a7d8b;
 
   --uwu-pink: #ff4d8d;
   --uwu-pink-solid: #e11d74;
@@ -17,15 +25,17 @@
   --uwu-pink-ink: #a3154f;
   --uwu-pink-tint: #ffe4ef;
   --uwu-pink-tint-strong: #ffd0e2;
-  /* The accent on the dark toasts of the light theme. */
-  --uwu-toast-accent: #ff7fac;
 
   --uwu-danger: #d92d44;
+  --uwu-danger-ink: #b4233a;
   --uwu-danger-tint: #fde4e7;
   --uwu-success: #12a06d;
+  --uwu-success-ink: #17796a;
   --uwu-success-tint: #d8f5e8;
   --uwu-warning: #b86e00;
+  --uwu-warning-ink: #8e5510;
   --uwu-warning-tint: #fdf0d6;
+  --uwu-offline: #b3a8b3;
 
   /* Bars in the statistics: the brand colour, checked against the surface (L 0.65, 3:1 and more). */
   --uwu-chart: #ff4d8d;
@@ -37,8 +47,33 @@
   --uwu-account-amber: #f59e0b;
   --uwu-account-coral: #f97360;
 
+  /* The toast is inverted: dark on a light app, light on a dark app. */
+  --uwu-toast: #1c1420;
+  --uwu-toast-ink: #ffffff;
+  --uwu-toast-accent: #ff7fac;
+  --uwu-toast-danger: #ff8096;
+
+  /* Behind modal dialogs, and what dims the page behind a sheet or drawer. */
+  --uwu-backdrop: rgb(28 20 32 / 0.35);
+  --uwu-scrim: rgb(25 10 20 / 0.3);
+
+  /* The phone's tab bar on the web: a solid surface, no glass. */
+  --uwu-tabbar: #ffffff;
+
+  --uwu-radius-small: 8px;
+  --uwu-radius-control: 10px;
+  --uwu-radius-card: 16px;
+  --uwu-radius-dialog: 22px;
+
   --uwu-shadow-float: 0 12px 32px rgb(28 20 32 / 0.12), 0 2px 8px rgb(28 20 32 / 0.06);
-  --uwu-focus: 0 0 0 3px rgb(255 77 141 / 0.35);
+  --uwu-shadow-primary: 0 2px 10px rgb(225 29 116 / 0.25);
+  /* The focus ring: opaque, 3:1 against every surface (WCAG 1.4.11). */
+  --uwu-focus: 0 0 0 3px var(--uwu-pink-solid);
+
+  --uwu-font:
+    "UwU Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  --uwu-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --tracking-ui: -0.008em;
 
   color-scheme: light;
 }
@@ -52,6 +87,7 @@
   --uwu-faint: #7d717d;
   --uwu-hairline: #2c2430;
   --uwu-border: #3a3040;
+  --uwu-control: #7d7185;
 
   --uwu-pink: #ff7fac;
   --uwu-pink-solid: #ff7fac;
@@ -62,17 +98,30 @@
   --uwu-pink-tint-strong: #4d2338;
 
   --uwu-danger: #ff6b7e;
+  --uwu-danger-ink: #ff8a99;
   --uwu-danger-tint: #3d1a20;
   --uwu-success: #3ddc97;
+  --uwu-success-ink: #5cc7ac;
   --uwu-success-tint: #123a2a;
   --uwu-warning: #f5b94a;
+  --uwu-warning-ink: #d8a25c;
   --uwu-warning-tint: #3a2a0c;
+  --uwu-offline: #6d6474;
 
   /* A step darker than the dark theme's pink, so bars do not glare on the dark surface (checked the same way). */
   --uwu-chart: #e8588a;
 
+  --uwu-toast: #f8f2f6;
+  --uwu-toast-ink: #1c1420;
+  --uwu-toast-accent: #a3154f;
+  --uwu-toast-danger: #b4233a;
+
+  --uwu-backdrop: rgb(0 0 0 / 0.5);
+  --uwu-scrim: rgb(0 0 0 / 0.5);
+  --uwu-tabbar: #1c171f;
+
   --uwu-shadow-float: 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.3);
-  --uwu-focus: 0 0 0 3px rgb(255 127 172 / 0.4);
+  --uwu-shadow-primary: 0 2px 10px rgb(255 127 172 / 0.2);
 
   color-scheme: dark;
 }

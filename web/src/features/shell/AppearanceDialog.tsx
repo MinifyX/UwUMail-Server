@@ -1,5 +1,5 @@
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, Select } from "@/components/ui/Field";
+import { Segmented, Select, SettingRow } from "@/components/ui/Field";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { useBrand } from "@/state/brand";
 import { useSavePrefs } from "@/features/session/session";
@@ -13,11 +13,12 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
 
   return (
     <Dialog open={open} onClose={onClose} title={t("appearance.title")} width="sm">
-      <div className="flex flex-col gap-5 px-6 pt-2 pb-6">
-        <Field label={t("appearance.language.label")}>
-          {(id) => (
+      <div className="flex flex-col gap-4 px-6 pt-2 pb-6">
+        <SettingRow label={t("appearance.language.label")}>
+          {({ id }) => (
             <Select
               id={id}
+              className="w-full sm:w-52"
               value={prefs.language}
               onChange={(event) => save.mutate({ language: event.target.value as LanguageSetting })}
             >
@@ -29,12 +30,13 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
               ))}
             </Select>
           )}
-        </Field>
+        </SettingRow>
         {/* Without the mascot everything is plain, so there is no tone to choose. */}
         {mascot && (
-          <Field label={t("appearance.tone.label")} hint={t("appearance.tone.hint")}>
-            {() => (
+          <SettingRow label={t("appearance.tone.label")} description={t("appearance.tone.hint")}>
+            {({ describedBy }) => (
               <Segmented<Tone>
+                describedBy={describedBy}
                 label={t("appearance.tone.label")}
                 value={prefs.tone}
                 onChange={(tone) => save.mutate({ tone })}
@@ -44,9 +46,9 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
                 ]}
               />
             )}
-          </Field>
+          </SettingRow>
         )}
-        <Field label={t("appearance.theme.label")}>
+        <SettingRow label={t("appearance.theme.label")}>
           {() => (
             <Segmented<ThemeSetting>
               label={t("appearance.theme.label")}
@@ -58,8 +60,8 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
               }))}
             />
           )}
-        </Field>
-        <Field label={t("appearance.motion.label")}>
+        </SettingRow>
+        <SettingRow label={t("appearance.motion.label")}>
           {() => (
             <Segmented<MotionSetting>
               label={t("appearance.motion.label")}
@@ -71,7 +73,7 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
               }))}
             />
           )}
-        </Field>
+        </SettingRow>
         {save.isError && (
           <p role="alert" className="text-[13px] text-danger">
             {t("appearance.saveFailed")}

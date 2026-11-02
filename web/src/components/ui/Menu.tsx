@@ -75,7 +75,7 @@ export function Menu({ trigger, items, align = "start", className }: MenuProps) 
             }
           }}
           className={clsx(
-            "absolute top-[calc(100%+6px)] z-40 flex w-max max-w-[min(360px,calc(100vw-48px))] min-w-[200px] animate-pop flex-col rounded-2xl border border-line bg-surface p-1.5 text-ink shadow-float",
+            "absolute top-[calc(100%+6px)] z-40 flex w-max max-w-[min(360px,calc(100vw-48px))] min-w-[200px] animate-pop flex-col rounded-menu border border-line bg-surface p-1.5 text-ink shadow-float",
             align === "end" ? "right-0" : "left-0",
           )}
         >

@@ -80,7 +80,23 @@
     "moving": "Moving",
     "more": "More",
     "updates": "Updates",
-    "assist": "AI assistant"
+    "assist": "AI assistant",
+    "groups": {
+      "account": "Account",
+      "mail": "Mail",
+      "extras": "Extras"
+    },
+    "codes": "Verification codes",
+    "new": "New",
+    "mode": "Area",
+    "home": "Go to overview",
+    "openMailbox": "Open mailbox",
+    "tabs": {
+      "server": "Server",
+      "people": "Accounts",
+      "queue": "Queue",
+      "codes": "Codes"
+    }
   },
   "userMenu": {
     "open": "Open account menu",
@@ -154,6 +170,55 @@
       "login": "Login",
       "role": "Role",
       "created": "Created on"
+    },
+    "tiles": {
+      "addresses_one": "1 address",
+      "addresses_other": "{{count}} addresses",
+      "addressesNote": "on this account",
+      "masked_one": "1 masked active",
+      "masked_other": "{{count}} masked active",
+      "storageOf": "of {{quota}}",
+      "storageUnlimited": "used, no limit",
+      "secondFactor": "Two-factor sign-in",
+      "secondFactorOn": "2FA on",
+      "secondFactorOff": "2FA off",
+      "passkeys_one": "1 passkey",
+      "passkeys_other": "{{count}} passkeys",
+      "since": "Account since"
+    },
+    "next": {
+      "title": "Up next",
+      "intro": "Small things that make your account better.",
+      "codes": {
+        "title": "Set up verification codes",
+        "text": "Show codes from mail above the mail list"
+      },
+      "secondFactor": {
+        "title": "Set up a second factor",
+        "text": "Passkey or authenticator app"
+      },
+      "masked": {
+        "title": "Create a masked address",
+        "text": "For shops and newsletters"
+      },
+      "device": {
+        "title": "Connect another device",
+        "text": "IMAP, JMAP or Apple profile"
+      }
+    },
+    "status": {
+      "title": "Status",
+      "allGood": "All good.",
+      "open_one": "One thing needs you.",
+      "open_other": "{{count}} things need you.",
+      "storageOk": "Storage {{percent}} % used",
+      "storageFilling": "Storage getting tight: {{percent}} % used",
+      "storageFull": "Storage almost full: {{percent}} % used",
+      "secondFactorOn": "Two-factor sign-in on",
+      "secondFactorOff": "Two-factor sign-in off",
+      "fetchOk_one": "1 fetched account running",
+      "fetchOk_other": "{{count}} fetched accounts running",
+      "fetchFailed": "Fetched account {{address}}: last fetch failed"
     }
   },
   "admin": {
@@ -221,7 +286,8 @@
         "title": "Last change",
         "none": "Nothing changed yet"
       }
-    }
+    },
+    "versionShort": "Version {{version}}"
   },
   "adminView": {
     "label": "View",
@@ -4962,5 +5028,39 @@
       "uploaded_one": "{{count}} entry imported.",
       "uploaded_other": "{{count}} entries imported."
     }
+  },
+  "codes": {
+    "title": "Verification codes",
+    "intro": "Spot one-time codes in mail, copy them and tidy up afterwards.",
+    "card": {
+      "title": "Codes in mail",
+      "intro": "Applies to webmail and the UwUMail apps."
+    },
+    "detect": {
+      "label": "Detect codes automatically (DE/EN)",
+      "description": "Looks for codes like “Your code is 482913” in German and English mail. You can copy codes found this way, but they are never filled in automatically."
+    },
+    "cleanup": {
+      "label": "Clean up expired codes",
+      "options": {
+        "off": "Off",
+        "now": "Right away",
+        "24h": "After 24 h",
+        "7d": "After 7 days"
+      },
+      "description": {
+        "off": "Mail with codes stays in the inbox.",
+        "now": "As soon as a code expires, the mail moves to the trash.",
+        "24h": "A day after it expires, the mail moves to the trash. (Default)",
+        "7d": "A week after it expires, the mail moves to the trash."
+      }
+    },
+    "signed": "UwUMail always shows codes with a signed origin (header {{header}}, DKIM verified). Only these may be filled in by apps, and only on the matching site.",
+    "preview": {
+      "title": "Preview",
+      "left": "{{time}} left",
+      "caption": "This is how a code appears above the mail list."
+    },
+    "localOnly": "For now these settings only apply in this browser."
   }
 }

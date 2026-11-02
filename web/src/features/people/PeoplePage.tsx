@@ -148,7 +148,7 @@ export function PeoplePage({ session }: { session: Session }) {
           ) : table ? (
             <div className="overflow-x-auto rounded-card border border-hairline bg-surface">
               <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-hairline text-[12px] font-semibold text-muted">
+                <thead className="border-b border-hairline text-[12px] font-bold tracking-wide text-muted uppercase">
                   <tr>
                     <th className="px-4 py-2.5">{t("people.table.person")}</th>
                     <th className="px-4 py-2.5">{t("people.table.status")}</th>
@@ -165,7 +165,7 @@ export function PeoplePage({ session }: { session: Session }) {
                           <PersonAvatar person={person} size="sm" />
                           <span className="min-w-0">
                             <span className="block truncate font-semibold">{person.name || person.login}</span>
-                            <span className="block truncate text-[12px] text-muted">{person.login}</span>
+                            <span className="block truncate font-mono text-[12px] text-muted">{person.login}</span>
                           </span>
                         </Link>
                       </td>
@@ -179,8 +179,10 @@ export function PeoplePage({ session }: { session: Session }) {
                       <td className="px-4 py-2">
                         <StorageLine person={person} />
                       </td>
-                      <td className="px-4 py-2 text-muted">{person.addresses.length}</td>
-                      <td className="px-4 py-2 text-muted">{formatDate(person.createdAt, i18n.language)}</td>
+                      <td className="px-4 py-2 text-muted tabular-nums">{person.addresses.length}</td>
+                      <td className="px-4 py-2 text-muted tabular-nums">
+                        {formatDate(person.createdAt, i18n.language)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
