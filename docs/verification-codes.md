@@ -61,7 +61,33 @@ candidate next to a word like "code" or "Bestätigungscode". Anything that looks
 like a date, an amount, a phone number, a postal code or an order, invoice or
 customer number is left alone; newsletters with discount codes stay
 newsletters. A guessed code is valid for 15 minutes unless the text says
-otherwise, and its `origin` is the registrable From domain.
+otherwise ("gültig für 10 Minuten", "5 Minuten gültig", "verfällt nach zwei
+Minuten", "expires in ten minutes"), and its `origin` is the registrable From
+domain.
+
+An HTML-only mail is read with each block (paragraph, heading, table cell, `div`)
+on a line of its own, so a code standing alone in a cell under "Einmalcode" is
+found like the same code in plain text.
+
+Without a code, an HTML mail may still carry a sign-in or confirmation link.
+The guess takes it, as `kind: "link"` without a code, only when all of this
+holds:
+
+- exactly one link sits behind a button such as "Sign in", "Log in",
+  "Anmelden", "Verify", "E-Mail bestätigen" or "Passwort zurücksetzen";
+- it is an `https` link to the registrable From domain or a host below it,
+  without user name or password, and its query carries no other address (a
+  click tracker on another domain or a redirect is no such link);
+- the text says the link was asked for or expires ("If you didn't request
+  this", "nicht angefordert", "This link expires in 10 minutes");
+- the mail is no list, bulk or reply mail (`List-Id`, `Precedence: list`,
+  `bulk` or `junk`, `In-Reply-To`, `References`): in a platform's notification
+  someone else may have written the link.
+
+Only links in the visible HTML count, not those in comments, `head`, `style`,
+`script` or `template`. A newsletter's "Jetzt anmelden" for an event says
+neither, and stays a newsletter. Like a signed code, a guessed link stays
+valid when the mail is forwarded.
 
 A guess is marked `source: "heuristic"` and is only made when DMARC passed, so
 the domain it is bound to is really the sender's: forged mail neither shows a
