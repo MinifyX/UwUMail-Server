@@ -121,6 +121,12 @@ pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, R
         });
     }
 
+    // Read before anything runs, so a failure here leaves nothing half done.
+    let internal = session::internal_domains(&jmap.inner.store, &login.account).await.map_err(|err| {
+        tracing::error!(%err, "reading the internal domains failed");
+        RequestError::new(StatusCode::INTERNAL_SERVER_ERROR, "serverFail", "Something went wrong on the server.")
+    })?;
+    let internal = session::internal_state(internal.as_deref());
     let echo_created_ids = request.created_ids.is_some();
     let may_use_dav = login.may_use_dav();
     let masked_only = login.masked_only();
@@ -157,7 +163,8 @@ pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, R
         if masked_only { Vec::new() } else { crate::sharing::shared_accounts(&jmap.inner.store, ctx.account.id).await };
     // So does where the account may make masked addresses.
     let masked = session::masked_state(&jmap.inner.store).await;
-    let state = format!("{}{}{masked}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
+    let state =
+        format!("{}{}{internal}{masked}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
     response.insert("sessionState".into(), json!(state));
     Ok(Value::Object(response))
 }

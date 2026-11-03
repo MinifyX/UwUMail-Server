@@ -2156,3 +2156,80 @@ async fn an_internal_only_account_is_refused_outside_at_rcpt() {
     assert_eq!(inbox[0].subject, "Nur intern");
     assert!(store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
 }
+
+/// Mail an account queued before it was switched to internal-only does not go out at its next
+/// attempt: the recipients fail with 5.7.1 and the sender gets a bounce. Mail of the server itself
+/// (no account) still goes.
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_mail_stays_here_once_its_account_is_internal_only() {
+    let b = start("b.test", &["nyu"], &[]).await;
+    let a = start("a.test", &["mini"], &[("b.test", b.mx)]).await;
+    for name in ["a.test", "mx.a.test", "_dmarc.a.test"] {
+        b.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap();
+    let only_here = uwumail_store::AccountUpdate { internal_only: Some(true), ..Default::default() };
+    store.update_account("mini@a.test", only_here).await.unwrap();
+    let to_nyu =
+        || vec![uwumail_store::NewQueueRecipient { address: "nyu@b.test".into(), notify_flags: 0, orcpt: None }];
+    let raw = "From: mini@a.test\r\nTo: nyu@b.test\r\nSubject: Vorher\r\n\r\nHallo\r\n";
+    store.enqueue("mini@a.test", to_nyu(), raw.as_bytes(), Some(mini.id), None, 3600).await.unwrap();
+    let raw = "From: postmaster@a.test\r\nTo: nyu@b.test\r\nSubject: System\r\n\r\nHallo\r\n";
+    store.enqueue("", to_nyu(), raw.as_bytes(), None, None, 3600).await.unwrap();
+
+    let bounce = &a.wait_for_inbox("mini@a.test", 1).await[0];
+    let bounce = a.raw(bounce).await;
+    assert!(bounce.contains("5.7.1") && bounce.contains("only send to addresses on this server"), "{bounce}");
+    let inbox = b.wait_for_inbox("nyu@b.test", 1).await;
+    assert_eq!(inbox.iter().map(|email| email.subject.as_str()).collect::<Vec<_>>(), ["System"]);
+}
+
+/// The switch on a shared mailbox holds for its members when they send as it, and a forwarding
+/// address passes an internal-only sender's mail on only to people here (docs/jmap-sending.md).
+#[tokio::test(flavor = "multi_thread")]
+async fn internal_only_goes_with_a_shared_mailbox_and_through_forwarding_addresses() {
+    use base64::Engine as _;
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let config = SmtpConfig { require_tls_for_auth: false, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "ami"], &[("c.test", unreachable)], config).await;
+    let store = a.smtp.store();
+    store
+        .create_shared_mailbox(uwumail_store::NewSharedMailbox {
+            address: "support@a.test".into(),
+            name: "Support".into(),
+            quota_bytes: 0,
+            members: vec![("mini@a.test".into(), true)],
+        })
+        .await
+        .unwrap();
+    let only_here = uwumail_store::AccountUpdate { internal_only: Some(true), ..Default::default() };
+    store.update_account("support@a.test", only_here).await.unwrap();
+    store.set_forward_address("kasse@a.test", vec!["oma@c.test".into(), "ami@a.test".into()], "").await.unwrap();
+
+    let mut session = RawSession::connect(a.submission).await;
+    session.command("EHLO client.test").await;
+    let plain = base64::engine::general_purpose::STANDARD.encode(format!("\0mini@a.test\0{PASSWORD}"));
+    assert!(session.command(&format!("AUTH PLAIN {plain}")).await.starts_with("235"));
+    // Mini herself may send anywhere, but not as the shared mailbox.
+    assert!(session.command("MAIL FROM:<support@a.test>").await.starts_with("250"));
+    let refused = session.command("RCPT TO:<leni@elsewhere.test>").await;
+    assert!(refused.starts_with("550 5.7.1") && refused.contains("only send to addresses on this server"), "{refused}");
+    assert!(session.command("RSET").await.starts_with("250"));
+
+    // Its address only in the From: the outside recipient comes back in a bounce, and the
+    // forwarding address reaches Ami here but not the address elsewhere.
+    assert!(session.command("MAIL FROM:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<kasse@a.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<leni@elsewhere.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let message = "From: Support <support@a.test>\r\nTo: kasse@a.test, leni@elsewhere.test\r\nSubject: Nur intern\r\n\r\nHallo\r\n.";
+    let reply = session.command(message).await;
+    assert!(reply.starts_with("250"), "{reply}");
+
+    assert_eq!(a.wait_for_inbox("ami@a.test", 1).await[0].subject, "Nur intern");
+    let bounce = &a.wait_for_inbox("mini@a.test", 1).await[0];
+    let bounce = a.raw(bounce).await;
+    assert!(bounce.contains("leni@elsewhere.test") && bounce.contains("kasse@a.test"), "{bounce}");
+    assert!(store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
+}

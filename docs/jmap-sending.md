@@ -124,19 +124,30 @@ The switch is read from the account as it is now, at every door:
 | SMTP submission (587/465) | `RCPT` answered `550 5.7.1 This account may only send to addresses on this server`; the recipients here still get the message | every `RCPT` refused, so the client has nobody to send to |
 | JMAP `EmailSubmission/set`, sent at once | the message goes to the recipients here; the others come back to the sender in a bounce with the same `550 5.7.1` reason | `forbiddenToSend`, nothing is sent and nothing bounces (like a message nobody accepts) |
 | JMAP, held back (undo window, send later) | checked again when it goes: the same split | refused with `forbiddenToSend` when it is held; if the switch went on meanwhile, it does not go and `deliveryStatus` names the reason |
-| Mail sent from a shared mailbox | the switch of the person sending counts, not the mailbox's | |
+| Sending as another account's address (a shared mailbox, a service account, a send-as domain) | the switch counts when it is on for the person sending or for the account the address belongs to: `MAIL FROM`, `From` and `Sender` are all looked at, so a shared mailbox that is switched on stays inside for every member who writes as it | as for the account itself |
 
 What else stays inside while it is on:
 
-- **Forwarding** to an address elsewhere cannot be set up (`internalOnly`
-  error); targets set up before are skipped when mail arrives and work again
-  once the switch is off. Sieve `redirect` only goes where forwarding may, so
-  it follows. Forwarding to people on this server is not affected.
+- **Forwarding** only goes to people on this server: an address elsewhere,
+  and also an address on one of this server's domains that belongs to nobody
+  here, cannot be set up (`internalOnly` error), because forwarding would hand
+  it to the domain's public mail server. Targets set up before are skipped
+  when mail arrives and work again once the switch is off. Sieve `redirect`
+  only goes where forwarding may, so it follows. Forwarding to people on this
+  server is not affected.
+- **Forwarding addresses** an admin set up (an address without a mailbox that
+  passes mail on) still reach their targets here when an internal-only
+  account writes to them; their targets elsewhere are left out, and the sender
+  gets a bounce for the forwarding address with the same `550 5.7.1` reason.
 - **Away replies** only answer senders on this server.
 - **Sending through a fetch account's provider** is switched off with the
   switch and cannot be switched back on (`internalOnly` error).
-- Messages already in the outgoing queue when the switch goes on are not
-  stopped; they were accepted while sending outside was allowed.
+- **Messages already in the outgoing queue** when the switch goes on do not
+  go out either: before each delivery attempt the queue looks at the switch
+  of the account that queued the message, and its recipients fail with the
+  same `550 5.7.1` reason and come back to the sender in a bounce. Mail the
+  server sends itself (bounces, reports) belongs to no account and is not
+  affected.
 
 The JMAP session tells clients, in the account's
 `urn:ietf:params:jmap:submission` capability, so they can warn before the
@@ -152,9 +163,9 @@ person writes to someone elsewhere:
 ```
 
 `uwuInternalOnly` is always there; `uwuInternalDomains` (lowercase, sorted)
-only while it is `true`. The session `state` changes when the switch does; a
-domain added or removed while it is on does not change the state, so a client
-sees the new list with its next session fetch.
+only while it is `true`. The session `state` changes when the switch does,
+and while it is on also when a domain is added or removed, so a client reads
+the session again and gets the new list.
 
 ## Signatures
 

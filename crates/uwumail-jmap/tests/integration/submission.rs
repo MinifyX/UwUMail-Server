@@ -290,6 +290,23 @@ async fn an_internal_only_account_sends_inside_and_bounces_the_rest() {
     assert_eq!(capability["uwuInternalOnly"], true);
     assert_eq!(capability["uwuInternalDomains"], json!(["example.org", "masked.test"]));
     assert_ne!(session["state"], state_before, "the session state moves with the switch");
+    // A new domain is somewhere to write to as well: the state moves, so apps read it again,
+    // and API responses tell the same state.
+    let state_before = session["state"].clone();
+    server.store.create_domain("later.test").await.unwrap();
+    let session = server.session_of(MINI).await;
+    let capability = &session["accounts"][&account]["accountCapabilities"]["urn:ietf:params:jmap:submission"];
+    assert_eq!(capability["uwuInternalDomains"], json!(["example.org", "later.test", "masked.test"]));
+    assert_ne!(session["state"], state_before, "the session state moves with the domains");
+    let (_, response) = server
+        .api_as(
+            &crate::common::basic(MINI, crate::common::PASSWORD),
+            &["urn:ietf:params:jmap:core"],
+            json!([["Core/echo", {}, "0"]]),
+        )
+        .await;
+    let api_state = response["sessionState"].as_str().unwrap();
+    assert!(session["state"].as_str().unwrap().starts_with(api_state), "{api_state} {}", session["state"]);
 
     // Mixed: Nyu gets it, the address elsewhere comes back to Mini.
     let (email, identity) = draft(&server, "Inside").await;

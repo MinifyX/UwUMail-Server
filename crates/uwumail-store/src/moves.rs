@@ -848,6 +848,7 @@ impl Store {
                 )?;
                 let mut granted = crate::identity_grants::Granted::default();
                 let address = format!("{local}@{domain}");
+                crate::identity_grants::revoke_identities(tx, account_id, &address, &mut granted)?;
                 crate::shared_mailboxes::address_changed(tx, account_id, &address, false, &mut granted)?;
                 Ok(Some(granted))
             })
@@ -1721,9 +1722,13 @@ mod tests {
         assert!(store.account("neu@example.org").await.unwrap().is_some());
         assert_eq!(store.move_mailboxes(1).await.unwrap().len(), 1, "the other move keeps its mailbox");
         // What only the refused request made goes.
-        person(&store, "frei@example.org").await;
+        let frei = person(&store, "frei@example.org").await;
+        store.identities(frei).await.unwrap();
         store.add_alias("frei.alias@example.org", "frei@example.org").await.unwrap();
+        assert_eq!(store.identities(frei).await.unwrap().len(), 2);
         assert!(store.undo_move_alias("frei.alias@example.org").await.unwrap());
+        let identities = store.identities(frei).await.unwrap();
+        assert_eq!(identities.iter().map(|i| i.email.as_str()).collect::<Vec<_>>(), ["frei@example.org"]);
         assert!(store.undo_move_account("frei@example.org").await.unwrap());
         assert!(store.account("frei@example.org").await.unwrap().is_none());
         assert!(!store.undo_move_account("frei@example.org").await.unwrap(), "gone already");

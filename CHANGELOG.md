@@ -23,11 +23,13 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   elsewhere are refused: in a mail app at the `RCPT` step with "550 5.7.1 This account may only
   send to addresses on this server", in the webmail and over JMAP they come back to the sender in
   a bounce while the people here still get the message. A message with nobody here at all is
-  refused as a whole. Mail held back for later is checked again when it goes. Forwarding to other
-  servers can't be set up and existing targets elsewhere are skipped while the switch is on, away
-  replies only answer senders on this server, and sending through a fetched mailbox's provider is
-  switched off. Mail apps can see it in the JMAP session (`uwuInternalOnly` and
-  `uwuInternalDomains` in the submission capability). See
+  refused as a whole. Mail held back for later is checked again when it goes, and mail already in
+  the outgoing queue bounces at its next attempt. Switched on for a shared mailbox, it also holds
+  for its members when they send as it. Forwarding only goes to people on this server (existing
+  targets elsewhere are skipped while the switch is on), forwarding addresses pass such mail on
+  only to their targets here, away replies only answer senders on this server, and sending
+  through a fetched mailbox's provider is switched off. Mail apps can see it in the JMAP session
+  (`uwuInternalOnly` and `uwuInternalDomains` in the submission capability). See
   [docs/jmap-sending.md](docs/jmap-sending.md#sending-only-within-this-server).
 
 ## 0.26.2

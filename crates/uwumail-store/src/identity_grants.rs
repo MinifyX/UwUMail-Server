@@ -29,7 +29,7 @@ pub(crate) fn grant_identity(
     granted: &mut Granted,
 ) -> Result<()> {
     let (count, has): (i64, bool) = conn.query_row(
-        "SELECT count(*), coalesce(sum(email = ?2), 0) > 0 FROM identities WHERE account_id = ?1",
+        "SELECT count(*), coalesce(sum(lower(email) = lower(?2)), 0) > 0 FROM identities WHERE account_id = ?1",
         params![account_id, email],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
@@ -57,7 +57,7 @@ pub(crate) fn revoke_identities(conn: &Connection, account_id: i64, email: &str,
         return Ok(());
     }
     let ids: Vec<i64> = conn
-        .prepare("SELECT id FROM identities WHERE account_id = ?1 AND email = ?2")?
+        .prepare("SELECT id FROM identities WHERE account_id = ?1 AND lower(email) = lower(?2)")?
         .query_map(params![account_id, email], |row| row.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     if ids.is_empty() {

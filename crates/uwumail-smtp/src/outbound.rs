@@ -94,7 +94,10 @@ fn retry_delay(attempt: i64) -> i64 {
 async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, recipients: Vec<QueueRecipient>) {
     let outcomes = match ctx.store.blob(&message.blob).await {
         Ok(raw) => {
-            let outcomes = deliver_domain(ctx, &domain, &message, &raw, &recipients).await;
+            let outcomes = match held_inside(ctx, &message, &recipients).await {
+                Some(outcomes) => outcomes,
+                None => deliver_domain(ctx, &domain, &message, &raw, &recipients).await,
+            };
             Some((raw, outcomes))
         }
         Err(err) => {
@@ -159,6 +162,31 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
     }
     if let Err(err) = ctx.store.complete_queue_message(message.id).await {
         tracing::error!(%err, message = message.id, "cleaning up the queue failed");
+    }
+}
+
+/// Mail queued by an account that may now only send to addresses on this server stays here: the
+/// switch holds for what is already waiting too, and the recipients fail as if the server
+/// elsewhere had refused them (docs/jmap-sending.md). System mail without an account goes on.
+async fn held_inside(ctx: &Context, message: &QueuedMessage, recipients: &[QueueRecipient]) -> Option<Vec<Outcome>> {
+    let account_id = message.account_id?;
+    match ctx.store.account_internal_only(account_id).await {
+        Ok(false) => None,
+        Ok(true) => Some(
+            recipients
+                .iter()
+                .map(|recipient| {
+                    let address = &recipient.address;
+                    Outcome::Failed(format!(
+                        "550 5.7.1 <{address}>: This account may only send to addresses on this server"
+                    ))
+                })
+                .collect(),
+        ),
+        Err(err) => {
+            tracing::error!(%err, message = message.id, "checking the sender of queued mail failed");
+            Some(recipients.iter().map(|_| Outcome::Deferred(format!("451 4.3.0 {err}"))).collect())
+        }
     }
 }
 

@@ -53,12 +53,6 @@ fn target_from_row(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resu
     Ok(ForwardTarget { id: row.get(0)?, address, local, created_at: row.get(2)?, confirmed_at: row.get(3)? })
 }
 
-/// Whether the address is on a domain this server holds (mail or masked-only).
-fn on_local_domain(conn: &Connection, address: &str) -> rusqlite::Result<bool> {
-    let domain = address.rsplit_once('@').map_or("", |(_, domain)| domain).to_ascii_lowercase();
-    conn.query_row("SELECT EXISTS (SELECT 1 FROM domains WHERE name = ?1)", [domain], |row| row.get(0))
-}
-
 fn targets(conn: &Connection, account_id: i64) -> rusqlite::Result<Vec<ForwardTarget>> {
     let mut stmt = conn.prepare(
         "SELECT id, address, created_at, confirmed_at FROM forward_targets WHERE account_id = ?1 ORDER BY created_at, id",
@@ -102,7 +96,9 @@ impl Store {
                 [account_id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
-            if target_account.is_none() && internal_only && !on_local_domain(tx, &address)? {
+            // Only an account here counts: an unknown address on a hosted domain would still be
+            // sent out (forwarding queues anything without an account for remote delivery).
+            if target_account.is_none() && internal_only {
                 return Err(StoreError::Rule {
                     code: "internalOnly",
                     message: "this account may only send to addresses on this server".into(),
@@ -269,9 +265,9 @@ impl Store {
                 if local == Some(account_id) || (local.is_none() && blocked) {
                     continue;
                 }
-                // Nothing leaves this server for an internal-only account; the target comes back
-                // when the switch goes off.
-                if local.is_none() && internal_only && !on_local_domain(conn, &address)? {
+                // Nothing leaves this server for an internal-only account, and only an account here
+                // keeps it here; the target comes back when the switch goes off.
+                if local.is_none() && internal_only {
                     continue;
                 }
                 targets.push((address, local));
@@ -353,6 +349,11 @@ mod tests {
         store.update_account("leni@example.org", update).await.unwrap();
         let refused = store.add_forward_target(leni.id, "oma@elsewhere.example", true).await;
         assert!(matches!(refused, Err(StoreError::Rule { code: "internalOnly", .. })));
+        let unknown_here = store.add_forward_target(leni.id, "nobody@example.org", true).await;
+        assert!(
+            matches!(unknown_here, Err(StoreError::Rule { code: "internalOnly", .. })),
+            "a hosted domain is not enough, the address must belong to someone here"
+        );
         let active = store.active_forwarding(leni.id).await.unwrap();
         assert_eq!(active.targets, vec![("ami@example.org".to_owned(), Some(ami.id))], "skipped at delivery");
         assert!(store.forwarding(leni.id).await.unwrap().internal_only);

@@ -139,7 +139,7 @@ impl Smtp {
     /// Checks the sender, completes and signs the message, delivers to local recipients and
     /// queues the rest. Failed local deliveries are bounced to the sender.
     pub async fn submit(&self, submission: Submission) -> Result<Submitted, SubmitError> {
-        let current = self.checked_account(&submission).await?;
+        let internal_only = self.checked_account(&submission).await?;
         let Submission { account, mail_from, recipients, raw, env_id, trace } = submission;
         let raw = headers::normalize_line_endings(&raw);
         let (from, _) = claimed_addresses(&raw)?;
@@ -149,7 +149,7 @@ impl Smtp {
             tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
             return Err(SubmitError::Virus(name));
         }
-        self.submit_checked(account, current.internal_only, mail_from, recipients, raw, env_id, trace, from).await
+        self.submit_checked(account, internal_only, mail_from, recipients, raw, env_id, trace, from).await
     }
 
     /// The checks [`Smtp::submit`] makes before it touches the message: may this account send at
@@ -160,8 +160,9 @@ impl Smtp {
         self.checked_account(submission).await.map(|_| ())
     }
 
-    /// [`Smtp::check_submission`], returning the account as it is now.
-    async fn checked_account(&self, submission: &Submission) -> Result<Account, SubmitError> {
+    /// [`Smtp::check_submission`], returning whether this message may only go to addresses on this
+    /// server.
+    async fn checked_account(&self, submission: &Submission) -> Result<bool, SubmitError> {
         let ctx = &self.inner;
         let Submission { account, mail_from, recipients, raw, .. } = submission;
         if recipients.is_empty() {
@@ -201,19 +202,25 @@ impl Smtp {
                 return Err(SubmitError::ForbiddenFrom(address.clone()));
             }
         }
+        // The switch on the account that sends, or on the account whose address it sends as (a
+        // shared mailbox or a service account its members write from).
+        let internal_only = current.internal_only || {
+            let sending = std::iter::once(mail_from).chain(&from).chain(&sender).cloned().collect();
+            ctx.store.addresses_internal_only(sending).await.map_err(SubmitError::Queue)?
+        };
         let mut any_internal = false;
         for recipient in recipients {
             let Ok((_, domain)) = uwumail_store::normalize_address(&recipient.address) else {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             };
-            if current.internal_only && !any_internal {
+            if internal_only && !any_internal {
                 any_internal = ctx.store.is_local_domain(&domain).await.unwrap_or(false);
             }
         }
         // An internal-only account with nobody on this server to write to: refused as a whole,
         // like a message nobody accepts (docs/jmap-sending.md). With some recipients here, the
         // others fail one by one in `submit_checked` and come back in a bounce.
-        if current.internal_only && !any_internal {
+        if internal_only && !any_internal {
             return Err(SubmitError::InternalOnly);
         }
         // The size limit holds for the message as it goes out, with the company footer in it
@@ -222,7 +229,7 @@ impl Smtp {
         if with_footer.len() > live.smtp.max_message_size {
             return Err(SubmitError::TooLarge);
         }
-        Ok(current)
+        Ok(internal_only)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -380,7 +387,23 @@ impl Smtp {
                 }
                 None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => {
                     match ctx.store.forward_address_targets(&address).await.ok().flatten() {
-                        Some(targets) => {
+                        Some(mut targets) => {
+                            // An internal-only sender's mail does not leave through a forwarding
+                            // address either: its people here get it, the targets elsewhere are
+                            // refused like any outside recipient (docs/jmap-sending.md).
+                            if internal_only && targets.iter().any(|(_, local)| local.is_none()) {
+                                targets.retain(|(_, local)| local.is_some());
+                                failed.push(FailedRecipient {
+                                    address: address.clone(),
+                                    error: format!(
+                                        "550 5.7.1 <{address}>: This account may only send to addresses on this \
+                                         server, so it did not go on to addresses elsewhere"
+                                    ),
+                                });
+                                if targets.is_empty() {
+                                    continue;
+                                }
+                            }
                             let forwarder = forward::Forwarder {
                                 name: &address,
                                 account_id: Some(account.id),

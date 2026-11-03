@@ -1255,12 +1255,17 @@ impl Session {
         };
         let address = format!("{local}@{domain}");
         let store = &ctx.store;
-        // An internal-only account (as it is now, not as it was at login) may not name anyone
-        // outside; the recipients here still get the message (docs/jmap-sending.md).
+        // An internal-only account (as it is now, not as it was at login), or one sending as the
+        // address of an internal-only account, may not name anyone outside; the recipients here
+        // still get the message (docs/jmap-sending.md).
         if self.kind.is_submission()
             && let Some(account) = &self.account
-            && store.account_by_id(account.id).await.ok().flatten().is_some_and(|current| current.internal_only)
             && !store.is_local_domain(&domain).await.unwrap_or(false)
+            && (store.account_internal_only(account.id).await.unwrap_or(false)
+                || store
+                    .addresses_internal_only(self.envelope.iter().map(|e| e.address.clone()).collect())
+                    .await
+                    .unwrap_or(false))
         {
             let text = format!("550 5.7.1 <{address}>: This account may only send to addresses on this server\r\n");
             self.error(&text).await?;
