@@ -32,6 +32,12 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   (`uwuInternalOnly` and `uwuInternalDomains` in the submission capability). See
   [docs/jmap-sending.md](docs/jmap-sending.md#sending-only-within-this-server).
 
+### Changed
+
+- **Webmail 0.25.0 (`3695165`): only sending within this server.** For such an account the
+  webmail says so under the sender, marks recipients elsewhere and won't send to them, and shows
+  the server's refusal as such.
+
 ## 0.26.2
 
 ### Fixed
