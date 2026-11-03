@@ -182,6 +182,27 @@ async fn invite_a_person_who_then_chooses_a_password() {
 }
 
 #[tokio::test]
+async fn internal_only_is_switched_on_the_person_page_and_logged() {
+    let portal = Portal::new().await;
+    let nyu = portal.login("nyu@example.org", "katzenpfote-123").await;
+    let new = json!({ "address": "ami@example.org", "name": "Ami", "password": "Kirschbluete-Tastatur" });
+    portal.request("POST", "/api/admin/people", Some(new), Some(&nyu)).await;
+    let (_, _, before) = portal.request("GET", "/api/admin/people/ami@example.org", None, Some(&nyu)).await;
+    assert_eq!(before["internalOnly"], false, "off for everyone");
+
+    let (status, _, person) = portal
+        .request("PATCH", "/api/admin/people/ami@example.org", Some(json!({ "internalOnly": true })), Some(&nyu))
+        .await;
+    assert_eq!((status, person["internalOnly"].as_bool()), (StatusCode::OK, Some(true)));
+    assert!(portal.store.account("ami@example.org").await.unwrap().unwrap().internal_only);
+
+    let (_, _, log) = portal.request("GET", "/api/admin/audit?limit=1", None, Some(&nyu)).await;
+    assert_eq!(log[0]["action"], "account.update");
+    assert_eq!(log[0]["target"], "ami@example.org");
+    assert_eq!(log[0]["details"], json!({ "internalOnly": true }));
+}
+
+#[tokio::test]
 async fn change_lock_out_trash_and_restore() {
     let portal = Portal::new().await;
     let nyu = portal.login("nyu@example.org", "katzenpfote-123").await;

@@ -30,6 +30,8 @@ pub struct Forwarding {
     pub keep_copy: bool,
     /// An admin forbade forwarding to other servers for this person.
     pub external_blocked: bool,
+    /// The account may only send to addresses on this server, so forwarding elsewhere is off too.
+    pub internal_only: bool,
     pub targets: Vec<ForwardTarget>,
 }
 
@@ -51,6 +53,12 @@ fn target_from_row(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resu
     Ok(ForwardTarget { id: row.get(0)?, address, local, created_at: row.get(2)?, confirmed_at: row.get(3)? })
 }
 
+/// Whether the address is on a domain this server holds (mail or masked-only).
+fn on_local_domain(conn: &Connection, address: &str) -> rusqlite::Result<bool> {
+    let domain = address.rsplit_once('@').map_or("", |(_, domain)| domain).to_ascii_lowercase();
+    conn.query_row("SELECT EXISTS (SELECT 1 FROM domains WHERE name = ?1)", [domain], |row| row.get(0))
+}
+
 fn targets(conn: &Connection, account_id: i64) -> rusqlite::Result<Vec<ForwardTarget>> {
     let mut stmt = conn.prepare(
         "SELECT id, address, created_at, confirmed_at FROM forward_targets WHERE account_id = ?1 ORDER BY created_at, id",
@@ -62,12 +70,12 @@ fn targets(conn: &Connection, account_id: i64) -> rusqlite::Result<Vec<ForwardTa
 impl Store {
     pub async fn forwarding(&self, account_id: i64) -> Result<Forwarding> {
         self.read(move |conn| {
-            let (keep_copy, external_blocked) = conn.query_row(
-                "SELECT forward_keep_copy, external_forwarding_blocked FROM accounts WHERE id = ?1",
+            let (keep_copy, external_blocked, internal_only) = conn.query_row(
+                "SELECT forward_keep_copy, external_forwarding_blocked, internal_only FROM accounts WHERE id = ?1",
                 [account_id],
-                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
+                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?)),
             )?;
-            Ok(Forwarding { keep_copy, external_blocked, targets: targets(conn, account_id)? })
+            Ok(Forwarding { keep_copy, external_blocked, internal_only, targets: targets(conn, account_id)? })
         })
         .await
     }
@@ -89,10 +97,17 @@ impl Store {
                     message: "this address is already yours".into(),
                 });
             }
-            let blocked: bool =
-                tx.query_row("SELECT external_forwarding_blocked FROM accounts WHERE id = ?1", [account_id], |row| {
-                    row.get(0)
-                })?;
+            let (blocked, internal_only): (bool, bool) = tx.query_row(
+                "SELECT external_forwarding_blocked, internal_only FROM accounts WHERE id = ?1",
+                [account_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            if target_account.is_none() && internal_only && !on_local_domain(tx, &address)? {
+                return Err(StoreError::Rule {
+                    code: "internalOnly",
+                    message: "this account may only send to addresses on this server".into(),
+                });
+            }
             if target_account.is_none() && (blocked || !external_allowed) {
                 return Err(StoreError::Rule {
                     code: "forwardingBlocked",
@@ -234,13 +249,14 @@ impl Store {
         Ok((target, account))
     }
 
-    /// Confirmed targets for delivery. Addresses elsewhere are left out while an admin blocks them.
+    /// Confirmed targets for delivery. Addresses elsewhere are left out while an admin blocks them
+    /// or the account may only send internally.
     pub async fn active_forwarding(&self, account_id: i64) -> Result<ActiveForwarding> {
         self.read(move |conn| {
-            let (keep_copy, blocked) = conn.query_row(
-                "SELECT forward_keep_copy, external_forwarding_blocked FROM accounts WHERE id = ?1",
+            let (keep_copy, blocked, internal_only) = conn.query_row(
+                "SELECT forward_keep_copy, external_forwarding_blocked, internal_only FROM accounts WHERE id = ?1",
                 [account_id],
-                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
+                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?)),
             )?;
             let mut stmt = conn.prepare(
                 "SELECT address FROM forward_targets WHERE account_id = ?1 AND confirmed_at IS NOT NULL ORDER BY id",
@@ -251,6 +267,11 @@ impl Store {
             for address in addresses {
                 let local = resolve(conn, &address)?;
                 if local == Some(account_id) || (local.is_none() && blocked) {
+                    continue;
+                }
+                // Nothing leaves this server for an internal-only account; the target comes back
+                // when the switch goes off.
+                if local.is_none() && internal_only && !on_local_domain(conn, &address)? {
                     continue;
                 }
                 targets.push((address, local));
@@ -314,5 +335,30 @@ mod tests {
         store.set_forward_keep_copy(leni.id, false).await.unwrap();
         let forwarding = store.forwarding(leni.id).await.unwrap();
         assert!(!forwarding.keep_copy && forwarding.external_blocked && forwarding.targets.len() == 2);
+    }
+
+    #[tokio::test]
+    async fn internal_only_refuses_and_skips_external_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        store.create_domain("example.org").await.unwrap();
+        let leni = account(&store, "leni@example.org").await;
+        let ami = account(&store, "ami@example.org").await;
+        store.add_forward_target(leni.id, "ami@example.org", true).await.unwrap();
+        let (_, token) = store.add_forward_target(leni.id, "leni@elsewhere.example", true).await.unwrap();
+        store.confirm_forward_link(&token.unwrap()).await.unwrap();
+        assert_eq!(store.active_forwarding(leni.id).await.unwrap().targets.len(), 2);
+
+        let update = crate::AccountUpdate { internal_only: Some(true), ..Default::default() };
+        store.update_account("leni@example.org", update).await.unwrap();
+        let refused = store.add_forward_target(leni.id, "oma@elsewhere.example", true).await;
+        assert!(matches!(refused, Err(StoreError::Rule { code: "internalOnly", .. })));
+        let active = store.active_forwarding(leni.id).await.unwrap();
+        assert_eq!(active.targets, vec![("ami@example.org".to_owned(), Some(ami.id))], "skipped at delivery");
+        assert!(store.forwarding(leni.id).await.unwrap().internal_only);
+
+        let update = crate::AccountUpdate { internal_only: Some(false), ..Default::default() };
+        store.update_account("leni@example.org", update).await.unwrap();
+        assert_eq!(store.active_forwarding(leni.id).await.unwrap().targets.len(), 2, "back when it goes off");
     }
 }

@@ -1255,6 +1255,17 @@ impl Session {
         };
         let address = format!("{local}@{domain}");
         let store = &ctx.store;
+        // An internal-only account (as it is now, not as it was at login) may not name anyone
+        // outside; the recipients here still get the message (docs/jmap-sending.md).
+        if self.kind.is_submission()
+            && let Some(account) = &self.account
+            && store.account_by_id(account.id).await.ok().flatten().is_some_and(|current| current.internal_only)
+            && !store.is_local_domain(&domain).await.unwrap_or(false)
+        {
+            let text = format!("550 5.7.1 <{address}>: This account may only send to addresses on this server\r\n");
+            self.error(&text).await?;
+            return Ok(Next::Continue);
+        }
         if !self.kind.is_submission()
             && srs::looks_like_srs(&local)
             && store.is_local_domain(&domain).await.unwrap_or(false)
@@ -2404,6 +2415,9 @@ impl Session {
             Err(SubmitError::NobodyAccepted) => "552 5.2.2 No recipient could take the message\r\n".into(),
             Err(SubmitError::SendingOff) => {
                 "550 5.7.1 Sending through this server is switched off for this account\r\n".into()
+            }
+            Err(SubmitError::InternalOnly) => {
+                "550 5.7.1 This account may only send to addresses on this server\r\n".into()
             }
             Err(SubmitError::AccountLocked) => "550 5.7.1 This account is disabled or in the trash\r\n".into(),
             Err(SubmitError::TooManyRecipients) => "452 4.5.3 Too many recipients\r\n".into(),

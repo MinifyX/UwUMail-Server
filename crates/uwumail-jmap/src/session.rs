@@ -105,7 +105,8 @@ pub fn session_state(account: &Account) -> String {
     // Changes whenever something in the session document would change.
     let calendars = if account.protocols.caldav { "-c" } else { "" };
     let contacts = if account.protocols.carddav { "-k" } else { "" };
-    format!("{}-{}{calendars}{contacts}", account.id, account.login.len() + account.display_name.len())
+    let internal = if account.internal_only { "-i" } else { "" };
+    format!("{}-{}{calendars}{contacts}{internal}", account.id, account.login.len() + account.display_name.len())
 }
 
 /// What the account's MaskedEmail capability says (a UwUMail addition to Fastmail's extension):
@@ -179,6 +180,9 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
                     },
                     SUBMISSION: {
                         "maxDelayedSend": MAX_DELAYED_SEND_SECS,
+                        // A UwUMail addition: this account may only send to addresses on this
+                        // server; `uwuInternalDomains` lists them while it is on (docs/jmap-sending.md).
+                        "uwuInternalOnly": account.internal_only,
                         // RFC 4865: the longest hold in seconds, and the latest date it may reach.
                         "submissionExtensions": {
                             "FUTURERELEASE": [
@@ -313,6 +317,11 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             crate::sharing::add_to_session(&mut document, &account, &shared);
             document["accounts"][ids::account(account.id)]["accountCapabilities"][MASKED] =
                 masked_capability(&jmap.inner.store, account.id).await;
+            if account.internal_only {
+                let domains = jmap.inner.store.internal_domains().await.unwrap_or_default();
+                document["accounts"][ids::account(account.id)]["accountCapabilities"][SUBMISSION]["uwuInternalDomains"] =
+                    json!(domains);
+            }
             // The picture: the same in both places, as the session belongs to one account.
             let profile = crate::methods::profile::capability(&jmap.inner.store, account.id).await;
             let may_be_public = profile["mayBePublic"].as_bool().unwrap_or(false);

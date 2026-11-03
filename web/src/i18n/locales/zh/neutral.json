@@ -500,6 +500,7 @@
       "passkeyKnown": "此通行密钥已注册。",
       "forwardToSelf": "这已经是你自己的地址了。",
       "forwardingBlocked": "此处不允许转发到其他服务器。",
+      "internalOnly": "此账户只能发送到本服务器上的地址。",
       "tooManyForwardTargets": "无法再添加转发地址。请先移除一个。",
       "vacationDates": "结束时间必须晚于开始时间。",
       "vacationText": "自动回复需要填写内容。",
@@ -850,7 +851,9 @@
       "redirectNone": "发给此账户的邮件会被拒收。",
       "redirectTo": "发给此账户的邮件会转到 {{address}}。",
       "webmail": "浏览器中的邮箱",
-      "webmailHint": "使用门户登录在 /mail 打开此邮箱。与 IMAP 和 JMAP 相互独立，后两者决定邮件程序可以做什么。"
+      "webmailHint": "使用门户登录在 /mail 打开此邮箱。与 IMAP 和 JMAP 相互独立，后两者决定邮件程序可以做什么。",
+      "internalOnly": "仅在本服务器内发送",
+      "internalOnlyHint": "邮件只能发送到本服务器域名下的地址。其他收件人会被拒绝，转发、自动回复以及通过其他服务商发送也仅限内部。"
     },
     "serviceAccess": {
       "title": "访问",

@@ -517,6 +517,7 @@
       "passkeyKnown": "Dieser Passkey ist schon eingetragen.",
       "forwardToSelf": "Das ist schon deine eigene Adresse.",
       "forwardingBlocked": "Weiterleitung an andere Server ist hier nicht erlaubt.",
+      "internalOnly": "Dieses Konto darf nur an Adressen auf diesem Server senden.",
       "tooManyForwardTargets": "Mehr Weiterleitungen gehen nicht. Entferne erst eine.",
       "vacationDates": "Das Ende muss nach dem Anfang liegen.",
       "vacationText": "Eine Abwesenheitsnotiz braucht einen Text.",
@@ -872,7 +873,9 @@
       "redirectNone": "Mails an dieses Konto werden abgewiesen.",
       "redirectTo": "Mails an dieses Konto gehen an {{address}}.",
       "webmail": "Postfach im Browser",
-      "webmailHint": "Dieses Postfach unter /mail mit der Portal-Anmeldung öffnen. Getrennt von IMAP und JMAP, die regeln, was Mail-Programme dürfen."
+      "webmailHint": "Dieses Postfach unter /mail mit der Portal-Anmeldung öffnen. Getrennt von IMAP und JMAP, die regeln, was Mail-Programme dürfen.",
+      "internalOnly": "Nur intern senden",
+      "internalOnlyHint": "Mails dürfen nur an Adressen auf den Domains dieses Servers gehen. Andere Empfänger werden abgelehnt, und auch Weiterleitungen, Abwesenheitsnotizen und das Senden über andere Anbieter bleiben intern."
     },
     "serviceAccess": {
       "title": "Zugang",

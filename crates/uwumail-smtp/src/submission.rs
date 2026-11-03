@@ -55,6 +55,8 @@ pub enum SubmitError {
     NobodyAccepted,
     #[error("sending through this server is switched off for this account")]
     SendingOff,
+    #[error("this account may only send to addresses on this server")]
+    InternalOnly,
     #[error("this account is disabled or in the trash")]
     AccountLocked,
     #[error("too many recipients")]
@@ -137,7 +139,7 @@ impl Smtp {
     /// Checks the sender, completes and signs the message, delivers to local recipients and
     /// queues the rest. Failed local deliveries are bounced to the sender.
     pub async fn submit(&self, submission: Submission) -> Result<Submitted, SubmitError> {
-        self.check_submission(&submission).await?;
+        let current = self.checked_account(&submission).await?;
         let Submission { account, mail_from, recipients, raw, env_id, trace } = submission;
         let raw = headers::normalize_line_endings(&raw);
         let (from, _) = claimed_addresses(&raw)?;
@@ -147,7 +149,7 @@ impl Smtp {
             tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
             return Err(SubmitError::Virus(name));
         }
-        self.submit_checked(account, mail_from, recipients, raw, env_id, trace, from).await
+        self.submit_checked(account, current.internal_only, mail_from, recipients, raw, env_id, trace, from).await
     }
 
     /// The checks [`Smtp::submit`] makes before it touches the message: may this account send at
@@ -155,6 +157,11 @@ impl Smtp {
     /// (JMAP's undo window and send later), so a message that could never go is refused at once and
     /// not only when its time comes. `submit` checks everything again.
     pub async fn check_submission(&self, submission: &Submission) -> Result<(), SubmitError> {
+        self.checked_account(submission).await.map(|_| ())
+    }
+
+    /// [`Smtp::check_submission`], returning the account as it is now.
+    async fn checked_account(&self, submission: &Submission) -> Result<Account, SubmitError> {
         let ctx = &self.inner;
         let Submission { account, mail_from, recipients, raw, .. } = submission;
         if recipients.is_empty() {
@@ -194,10 +201,20 @@ impl Smtp {
                 return Err(SubmitError::ForbiddenFrom(address.clone()));
             }
         }
+        let mut any_internal = false;
         for recipient in recipients {
-            if uwumail_store::normalize_address(&recipient.address).is_err() {
+            let Ok((_, domain)) = uwumail_store::normalize_address(&recipient.address) else {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
+            };
+            if current.internal_only && !any_internal {
+                any_internal = ctx.store.is_local_domain(&domain).await.unwrap_or(false);
             }
+        }
+        // An internal-only account with nobody on this server to write to: refused as a whole,
+        // like a message nobody accepts (docs/jmap-sending.md). With some recipients here, the
+        // others fail one by one in `submit_checked` and come back in a bounce.
+        if current.internal_only && !any_internal {
+            return Err(SubmitError::InternalOnly);
         }
         // The size limit holds for the message as it goes out, with the company footer in it
         // (security review 0.22 SIG-4), so a held message is refused now and not when it is due.
@@ -205,13 +222,14 @@ impl Smtp {
         if with_footer.len() > live.smtp.max_message_size {
             return Err(SubmitError::TooLarge);
         }
-        Ok(())
+        Ok(current)
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn submit_checked(
         &self,
         account: Account,
+        internal_only: bool,
         mail_from: String,
         recipients: Vec<SubmissionRecipient>,
         raw: Vec<u8>,
@@ -281,6 +299,14 @@ impl Smtp {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             };
             let address = format!("{local}@{domain}");
+            // Nothing leaves this server for an internal-only account (docs/jmap-sending.md).
+            if internal_only && !ctx.store.is_local_domain(&domain).await.unwrap_or(false) {
+                failed.push(FailedRecipient {
+                    address: address.clone(),
+                    error: format!("550 5.7.1 <{address}>: This account may only send to addresses on this server"),
+                });
+                continue;
+            }
             // A group: the sender has to be allowed to write to it, and then every member gets it.
             if let Some(group) = ctx.store.group_delivery(&address).await.ok().flatten() {
                 if !ctx.store.group_accepts(&group, &mail_from, Some(account.id)).await.unwrap_or(false) {

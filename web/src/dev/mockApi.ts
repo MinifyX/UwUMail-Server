@@ -192,6 +192,7 @@ function person(login: string, name: string, extra: Partial<Person> = {}): Perso
     redirectTo: "",
     hasMailbox: true,
     webmail: true,
+    internalOnly: false,
     status: "active",
     quotaBytes: 5 * GB,
     usedBytes: Math.round(Math.random() * 3 * GB),
@@ -5119,11 +5120,13 @@ const routes: [string, RegExp, Handler][] = [
         redirectTo?: string;
         quotaBytes?: number;
         disabled?: boolean;
+        internalOnly?: boolean;
       };
       if (login === "lorin@uwu.example" && (changes.admin === false || changes.disabled || changes.service)) {
         return problem(409, changes.admin === false ? "lastAdmin" : "notYourself");
       }
       if (changes.name !== undefined) found.name = changes.name;
+      if (changes.internalOnly !== undefined) found.internalOnly = changes.internalOnly;
       if (changes.admin !== undefined) found.role = changes.admin ? "admin" : "user";
       if (changes.service !== undefined) found.role = changes.service ? "service" : "user";
       if (changes.protocols !== undefined) {

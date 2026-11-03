@@ -55,6 +55,13 @@ pub async fn maybe_reply(ctx: &Context, account_id: i64, envelope_from: &str, se
         return;
     }
     let Ok(Some(account)) = ctx.store.account_by_id(account_id).await else { return };
+    // An internal-only account answers nobody outside (docs/jmap-sending.md).
+    if account.internal_only {
+        let domain = envelope_from.rsplit_once('@').map_or("", |(_, domain)| domain);
+        if !ctx.store.is_local_domain(domain).await.unwrap_or(false) {
+            return;
+        }
+    }
     let Some(message) = MessageParser::default().parse_headers(raw) else { return };
 
     // Only answer mail sent to this person directly, not through a list or as Bcc.

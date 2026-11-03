@@ -828,6 +828,15 @@ impl Store {
                         "sending from this address needs the provider's outgoing server".into(),
                     ));
                 }
+                // A provider's server is outside by definition: nothing for an internal-only account.
+                let internal_only: bool =
+                    tx.query_row("SELECT internal_only FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))?;
+                if send && internal_only {
+                    return Err(StoreError::Rule {
+                        code: "internalOnly",
+                        message: "this account may only send to addresses on this server".into(),
+                    });
+                }
                 if send && last_ok_at.is_none() {
                     return Err(StoreError::Invalid(
                         "sending from this address needs one successful fetch first, to prove the mailbox is yours"
@@ -1626,6 +1635,17 @@ mod tests {
         store.update_fetch_account(account_id, fetched.id, off).await.unwrap();
         assert!(!store.account_owns_address(account_id, &address).await.unwrap());
         assert!(store.fetch_sender(account_id, &address).await.unwrap().is_none());
+        // An account that may only send internally loses the provider route, and cannot turn it on.
+        let turn_on = FetchAccountUpdate { send_enabled: Some(true), ..Default::default() };
+        store.update_fetch_account(account_id, fetched.id, turn_on).await.unwrap();
+        let internal = crate::AccountUpdate { internal_only: Some(true), ..Default::default() };
+        store.update_account("mini@uwu.test", internal).await.unwrap();
+        assert!(store.fetch_sender(account_id, &address).await.unwrap().is_none(), "switched off with the flag");
+        let again = FetchAccountUpdate { send_enabled: Some(true), ..Default::default() };
+        assert!(matches!(
+            store.update_fetch_account(account_id, fetched.id, again).await,
+            Err(StoreError::Rule { code: "internalOnly", .. })
+        ));
     }
 
     #[tokio::test]

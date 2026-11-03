@@ -15,6 +15,21 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   a shared mailbox). Aliases added before this release don't get an identity automatically: add
   it once in the identity settings, or remove the alias and add it again.
 
+### Added
+
+- Admins can let a person send only within this server: a new switch "Only send within this
+  server" on the person's page (off for everyone, logged in the audit log). Such an account can
+  still write to every address on this server's domains, masked-only domains included. Recipients
+  elsewhere are refused: in a mail app at the `RCPT` step with "550 5.7.1 This account may only
+  send to addresses on this server", in the webmail and over JMAP they come back to the sender in
+  a bounce while the people here still get the message. A message with nobody here at all is
+  refused as a whole. Mail held back for later is checked again when it goes. Forwarding to other
+  servers can't be set up and existing targets elsewhere are skipped while the switch is on, away
+  replies only answer senders on this server, and sending through a fetched mailbox's provider is
+  switched off. Mail apps can see it in the JMAP session (`uwuInternalOnly` and
+  `uwuInternalDomains` in the submission capability). See
+  [docs/jmap-sending.md](docs/jmap-sending.md#sending-only-within-this-server).
+
 ## 0.26.2
 
 ### Fixed

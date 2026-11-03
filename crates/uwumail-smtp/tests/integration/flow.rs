@@ -2124,3 +2124,35 @@ async fn apps_send_with_oauth_tokens() {
     assert!(reply.starts_with("235"), "{reply}");
     assert!(session.command("MAIL FROM:<mini@a.test>").await.starts_with("250"));
 }
+
+/// An internal-only account (docs/jmap-sending.md): recipients elsewhere are refused at RCPT, the
+/// ones here still get the message, and nothing is queued for outside.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_internal_only_account_is_refused_outside_at_rcpt() {
+    use base64::Engine as _;
+    let config = SmtpConfig { require_tls_for_auth: false, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "nyu"], &[], config).await;
+    let store = a.smtp.store();
+    store.create_domain_with_kind("masked.test", uwumail_store::DomainKind::Masked).await.unwrap();
+    let only_here = uwumail_store::AccountUpdate { internal_only: Some(true), ..Default::default() };
+    store.update_account("mini@a.test", only_here).await.unwrap();
+
+    let mut session = RawSession::connect(a.submission).await;
+    session.command("EHLO client.test").await;
+    let plain = base64::engine::general_purpose::STANDARD.encode(format!("\0mini@a.test\0{PASSWORD}"));
+    assert!(session.command(&format!("AUTH PLAIN {plain}")).await.starts_with("235"));
+    assert!(session.command("MAIL FROM:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<nyu@a.test>").await.starts_with("250"));
+    let refused = session.command("RCPT TO:<leni@elsewhere.test>").await;
+    assert!(refused.starts_with("550 5.7.1") && refused.contains("only send to addresses on this server"), "{refused}");
+    // A masked-only domain is this server's too: refused as unknown, not as outside.
+    let masked = session.command("RCPT TO:<nobody@masked.test>").await;
+    assert!(!masked.contains("only send to addresses on this server"), "{masked}");
+    assert!(session.command("DATA").await.starts_with("354"));
+    let message = "From: mini@a.test\r\nTo: nyu@a.test, leni@elsewhere.test\r\nSubject: Nur intern\r\n\r\nHallo\r\n.";
+    assert!(session.command(message).await.starts_with("250"));
+
+    let inbox = a.wait_for_inbox("nyu@a.test", 1).await;
+    assert_eq!(inbox[0].subject, "Nur intern");
+    assert!(store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
+}

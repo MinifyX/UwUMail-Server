@@ -517,6 +517,7 @@
       "passkeyKnown": "Deze passkey is al geregistreerd.",
       "forwardToSelf": "Dat is al je eigen adres.",
       "forwardingBlocked": "Doorsturen naar andere servers is hier niet toegestaan.",
+      "internalOnly": "Dit account mag alleen naar adressen op deze server versturen.",
       "tooManyForwardTargets": "Geen doorstuuradressen meer mogelijk. Verwijder er eerst een.",
       "vacationDates": "Het einde moet na het begin liggen.",
       "vacationText": "Een afwezigheidsbericht heeft een tekst nodig.",
@@ -872,7 +873,9 @@
       "redirectNone": "Mail aan dit account wordt geweigerd.",
       "redirectTo": "Mail aan dit account gaat naar {{address}}.",
       "webmail": "Mailbox in de browser",
-      "webmailHint": "Deze mailbox openen op /mail met de portaallogin. Los van IMAP en JMAP, die bepalen wat mailprogramma's mogen."
+      "webmailHint": "Deze mailbox openen op /mail met de portaallogin. Los van IMAP en JMAP, die bepalen wat mailprogramma's mogen.",
+      "internalOnly": "Alleen intern versturen",
+      "internalOnlyHint": "Mail mag alleen naar adressen op de domeinen van deze server. Andere ontvangers worden geweigerd, en ook doorsturen, afwezigheidsberichten en versturen via andere providers blijven intern."
     },
     "serviceAccess": {
       "title": "Toegang",
