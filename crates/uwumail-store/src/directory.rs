@@ -926,9 +926,13 @@ impl Store {
                 }
                 other => other.into(),
             })?;
-            // Members who send for a shared mailbox answer from its new address too.
+            // The account may send as its new address right away, so it finds it among its
+            // identities; one that has none yet gets it with its defaults. Members who send for a
+            // shared mailbox answer from its new address too.
             let mut granted = crate::identity_grants::Granted::default();
-            crate::shared_mailboxes::address_changed(tx, account_id, &format!("{local}@{domain}"), true, &mut granted)?;
+            let address = format!("{local}@{domain}");
+            crate::identity_grants::grant_identity(tx, account_id, &address, "", &mut granted)?;
+            crate::shared_mailboxes::address_changed(tx, account_id, &address, true, &mut granted)?;
             Ok(granted)
         })
         .await
@@ -954,8 +958,11 @@ impl Store {
                     "DELETE FROM addresses WHERE local_part = ?1 AND domain_id = ?2 AND kind = 'alias'",
                     params![local, domain_id],
                 )?;
+                // An identity the account can no longer send as goes with the address, unless the
+                // account may still send as it some other way (a send-as domain, say).
                 let mut granted = crate::identity_grants::Granted::default();
                 let address = format!("{local}@{domain}");
+                crate::identity_grants::revoke_identities(tx, account_id, &address, &mut granted)?;
                 crate::shared_mailboxes::address_changed(tx, account_id, &address, false, &mut granted)?;
                 Ok(granted)
             })
@@ -1233,6 +1240,38 @@ mod tests {
 
         store.remove_alias("kontakt@example.org").await.unwrap();
         assert_eq!(store.resolve_recipient("kontakt@example.org").await.unwrap(), Some(ami.id));
+    }
+
+    /// An alias added after the account first read its identities never became one, so mail apps
+    /// did not offer it as a sender although the server let it send as it.
+    #[tokio::test]
+    async fn an_alias_comes_and_goes_with_its_identity() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        store.create_domain("verein.example").await.unwrap();
+        let mini = store.create_account(person("mini@example.org")).await.unwrap();
+        let emails = |list: Vec<crate::Identity>| list.into_iter().map(|identity| identity.email).collect::<Vec<_>>();
+        assert_eq!(emails(store.identities(mini.id).await.unwrap()), vec!["mini@example.org"]);
+
+        store.add_alias("kontakt@example.org", "mini@example.org").await.unwrap();
+        store.add_alias("info@verein.example", "mini@example.org").await.unwrap();
+        let list = store.identities(mini.id).await.unwrap();
+        assert_eq!(emails(list.clone()), vec!["mini@example.org", "kontakt@example.org", "info@verein.example"]);
+        assert!(list.iter().all(|identity| identity.name == "Mini"), "named like the account");
+
+        store.remove_alias("kontakt@example.org").await.unwrap();
+        // Still allowed through the send-as domain, so that identity stays.
+        store.set_send_as_domains(mini.id, vec!["verein.example".into()]).await.unwrap();
+        store.remove_alias("info@verein.example").await.unwrap();
+        assert_eq!(emails(store.identities(mini.id).await.unwrap()), vec!["mini@example.org", "info@verein.example"]);
+
+        // Added back, the address is offered again, once.
+        store.add_alias("kontakt@example.org", "mini@example.org").await.unwrap();
+        store.add_alias("info@verein.example", "mini@example.org").await.unwrap();
+        assert_eq!(
+            emails(store.identities(mini.id).await.unwrap()),
+            vec!["mini@example.org", "info@verein.example", "kontakt@example.org"]
+        );
     }
 
     #[tokio::test]

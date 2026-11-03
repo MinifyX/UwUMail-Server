@@ -3,6 +3,18 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.27.0
+
+### Fixed
+
+- An alias added to an account later, by an admin or by the person themselves, now shows up as a
+  sender identity right away. Until now only the addresses an account had when its identities
+  were first read became identities. The server already let the account send as a later alias,
+  but webmail and mail apps did not offer it as a sender. Removing an alias also removes its
+  identity, unless the account may still send as it some other way (a send-as domain, a group or
+  a shared mailbox). Aliases added before this release don't get an identity automatically: add
+  it once in the identity settings, or remove the alias and add it again.
+
 ## 0.26.2
 
 ### Fixed
