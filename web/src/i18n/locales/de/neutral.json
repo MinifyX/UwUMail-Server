@@ -586,6 +586,7 @@
       "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
       "sharedMailbox": "Das ist ein geteiltes Postfach: Es hat App-Passwörter, aber kein Passwort, und die Mitglieder nutzen es aus ihrem eigenen Konto.",
       "sharedMailboxNeedsMailbox": "Ein geteiltes Postfach behält seine Mails: IMAP oder JMAP muss an bleiben.",
+      "internalOnly": "Dieses Konto darf nur an Adressen dieses Servers senden.",
       "maskedDomain": "Maskierte Adressen sind für dich auf dieser Domain nicht eingeschaltet. Frag die Admins.",
       "maskedLimit": "Du hast so viele maskierte Adressen, wie dieser Server erlaubt. Lösch welche, die du nicht mehr brauchst.",
       "maskedPrefix": "Ein Präfix darf nur Buchstaben a–z, Ziffern und _ haben, höchstens 64.",
@@ -872,7 +873,9 @@
       "redirectNone": "Mails an dieses Konto werden abgewiesen.",
       "redirectTo": "Mails an dieses Konto gehen an {{address}}.",
       "webmail": "Postfach im Browser",
-      "webmailHint": "Dieses Postfach unter /mail mit der Portal-Anmeldung öffnen. Getrennt von IMAP und JMAP, die regeln, was Mail-Programme dürfen."
+      "webmailHint": "Dieses Postfach unter /mail mit der Portal-Anmeldung öffnen. Getrennt von IMAP und JMAP, die regeln, was Mail-Programme dürfen.",
+      "internalOnly": "Nur intern senden",
+      "internalOnlyHint": "Darf nur an Adressen dieses Servers senden. Auch Weiterleitungen, Mail-Regeln und Abwesenheitsnotizen bleiben dann hier, selbst wenn jemand die Zugangsdaten hat."
     },
     "serviceAccess": {
       "title": "Zugang",
@@ -1056,6 +1059,8 @@
       "wordsAdded_other": "{{count}} Einträge",
       "serviceOn": "ist jetzt ein Dienst",
       "serviceOff": "ist jetzt eine Person",
+      "internalOnlyOn": "sendet nur noch intern",
+      "internalOnlyOff": "sendet wieder nach außen",
       "protocols": "Protokolle: {{value}}",
       "protocolsNone": "alle Protokolle aus",
       "redirectTo": "Mail geht an {{address}}",

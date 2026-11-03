@@ -569,6 +569,7 @@
       "refreshPause": "今取得したばかりです。1分後にもう一度お試しください。",
       "sharedMailbox": "これは共有メールボックスです。アプリパスワードはありますがパスワードはなく、メンバーは自分のアカウントから使います。",
       "sharedMailboxNeedsMailbox": "共有メールボックスはメールを保持します。IMAP か JMAP をオンのままにしてください。",
+      "internalOnly": "このアカウントは、このサーバーのアドレスにのみ送信できます。",
       "maskedDomain": "このドメインではマスクアドレスが有効になっていません。管理者に聞いてください。",
       "maskedLimit": "このサーバーで作れる上限までマスクアドレスがあります。不要なものを削除してください。",
       "maskedPrefix": "接頭辞に使えるのは英小文字 a–z、数字、_ だけで、64 文字までです。",
@@ -850,7 +851,9 @@
       "redirectNone": "このアカウント宛てのメールは拒否されます。",
       "redirectTo": "このアカウント宛てのメールは{{address}}に届きます。",
       "webmail": "ブラウザーでメールボックス",
-      "webmailHint": "ポータルのログインで /mail からこのメールボックスを開けます。メールプログラムに何を許可するかを決める IMAP・JMAP とは別の設定です。"
+      "webmailHint": "ポータルのログインで /mail からこのメールボックスを開けます。メールプログラムに何を許可するかを決める IMAP・JMAP とは別の設定です。",
+      "internalOnly": "内部のみに送信",
+      "internalOnlyHint": "このサーバーのアドレスにのみ送信できます。転送、メールルール、不在通知もここにとどまり、認証情報を持つ人でも外部には送れません。"
     },
     "serviceAccess": {
       "title": "アクセス",
@@ -1033,6 +1036,8 @@
       "wordsAdded_other": "{{count}}件のエントリー",
       "serviceOn": "サービスになりました",
       "serviceOff": "人になりました",
+      "internalOnlyOn": "内部のみに送信",
+      "internalOnlyOff": "再び外部に送信可能",
       "protocols": "プロトコル：{{value}}",
       "protocolsNone": "すべてのプロトコルがオフ",
       "redirectTo": "メールは{{address}}へ",

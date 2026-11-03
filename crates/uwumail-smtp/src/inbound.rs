@@ -24,7 +24,7 @@ use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
 use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
-use crate::submission::{Submission, SubmissionRecipient, SubmitError};
+use crate::submission::{INTERNAL_ONLY_TEXT, Submission, SubmissionRecipient, SubmitError};
 use crate::{Smtp, clamav, fetched, forward, headers, labels, random_id, relay, reports, rules, spam, srs, vacation};
 
 const MAX_HOPS: usize = 50;
@@ -1255,6 +1255,21 @@ impl Session {
         };
         let address = format!("{local}@{domain}");
         let store = &ctx.store;
+        // Said per recipient, at once: the others can still have the message (docs/groups.md).
+        if let (Some(account), Some(envelope)) = (&self.account, &self.envelope) {
+            match smtp.refuses_recipient(account.id, &envelope.address, &address).await {
+                Ok(false) => {}
+                Ok(true) => {
+                    self.error(&format!("550 5.7.1 <{address}>: {INTERNAL_ONLY_TEXT}\r\n")).await?;
+                    return Ok(Next::Continue);
+                }
+                Err(err) => {
+                    tracing::error!(%err, "checking whether the sender may reach this recipient failed");
+                    self.reply("451 4.3.0 Temporary lookup failure\r\n").await?;
+                    return Ok(Next::Continue);
+                }
+            }
+        }
         if !self.kind.is_submission()
             && srs::looks_like_srs(&local)
             && store.is_local_domain(&domain).await.unwrap_or(false)
@@ -2405,6 +2420,7 @@ impl Session {
             Err(SubmitError::SendingOff) => {
                 "550 5.7.1 Sending through this server is switched off for this account\r\n".into()
             }
+            Err(SubmitError::InternalOnly(address)) => format!("550 5.7.1 <{address}>: {INTERNAL_ONLY_TEXT}\r\n"),
             Err(SubmitError::AccountLocked) => "550 5.7.1 This account is disabled or in the trash\r\n".into(),
             Err(SubmitError::TooManyRecipients) => "452 4.5.3 Too many recipients\r\n".into(),
             Err(SubmitError::TooLarge) => "552 5.3.4 The message is too large\r\n".into(),

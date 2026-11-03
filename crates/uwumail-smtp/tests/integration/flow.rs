@@ -27,7 +27,7 @@ pub(crate) struct TestServer {
     pub(crate) smtp: Smtp,
     pub(crate) mx: SocketAddr,
     submission: SocketAddr,
-    submission_tls: SocketAddr,
+    pub(crate) submission_tls: SocketAddr,
     _shutdown: watch::Sender<bool>,
     _dir: tempfile::TempDir,
 }

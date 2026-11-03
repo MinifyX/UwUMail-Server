@@ -288,6 +288,14 @@ function ProtocolCard({ person }: { person: Person }) {
           />
         ))}
       </div>
+      <div className="mt-4 border-t border-hairline pt-4">
+        <Toggle
+          checked={person.internalOnly}
+          onChange={(on) => update.mutate({ internalOnly: on })}
+          label={t("people.protocols.internalOnly")}
+          description={t("people.protocols.internalOnlyHint")}
+        />
+      </div>
       {person.hasMailbox && person.role !== "service" && (
         <div className="mt-4 border-t border-hairline pt-4">
           <Toggle

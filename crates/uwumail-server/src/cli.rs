@@ -407,6 +407,10 @@ pub enum AccountCommand {
         /// means its address takes no mail at all.
         #[arg(long)]
         redirect: Option<String>,
+        /// Whether this account may only send to addresses of this server; nothing leaves in its
+        /// name then, forwarding and vacation replies included.
+        #[arg(long)]
+        internal_only: Option<Switch>,
     },
     /// Let someone send as any address of these domains; without domains, only as their own again.
     SendAs {

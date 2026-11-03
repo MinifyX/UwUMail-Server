@@ -3,6 +3,20 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+### Added
+
+- *Send internally only*, a switch per account for admins (portal, `internalOnly` in the admin
+  API, `account protocols --internal-only`): the account can only send to addresses this server
+  takes itself, and nothing leaves in its name, so a stolen app password of a contact form or
+  scanner sends no mail out. SMTP refuses a recipient elsewhere at `RCPT` with `550 5.7.1`, and JMAP
+  refuses a whole submission with `forbiddenToSend`. Its own forwarding, Sieve redirects, vacation
+  replies and calendar mail stay here too, a forwarding address only passes such mail on to people
+  here, and the forwarding of people who get it stops here as well. Off by default; nothing changes
+  for existing accounts. See
+  [docs/groups.md](docs/groups.md#sending-only-inside-this-server).
+
 ## 0.26.2
 
 ### Fixed

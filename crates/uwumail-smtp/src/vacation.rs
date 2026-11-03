@@ -55,6 +55,11 @@ pub async fn maybe_reply(ctx: &Context, account_id: i64, envelope_from: &str, se
         return;
     }
     let Ok(Some(account)) = ctx.store.account_by_id(account_id).await else { return };
+    // A reply is mail with a text the account chose, to whoever writes to it: for an account held
+    // to this server only people here get one (docs/groups.md).
+    if account.internal_only && !matches!(ctx.store.resolve_recipient(envelope_from).await, Ok(Some(_))) {
+        return;
+    }
     let Some(message) = MessageParser::default().parse_headers(raw) else { return };
 
     // Only answer mail sent to this person directly, not through a list or as Bcc.

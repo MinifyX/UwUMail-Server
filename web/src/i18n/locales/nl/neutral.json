@@ -586,6 +586,7 @@
       "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw.",
       "sharedMailbox": "Dit is een gedeelde mailbox: hij heeft app-wachtwoorden maar geen wachtwoord, en de leden gebruiken hem vanuit hun eigen account.",
       "sharedMailboxNeedsMailbox": "Een gedeelde mailbox houdt zijn mail: IMAP of JMAP moet aan blijven.",
+      "internalOnly": "Dit account mag alleen naar adressen van deze server verzenden.",
       "maskedDomain": "Gemaskeerde adressen staan voor jou op dit domein niet aan. Vraag het de beheerder.",
       "maskedLimit": "Je hebt zoveel gemaskeerde adressen als deze server toestaat. Verwijder er een paar die je niet meer nodig hebt.",
       "maskedPrefix": "Een voorvoegsel mag alleen letters a–z, cijfers en _ bevatten, hooguit 64.",
@@ -872,7 +873,9 @@
       "redirectNone": "Mail aan dit account wordt geweigerd.",
       "redirectTo": "Mail aan dit account gaat naar {{address}}.",
       "webmail": "Mailbox in de browser",
-      "webmailHint": "Deze mailbox openen op /mail met de portaallogin. Los van IMAP en JMAP, die bepalen wat mailprogramma's mogen."
+      "webmailHint": "Deze mailbox openen op /mail met de portaallogin. Los van IMAP en JMAP, die bepalen wat mailprogramma's mogen.",
+      "internalOnly": "Alleen intern verzenden",
+      "internalOnlyHint": "Mag alleen naar adressen van deze server verzenden. Doorsturen, mailregels en afwezigheidsberichten blijven dan ook hier, zelfs voor iemand die de inloggegevens heeft."
     },
     "serviceAccess": {
       "title": "Toegang",
@@ -1056,6 +1059,8 @@
       "wordsAdded_other": "{{count}} vermeldingen",
       "serviceOn": "is nu een dienst",
       "serviceOff": "is nu een persoon",
+      "internalOnlyOn": "verzendt alleen intern",
+      "internalOnlyOff": "mag weer naar buiten verzenden",
       "protocols": "protocollen: {{value}}",
       "protocolsNone": "alle protocollen uit",
       "redirectTo": "mail gaat naar {{address}}",

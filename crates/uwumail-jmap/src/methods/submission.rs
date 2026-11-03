@@ -176,6 +176,10 @@ fn submit_error(err: SubmitError, mail_from: &str) -> SetError {
         SubmitError::SendingOff => {
             SetError::new("forbiddenToSend", "sending through this server is switched off for this account")
         }
+        SubmitError::InternalOnly(address) => SetError::new(
+            "forbiddenToSend",
+            format!("this account may only send to addresses on this server, not to {address}"),
+        ),
         SubmitError::AccountLocked => SetError::new("forbiddenToSend", "this account is disabled or in the trash"),
         SubmitError::TooManyRecipients => SetError::new("tooManyRecipients", "too many recipients"),
         SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),

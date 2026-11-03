@@ -586,6 +586,7 @@
       "refreshPause": "Just fetched. Try again in a minute.",
       "sharedMailbox": "This is a shared mailbox: it has app passwords but no password, and its members use it from their own accounts.",
       "sharedMailboxNeedsMailbox": "A shared mailbox keeps its mail: IMAP or JMAP has to stay on.",
+      "internalOnly": "This account may only send to addresses of this server.",
       "maskedDomain": "Masked addresses are not switched on for you on this domain. Ask the admin.",
       "maskedLimit": "You have as many masked addresses as this server allows. Delete some you no longer need.",
       "maskedPrefix": "A prefix may only have letters a–z, digits and _, up to 64 of them.",
@@ -872,7 +873,9 @@
       "redirectNone": "Mail to this account is refused.",
       "redirectTo": "Mail to this account goes to {{address}}.",
       "webmail": "Mailbox in the browser",
-      "webmailHint": "Opening this mailbox at /mail with the portal login. Separate from IMAP and JMAP, which decide what mail programs may do."
+      "webmailHint": "Opening this mailbox at /mail with the portal login. Separate from IMAP and JMAP, which decide what mail programs may do.",
+      "internalOnly": "Send internally only",
+      "internalOnlyHint": "May only send to addresses of this server. Forwarding, mail rules and vacation replies stay here too, even for someone who has the credentials."
     },
     "serviceAccess": {
       "title": "Access",
@@ -1056,6 +1059,8 @@
       "wordsAdded_other": "{{count}} entries",
       "serviceOn": "is a service now",
       "serviceOff": "is a person now",
+      "internalOnlyOn": "sends internally only",
+      "internalOnlyOff": "may send elsewhere again",
       "protocols": "protocols: {{value}}",
       "protocolsNone": "every protocol off",
       "redirectTo": "mail goes to {{address}}",

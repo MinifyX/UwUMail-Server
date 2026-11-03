@@ -349,12 +349,17 @@ The same from the terminal:
 docker compose exec uwumail uwumail-server account add reports@example.com --service --name "Reports"
 docker compose exec uwumail uwumail-server account protocols reports@example.com \
   --imap off --jmap off --redirect me@example.com
+docker compose exec uwumail uwumail-server account protocols reports@example.com --internal-only on
 docker compose exec uwumail uwumail-server account service someone@example.com on
 docker compose exec uwumail uwumail-server account shared someone@example.com on --sender me@example.com
 ```
 
 `account list` marks a service as such, and says `sends only` when it has no
 mailbox. App passwords are made in the portal, on the account's page.
+
+`--internal-only on`, *Send internally only* in the portal, holds an account to
+this server: it can only send to addresses of this server, and nothing leaves in
+its name. See [groups.md](groups.md#sending-only-inside-this-server).
 
 ```toml
 # Public name of the server. Used in SMTP greetings, MX records and the certificate.

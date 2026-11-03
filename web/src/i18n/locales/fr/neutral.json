@@ -597,6 +597,7 @@
       "refreshPause": "Tout juste récupéré. Réessayez dans une minute.",
       "sharedMailbox": "C'est une boîte partagée : elle a des mots de passe d'application mais pas de mot de passe, et ses membres l'utilisent depuis leur propre compte.",
       "sharedMailboxNeedsMailbox": "Une boîte partagée garde son courrier : IMAP ou JMAP doit rester activé.",
+      "internalOnly": "Ce compte ne peut envoyer qu'aux adresses de ce serveur.",
       "maskedDomain": "Les adresses masquées ne sont pas activées pour vous sur ce domaine. Demandez à l’administration.",
       "maskedLimit": "Vous avez autant d'adresses masquées que ce serveur le permet. Supprimez celles dont vous n'avez plus besoin.",
       "maskedPrefix": "Un préfixe ne peut contenir que des lettres a–z, des chiffres et _, 64 au plus.",
@@ -888,7 +889,9 @@
       "redirectNone": "Le courrier pour ce compte est refusé.",
       "redirectTo": "Le courrier pour ce compte va à {{address}}.",
       "webmail": "Boîte mail dans le navigateur",
-      "webmailHint": "Ouvrir cette boîte mail sur /mail avec la connexion du portail. Indépendant d'IMAP et JMAP, qui décident de ce que les logiciels de messagerie peuvent faire."
+      "webmailHint": "Ouvrir cette boîte mail sur /mail avec la connexion du portail. Indépendant d'IMAP et JMAP, qui décident de ce que les logiciels de messagerie peuvent faire.",
+      "internalOnly": "Envoi interne uniquement",
+      "internalOnlyHint": "Ne peut envoyer qu'aux adresses de ce serveur. Les transferts, les règles de messagerie et les réponses d'absence restent ici aussi, même pour quelqu'un qui possède les identifiants."
     },
     "serviceAccess": {
       "title": "Accès",
@@ -1073,6 +1076,8 @@
       "wordsAdded_other": "{{count}} entrées",
       "serviceOn": "est maintenant un service",
       "serviceOff": "est maintenant une personne",
+      "internalOnlyOn": "envoie en interne uniquement",
+      "internalOnlyOff": "peut de nouveau envoyer à l'extérieur",
       "protocols": "protocoles : {{value}}",
       "protocolsNone": "tous les protocoles désactivés",
       "redirectTo": "le courrier va à {{address}}",

@@ -197,6 +197,10 @@ pub struct Account {
     /// A mailbox several people use (docs/groups.md). Stored as a service; nobody signs in to it,
     /// its members reach its folders from their own accounts.
     pub shared_mailbox: bool,
+    /// May only send to addresses this server takes itself, and nothing leaves in its name: no
+    /// forwarding, redirect or vacation reply to elsewhere either (docs/groups.md). Only an admin
+    /// sets this.
+    pub internal_only: bool,
 }
 
 impl Account {
@@ -266,9 +270,9 @@ impl std::fmt::Debug for NewAccount {
 
 pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, \
      created_at, deleted_at, credentials_changed_at, kind, smtp_enabled, imap_enabled, jmap_enabled, \
-     caldav_enabled, carddav_enabled, redirect_to, webmail_enabled, shared_mailbox";
+     caldav_enabled, carddav_enabled, redirect_to, webmail_enabled, shared_mailbox, internal_only";
 /// Number of columns in [`ACCOUNT_COLUMNS`]; extra columns of a query start here.
-pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 19;
+pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 20;
 
 pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
@@ -292,6 +296,7 @@ pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
         redirect_to: row.get(16)?,
         webmail: row.get(17)?,
         shared_mailbox: row.get(18)?,
+        internal_only: row.get(19)?,
     })
 }
 
@@ -728,6 +733,7 @@ impl Store {
                 redirect_to: String::new(),
                 webmail: true,
                 shared_mailbox: false,
+                internal_only: false,
             };
             let then = then(tx, &account)?;
             Ok((account, then))

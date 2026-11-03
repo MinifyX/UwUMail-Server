@@ -46,6 +46,8 @@ pub fn person_json(person: &Person) -> Value {
         "redirectTo": account.redirect_to,
         // The webmail is its own switch, not a sixth protocol: see migration 0028.
         "webmail": account.webmail,
+        // Sends only to addresses of this server, and nothing leaves in its name.
+        "internalOnly": account.internal_only,
         // A service with neither IMAP nor JMAP has no mailbox at all.
         "hasMailbox": account.has_mailbox(),
         // A mailbox several people use: a service with members.
@@ -260,6 +262,8 @@ pub struct PersonChanges {
     redirect_to: Option<String>,
     /// Whether this person may open their mailbox in the browser.
     webmail: Option<bool>,
+    /// Whether this account may only send to addresses of this server.
+    internal_only: Option<bool>,
 }
 
 pub async fn update(
@@ -292,6 +296,7 @@ pub async fn update(
                 protocols: changes.protocols,
                 redirect_to: changes.redirect_to.clone(),
                 webmail: changes.webmail,
+                internal_only: changes.internal_only,
             },
         )
         .await?;
@@ -313,6 +318,9 @@ pub async fn update(
     }
     if let Some(webmail) = changes.webmail {
         details.insert("webmail".into(), webmail.into());
+    }
+    if let Some(internal_only) = changes.internal_only {
+        details.insert("internalOnly".into(), internal_only.into());
     }
     if let Some(quota) = changes.quota_bytes {
         details.insert("quotaBytes".into(), quota.into());

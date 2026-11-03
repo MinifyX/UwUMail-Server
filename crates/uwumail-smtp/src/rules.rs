@@ -246,7 +246,8 @@ async fn redirect_target(ctx: &Context, account_id: i64, address: &str) -> Optio
         Ok(Some(target)) if target == account_id => None,
         Ok(Some(target)) => Some((address, Some(target))),
         Ok(None) => {
-            if !ctx.live().smtp.allow_external_forwarding {
+            let held = ctx.store.account_by_id(account_id).await.ok()??.internal_only;
+            if held || !ctx.live().smtp.allow_external_forwarding {
                 return None;
             }
             let active = ctx.store.active_forwarding(account_id).await.ok()?;

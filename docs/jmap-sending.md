@@ -81,6 +81,10 @@ whether the account may send at all — so a message that could never go is
 refused at once (`forbiddenFrom`, `forbiddenMailFrom`, `forbiddenToSend`, …)
 and not silently later. It is checked again when it goes.
 
+An account [held to this server](groups.md#sending-only-inside-this-server)
+gets `forbiddenToSend` for a submission that names anyone elsewhere, also among
+other recipients: nothing of it goes.
+
 The message itself is kept as it was when it was submitted: editing or
 deleting the draft afterwards changes nothing about what is sent. It is stored
 in the database with its release time, not in memory, so a restart only

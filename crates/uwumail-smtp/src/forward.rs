@@ -12,9 +12,14 @@ pub(crate) struct Plan {
 }
 
 pub(crate) async fn plan(ctx: &Context, account_id: i64) -> Plan {
-    match ctx.store.active_forwarding(account_id).await {
-        Ok(active) => {
-            let external_allowed = ctx.live().smtp.allow_external_forwarding;
+    let active = async {
+        // An account held to this server forwards to nobody elsewhere, whatever it set up.
+        let held = ctx.store.account_by_id(account_id).await?.is_some_and(|account| account.internal_only);
+        Ok::<_, uwumail_store::StoreError>((ctx.store.active_forwarding(account_id).await?, held))
+    };
+    match active.await {
+        Ok((active, held)) => {
+            let external_allowed = ctx.live().smtp.allow_external_forwarding && !held;
             let targets: Vec<_> =
                 active.targets.into_iter().filter(|(_, local)| local.is_some() || external_allowed).collect();
             // Without anywhere else to go, the mail always stays.
@@ -24,6 +29,16 @@ pub(crate) async fn plan(ctx: &Context, account_id: i64) -> Plan {
             tracing::error!(%err, account_id, "reading the forwarding failed, keeping the mail");
             Plan { keep_copy: true, targets: Vec::new() }
         }
+    }
+}
+
+impl Plan {
+    /// The plan for a message from a sender held to this server: the recipient's forwarding only
+    /// goes as far as other people here, and what can go nowhere else stays.
+    pub(crate) fn only_here(mut self) -> Plan {
+        self.targets.retain(|(_, local)| local.is_some());
+        self.keep_copy |= self.targets.is_empty();
+        self
     }
 }
 

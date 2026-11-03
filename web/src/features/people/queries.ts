@@ -88,6 +88,8 @@ export interface PersonChanges {
   disabled?: boolean;
   /** Whether this person may open their mailbox in the browser. */
   webmail?: boolean;
+  /** Whether this account may only send to addresses of this server. */
+  internalOnly?: boolean;
 }
 
 /**

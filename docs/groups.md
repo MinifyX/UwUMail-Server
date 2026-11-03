@@ -205,6 +205,77 @@ it removes them, and a new alias adds one.
 A shared mailbox moved to the trash takes no mail and its members no longer
 see it or send as it. Restored, it is back as it was.
 
+## Sending only inside this server
+
+*Send internally only*, among the protocol switches on an account's page, holds
+an account to this server: it can reach the addresses this server takes itself,
+and nothing leaves in its name. It is meant for accounts of programs, such as
+the contact form of a website that only ever writes to the shared mailbox
+`info@`: whoever steals that app password gets no way to send mail out with it.
+It is off for every account until an admin turns it on, and it works for people,
+services and shared mailboxes alike. Only admins can change it, in the portal,
+with `PATCH /api/admin/people/{login}` and `{ "internalOnly": true }`, or with:
+
+```bash
+docker compose exec uwumail uwumail-server account protocols webserver@example.com --internal-only on
+```
+
+The change is written to the admin log and counts at once, also for sessions
+that are already open and for mail held back for later.
+
+| Way out | What it does for an account with the switch on |
+| --- | --- |
+| SMTP submission | A recipient elsewhere gets `550 5.7.1` at `RCPT`, one by one. The other recipients still get the message from a client that goes on (see below) |
+| JMAP, webmail, send later | The whole submission is refused with `forbiddenToSend`, naming the address. Mail held back when the switch came on is not sent; its `deliveryStatus` says so |
+| Its own forwarding | Only to people on this server. A target elsewhere has no effect and stays in the list, and the mail stays in the mailbox even without *keep a copy*. The portal takes no new target elsewhere and sends no confirmation mail |
+| Its own Sieve `redirect` | Left out and logged, like any redirect that may not go, and the message stays ([sieve.md](sieve.md#redirect)) |
+| Its own vacation reply | Only to people on this server. Nobody elsewhere gets one, and nothing is noted for them |
+| Calendar invitations and answers | Reach people on this server. For anyone elsewhere the mail is refused like any other and logged, and the event stays as it is |
+
+And for what it sends to people on this server:
+
+| Recipient | What happens |
+| --- | --- |
+| A person, a shared mailbox, a catch-all | Delivered as usual |
+| A forwarding address | Its targets on this server get the message, the ones elsewhere are left out. With no target on this server the address is refused with `550 5.7.1`, like an address elsewhere |
+| A group | Delivered to every member. Groups only have members on this server |
+| Someone who forwards their mail elsewhere, also as a group member | They get the message, and it stays with them. Their forwarding stops here for this message, and the sender is not told: where a person forwards their mail is theirs to know |
+| An address of ours nobody has | `550 5.1.1`, as for anyone |
+
+**Mixed lists.** SMTP answers per recipient, so that is what it does here: each
+address elsewhere is refused at `RCPT`, and a client that goes on delivers to the
+rest. Many mail programs and libraries give up on the first refusal instead, and
+then nobody gets it. Past that first door everything is all or nothing: JMAP has
+no `RCPT` to refuse at, and a half-sent message must not look like a sent one, so
+one address elsewhere stops the whole message. That also holds for SMTP where the
+`From` decides (below), which is only known after `DATA`.
+
+**Shared mailboxes.** The switch of a shared mailbox holds for all mail in its
+name, whoever's login sends it: a member who sends with its address, as envelope
+sender, `From` or `Sender`, is held like the mailbox itself. What they send with
+their own address is not touched. The switch of a person holds for everything
+they send, in the name of a shared mailbox too.
+
+**What it deliberately does not cover:**
+
+- **A notice from the server** to someone elsewhere who wrote to this account,
+  such as a bounce for a full mailbox. It carries only what they sent themselves
+  and nothing the account can choose. The queue checks this as well: a message
+  queued in the account's name is refused there, whichever way it came, and only
+  mail that belongs to no account passes.
+- **Mail already in the queue** when the switch comes on still goes, as it does
+  when an account is locked. After a theft, look through the queue as well.
+- **Reading.** Whoever has the credentials can still read the mailbox and fetch
+  what is in it; this is about mail going out. Use the protocol switches and app
+  password scopes for what an account can read, and without IMAP and JMAP a
+  sending service has no mailbox to read at all.
+- **Things that are not mail,** such as a one-click unsubscribe, which is a web
+  request, or fetching a subscribed calendar.
+- **What people do.** Someone who received the message can pass it on by hand
+  from their own account.
+- **An admin's login.** It can turn the switch off, so it does not protect an admin
+  account from its own password.
+
 ## Portal API
 
 Admins (session cookie and CSRF header, as the rest of the portal):
@@ -222,6 +293,7 @@ Admins (session cookie and CSRF header, as the rest of the portal):
 | `DELETE /api/admin/people/{login}/shared-mailbox` | turns a shared mailbox back into a plain service, answers with the person |
 | `POST /api/admin/people/{login}/app-passwords` with `{ name }` | an app password for a service or shared mailbox, as for any service |
 | `GET /api/admin/people/{login}` | for a shared mailbox, `sharedMailbox: true` and its `members` |
+| `PATCH /api/admin/people/{login}` with `{ internalOnly }` | [sending only inside this server](#sending-only-inside-this-server), for any account; written to the admin log as `account.update` |
 
 Each change is written to the admin log (`group.create`, `group.update`,
 `group.remove`, `sharedMailbox.create`, `sharedMailbox.members`,

@@ -56,6 +56,9 @@ checks and limits:
 - **one redirect per message** at most, never to the account itself, and not for a message that
   was here before (its `Delivered-To`) or has travelled through more than 25 servers.
 
+An account held to this server ([groups.md](groups.md#sending-only-inside-this-server)) only redirects
+to people on this server.
+
 A redirect that is not allowed is left out and logged, and the message stays in the inbox, even
 without `:copy`: a rule can't make mail disappear by pointing it somewhere it may not go.
 

@@ -55,6 +55,8 @@ pub enum SubmitError {
     NobodyAccepted,
     #[error("sending through this server is switched off for this account")]
     SendingOff,
+    #[error("this account may only send to addresses on this server, not to <{0}>")]
+    InternalOnly(String),
     #[error("this account is disabled or in the trash")]
     AccountLocked,
     #[error("too many recipients")]
@@ -112,6 +114,9 @@ fn claimed_addresses(raw: &[u8]) -> Result<(Vec<String>, Vec<String>), SubmitErr
     Ok((from, claimed))
 }
 
+/// What a sender held to this server hears about someone elsewhere.
+pub(crate) const INTERNAL_ONLY_TEXT: &str = "This account may only send to addresses on this server";
+
 fn stored_error(err: StoreError) -> String {
     match err {
         StoreError::QuotaExceeded => "552 5.2.2 Mailbox is full".into(),
@@ -140,14 +145,16 @@ impl Smtp {
         self.check_submission(&submission).await?;
         let Submission { account, mail_from, recipients, raw, env_id, trace } = submission;
         let raw = headers::normalize_line_endings(&raw);
-        let (from, _) = claimed_addresses(&raw)?;
+        let (from, sender) = claimed_addresses(&raw)?;
+        let claimed = from.iter().chain(&sender).map(String::as_str).chain([mail_from.as_str()]);
+        let held = self.held_to_this_server(account.id, claimed).await.map_err(SubmitError::Queue)?;
         // Our own people send viruses too, mostly without knowing. Turning one away here keeps it
         // out of other people's mailboxes and our name off their scanner's report.
         if let clamav::Checked::Found(name) = clamav::check(&self.inner.live().spam.antivirus, &raw).await {
             tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
             return Err(SubmitError::Virus(name));
         }
-        self.submit_checked(account, mail_from, recipients, raw, env_id, trace, from).await
+        self.submit_checked(account, mail_from, recipients, raw, env_id, trace, from, held).await
     }
 
     /// The checks [`Smtp::submit`] makes before it touches the message: may this account send at
@@ -199,6 +206,16 @@ impl Smtp {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             }
         }
+        // All or nothing: a message that names someone elsewhere is refused as a whole, so nobody
+        // takes a half-sent message for a sent one. SMTP already refused such a recipient at RCPT.
+        let claimed = from.iter().chain(&sender).map(String::as_str).chain([mail_from.as_str()]);
+        if self.held_to_this_server(account.id, claimed).await.map_err(SubmitError::Queue)? {
+            for recipient in recipients {
+                if self.only_reaches_elsewhere(&recipient.address).await.map_err(SubmitError::Queue)? {
+                    return Err(SubmitError::InternalOnly(recipient.address.clone()));
+                }
+            }
+        }
         // The size limit holds for the message as it goes out, with the company footer in it
         // (security review 0.22 SIG-4), so a held message is refused now and not when it is due.
         let with_footer = self.with_company_footer(account, &from, raw, None).await;
@@ -206,6 +223,58 @@ impl Smtp {
             return Err(SubmitError::TooLarge);
         }
         Ok(())
+    }
+
+    /// Whether a message of this account with these sender addresses is held to this server: the
+    /// account itself is, or it sends as a shared mailbox that is (docs/groups.md). Read fresh, so
+    /// the switch counts from the moment an admin sets it, for open sessions and held mail too.
+    async fn held_to_this_server<'a>(
+        &self,
+        account_id: i64,
+        addresses: impl Iterator<Item = &'a str>,
+    ) -> Result<bool, StoreError> {
+        let store = &self.inner.store;
+        if store.account_by_id(account_id).await?.is_some_and(|account| account.internal_only) {
+            return Ok(true);
+        }
+        for address in addresses {
+            if let Some(shared) = store.shared_mailbox_sending_as(account_id, address).await?
+                && store.account_by_id(shared).await?.is_some_and(|account| account.internal_only)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether mail for `address` could only leave this server: it belongs to no one here, or it is
+    /// a forwarding address with nobody here among its targets. An address of ours nobody has is
+    /// not one of these; it is refused as unknown, as for anyone. Looked up in the order
+    /// `submit_checked` does.
+    async fn only_reaches_elsewhere(&self, address: &str) -> Result<bool, StoreError> {
+        let store = &self.inner.store;
+        let (local, domain) = uwumail_store::normalize_address(address)?;
+        let address = format!("{local}@{domain}");
+        if store.group_delivery(&address).await?.is_some() || store.resolve_recipient(&address).await?.is_some() {
+            return Ok(false);
+        }
+        if !store.is_local_domain(&domain).await? {
+            return Ok(true);
+        }
+        let targets = store.forward_address_targets(&address).await?;
+        Ok(targets.is_some_and(|targets| targets.iter().all(|(_, local)| local.is_none())))
+    }
+
+    /// Whether SMTP should refuse this recipient at RCPT. The `From` is not known yet there;
+    /// [`Smtp::check_submission`] looks at it after DATA.
+    pub(crate) async fn refuses_recipient(
+        &self,
+        account_id: i64,
+        mail_from: &str,
+        address: &str,
+    ) -> Result<bool, StoreError> {
+        Ok(self.held_to_this_server(account_id, [mail_from].into_iter()).await?
+            && self.only_reaches_elsewhere(address).await?)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -218,6 +287,7 @@ impl Smtp {
         env_id: Option<String>,
         trace: Option<String>,
         from: Vec<String>,
+        held: bool,
     ) -> Result<Submitted, SubmitError> {
         let ctx = &self.inner;
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
@@ -304,7 +374,7 @@ impl Smtp {
                         continue;
                     }
                     reached.push(target);
-                    match self.deliver_locally(target, &address, &mail_from, &signed, &from[0], false).await {
+                    match self.deliver_locally(target, &address, &mail_from, &signed, &from[0], false, held).await {
                         Ok(()) => got_it = true,
                         Err(error) => failure = Some(error),
                     }
@@ -347,14 +417,29 @@ impl Smtp {
                         tracing::warn!(%id, %err, "noting mail for a masked address failed");
                     }
                     let to_trash = masked.is_some_and(|masked| masked.state == MaskedState::Disabled);
-                    match self.deliver_locally(account_id, &address, &mail_from, &signed, &from[0], to_trash).await {
+                    match self
+                        .deliver_locally(account_id, &address, &mail_from, &signed, &from[0], to_trash, held)
+                        .await
+                    {
                         Ok(()) => local_deliveries += 1,
                         Err(error) => failed.push(FailedRecipient { address, error }),
                     }
                 }
                 None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => {
                     match ctx.store.forward_address_targets(&address).await.ok().flatten() {
-                        Some(targets) => {
+                        Some(mut targets) => {
+                            // Held to this server: the people here among the targets get it, and
+                            // with nobody here it goes nowhere.
+                            if held {
+                                targets.retain(|(_, local)| local.is_some());
+                                if targets.is_empty() {
+                                    failed.push(FailedRecipient {
+                                        address: address.clone(),
+                                        error: format!("550 5.7.1 <{address}>: {INTERNAL_ONLY_TEXT}"),
+                                    });
+                                    continue;
+                                }
+                            }
                             let forwarder = forward::Forwarder {
                                 name: &address,
                                 account_id: Some(account.id),
@@ -370,6 +455,9 @@ impl Smtp {
                         }),
                     }
                 }
+                // Refused before this; a recipient that moved away since must not slip out either.
+                None if held => failed
+                    .push(FailedRecipient { error: format!("550 5.7.1 <{address}>: {INTERNAL_ONLY_TEXT}"), address }),
                 None => remote.push(NewQueueRecipient {
                     address,
                     notify_flags: recipient.notify_flags,
@@ -468,7 +556,9 @@ impl Smtp {
 
     /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the
     /// Trash, for a disabled masked address), a vacation reply and calendar invitations. The error
-    /// is the answer for a bounce.
+    /// is the answer for a bounce. For a sender `held` to this server the forwarding stops at people
+    /// here.
+    #[allow(clippy::too_many_arguments)]
     async fn deliver_locally(
         &self,
         account_id: i64,
@@ -477,6 +567,7 @@ impl Smtp {
         signed: &[u8],
         author: &str,
         to_trash: bool,
+        held: bool,
     ) -> Result<(), String> {
         let ctx = &self.inner;
         if to_trash {
@@ -489,7 +580,10 @@ impl Smtp {
             };
             return ctx.store.ingest(request).await.map(|_| ()).map_err(stored_error);
         }
-        let plan = forward::plan(ctx, account_id).await;
+        let mut plan = forward::plan(ctx, account_id).await;
+        if held {
+            plan = plan.only_here();
+        }
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {

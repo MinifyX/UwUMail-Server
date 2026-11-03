@@ -187,6 +187,9 @@ pub struct AccountUpdate {
     pub redirect_to: Option<String>,
     /// Whether this account may open its mailbox in the browser.
     pub webmail: Option<bool>,
+    /// Whether this account may only send to addresses of this server. For admins only: its owner
+    /// must not be able to turn it off.
+    pub internal_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -339,6 +342,9 @@ impl Store {
                 if let Some(webmail) = update.webmail {
                     after.webmail = webmail;
                 }
+                if let Some(internal_only) = update.internal_only {
+                    after.internal_only = internal_only;
+                }
                 // A service is never an admin: it cannot reach the portal at all.
                 if after.role == Role::Service && before.role == Role::Admin {
                     after.role = Role::Service;
@@ -347,8 +353,8 @@ impl Store {
                 tx.execute(
                     "UPDATE accounts SET display_name = ?1, role = ?2, kind = ?3, quota_bytes = ?4, disabled = ?5,
                         smtp_enabled = ?6, imap_enabled = ?7, jmap_enabled = ?8, caldav_enabled = ?9,
-                        carddav_enabled = ?10, redirect_to = ?11, webmail_enabled = ?12
-                 WHERE id = ?13",
+                        carddav_enabled = ?10, redirect_to = ?11, webmail_enabled = ?12, internal_only = ?13
+                 WHERE id = ?14",
                     params![
                         after.display_name,
                         if after.role == Role::Admin { "admin" } else { "user" },
@@ -362,6 +368,7 @@ impl Store {
                         after.protocols.carddav,
                         after.redirect_to,
                         after.webmail,
+                        after.internal_only,
                         after.id
                     ],
                 )?;

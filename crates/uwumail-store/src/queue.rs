@@ -171,6 +171,19 @@ impl Store {
         let (blob_key, size, return_path) = (blob.as_str().to_owned(), raw.len() as i64, return_path.to_owned());
         let id = self
             .write(move |tx| {
+                // The last door before the network: whatever path brought it here, nothing leaves in
+                // the name of an account held to this server (docs/groups.md).
+                if let Some(account_id) = account_id {
+                    let held: Option<bool> = tx
+                        .query_row("SELECT internal_only FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
+                        .optional()?;
+                    if held == Some(true) {
+                        return Err(StoreError::Rule {
+                            code: "internalOnly",
+                            message: "this account may only send to addresses on this server".into(),
+                        });
+                    }
+                }
                 let created_at = now();
                 tx.execute(
                     "INSERT INTO queue_messages (blob_hash, return_path, account_id, size, env_id, created_at, expires_at)

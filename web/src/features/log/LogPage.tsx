@@ -147,6 +147,9 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
       .map(([key]) => key.toUpperCase());
     parts.push(on.length > 0 ? t("log.details.protocols", { value: on.join(", ") }) : t("log.details.protocolsNone"));
   }
+  if (typeof details.internalOnly === "boolean") {
+    parts.push(t(details.internalOnly ? "log.details.internalOnlyOn" : "log.details.internalOnlyOff"));
+  }
   if (typeof details.redirectTo === "string") {
     parts.push(
       details.redirectTo ? t("log.details.redirectTo", { address: details.redirectTo }) : t("log.details.redirectNone"),

@@ -284,3 +284,40 @@ async fn change_lock_out_trash_and_restore() {
     let actions: Vec<_> = log.as_array().unwrap().iter().map(|r| r["action"].as_str().unwrap().to_owned()).collect();
     assert_eq!(actions, ["account.purge", "alias.remove", "account.restore"]);
 }
+
+/// docs/groups.md: admins hold an account to this server, and its owner can neither turn that off
+/// nor set up a forward to elsewhere.
+#[tokio::test]
+async fn only_an_admin_holds_an_account_to_this_server() {
+    let portal = Portal::new().await;
+    let nyu = portal.login("nyu@example.org", "katzenpfote-123").await;
+    let new = json!({ "address": "ami@example.org", "name": "Ami", "password": "Kirschbluete-Tastatur" });
+    let (status, _, created) = portal.request("POST", "/api/admin/people", Some(new), Some(&nyu)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["person"]["internalOnly"], false, "off for everyone until an admin says otherwise");
+
+    let path = "/api/admin/people/ami@example.org";
+    let (status, _, person) = portal.request("PATCH", path, Some(json!({ "internalOnly": true })), Some(&nyu)).await;
+    assert_eq!((status, person["internalOnly"].as_bool()), (StatusCode::OK, Some(true)), "{person}");
+    let (_, _, log) = portal.request("GET", "/api/admin/audit", None, Some(&nyu)).await;
+    assert_eq!(log[0]["action"], "account.update");
+    assert_eq!(log[0]["details"]["internalOnly"], true);
+
+    let ami = portal.login("ami@example.org", "Kirschbluete-Tastatur").await;
+    let (status, _, _) = portal.request("PATCH", path, Some(json!({ "internalOnly": false })), Some(&ami)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(portal.store.account("ami@example.org").await.unwrap().unwrap().internal_only);
+
+    // Her own account pages know no such switch, and take no target elsewhere.
+    let (_, _, forwarding) = portal.request("GET", "/api/account/forwarding", None, Some(&ami)).await;
+    assert_eq!(forwarding["externalAllowed"], false, "{forwarding}");
+    let target = json!({ "address": "oma@elsewhere.example", "password": "Kirschbluete-Tastatur" });
+    let (status, _, body) = portal.request("POST", "/api/account/forwarding/targets", Some(target), Some(&ami)).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("forwardingBlocked")), "{body}");
+    assert!(portal.store.queue_entries().await.unwrap().is_empty(), "no confirmation mail either");
+
+    // Back off, by the admin: nothing else about the account changed.
+    let (status, _, person) = portal.request("PATCH", path, Some(json!({ "internalOnly": false })), Some(&nyu)).await;
+    assert_eq!((status, person["internalOnly"].as_bool()), (StatusCode::OK, Some(false)));
+    assert_eq!(person["status"], "active");
+}

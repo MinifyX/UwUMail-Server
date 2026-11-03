@@ -42,9 +42,10 @@ async fn check_confirmation_allowed(web: &Web, account_id: i64, address: &str) -
 
 async fn forwarding_json(web: &Web, account_id: i64) -> ApiResult<Value> {
     let forwarding = web.store().forwarding(account_id).await?;
+    let held = web.store().account_by_id(account_id).await?.is_some_and(|account| account.internal_only);
     Ok(json!({
         "keepCopy": forwarding.keep_copy,
-        "externalAllowed": web.smtp().allow_external_forwarding() && !forwarding.external_blocked,
+        "externalAllowed": web.smtp().allow_external_forwarding() && !forwarding.external_blocked && !held,
         "targets": forwarding.targets,
         "maxTargets": uwumail_store::MAX_FORWARD_TARGETS,
     }))
@@ -73,7 +74,8 @@ pub async fn add_target(
         confirm_identity(&web, &session, new.password.as_deref()).await?;
         check_confirmation_allowed(&web, session.account.id, &address).await?;
     }
-    let allowed = web.smtp().allow_external_forwarding();
+    // Held to this server: no target elsewhere, and so no confirmation mail to one either.
+    let allowed = web.smtp().allow_external_forwarding() && !session.account.internal_only;
     let (target, token) = web.store().add_forward_target(session.account.id, &address, allowed).await?;
     if let Some(token) = &token {
         send_confirmation(&web, &session.account, &target.address, token).await?;

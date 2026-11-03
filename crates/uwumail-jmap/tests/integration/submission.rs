@@ -257,3 +257,56 @@ async fn held_mail_ends_with_the_app_password_that_held_it() {
     assert_eq!(submission(&server, &id).await["undoStatus"], "canceled");
     assert_eq!(server.jmap.release_due_submissions().await, 0);
 }
+
+/// An account held to this server (docs/groups.md): JMAP has no RCPT to refuse at, so a message
+/// that names anyone elsewhere is refused as a whole.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_account_held_to_this_server_sends_inside_it_only() {
+    let server = server().await;
+    let change = json!({ "mailUndoSend": "0" }).as_object().unwrap().clone();
+    server.store.update_preferences(server.id(MINI).await, change).await.unwrap();
+    let hold = async |on: bool| {
+        let update = uwumail_store::AccountUpdate { internal_only: Some(on), ..Default::default() };
+        server.store.update_account(MINI, update).await.unwrap();
+    };
+    let envelope = |rcpt: &[&str]| {
+        let rcpt: Vec<Value> = rcpt.iter().map(|email| json!({ "email": email })).collect();
+        json!({ "envelope": { "mailFrom": { "email": MINI }, "rcptTo": rcpt } })
+    };
+    let queued = async || server.store.queue_entries().await.unwrap().len();
+    hold(true).await;
+
+    let (email, identity) = draft(&server, "Nach innen").await;
+    let set = submit(&server, &email, &identity, json!({})).await;
+    assert_eq!(set["created"]["s"]["undoStatus"], "final", "{set}");
+    assert_eq!(subjects_for_nyu(&server).await, ["Nach innen"]);
+
+    for rcpt in [&["oma@elsewhere.example"][..], &[NYU, "oma@elsewhere.example"]] {
+        let set = submit(&server, &email, &identity, envelope(rcpt)).await;
+        let refused = &set["notCreated"]["s"];
+        assert_eq!(refused["type"], "forbiddenToSend", "{set}");
+        assert!(refused["description"].as_str().unwrap().contains("oma@elsewhere.example"), "{set}");
+    }
+    assert_eq!(subjects_for_nyu(&server).await, ["Nach innen"], "nothing of a mixed list went");
+    assert_eq!(queued().await, 0);
+
+    // Held back while it was allowed, and the switch came on before its time: it does not go.
+    hold(false).await;
+    let later = json!({ "mailFrom": { "email": MINI, "parameters": { "HOLDFOR": "1" } },
+        "rcptTo": [{ "email": "oma@elsewhere.example" }] });
+    let set = submit(&server, &email, &identity, json!({ "envelope": later })).await;
+    assert_eq!(set["created"]["s"]["undoStatus"], "pending", "{set}");
+    let id = set["created"]["s"]["id"].as_str().unwrap().to_owned();
+    hold(true).await;
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    server.jmap.release_due_submissions().await;
+    assert_eq!(queued().await, 0);
+    let held = submission(&server, &id).await;
+    assert_eq!(held["deliveryStatus"]["oma@elsewhere.example"]["delivered"], "no", "{held}");
+
+    // Without the switch it is an ordinary account.
+    hold(false).await;
+    let set = submit(&server, &email, &identity, envelope(&["oma@elsewhere.example"])).await;
+    assert_eq!(set["created"]["s"]["undoStatus"], "final", "{set}");
+    assert_eq!(queued().await, 1);
+}
