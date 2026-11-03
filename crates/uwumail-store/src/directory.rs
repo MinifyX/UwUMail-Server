@@ -197,6 +197,8 @@ pub struct Account {
     /// A mailbox several people use (docs/groups.md). Stored as a service; nobody signs in to it,
     /// its members reach its folders from their own accounts.
     pub shared_mailbox: bool,
+    /// May only send to addresses on this server (docs/jmap-sending.md).
+    pub internal_only: bool,
 }
 
 impl Account {
@@ -266,9 +268,9 @@ impl std::fmt::Debug for NewAccount {
 
 pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, \
      created_at, deleted_at, credentials_changed_at, kind, smtp_enabled, imap_enabled, jmap_enabled, \
-     caldav_enabled, carddav_enabled, redirect_to, webmail_enabled, shared_mailbox";
+     caldav_enabled, carddav_enabled, redirect_to, webmail_enabled, shared_mailbox, internal_only";
 /// Number of columns in [`ACCOUNT_COLUMNS`]; extra columns of a query start here.
-pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 19;
+pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 20;
 
 pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
@@ -292,6 +294,7 @@ pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
         redirect_to: row.get(16)?,
         webmail: row.get(17)?,
         shared_mailbox: row.get(18)?,
+        internal_only: row.get(19)?,
     })
 }
 
@@ -474,9 +477,24 @@ impl Store {
             }
             tx.execute("DELETE FROM domains WHERE id = ?1", [id])?;
             crate::masked_domains::bump_version(tx)?;
-            Ok(())
+            // Nobody can send from the domain any more (a send-as domain on it went with it), so
+            // the identities on it go too.
+            let mut stmt = tx.prepare(
+                "SELECT DISTINCT account_id, email FROM identities
+                 WHERE lower(substr(email, instr(email, '@') + 1)) = ?1",
+            )?;
+            let on_domain = stmt
+                .query_map([&name], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            drop(stmt);
+            let mut granted = crate::identity_grants::Granted::default();
+            for (account_id, email) in on_domain {
+                crate::identity_grants::revoke_identities(tx, account_id, &email, &mut granted)?;
+            }
+            Ok(granted)
         })
         .await
+        .map(|granted| self.notify_granted(granted))
     }
 
     /// Finishes a rotation: the pending keys sign from now on, the keys they replace are retired.
@@ -552,6 +570,17 @@ impl Store {
             let account = login.as_deref().map(|login| account_id(tx, login)).transpose()?;
             tx.execute("UPDATE domains SET catch_all_account_id = ?1 WHERE id = ?2", params![account, domain_id])?;
             Ok(())
+        })
+        .await
+    }
+
+    /// Every domain this server holds, mail and masked-only, in lowercase: where an internal-only
+    /// account may send to.
+    pub async fn internal_domains(&self) -> Result<Vec<String>> {
+        self.read(|conn| {
+            let mut stmt = conn.prepare("SELECT lower(name) FROM domains ORDER BY lower(name)")?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
         })
         .await
     }
@@ -728,6 +757,7 @@ impl Store {
                 redirect_to: String::new(),
                 webmail: true,
                 shared_mailbox: false,
+                internal_only: false,
             };
             let then = then(tx, &account)?;
             Ok((account, then))
@@ -926,9 +956,13 @@ impl Store {
                 }
                 other => other.into(),
             })?;
-            // Members who send for a shared mailbox answer from its new address too.
+            // The account may send as its new address right away, so it finds it among its
+            // identities; one that has none yet gets it with its defaults. Members who send for a
+            // shared mailbox answer from its new address too.
             let mut granted = crate::identity_grants::Granted::default();
-            crate::shared_mailboxes::address_changed(tx, account_id, &format!("{local}@{domain}"), true, &mut granted)?;
+            let address = format!("{local}@{domain}");
+            crate::identity_grants::grant_identity(tx, account_id, &address, "", &mut granted)?;
+            crate::shared_mailboxes::address_changed(tx, account_id, &address, true, &mut granted)?;
             Ok(granted)
         })
         .await
@@ -954,8 +988,11 @@ impl Store {
                     "DELETE FROM addresses WHERE local_part = ?1 AND domain_id = ?2 AND kind = 'alias'",
                     params![local, domain_id],
                 )?;
+                // An identity the account can no longer send as goes with the address, unless the
+                // account may still send as it some other way (a send-as domain, say).
                 let mut granted = crate::identity_grants::Granted::default();
                 let address = format!("{local}@{domain}");
+                crate::identity_grants::revoke_identities(tx, account_id, &address, &mut granted)?;
                 crate::shared_mailboxes::address_changed(tx, account_id, &address, false, &mut granted)?;
                 Ok(granted)
             })
@@ -1050,6 +1087,43 @@ impl Store {
     pub async fn account_owns_address(&self, account_id: i64, address: &str) -> Result<bool> {
         let address = address.to_owned();
         self.read(move |conn| crate::extras::owns(conn, account_id, &address)).await
+    }
+
+    /// Whether the account may only send to addresses on this server, as it is now. One lookup by
+    /// id, cheap enough for every delivery attempt; an account that is gone counts as not.
+    pub async fn account_internal_only(&self, account_id: i64) -> Result<bool> {
+        self.read(move |conn| {
+            Ok(conn
+                .query_row("SELECT internal_only FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
+                .optional()?
+                .unwrap_or(false))
+        })
+        .await
+    }
+
+    /// Whether any of `addresses` belongs to an internal-only account here: the switch on a shared
+    /// mailbox or a service account goes with its address, whoever sends as it.
+    pub async fn addresses_internal_only(&self, addresses: Vec<String>) -> Result<bool> {
+        let parsed: Vec<(String, String)> =
+            addresses.iter().filter_map(|address| normalize_address(address).ok()).collect();
+        if parsed.is_empty() {
+            return Ok(false);
+        }
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM addresses a JOIN domains d ON d.id = a.domain_id
+                                JOIN accounts acc ON acc.id = a.account_id
+                                WHERE d.name = ?1 AND a.local_part IN (?2, ?3) AND acc.internal_only = 1)",
+            )?;
+            for (local, domain) in &parsed {
+                let base = base_local_part(local);
+                if stmt.query_row(params![domain, local, base], |row| row.get::<_, bool>(0))? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+        .await
     }
 
     /// The domains an account may send as with any address.
@@ -1233,6 +1307,57 @@ mod tests {
 
         store.remove_alias("kontakt@example.org").await.unwrap();
         assert_eq!(store.resolve_recipient("kontakt@example.org").await.unwrap(), Some(ami.id));
+    }
+
+    /// An alias added after the account first read its identities never became one, so mail apps
+    /// did not offer it as a sender although the server let it send as it.
+    #[tokio::test]
+    async fn an_alias_comes_and_goes_with_its_identity() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        store.create_domain("verein.example").await.unwrap();
+        let mini = store.create_account(person("mini@example.org")).await.unwrap();
+        let emails = |list: Vec<crate::Identity>| list.into_iter().map(|identity| identity.email).collect::<Vec<_>>();
+        assert_eq!(emails(store.identities(mini.id).await.unwrap()), vec!["mini@example.org"]);
+
+        store.add_alias("kontakt@example.org", "mini@example.org").await.unwrap();
+        store.add_alias("info@verein.example", "mini@example.org").await.unwrap();
+        let list = store.identities(mini.id).await.unwrap();
+        assert_eq!(emails(list.clone()), vec!["mini@example.org", "kontakt@example.org", "info@verein.example"]);
+        assert!(list.iter().all(|identity| identity.name == "Mini"), "named like the account");
+
+        store.remove_alias("kontakt@example.org").await.unwrap();
+        // Still allowed through the send-as domain, so that identity stays.
+        store.set_send_as_domains(mini.id, vec!["verein.example".into()]).await.unwrap();
+        store.remove_alias("info@verein.example").await.unwrap();
+        assert_eq!(emails(store.identities(mini.id).await.unwrap()), vec!["mini@example.org", "info@verein.example"]);
+
+        // Added back, the address is offered again, once.
+        store.add_alias("kontakt@example.org", "mini@example.org").await.unwrap();
+        store.add_alias("info@verein.example", "mini@example.org").await.unwrap();
+        assert_eq!(
+            emails(store.identities(mini.id).await.unwrap()),
+            vec!["mini@example.org", "info@verein.example", "kontakt@example.org"]
+        );
+
+        // An identity kept as it was once typed goes too: addresses compare without case.
+        store
+            .write(|tx| {
+                tx.execute(
+                    "UPDATE identities SET email = 'Kontakt@Example.org' WHERE email = 'kontakt@example.org'",
+                    [],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        store.remove_alias("kontakt@example.org").await.unwrap();
+        assert_eq!(emails(store.identities(mini.id).await.unwrap()), vec!["mini@example.org", "info@verein.example"]);
+
+        // With its domain gone nobody sends from it, send-as domain or not.
+        store.remove_alias("info@verein.example").await.unwrap();
+        store.delete_domain("verein.example").await.unwrap();
+        assert_eq!(emails(store.identities(mini.id).await.unwrap()), vec!["mini@example.org"]);
     }
 
     #[tokio::test]

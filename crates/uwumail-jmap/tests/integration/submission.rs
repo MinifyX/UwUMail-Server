@@ -257,3 +257,130 @@ async fn held_mail_ends_with_the_app_password_that_held_it() {
     assert_eq!(submission(&server, &id).await["undoStatus"], "canceled");
     assert_eq!(server.jmap.release_due_submissions().await, 0);
 }
+
+/// How many emails a person has, in all folders.
+async fn email_count(server: &common::Server, login: &str) -> u64 {
+    let account = server.account_id(login).await;
+    let responses =
+        server.api(login, json!([["Email/query", { "accountId": account, "calculateTotal": true }, "0"]])).await;
+    args(&responses, 0, "Email/query")["total"].as_u64().unwrap()
+}
+
+async fn internal_only(server: &common::Server, on: bool) {
+    let update = uwumail_store::AccountUpdate { internal_only: Some(on), ..Default::default() };
+    server.store.update_account(MINI, update).await.unwrap();
+}
+
+/// An internal-only account (docs/jmap-sending.md): the session says so, people here get the
+/// message, everyone else comes back in a bounce, and with nobody here it is refused as a whole.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_internal_only_account_sends_inside_and_bounces_the_rest() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let session = server.session_of(MINI).await;
+    let capability = &session["accounts"][&account]["accountCapabilities"]["urn:ietf:params:jmap:submission"];
+    assert_eq!(capability["uwuInternalOnly"], false, "always there");
+    assert!(capability.get("uwuInternalDomains").is_none(), "only while it is on");
+    let state_before = session["state"].clone();
+
+    server.store.create_domain_with_kind("masked.test", uwumail_store::DomainKind::Masked).await.unwrap();
+    internal_only(&server, true).await;
+    let session = server.session_of(MINI).await;
+    let capability = &session["accounts"][&account]["accountCapabilities"]["urn:ietf:params:jmap:submission"];
+    assert_eq!(capability["uwuInternalOnly"], true);
+    assert_eq!(capability["uwuInternalDomains"], json!(["example.org", "masked.test"]));
+    assert_ne!(session["state"], state_before, "the session state moves with the switch");
+    // A new domain is somewhere to write to as well: the state moves, so apps read it again,
+    // and API responses tell the same state.
+    let state_before = session["state"].clone();
+    server.store.create_domain("later.test").await.unwrap();
+    let session = server.session_of(MINI).await;
+    let capability = &session["accounts"][&account]["accountCapabilities"]["urn:ietf:params:jmap:submission"];
+    assert_eq!(capability["uwuInternalDomains"], json!(["example.org", "later.test", "masked.test"]));
+    assert_ne!(session["state"], state_before, "the session state moves with the domains");
+    let (_, response) = server
+        .api_as(
+            &crate::common::basic(MINI, crate::common::PASSWORD),
+            &["urn:ietf:params:jmap:core"],
+            json!([["Core/echo", {}, "0"]]),
+        )
+        .await;
+    let api_state = response["sessionState"].as_str().unwrap();
+    assert!(session["state"].as_str().unwrap().starts_with(api_state), "{api_state} {}", session["state"]);
+
+    // Mixed: Nyu gets it, the address elsewhere comes back to Mini.
+    let (email, identity) = draft(&server, "Inside").await;
+    let mini_before = email_count(&server, MINI).await;
+    let envelope =
+        json!({ "mailFrom": { "email": MINI }, "rcptTo": [{ "email": NYU }, { "email": "leni@elsewhere.test" }] });
+    let set =
+        submit(&server, &email, &identity, json!({ "envelope": envelope, "sendAt": "2020-01-01T00:00:00Z" })).await;
+    assert_eq!(set["created"]["s"]["undoStatus"], "final", "{set}");
+    assert_eq!(subjects_for_nyu(&server).await, ["Inside"]);
+    assert_eq!(email_count(&server, MINI).await, mini_before + 1, "a bounce for the address elsewhere");
+    assert!(server.store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
+
+    // Nobody here: refused at once, also when held for later.
+    let envelope = json!({ "mailFrom": { "email": MINI }, "rcptTo": [{ "email": "leni@elsewhere.test" }] });
+    let set = submit(&server, &email, &identity, json!({ "envelope": envelope.clone() })).await;
+    assert_eq!(set["notCreated"]["s"]["type"], "forbiddenToSend", "{set}");
+    let later = uwumail_jmap::dates::format(uwumail_store_now() + 3600);
+    let set = submit(&server, &email, &identity, json!({ "envelope": envelope, "sendAt": later })).await;
+    assert_eq!(set["notCreated"]["s"]["type"], "forbiddenToSend", "{set}");
+}
+
+/// Mail held back before the switch went on is checked again when its time comes.
+#[tokio::test(flavor = "multi_thread")]
+async fn held_mail_is_checked_against_internal_only_when_it_goes() {
+    let server = server().await;
+    let mini = server.id(MINI).await;
+    let identity = server.store.identities(mini).await.unwrap()[0].id;
+    let hold = |subject: &'static str, rcpt: Value| {
+        let server = &server;
+        async move {
+            let raw = format!("From: mini@example.org\r\nTo: nyu@example.org\r\nSubject: {subject}\r\n\r\nMiau\r\n");
+            let email = server
+                .store
+                .ingest(uwumail_store::IngestRequest {
+                    account_id: mini,
+                    raw: raw.into_bytes(),
+                    mailboxes: vec![uwumail_store::MailboxTarget::Role(uwumail_store::MailboxRole::Drafts)],
+                    keywords: vec![],
+                    received_at: None,
+                })
+                .await
+                .unwrap();
+            let envelope = json!({ "mailFrom": { "email": MINI }, "rcptTo": rcpt }).to_string();
+            server
+                .store
+                .hold_submission(uwumail_store::NewHeldSubmission {
+                    account_id: mini,
+                    identity_id: identity,
+                    email_id: email.id,
+                    thread_id: email.thread_id,
+                    envelope,
+                    send_at: uwumail_store_now() - 1,
+                    blob: email.blob,
+                    credential: None,
+                })
+                .await
+                .unwrap()
+        }
+    };
+    let mixed = hold("Mixed", json!([{ "email": NYU }, { "email": "leni@elsewhere.test" }])).await;
+    let outside = hold("Outside", json!([{ "email": "leni@elsewhere.test" }])).await;
+    internal_only(&server, true).await;
+    let mini_before = email_count(&server, MINI).await;
+
+    assert_eq!(server.jmap.release_due_submissions().await, 2);
+    assert_eq!(subjects_for_nyu(&server).await, ["Mixed"]);
+    assert_eq!(email_count(&server, MINI).await, mini_before + 1, "a bounce for the address elsewhere");
+    assert!(server.store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
+    let records = server.store.submissions(mini, Some(vec![mixed, outside])).await.unwrap();
+    let outside = records.iter().find(|record| record.id == outside).unwrap();
+    assert!(
+        outside.release_error.as_deref().is_some_and(|error| error.contains("only send to addresses on this server")),
+        "{:?}",
+        outside.release_error
+    );
+}

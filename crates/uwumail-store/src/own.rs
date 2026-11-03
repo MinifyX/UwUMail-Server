@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::address::{base_local_part, normalize_address};
 use crate::directory::domain_id;
+use crate::identity_grants::{Granted, grant_identity, revoke_identities};
 use crate::mail::MailboxRole;
 use crate::mutate::{EmailUpdate, MailboxesChange};
 use crate::{Result, Store, StoreError, now};
@@ -134,7 +135,7 @@ impl Store {
         if RESERVED.contains(&base_local_part(&local)) {
             return Err(rule("aliasReserved", format!("{local} is kept for the server")));
         }
-        self.write(move |tx| {
+        let (own, granted) = self.write(move |tx| {
             forget_old_releases(tx)?;
             if let Some(id) = tx.query_row("SELECT id FROM domains WHERE name = ?1", [&domain], |row| row.get(0)).optional()? {
                 crate::masked_domains::ensure_mail_domain(tx, id)?;
@@ -179,38 +180,52 @@ impl Store {
                 "DELETE FROM released_addresses WHERE local_part = ?1 AND domain_id = ?2",
                 params![local, domain_id],
             )?;
-            Ok(OwnAddress { address: format!("{local}@{domain}"), kind: "alias".into(), own: true, created_at })
+            // Offered as a sender right away (see `Store::add_alias`).
+            let address = format!("{local}@{domain}");
+            let mut granted = Granted::default();
+            grant_identity(tx, account_id, &address, "", &mut granted)?;
+            Ok((OwnAddress { address, kind: "alias".into(), own: true, created_at }, granted))
         })
-        .await
+        .await?;
+        self.notify_granted(granted);
+        Ok(own)
     }
 
     /// Deletes an alias the person created. The address stays reserved for them for 30 days.
     pub async fn delete_own_alias(&self, account_id: i64, address: &str) -> Result<()> {
         let (local, domain) = normalize_address(address)?;
-        self.write(move |tx| {
-            let domain_id = domain_id(tx, &domain)?;
-            let own: Option<bool> = tx
-                .query_row(
-                    "SELECT created_by_owner FROM addresses
+        let granted = self
+            .write(move |tx| {
+                let domain_id = domain_id(tx, &domain)?;
+                let own: Option<bool> = tx
+                    .query_row(
+                        "SELECT created_by_owner FROM addresses
                      WHERE local_part = ?1 AND domain_id = ?2 AND account_id = ?3 AND kind = 'alias'",
-                    params![local, domain_id, account_id],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            match own {
-                None => return Err(StoreError::NotFound(format!("alias {local}@{domain}"))),
-                Some(false) => return Err(rule("aliasNotYours", "an admin created this alias")),
-                Some(true) => {}
-            }
-            tx.execute("DELETE FROM addresses WHERE local_part = ?1 AND domain_id = ?2", params![local, domain_id])?;
-            tx.execute(
-                "INSERT OR REPLACE INTO released_addresses (local_part, domain_id, account_id, released_at)
+                        params![local, domain_id, account_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                match own {
+                    None => return Err(StoreError::NotFound(format!("alias {local}@{domain}"))),
+                    Some(false) => return Err(rule("aliasNotYours", "an admin created this alias")),
+                    Some(true) => {}
+                }
+                tx.execute(
+                    "DELETE FROM addresses WHERE local_part = ?1 AND domain_id = ?2",
+                    params![local, domain_id],
+                )?;
+                tx.execute(
+                    "INSERT OR REPLACE INTO released_addresses (local_part, domain_id, account_id, released_at)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![local, domain_id, account_id, now()],
-            )?;
-            Ok(())
-        })
-        .await
+                    params![local, domain_id, account_id, now()],
+                )?;
+                let mut granted = Granted::default();
+                revoke_identities(tx, account_id, &format!("{local}@{domain}"), &mut granted)?;
+                Ok(granted)
+            })
+            .await?;
+        self.notify_granted(granted);
+        Ok(())
     }
 
     pub async fn set_domain_self_service(&self, domain: &str, on: bool) -> Result<()> {
@@ -365,14 +380,20 @@ mod tests {
         assert_eq!(code(store.create_own_alias(leni, "katze@example.org").await), "aliasDomain");
         store.set_domain_self_service("example.org", true).await.unwrap();
         assert_eq!(code(store.create_own_alias(leni, "postmaster@example.org").await), "aliasReserved");
+        let senders = || async {
+            store.identities(leni).await.unwrap().into_iter().map(|identity| identity.email).collect::<Vec<_>>()
+        };
+        assert_eq!(senders().await, vec!["leni@example.org"]);
         assert_eq!(code(store.create_own_alias(leni, "ami@example.org").await), "addressTaken");
         store.create_own_alias(leni, "Katze@example.org").await.unwrap();
         store.set_alias_limit(leni, 1).await.unwrap();
         assert_eq!(code(store.create_own_alias(leni, "hund@example.org").await), "aliasLimit");
         assert_eq!(store.resolve_recipient("katze@example.org").await.unwrap(), Some(leni));
+        assert_eq!(senders().await, vec!["leni@example.org", "katze@example.org"], "offered as a sender");
 
         store.delete_own_alias(leni, "katze@example.org").await.unwrap();
         assert_eq!(store.resolve_recipient("katze@example.org").await.unwrap(), None);
+        assert_eq!(senders().await, vec!["leni@example.org"], "and no longer");
         assert_eq!(code(store.create_own_alias(ami, "katze@example.org").await), "addressTaken", "reserved for leni");
         let own = store.own_addresses(leni).await.unwrap();
         assert_eq!((own.used, own.released.len()), (0, 1));

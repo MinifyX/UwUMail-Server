@@ -51,6 +51,7 @@ const KNOWN = [
   "passkeyKnown",
   "forwardToSelf",
   "forwardingBlocked",
+  "internalOnly",
   "tooManyForwardTargets",
   "vacationDates",
   "vacationText",

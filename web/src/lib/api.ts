@@ -214,6 +214,8 @@ export interface Person {
   hasMailbox: boolean;
   /** Whether this person may open their mailbox in the browser. Its own switch, not a protocol. */
   webmail: boolean;
+  /** May only send to addresses on this server's domains. */
+  internalOnly: boolean;
   status: PersonStatus;
   quotaBytes: number;
   usedBytes: number;

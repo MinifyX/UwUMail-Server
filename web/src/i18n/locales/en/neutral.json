@@ -517,6 +517,7 @@
       "passkeyKnown": "This passkey is already registered.",
       "forwardToSelf": "That is already your own address.",
       "forwardingBlocked": "Forwarding to other servers is not allowed here.",
+      "internalOnly": "This account may only send to addresses on this server.",
       "tooManyForwardTargets": "No more forwarding addresses. Remove one first.",
       "vacationDates": "The end has to be after the start.",
       "vacationText": "An away message needs a text.",
@@ -872,7 +873,9 @@
       "redirectNone": "Mail to this account is refused.",
       "redirectTo": "Mail to this account goes to {{address}}.",
       "webmail": "Mailbox in the browser",
-      "webmailHint": "Opening this mailbox at /mail with the portal login. Separate from IMAP and JMAP, which decide what mail programs may do."
+      "webmailHint": "Opening this mailbox at /mail with the portal login. Separate from IMAP and JMAP, which decide what mail programs may do.",
+      "internalOnly": "Only send within this server",
+      "internalOnlyHint": "Mail may only go to addresses on this server's domains. Other recipients are refused, and forwarding, away replies and sending through other providers stay inside too."
     },
     "serviceAccess": {
       "title": "Access",

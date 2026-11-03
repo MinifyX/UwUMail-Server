@@ -108,6 +108,30 @@ pub fn session_state(account: &Account) -> String {
     format!("{}-{}{calendars}{contacts}", account.id, account.login.len() + account.display_name.len())
 }
 
+/// The domains an internal-only account may send to, or `None` when it may send anywhere.
+pub async fn internal_domains(
+    store: &uwumail_store::Store,
+    account: &Account,
+) -> uwumail_store::Result<Option<Vec<String>>> {
+    if !account.internal_only {
+        return Ok(None);
+    }
+    store.internal_domains().await.map(Some)
+}
+
+/// The part of the session state the internal-only switch moves: `-i` and a short hash of the
+/// domains, so a client also learns when a domain comes or goes.
+pub fn internal_state(domains: Option<&[String]>) -> String {
+    use sha2::{Digest, Sha256};
+    let Some(domains) = domains else { return String::new() };
+    let mut hash = Sha256::new();
+    for domain in domains {
+        hash.update(domain.as_bytes());
+        hash.update(b"\n");
+    }
+    format!("-i{}", hex::encode(&hash.finalize()[..4]))
+}
+
 /// What the account's MaskedEmail capability says (a UwUMail addition to Fastmail's extension):
 /// the domains it may make masked addresses on and the one a new one goes to without `domain`.
 pub async fn masked_capability(store: &uwumail_store::Store, account_id: i64) -> Value {
@@ -179,6 +203,9 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
                     },
                     SUBMISSION: {
                         "maxDelayedSend": MAX_DELAYED_SEND_SECS,
+                        // A UwUMail addition: this account may only send to addresses on this
+                        // server; `uwuInternalDomains` lists them while it is on (docs/jmap-sending.md).
+                        "uwuInternalOnly": account.internal_only,
                         // RFC 4865: the longest hold in seconds, and the latest date it may reach.
                         "submissionExtensions": {
                             "FUTURERELEASE": [
@@ -294,13 +321,20 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
         Ok(login) if login.masked_only() => {
             let base = base_url(&headers, client);
             let account = login.account;
+            let internal = match internal_domains(&jmap.inner.store, &account).await {
+                Ok(domains) => internal_state(domains.as_deref()),
+                Err(err) => {
+                    tracing::error!(%err, "reading the internal domains failed");
+                    return crate::auth::AuthError::Internal.into_response();
+                }
+            };
             let account_id = ids::account(account.id);
             let mut document = document(&account, &base, false);
             keep_masked_only(&mut document, &account_id);
             document["accounts"][&account_id]["accountCapabilities"][MASKED] =
                 masked_capability(&jmap.inner.store, account.id).await;
             let masked_state = masked_state(&jmap.inner.store).await;
-            document["state"] = json!(format!("{}{masked_state}", session_state(&account)));
+            document["state"] = json!(format!("{}{internal}{masked_state}", session_state(&account)));
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
         Ok(login) => {
@@ -313,6 +347,18 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             crate::sharing::add_to_session(&mut document, &account, &shared);
             document["accounts"][ids::account(account.id)]["accountCapabilities"][MASKED] =
                 masked_capability(&jmap.inner.store, account.id).await;
+            let internal = match internal_domains(&jmap.inner.store, &account).await {
+                Ok(domains) => domains,
+                Err(err) => {
+                    tracing::error!(%err, "reading the internal domains failed");
+                    return crate::auth::AuthError::Internal.into_response();
+                }
+            };
+            let internal_state = internal_state(internal.as_deref());
+            if let Some(domains) = internal {
+                document["accounts"][ids::account(account.id)]["accountCapabilities"][SUBMISSION]["uwuInternalDomains"] =
+                    json!(domains);
+            }
             // The picture: the same in both places, as the session belongs to one account.
             let profile = crate::methods::profile::capability(&jmap.inner.store, account.id).await;
             let may_be_public = profile["mayBePublic"].as_bool().unwrap_or(false);
@@ -335,7 +381,7 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             let picture_state = if may_be_public { "-p1" } else { "-p0" };
             let assist_state = add_assist(&jmap, &mut document, &account, &base).await;
             document["state"] = json!(format!(
-                "{}{}{masked_state}{picture_state}{assist_state}",
+                "{}{}{internal_state}{masked_state}{picture_state}{assist_state}",
                 session_state(&account),
                 crate::sharing::state_suffix(&shared)
             ));

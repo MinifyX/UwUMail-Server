@@ -44,7 +44,10 @@ async fn forwarding_json(web: &Web, account_id: i64) -> ApiResult<Value> {
     let forwarding = web.store().forwarding(account_id).await?;
     Ok(json!({
         "keepCopy": forwarding.keep_copy,
-        "externalAllowed": web.smtp().allow_external_forwarding() && !forwarding.external_blocked,
+        "externalAllowed": web.smtp().allow_external_forwarding()
+            && !forwarding.external_blocked
+            && !forwarding.internal_only,
+        "internalOnly": forwarding.internal_only,
         "targets": forwarding.targets,
         "maxTargets": uwumail_store::MAX_FORWARD_TARGETS,
     }))

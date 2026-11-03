@@ -3,6 +3,41 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.27.0
+
+### Fixed
+
+- An alias added to an account later, by an admin or by the person themselves, now shows up as a
+  sender identity right away. Until now only the addresses an account had when its identities
+  were first read became identities. The server already let the account send as a later alias,
+  but webmail and mail apps did not offer it as a sender. Removing an alias also removes its
+  identity, unless the account may still send as it some other way (a send-as domain, a group or
+  a shared mailbox). Aliases added before this release don't get an identity automatically: add
+  it once in the identity settings, or remove the alias and add it again.
+
+### Added
+
+- Admins can let a person send only within this server: a new switch "Only send within this
+  server" on the person's page (off for everyone, logged in the audit log). Such an account can
+  still write to every address on this server's domains, masked-only domains included. Recipients
+  elsewhere are refused: in a mail app at the `RCPT` step with "550 5.7.1 This account may only
+  send to addresses on this server", in the webmail and over JMAP they come back to the sender in
+  a bounce while the people here still get the message. A message with nobody here at all is
+  refused as a whole. Mail held back for later is checked again when it goes, and mail already in
+  the outgoing queue bounces at its next attempt. Switched on for a shared mailbox, it also holds
+  for its members when they send as it. Forwarding only goes to people on this server (existing
+  targets elsewhere are skipped while the switch is on), forwarding addresses pass such mail on
+  only to their targets here, away replies only answer senders on this server, and sending
+  through a fetched mailbox's provider is switched off. Mail apps can see it in the JMAP session
+  (`uwuInternalOnly` and `uwuInternalDomains` in the submission capability). See
+  [docs/jmap-sending.md](docs/jmap-sending.md#sending-only-within-this-server).
+
+### Changed
+
+- **Webmail 0.25.0 (`3695165`): only sending within this server.** For such an account the
+  webmail says so under the sender, marks recipients elsewhere and won't send to them, and shows
+  the server's refusal as such.
+
 ## 0.26.2
 
 ### Fixed

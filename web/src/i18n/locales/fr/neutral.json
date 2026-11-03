@@ -528,6 +528,7 @@
       "passkeyKnown": "Cette clé d'accès est déjà enregistrée.",
       "forwardToSelf": "C'est déjà votre propre adresse.",
       "forwardingBlocked": "Le transfert vers d'autres serveurs n'est pas autorisé ici.",
+      "internalOnly": "Ce compte ne peut envoyer qu'aux adresses de ce serveur.",
       "tooManyForwardTargets": "Plus d'adresses de transfert possibles. Supprimez-en d'abord une.",
       "vacationDates": "La fin doit être après le début.",
       "vacationText": "Un message d'absence a besoin d'un texte.",
@@ -888,7 +889,9 @@
       "redirectNone": "Le courrier pour ce compte est refusé.",
       "redirectTo": "Le courrier pour ce compte va à {{address}}.",
       "webmail": "Boîte mail dans le navigateur",
-      "webmailHint": "Ouvrir cette boîte mail sur /mail avec la connexion du portail. Indépendant d'IMAP et JMAP, qui décident de ce que les logiciels de messagerie peuvent faire."
+      "webmailHint": "Ouvrir cette boîte mail sur /mail avec la connexion du portail. Indépendant d'IMAP et JMAP, qui décident de ce que les logiciels de messagerie peuvent faire.",
+      "internalOnly": "Envoi interne uniquement",
+      "internalOnlyHint": "Les e-mails ne peuvent aller qu'aux adresses des domaines de ce serveur. Les autres destinataires sont refusés, et les transferts, réponses d'absence et envois via d'autres fournisseurs restent aussi en interne."
     },
     "serviceAccess": {
       "title": "Accès",
