@@ -3,6 +3,26 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.26.2
+
+### Fixed
+
+- Verification codes in HTML-only mail are found again when the code stands in a table cell or a
+  heading of its own: the text ran into the next sentence ("842526Dieser Einmalcode …"), and the
+  space after a bold code went missing ("9063ist der Code"). The guess now reads such mail with
+  each block on a line of its own.
+- A validity written after the number ("5 Minuten gültig") or as a word ("verfällt nach zwei
+  Minuten", "expires in ten minutes") is read; such codes counted as valid for 15 minutes.
+
+### Added
+
+- The guess also finds sign-in and confirmation links (`kind: "link"`): exactly one `https` link
+  to the From domain behind a button such as "Sign in" or "E-Mail bestätigen", in mail that says
+  it was asked for or expires, not in list, bulk or reply mail and without a redirect in the
+  link, and only with DMARC passed like every guess. See
+  [docs/verification-codes.md](docs/verification-codes.md) and
+  [docs/security-audit-0.26.2.md](docs/security-audit-0.26.2.md).
+
 ## 0.26.1
 
 First published release with verification codes: the 0.26.0 tag never produced a release, because the image scan stopped it before anything was pushed. Everything listed under 0.26.0 ships here.

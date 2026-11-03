@@ -19,7 +19,7 @@
 
 use std::sync::LazyLock;
 
-use mail_parser::MessageParser;
+use mail_parser::{MessageParser, PartType};
 use regex::Regex;
 
 /// The longest header value read; a real one is well under 300 bytes.
@@ -237,22 +237,170 @@ fn find(raw: &[u8], auth: &Authenticity, received_at: i64) -> Option<Detected> {
         text.push_str(subject);
         text.push('\n');
     }
-    if let Some(body) = message.body_text(0) {
-        text.push_str(&body);
+    // An HTML-only mail is read with its blocks on lines of their own: mail-parser only breaks at
+    // `<br>` and `</p>`, so a code in a table cell or a heading ran into the next sentence.
+    let html = message.html_part(0).and_then(|part| match &part.body {
+        PartType::Html(html) => Some(read_html(html)),
+        _ => None,
+    });
+    match (message.text_part(0).map(|part| &part.body), &html) {
+        (Some(PartType::Html(_)), Some(html)) => text.push_str(&html.text),
+        _ => {
+            if let Some(body) = message.body_text(0) {
+                text.push_str(&body);
+            }
+        }
     }
     let text = cut(&text, MAX_TEXT);
-    let (code, purpose, validity) = guess(text)?;
+    let (kind, code, url, purpose, validity) = match guess(text) {
+        Some((code, purpose, validity)) => (Kind::Otp, Some(code), None, purpose, validity),
+        None if !is_list_mail(&message) => {
+            let (url, purpose, validity) = guess_link(&html?.links, text, &from_domain)?;
+            (Kind::Link, None, Some(url), purpose, validity)
+        }
+        None => return None,
+    };
     Some(Detected {
-        kind: Kind::Otp,
+        kind,
         origin: from_domain,
-        code: Some(code),
-        url: None,
+        code,
+        url,
         purpose,
         expires_at: received_at.saturating_add(validity),
         source: Source::Heuristic,
         // Only ever reached with DMARC passed, see above.
         autofill: true,
     })
+}
+
+/// Elements that stand on a line of their own in the text.
+const BLOCKS: &[&str] = &[
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "br",
+    "center",
+    "dd",
+    "div",
+    "dl",
+    "dt",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "title",
+    "tr",
+    "ul",
+];
+
+/// Elements whose content is no text.
+const NOT_TEXT: &[&str] = &["head", "style", "script", "template"];
+
+/// The visible text of an HTML body and its links.
+#[derive(Default)]
+struct Html {
+    /// Each block on a line of its own.
+    text: String,
+    /// `href` (entities decoded) and the text of each link, in order.
+    links: Vec<(String, String)>,
+}
+
+/// `href="…"`, `href='…'` or `href=…` inside a tag; `data-href` is no link.
+static HREF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?is)\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#).expect("a valid pattern"));
+
+/// Reads an HTML body as text, each block on a line of its own, and collects its links on the way,
+/// both from the same visible content: comments, `head`, `style`, `script` and `template` are
+/// skipped. mail-parser's own conversion only breaks at `<br>` and `</p>`, and after a break it
+/// drops the space behind an inline element: `<td><b>9063</b> ist der Code` came out as
+/// "9063ist der Code". Stops once the text is past [`MAX_TEXT`], the most the guess reads.
+fn read_html(html: &str) -> Html {
+    let html = cut(html, MAX_MESSAGE);
+    // Lower case for finding tags; ASCII only, so every offset stays the same.
+    let lower = html.to_ascii_lowercase();
+    let mut read = Html::default();
+    // The link being read: its `href` and where its text starts.
+    let mut link: Option<(String, usize)> = None;
+    let mut at = 0;
+    while at < html.len() && read.text.len() <= MAX_TEXT {
+        let text = &mut read.text;
+        let Some(open) = lower[at..].find('<').map(|open| at + open) else {
+            push_html_text(text, &html[at..]);
+            break;
+        };
+        push_html_text(text, &html[at..open]);
+        if lower[open..].starts_with("<!--") {
+            at = lower[open..].find("-->").map_or(html.len(), |end| open + end + 3);
+            continue;
+        }
+        let end = lower[open..].find('>').map_or(html.len(), |end| open + end + 1);
+        let closing = lower[open + 1..].starts_with('/');
+        let name: String =
+            lower[open + 1..end].trim_start_matches('/').chars().take_while(char::is_ascii_alphanumeric).collect();
+        at = end;
+        if NOT_TEXT.contains(&name.as_str()) && !closing {
+            let close = format!("</{name}");
+            at = lower[end..].find(&close).map_or(html.len(), |close| end + close);
+        } else if BLOCKS.contains(&name.as_str()) && !text.ends_with('\n') {
+            let trimmed = text.trim_end_matches(' ').len();
+            text.truncate(trimmed);
+            text.push('\n');
+        } else if name == "a" {
+            if let Some((href, start)) = link.take() {
+                let label = text.get(start.min(text.len())..).unwrap_or_default();
+                read.links.push((href, label.split_whitespace().collect::<Vec<_>>().join(" ")));
+            }
+            if !closing {
+                link = HREF.captures(&html[open..end]).and_then(|href| {
+                    let href = href.get(1).or_else(|| href.get(2)).or_else(|| href.get(3))?.as_str();
+                    // Entities decoded the way a browser does before following it: `&amp;`, `&#38;`.
+                    let href = mail_parser::decoders::html::html_to_text(href);
+                    Some((href.trim().to_owned(), text.len()))
+                });
+            }
+        }
+    }
+    read
+}
+
+/// A piece of text between tags: entities decoded, white space folded into one space.
+fn push_html_text(text: &mut String, piece: &str) {
+    if piece.is_empty() {
+        return;
+    }
+    let space_before = piece.starts_with(|c: char| c.is_ascii_whitespace());
+    let space_after = piece.ends_with(|c: char| c.is_ascii_whitespace());
+    let decoded = mail_parser::decoders::html::html_to_text(piece);
+    let decoded = decoded.trim();
+    let at_start = text.is_empty() || text.ends_with([' ', '\n']);
+    if (space_before || decoded.is_empty() && space_after) && !at_start {
+        text.push(' ');
+    }
+    if !decoded.is_empty() {
+        text.push_str(decoded);
+        if space_after {
+            text.push(' ');
+        }
+    }
 }
 
 /// At most `max` bytes of `text`, cut at a character boundary.
@@ -360,13 +508,56 @@ fn https_below(url: &str, origin: &str) -> Option<String> {
 
 // --- The guess -------------------------------------------------------------------------------
 
-/// Validity in the text: "gültig für 10 Minuten", "valid for 2 hours", "expires in 15 min".
-static VALIDITY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)(?:gültig|valid|expires?|läuft|verfällt)\D{0,30}?(\d{1,3})\s*(minuten|minutes|minute|min|stunden|stunde|hours|hour|std)\b",
-    )
-    .expect("a valid pattern")
-});
+/// A number of minutes or hours, in digits or as a word, and its unit.
+const AMOUNT: &str = r"\b(\d{1,3}|einer|eine|ein|zwei|drei|vier|fünfzehn|fünf|zehn|zwanzig|dreißig|sechzig|an|a|one|two|three|four|fifteen|five|ten|twenty|thirty|sixty)\s*(minuten|minutes|minute|min|stunden|stunde|hours|hour|std)\b";
+
+/// Validity in the text: "gültig für 10 Minuten", "valid for 2 hours", "expires in 15 min",
+/// "verfällt nach zwei Minuten", and the other way round, "5 Minuten gültig".
+static VALIDITY: [LazyLock<Regex>; 2] = [
+    LazyLock::new(|| {
+        Regex::new(&format!(r"(?i)(?:gültig|valid|expires?|läuft|verfällt)\D{{0,30}}?{AMOUNT}"))
+            .expect("a valid pattern")
+    }),
+    LazyLock::new(|| {
+        Regex::new(&format!(r"(?i){AMOUNT}\s+(?:lang\s+|long\s+)?(?:gültig|valid)")).expect("a valid pattern")
+    }),
+];
+
+/// A number of minutes or hours, in digits or as a word.
+fn amount(word: &str) -> Option<i64> {
+    if let Ok(amount) = word.parse() {
+        return Some(amount);
+    }
+    Some(match word {
+        "ein" | "eine" | "einer" | "an" | "a" | "one" => 1,
+        "zwei" | "two" => 2,
+        "drei" | "three" => 3,
+        "vier" | "four" => 4,
+        "fünf" | "five" => 5,
+        "zehn" | "ten" => 10,
+        "fünfzehn" | "fifteen" => 15,
+        "zwanzig" | "twenty" => 20,
+        "dreißig" | "thirty" => 30,
+        "sechzig" | "sixty" => 60,
+        _ => return None,
+    })
+}
+
+/// How long the text says the code or link is valid, [`DEFAULT_VALIDITY`] when it doesn't say.
+fn validity_of(lower: &str) -> i64 {
+    VALIDITY
+        .iter()
+        .find_map(|pattern| pattern.captures(lower))
+        .and_then(|captures| {
+            let amount = amount(captures.get(1)?.as_str())?;
+            let unit = captures.get(2)?.as_str();
+            let seconds = if unit.starts_with("min") { 60 } else { 3600 };
+            Some(amount * seconds)
+        })
+        .filter(|seconds| *seconds > 0)
+        .unwrap_or(DEFAULT_VALIDITY)
+        .min(MAX_VALIDITY)
+}
 
 /// Code words that are no code to sign in with.
 const NOT_A_CODE: &[&str] = &[
@@ -624,18 +815,107 @@ fn guess(text: &str) -> Option<(String, Purpose, i64)> {
     let code = found.pop()?;
 
     let lower = text.to_lowercase();
-    let validity = VALIDITY
-        .captures(&lower)
-        .and_then(|captures| {
-            let amount: i64 = captures.get(1)?.as_str().parse().ok()?;
-            let unit = captures.get(2)?.as_str();
-            let seconds = if unit.starts_with("min") { 60 } else { 3600 };
-            Some(amount * seconds)
-        })
-        .filter(|seconds| *seconds > 0)
-        .unwrap_or(DEFAULT_VALIDITY)
-        .min(MAX_VALIDITY);
-    Some((code, purpose_of(&lower), validity))
+    Some((code, purpose_of(&lower), validity_of(&lower)))
+}
+
+/// What the button of a sign-in or confirmation link says, as a whole or at its start.
+const LINK_BUTTONS: &[&str] = &[
+    "sign in",
+    "sign-in",
+    "log in",
+    "login",
+    "anmelden",
+    "jetzt anmelden",
+    "einloggen",
+    "jetzt einloggen",
+    "verify",
+    "confirm",
+    "bestätigen",
+    "jetzt bestätigen",
+    "verifizieren",
+    "e-mail bestätigen",
+    "e-mail-adresse bestätigen",
+    "email bestätigen",
+    "e-mail verifizieren",
+    "e-mail-adresse verifizieren",
+    "reset password",
+    "reset your password",
+    "passwort zurücksetzen",
+    "kennwort zurücksetzen",
+];
+
+/// What a mail with a link someone asked for says around it.
+const LINK_SIGNS: &[&str] = &[
+    "didn't request",
+    "didn’t request",
+    "did not request",
+    "didn't ask",
+    "didn’t ask",
+    "did not ask",
+    "wasn't you",
+    "wasn’t you",
+    "link expires",
+    "link will expire",
+    "link is valid for",
+    "nicht angefordert",
+    "nicht angefragt",
+    "nicht beantragt",
+    "nicht du warst",
+    "nicht von ihnen",
+    "link ist nur",
+    "link ist gültig",
+    "link läuft",
+    "link verfällt",
+];
+
+/// Whether a mail is list or notification traffic: what a platform's notification carries may be
+/// written by anyone with an account there, and a "Sign in" link planted in a comment would come
+/// with the platform's DMARC pass (security review of 0.26.2, F1).
+fn is_list_mail(message: &mail_parser::Message<'_>) -> bool {
+    let header = |name: &str| message.headers_raw().find(|(found, _)| found.eq_ignore_ascii_case(name));
+    header("List-Id").is_some()
+        || header("In-Reply-To").is_some()
+        || header("References").is_some()
+        || header("Precedence")
+            .is_some_and(|(_, value)| ["list", "bulk", "junk"].contains(&value.trim().to_ascii_lowercase().as_str()))
+}
+
+/// Whether a link carries another address in its query, the way a redirect does: the link to the
+/// From domain then takes the reader elsewhere (F2).
+fn redirects(url: &str) -> bool {
+    let query = url.split_once('?').map(|(_, query)| query.to_ascii_lowercase()).unwrap_or_default();
+    ["=http", "=//", "%3a%2f%2f", "%2f%2f"].iter().any(|sign| query.contains(sign))
+}
+
+/// The one sign-in or confirmation link of an HTML mail, what it is for and how long it is valid.
+/// As shy as the code: exactly one link behind a button such as "Sign in" or "E-Mail bestätigen",
+/// an `https` link to the From domain or below it that leads nowhere else, and a text that says it
+/// was asked for or expires. A newsletter's "Jetzt anmelden" for an event says neither.
+fn guess_link(links: &[(String, String)], text: &str, from_domain: &str) -> Option<(String, Purpose, i64)> {
+    let lower = text.to_lowercase();
+    if !LINK_SIGNS.iter().any(|sign| lower.contains(sign)) {
+        return None;
+    }
+    let mut found: Vec<String> = Vec::new();
+    for (href, label) in links {
+        let label = label.to_lowercase();
+        let label = label.trim_matches(|c: char| !c.is_alphanumeric());
+        let button = LINK_BUTTONS.iter().any(|button| {
+            label == *button || (label.starts_with(&format!("{button} ")) && label.split(' ').count() <= 6)
+        });
+        if !button {
+            continue;
+        }
+        let Some(url) = https_below(href, from_domain).filter(|url| !redirects(url)) else { continue };
+        if !found.contains(&url) {
+            found.push(url);
+        }
+        if found.len() > 1 {
+            return None;
+        }
+    }
+    let url = found.pop()?;
+    Some((url, purpose_of(&lower), validity_of(&lower)))
 }
 
 /// What the wording says the code is for. Resetting a password says "sign in" too, so it goes
@@ -856,6 +1136,143 @@ mod tests {
         assert_eq!(detect(raw.as_bytes(), &unsigned(), NOW).unwrap().code.as_deref(), Some("246810"));
     }
 
+    fn html_mail(subject: &str, html: &str) -> Vec<u8> {
+        format!(
+            "From: Shop <no.reply@shop.example>\r\nTo: mini@example.org\r\nSubject: {subject}\r\n\
+             Content-Type: text/html; charset=utf-8\r\n\r\n<html><head><style>td {{ color: #000 }}</style></head>\
+             <body><table><tr><td>Shop</td></tr><tr><td><img alt=\"Shop\" src=\"cid:logo\"></td></tr>{html}</table></body></html>\r\n"
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn a_code_in_its_own_cell_or_heading_is_found() {
+        // The code in a heading of its own cell, right before the next sentence (IKEA, 2026-11-03).
+        let raw = html_mail(
+            "Dein Einmalcode",
+            "<tr><td><h1>Hej,</h1></td></tr><tr><td><p>bitte gib die sechs Ziffern unten in die Ansicht ein, \
+             in der du den Einmalcode angefordert hast.</p></td></tr><tr><td><h1>842526</h1></td></tr>\
+             <tr><td><p>Dieser Einmalcode ist nur 5 Minuten g&uuml;ltig.</p></td></tr>",
+        );
+        let found = detect(&raw, &unsigned(), NOW).unwrap();
+        assert_eq!((found.kind, found.code.as_deref(), found.expires_at), (Kind::Otp, Some("842526"), NOW + 300));
+        let raw = html_mail(
+            "Verifizieren Sie Ihre E-Mail-Adresse",
+            "<tr><td><div><b>9063</b> ist der Code zur Verifizierung Ihrer registrierten E-Mail-Adresse.</div>\
+             <div>Der Code verfällt nach zwei Minuten.</div></td></tr>",
+        );
+        let found = detect(&raw, &unsigned(), NOW).unwrap();
+        assert_eq!((found.code.as_deref(), found.expires_at), (Some("9063"), NOW + 120));
+    }
+
+    #[test]
+    fn validity_may_be_written_out() {
+        for (text, seconds) in [
+            ("Der Code verfällt nach zwei Minuten.", 120),
+            ("Er ist eine Stunde gültig.", 3600),
+            ("This code expires in ten minutes.", 600),
+            ("Valid for an hour.", 3600),
+            ("Gültig für fünfzehn Minuten.", 900),
+            ("Gültig, solange du willst.", DEFAULT_VALIDITY),
+        ] {
+            assert_eq!(validity_of(&text.to_lowercase()), seconds, "{text}");
+        }
+    }
+
+    fn sign_in(href: &str, button: &str, note: &str) -> Vec<u8> {
+        html_mail(
+            "Your secure link to Shop is here",
+            &format!(
+                "<tr><td><h2>Sign in to Shop</h2><p>Click the button below to finish signing in. This link expires \
+                 in 10 minutes.</p><a class=\"btn\" href=\"{href}\"><span>{button}</span></a><p>{note}</p>\
+                 <p><a href=\"https://shop.example/help\">Help</a> &middot; <a href=\"https://shop.example/privacy\">Privacy</a></p></td></tr>"
+            ),
+        )
+    }
+
+    #[test]
+    fn a_sign_in_link_is_found() {
+        let note = "If you didn't request this email, you can safely ignore it.";
+        let found =
+            detect(&sign_in("https://login.shop.example/magic?t=abc&amp;u=1", "Sign in", note), &unsigned(), NOW)
+                .unwrap();
+        assert_eq!(found.kind, Kind::Link);
+        assert_eq!(found.url.as_deref(), Some("https://login.shop.example/magic?t=abc&u=1"));
+        assert_eq!(found.code, None);
+        assert_eq!((found.origin.as_str(), found.purpose), ("shop.example", Purpose::Login));
+        assert_eq!((found.source, found.expires_at), (Source::Heuristic, NOW + 600));
+        let raw = html_mail(
+            "Bitte bestätige deine E-Mail-Adresse",
+            "<tr><td><p>Du hast dich bei Shop registriert.</p>\
+             <a href='https://shop.example/confirm/xyz'>E-Mail-Adresse bestätigen</a>\
+             <p>Falls du das nicht angefordert hast, ignoriere diese Mail.</p></td></tr>",
+        );
+        let found = detect(&raw, &unsigned(), NOW).unwrap();
+        assert_eq!((found.url.as_deref(), found.purpose), (Some("https://shop.example/confirm/xyz"), Purpose::Signup));
+    }
+
+    #[test]
+    fn other_links_are_no_sign_in_links() {
+        let note = "If you didn't request this email, you can safely ignore it.";
+        for (href, button) in [
+            ("https://tracker.example/r?u=shop.example", "Sign in"),
+            ("http://shop.example/magic", "Sign in"),
+            ("https://shop.example@evil.example/magic", "Sign in"),
+            ("https://shop.example/sale", "Jetzt shoppen"),
+        ] {
+            assert_eq!(detect(&sign_in(href, button, note), &unsigned(), NOW), None, "{href} {button}");
+        }
+        // Without a word that it was asked for or expires, and with two different sign-in links.
+        let raw = html_mail(
+            "Unser Herbstfest",
+            "<tr><td><p>Feiere mit uns am Samstag!</p><a href=\"https://shop.example/fest\">Jetzt anmelden</a></td></tr>",
+        );
+        assert_eq!(detect(&raw, &unsigned(), NOW), None);
+        let raw = html_mail(
+            "Sign in",
+            "<tr><td><p>This link expires soon.</p><a href=\"https://shop.example/a\">Sign in</a>\
+             <a href=\"https://shop.example/b\">Log in</a></td></tr>",
+        );
+        assert_eq!(detect(&raw, &unsigned(), NOW), None);
+        // Not without DMARC (VC-03).
+        let raw = sign_in("https://shop.example/magic", "Sign in", note);
+        assert_eq!(detect(&raw, &Authenticity { dmarc_passed: false, ..unsigned() }, NOW), None);
+    }
+
+    #[test]
+    fn a_sign_in_link_is_only_believed_in_the_html_itself() {
+        let note = "If you didn't request this email, you can safely ignore it.";
+        // A link that leads on to another address (F2).
+        for href in [
+            "https://shop.example/out?to=https%3A%2F%2Fevil.example%2F",
+            "https://shop.example/out?to=https://evil.example/",
+            "https://shop.example/out?to=//evil.example/",
+        ] {
+            assert_eq!(detect(&sign_in(href, "Sign in", note), &unsigned(), NOW), None, "{href}");
+        }
+        // Not in a list, a bulk mail or a reply: what someone else wrote on a platform (F1).
+        let raw = sign_in("https://shop.example/magic", "Sign in", note);
+        for header in ["List-Id: <news.shop.example>", "Precedence: bulk", "In-Reply-To: <a@shop.example>"] {
+            let raw = [format!("{header}\r\n").as_bytes(), &raw].concat();
+            assert_eq!(detect(&raw, &unsigned(), NOW), None, "{header}");
+        }
+        // Neither a `data-href` nor a link in a comment or a template is one (F4); an unquoted
+        // `href` with an encoded `&` is (F5).
+        for html in [
+            "<a data-href=\"https://shop.example/magic\" href=\"#\">Sign in</a>",
+            "<!-- <a href=\"https://shop.example/magic\">Sign in</a> -->",
+            "<template><a href=\"https://shop.example/magic\">Sign in</a></template>",
+        ] {
+            let raw = html_mail("Sign in", &format!("<tr><td><p>This link expires in 10 minutes.</p>{html}</td></tr>"));
+            assert_eq!(detect(&raw, &unsigned(), NOW), None, "{html}");
+        }
+        let raw = html_mail(
+            "Sign in",
+            "<tr><td><p>This link expires in 10 minutes.</p><a href=https://shop.example/m?a=1&#38;b=2>Sign in</a></td></tr>",
+        );
+        assert_eq!(detect(&raw, &unsigned(), NOW).unwrap().url.as_deref(), Some("https://shop.example/m?a=1&b=2"));
+    }
+
     #[test]
     fn no_from_domain_no_code() {
         let auth = Authenticity { from_domain: None, ..unsigned() };
@@ -874,16 +1291,22 @@ mod tests {
             state ^= state << 17;
             state
         };
-        let alphabet: &[u8] = b"0123456789 -:;=\r\n\t\"<>@#%ABCDEZaeiou\xc3\xa4\xe2\x82\xac\xff.CodeVerification-Info";
+        let alphabet: &[u8] =
+            b"0123456789 -:;=\r\n\t\"<>/!&@#%ABCDEZaeiou\xc3\xa4\xe2\x82\xac\xff.CodeVerification-Info";
         let seeds = [
             with_header("Verification-Info: kind=otp; origin=shop.example; code=777111; expires=2026-11-01T17:05:00Z"),
             mail("Code", "Code: 482913"),
+            html_mail(
+                "Sign in",
+                "<tr><td><!-- x --><h1>Code</h1><b>482913</b> ist &uuml;g&#252;ltig <a href=\"https://shop.example/m\">Sign in</a> \
+                 didn't request<script>x</script></td></tr>",
+            ),
         ];
         for round in 0..1500 {
             let mut raw = if round % 3 == 0 {
                 (0..(next() % 600)).map(|_| alphabet[(next() % alphabet.len() as u64) as usize]).collect::<Vec<u8>>()
             } else {
-                seeds[round % 2].clone()
+                seeds[round % seeds.len()].clone()
             };
             if !raw.is_empty() {
                 for _ in 0..(next() % 12) {
