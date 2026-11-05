@@ -2233,3 +2233,53 @@ async fn internal_only_goes_with_a_shared_mailbox_and_through_forwarding_address
     assert!(bounce.contains("leni@elsewhere.test") && bounce.contains("kasse@a.test"), "{bounce}");
     assert!(store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
 }
+
+/// A confirmed forwarding target elsewhere, without a copy staying here.
+async fn forwards_away(server: &TestServer, login: &str) {
+    let store = server.smtp.store();
+    let account = store.account(login).await.unwrap().unwrap();
+    let (_, token) = store.add_forward_target(account.id, "oma@c.test", true).await.unwrap();
+    store.confirm_forward_link(&token.unwrap()).await.unwrap();
+    store.set_forward_keep_copy(account.id, false).await.unwrap();
+}
+
+/// Someone here who forwards elsewhere does not carry an internal-only sender's mail out: it stays
+/// with them, also when it came through a group, and their forwarding goes on for everyone else
+/// (docs/jmap-sending.md).
+#[tokio::test(flavor = "multi_thread")]
+async fn internal_only_mail_does_not_leave_through_someone_who_forwards() {
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini", "leni", "ami", "webserver"], &[("c.test", unreachable)]).await;
+    let store = a.smtp.store();
+    let only_here = uwumail_store::AccountUpdate { internal_only: Some(true), ..Default::default() };
+    store.update_account("webserver@a.test", only_here).await.unwrap();
+    forwards_away(&a, "leni@a.test").await;
+    forwards_away(&a, "ami@a.test").await;
+    store
+        .create_group(uwumail_store::NewGroup {
+            address: "vorstand@a.test".into(),
+            name: "Vorstand".into(),
+            who_may_send: uwumail_store::WhoMaySend::Anyone,
+            members_may_send_as: false,
+            members: vec!["ami@a.test".into(), "mini@a.test".into()],
+        })
+        .await
+        .unwrap();
+
+    let webserver = a.mailer("webserver@a.test", PASSWORD, false);
+    webserver.send(mail("webserver@a.test", &["leni@a.test"], "Kontakt")).await.unwrap();
+    webserver.send(mail("webserver@a.test", &["vorstand@a.test"], "Sitzung")).await.unwrap();
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Kontakt", "it stays, without a copy set");
+    assert_eq!(a.wait_for_inbox("ami@a.test", 1).await[0].subject, "Sitzung");
+    assert_eq!(a.wait_for_inbox("mini@a.test", 1).await[0].subject, "Sitzung");
+    assert!(store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
+
+    // The same forwarding carries everyone else's mail out, and keeps no copy.
+    a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["leni@a.test"], "Hallo")).await.unwrap();
+    let started = Instant::now();
+    while store.queue_entries().await.unwrap().is_empty() {
+        assert!(started.elapsed() < Duration::from_secs(10), "the forward was not queued");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await.len(), 1);
+}

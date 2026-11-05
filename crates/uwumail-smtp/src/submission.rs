@@ -337,7 +337,10 @@ impl Smtp {
                         continue;
                     }
                     reached.push(target);
-                    match self.deliver_locally(target, &address, &mail_from, &signed, &from[0], false).await {
+                    match self
+                        .deliver_locally(target, &address, &mail_from, &signed, &from[0], false, internal_only)
+                        .await
+                    {
                         Ok(()) => got_it = true,
                         Err(error) => failure = Some(error),
                     }
@@ -380,7 +383,10 @@ impl Smtp {
                         tracing::warn!(%id, %err, "noting mail for a masked address failed");
                     }
                     let to_trash = masked.is_some_and(|masked| masked.state == MaskedState::Disabled);
-                    match self.deliver_locally(account_id, &address, &mail_from, &signed, &from[0], to_trash).await {
+                    match self
+                        .deliver_locally(account_id, &address, &mail_from, &signed, &from[0], to_trash, internal_only)
+                        .await
+                    {
                         Ok(()) => local_deliveries += 1,
                         Err(error) => failed.push(FailedRecipient { address, error }),
                     }
@@ -517,7 +523,9 @@ impl Smtp {
 
     /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the
     /// Trash, for a disabled masked address), a vacation reply and calendar invitations. The error
-    /// is the answer for a bounce.
+    /// is the answer for a bounce. An internal-only sender's mail goes no further than this server,
+    /// whatever the recipient's forwarding says (docs/jmap-sending.md).
+    #[allow(clippy::too_many_arguments)]
     async fn deliver_locally(
         &self,
         account_id: i64,
@@ -526,6 +534,7 @@ impl Smtp {
         signed: &[u8],
         author: &str,
         to_trash: bool,
+        internal_only: bool,
     ) -> Result<(), String> {
         let ctx = &self.inner;
         if to_trash {
@@ -538,7 +547,10 @@ impl Smtp {
             };
             return ctx.store.ingest(request).await.map(|_| ()).map_err(stored_error);
         }
-        let plan = forward::plan(ctx, account_id).await;
+        let mut plan = forward::plan(ctx, account_id).await;
+        if internal_only {
+            plan = plan.only_here();
+        }
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {
