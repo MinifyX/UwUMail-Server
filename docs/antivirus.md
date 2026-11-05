@@ -81,7 +81,9 @@ really do talk to each other.
 The page also shows the version and the number and date of the signature
 database. ClamAV publishes several times a day; a database older than three
 days means its updater (`freshclam`, which runs inside the same container) is
-not getting through, and the health overview says so.
+not getting through, and the health overview says so. `compose.yaml` lets it
+look every two hours (`FRESHCLAM_CHECKS`), so a single failed try is made up
+for the same day; `docker logs uwumail-clamav` shows why tries fail.
 
 Tried end to end on the test instance on 18 September 2026 with ClamAV 1.5.4: a
 message with the EICAR file as an attachment came back as `554 5.7.0 This

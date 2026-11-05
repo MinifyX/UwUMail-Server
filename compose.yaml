@@ -76,6 +76,9 @@ services:
     profiles:
       - antivirus
     restart: unless-stopped
+    environment:
+      # The image only looks for new signatures once a day, so one failed try leaves them a day old.
+      FRESHCLAM_CHECKS: "12"
     volumes:
       - uwumail-clamav:/var/lib/clamav
     expose:
