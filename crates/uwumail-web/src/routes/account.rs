@@ -53,12 +53,35 @@ const PREFERENCES: &[(&str, &[&str])] = &[
     ("adminAlerts", &["all", "problems", "none"]),
 ];
 
+/// How many features `seenFeatures` may list: the "New" tags someone has already clicked.
+const SEEN_FEATURES_MAX: usize = 64;
+
+/// `seenFeatures`: distinct short ids like `codes`, at most [`SEEN_FEATURES_MAX`].
+fn valid_seen_features(value: &Value) -> bool {
+    let Some(list) = value.as_array() else { return false };
+    list.len() <= SEEN_FEATURES_MAX
+        && list.iter().enumerate().all(|(index, id)| {
+            id.as_str().is_some_and(|id| {
+                (1..=32).contains(&id.len())
+                    && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            }) && !list[..index].contains(id)
+        })
+}
+
 pub async fn update_preferences(
     State(web): State<Web>,
     session: Session,
     Json(changes): Json<Map<String, Value>>,
 ) -> ApiResult<Json<Value>> {
     for (key, value) in &changes {
+        if key == "seenFeatures" {
+            if !value.is_null() && !valid_seen_features(value) {
+                return Err(ApiError::Invalid(format!(
+                    "seenFeatures must be a list of at most {SEEN_FEATURES_MAX} distinct feature ids"
+                )));
+            }
+            continue;
+        }
         let Some((_, allowed)) = PREFERENCES.iter().find(|(name, _)| name == key) else {
             return Err(ApiError::Invalid(format!("unknown preference {key}")));
         };

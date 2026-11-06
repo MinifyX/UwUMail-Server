@@ -236,8 +236,42 @@ async fn preferences_need_csrf_and_valid_values() {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     }
 
+    let (status, _, body) = call(
+        &app,
+        Call {
+            cookie: Some(&cookie),
+            csrf: Some(&csrf),
+            ..Call::send("PATCH", "/api/account/preferences", json!({ "seenFeatures": ["codes", "dark-mode2"] }))
+        },
+    )
+    .await;
+    assert_eq!((status, &body["seenFeatures"]), (StatusCode::OK, &json!(["codes", "dark-mode2"])));
+    let too_many: Vec<String> = (0..65).map(|n| format!("f{n}")).collect();
+    for invalid in [
+        json!({ "seenFeatures": "codes" }),
+        json!({ "seenFeatures": ["codes", "codes"] }),
+        json!({ "seenFeatures": ["Codes"] }),
+        json!({ "seenFeatures": [""] }),
+        json!({ "seenFeatures": ["x".repeat(33)] }),
+        json!({ "seenFeatures": [1] }),
+        json!({ "seenFeatures": too_many }),
+    ] {
+        let (status, _, _) = call(
+            &app,
+            Call {
+                cookie: Some(&cookie),
+                csrf: Some(&csrf),
+                ..Call::send("PATCH", "/api/account/preferences", invalid)
+            },
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
     let (_, _, session) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/session") }).await;
     assert_eq!(session["preferences"]["mode"], "pro");
+    // A fresh database: installed with this very version.
+    assert_eq!(session["server"]["installedVersion"], env!("CARGO_PKG_VERSION"));
 }
 
 #[tokio::test]

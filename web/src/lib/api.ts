@@ -97,7 +97,8 @@ export interface Session {
   account: { id: number; login: string; name: string; role: Role };
   csrfToken: string;
   preferences: Record<string, unknown>;
-  server: { hostname: string; version: string; brand: Brand };
+  /** `installedVersion`: the version this server was first installed with. */
+  server: { hostname: string; version: string; installedVersion: string; brand: Brand };
   /** Whether this person has a mailbox in the browser under /mail. */
   webmail: boolean;
 }

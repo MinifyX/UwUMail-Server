@@ -38,6 +38,19 @@ After the very first `pnpm build`, run `touch crates/uwumail-web/build.rs` so
 Cargo notices the new folder; later builds are picked up automatically. With
 `pnpm dev:mock`, add `?loggedOut` to the URL to see the login page.
 
+### Marking a menu entry as new
+
+Give the entry in `web/src/features/shell/PortalShell.tsx` the version that
+brings it, e.g. `newSince: "0.28.0"`. The portal then shows a "New" tag beside
+it, but only on servers that were installed with an older version and updated
+since (the server keeps the version it started with as the setting
+`installed_version` and sends it as `server.installedVersion` with the
+session; databases from before 0.28 count as `0.0.0`). Fresh installations of
+that version or newer never see the tag. Clicking the entry once removes the
+tag for that person on all devices: its id (the path with `/` as `-`, e.g.
+`account-codes`) goes into the preference `seenFeatures`. Remove `newSince`
+again after a few releases.
+
 ## Local stack
 
 Two containers built from the working tree that deliver to each other:

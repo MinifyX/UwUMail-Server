@@ -36,6 +36,7 @@ import { Link, usePath } from "@/lib/router";
 import { adminViewOf, inCalmNav } from "@/features/admin/adminPrefs";
 import { useLogout } from "@/features/session/session";
 import { AppearanceDialog } from "./AppearanceDialog";
+import { seenFeaturesOf, showsNew, useMarkSeen } from "./newBadge";
 
 interface NavItem {
   to: string;
@@ -43,8 +44,15 @@ interface NavItem {
   icon: LucideIcon;
   /** Further addresses this entry stands for, such as the tabs of a page gathered under it. */
   also?: string[];
-  /** A small word beside the label, such as "New". */
+  /**
+   * The version that brought this page. A server updated from an older version shows "New" beside
+   * it until the person opens it once (docs/development.md).
+   */
+  newSince?: string;
+  /** A small word beside the label, such as "New"; set from `newSince`. */
   tag?: string;
+  /** Runs when the entry is clicked. */
+  onOpen?: () => void;
 }
 
 interface NavGroup {
@@ -75,7 +83,10 @@ function NavRow({ item, path, onNavigate }: { item: NavItem; path: string; onNav
   return (
     <Link
       to={item.to}
-      onClick={onNavigate}
+      onClick={() => {
+        item.onOpen?.();
+        onNavigate();
+      }}
       aria-current={active ? "page" : undefined}
       className={clsx(
         "flex h-9 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors",
@@ -148,6 +159,15 @@ function useNavigation(session: Session) {
   const { t } = useT();
   const isAdmin = session.account.role === "admin";
   const calm = isAdmin && adminViewOf(session.preferences) === "simple";
+  const seen = seenFeaturesOf(session.preferences);
+  const markSeen = useMarkSeen();
+  // The id an entry is remembered by once opened, such as "account-codes".
+  const withTag = (item: NavItem): NavItem => {
+    const id = item.to.slice(1).replaceAll("/", "-");
+    if (!item.newSince || !showsNew({ id, since: item.newSince }, session.server.installedVersion, seen)) return item;
+    // The server keeps at most 64; the oldest go first.
+    return { ...item, tag: t("nav.new"), onOpen: () => markSeen.mutate([...seen, id].slice(-64)) };
+  };
 
   const account: NavGroup[] = [
     {
@@ -166,7 +186,7 @@ function useNavigation(session: Session) {
         { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
         { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
         { to: "/account/moving", label: t("nav.moving"), icon: Truck },
-        { to: "/account/codes", label: t("nav.codes"), icon: KeyRound, tag: t("nav.new") },
+        { to: "/account/codes", label: t("nav.codes"), icon: KeyRound, newSince: "0.26.0" },
       ],
     },
     {
@@ -176,7 +196,7 @@ function useNavigation(session: Session) {
         { to: "/account/assist", label: t("nav.assist"), icon: Sparkles },
       ],
     },
-  ];
+  ].map((group) => ({ ...group, items: group.items.map(withTag) }));
 
   const serverItems: NavItem[] = [
     {
@@ -196,7 +216,7 @@ function useNavigation(session: Session) {
     { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
     { to: "/admin/updates", label: t("nav.updates"), icon: CircleFadingArrowUp },
     { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
-  ];
+  ].map(withTag);
   // The calm view keeps the rest one click away instead of hiding it.
   const server: NavGroup[] = calm
     ? [
