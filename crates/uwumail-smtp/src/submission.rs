@@ -73,6 +73,10 @@ pub enum SubmitError {
     /// it may again.
     #[error("this account sent to too many recipients in the last {0}, please try again later")]
     RateLimited(&'static str),
+    /// One message has more recipients than the limit for a whole window ("hour" or "day"), so
+    /// trying again later cannot help.
+    #[error("this message has more recipients than this account may send to in one {0}")]
+    OverLimit(&'static str),
     #[error("the message is larger than this server accepts")]
     TooLarge,
     #[error("the message has a malformed header block")]
@@ -321,6 +325,13 @@ impl Smtp {
     fn take_send_budget(&self, account: &Account, recipients: usize) -> Result<(), SubmitError> {
         let live = self.inner.live();
         let (per_hour, per_day) = (live.smtp.max_recipients_per_hour, live.smtp.max_recipients_per_day);
+        // Answered as permanent: a temporary refusal would have the client retry it forever.
+        if per_hour > 0 && recipients > per_hour {
+            return Err(SubmitError::OverLimit("hour"));
+        }
+        if per_day > 0 && recipients > per_day {
+            return Err(SubmitError::OverLimit("day"));
+        }
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         self.inner.send_limits.take(account.id, recipients, per_hour, per_day, now).map_err(|window| {
             tracing::warn!(

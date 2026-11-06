@@ -15,7 +15,8 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   `docs/outbound-abuse.md`.
 - Sending limits per account: at most 500 recipients an hour and 2000 a day, from every door
   together (`smtp.max_recipients_per_hour` / `_per_day`, 0 = no limit). Over the limit, SMTP
-  answers 451 4.7.1 and JMAP `rateLimit`.
+  answers 451 4.7.1 and JMAP `rateLimit`; a single message with more recipients than a whole
+  hour or day allows is refused for good (550 5.5.3, JMAP `tooManyRecipients`).
 - Send suspension: spam refusals, hitting the sending limit (once per window) and complaints
   count as strikes, and refusals for addresses that do not exist (5.1.x) are counted on their own. After 3 strikes or 25 hard bounces within 60 minutes,
   the account may not send to other servers for 60 minutes. Mail inside the server still works.
@@ -35,6 +36,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ### Changed
 
+- Portal: the "New" tag in the menu now only appears for features that came with an update of
+  the server (not on fresh installs of that version) and disappears on all devices once you open
+  the entry.
 - When Microsoft blocks the server's address (S3150 and similar), mail is no longer bounced at
   once. It is held and tried again every 45 minutes for up to 48 hours, and only then bounced.
   The sender gets a delay notice on the first hold. The Microsoft page and the admin mail show the

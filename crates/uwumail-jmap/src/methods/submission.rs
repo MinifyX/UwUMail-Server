@@ -186,6 +186,10 @@ fn submit_error(err: SubmitError, mail_from: &str) -> SetError {
             "rateLimit",
             format!("the sending limit for this {window} is reached, please try again later"),
         ),
+        SubmitError::OverLimit(window) => SetError::new(
+            "tooManyRecipients",
+            format!("the message has more recipients than this account may send to in one {window}"),
+        ),
         SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),
         SubmitError::MalformedHeaders => SetError::new("invalidEmail", "the email has a malformed header block"),
         SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),

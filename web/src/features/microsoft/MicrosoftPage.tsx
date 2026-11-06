@@ -243,11 +243,23 @@ function ResolvedRow({ issue }: { issue: MicrosoftIssue }) {
 }
 
 /** While Microsoft blocks the address: how many recipients wait, and the steps to get delisted. */
-function BlockedGuide({ ip, heldCount, delistUrl, sndsUrl }: { ip: string; heldCount: number; delistUrl: string; sndsUrl: string }) {
+function BlockedGuide({
+  ip,
+  heldCount,
+  delistUrl,
+  sndsUrl,
+}: {
+  ip: string;
+  heldCount: number;
+  delistUrl: string;
+  sndsUrl: string;
+}) {
   const { t } = useT();
   return (
     <div className="flex flex-col gap-2 rounded-card border border-hairline bg-surface p-5">
-      <h3 className="text-[15px] font-bold">{t("microsoft.blocked.title", { ip: ip || t("microsoft.issues.theIp") })}</h3>
+      <h3 className="text-[15px] font-bold">
+        {t("microsoft.blocked.title", { ip: ip || t("microsoft.issues.theIp") })}
+      </h3>
       {heldCount > 0 && <p className="text-[13px] text-muted">{t("microsoft.blocked.held", { count: heldCount })}</p>}
       <Steps>
         <li>

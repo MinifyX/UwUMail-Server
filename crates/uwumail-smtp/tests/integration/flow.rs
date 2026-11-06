@@ -298,7 +298,7 @@ async fn an_account_sends_to_only_so_many_people_an_hour() {
     // Security audit 2026-11 M-02: a taken-over login is not a spam cannon, on any door.
     use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
     let config = SmtpConfig { max_recipients_per_hour: 3, max_recipients_per_day: 50, ..SmtpConfig::default() };
-    let a = start_with("a.test", &["mini", "ami", "bea"], &[], config).await;
+    let a = start_with("a.test", &["mini", "ami", "bea", "cem", "dan"], &[], config).await;
     let mailer = a.mailer("mini@a.test", PASSWORD, false);
     mailer.send(mail("mini@a.test", &["ami@a.test", "bea@a.test"], "eins")).await.unwrap();
     // Two more do not fit into the hour: asked to come back later, and nobody gets it.
@@ -321,6 +321,13 @@ async fn an_account_sends_to_only_so_many_people_an_hour() {
     assert!(matches!(a.smtp.submit(submit()).await, Err(SubmitError::RateLimited("hour"))));
     assert_eq!(a.wait_for_inbox("ami@a.test", 2).await.len(), 2);
     assert_eq!(a.wait_for_inbox("bea@a.test", 1).await.len(), 1);
+    // More recipients than a whole hour allows can never go: refused for good, not for later.
+    let refused = a
+        .mailer("bea@a.test", PASSWORD, false)
+        .send(mail("bea@a.test", &["mini@a.test", "ami@a.test", "cem@a.test", "dan@a.test"], "zu viele"))
+        .await
+        .expect_err("over the limit in one message");
+    assert!(refused.is_permanent() && refused.to_string().contains("more recipients"), "{refused}");
     // Someone else's budget is their own.
     a.mailer("ami@a.test", PASSWORD, false)
         .send(mail("ami@a.test", &["mini@a.test", "bea@a.test"], "x"))

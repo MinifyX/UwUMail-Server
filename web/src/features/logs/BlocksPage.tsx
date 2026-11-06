@@ -74,7 +74,10 @@ function ExemptCard({ exempt, hosts }: { exempt: string[]; hosts: BlocksView["ex
   const [problem, setProblem] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: (networks: string[]) =>
-      api<Pick<BlocksView, "exempt" | "exemptHosts">>("/api/admin/blocks/exempt", { method: "PUT", body: { networks } }),
+      api<Pick<BlocksView, "exempt" | "exemptHosts">>("/api/admin/blocks/exempt", {
+        method: "PUT",
+        body: { networks },
+      }),
     onSuccess: (result) => {
       // The server's spelling, so the list shows what is really in force.
       queryClient.setQueryData<BlocksView>(BLOCKS_KEY, (view) => view && { ...view, ...result });

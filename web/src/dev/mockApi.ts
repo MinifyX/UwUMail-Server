@@ -3233,7 +3233,9 @@ const routes: [string, RegExp, Handler][] = [
     (body) => {
       const networks = (body as { networks: string[] }).networks.map((entry) => entry.trim().toLowerCase());
       // The real one parses every entry; host names are taken as they are.
-      const bad = networks.find((entry) => !/^[0-9a-f:.]+(\/\d{1,3})?$/.test(entry) && !/^[a-z0-9.-]+\.[a-z]+$/.test(entry));
+      const bad = networks.find(
+        (entry) => !/^[0-9a-f:.]+(\/\d{1,3})?$/.test(entry) && !/^[a-z0-9.-]+\.[a-z]+$/.test(entry),
+      );
       if (bad !== undefined) return [400, { code: "invalid", detail: `${bad} is not an address or network` }];
       exemptNetworks = [...new Set(networks)];
       return [200, { exempt: exemptNetworks, exemptHosts: exemptHosts() }];
