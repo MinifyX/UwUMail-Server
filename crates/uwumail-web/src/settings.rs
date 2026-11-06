@@ -66,6 +66,9 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("delivery.max_lifetime_hours", SettingKind::Integer { min: 1, max: 720 }),
     spec("smtp.max_message_size", SettingKind::Integer { min: 1_048_576, max: 1_073_741_824 }),
     spec("smtp.max_recipients", SettingKind::Integer { min: 1, max: 10_000 }),
+    // Recipients per account and hour or day, from every door; 0 is no limit (security audit 2026-11 M-02).
+    spec("smtp.max_recipients_per_hour", SettingKind::Integer { min: 0, max: 1_000_000 }),
+    spec("smtp.max_recipients_per_day", SettingKind::Integer { min: 0, max: 10_000_000 }),
     spec("smtp.verify_senders", SettingKind::Bool),
     spec("smtp.enforce_dmarc_reject", SettingKind::Bool),
     spec("smtp.require_tls_for_auth", SettingKind::Bool),

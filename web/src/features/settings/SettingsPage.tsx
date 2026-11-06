@@ -382,7 +382,13 @@ export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
             title={t("settings.receiving.title")}
             intro={t("settings.receiving.intro")}
             view={view}
-            keys={["smtp.max_message_size", "smtp.max_recipients", "smtp.trusted_relays"]}
+            keys={[
+              "smtp.max_message_size",
+              "smtp.max_recipients",
+              "smtp.max_recipients_per_hour",
+              "smtp.max_recipients_per_day",
+              "smtp.trusted_relays",
+            ]}
           >
             {(form) => (
               <>
@@ -396,6 +402,17 @@ export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
                   form={form}
                   settingKey="smtp.max_recipients"
                   label={t("settings.receiving.maxRecipients")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.max_recipients_per_hour"
+                  label={t("settings.receiving.maxPerHour")}
+                  hint={t("settings.receiving.maxPerHourHint")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.max_recipients_per_day"
+                  label={t("settings.receiving.maxPerDay")}
                 />
                 <Field
                   label={t("settings.receiving.trustedRelays")}
