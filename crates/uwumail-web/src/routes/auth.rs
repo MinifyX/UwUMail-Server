@@ -45,6 +45,8 @@ pub(crate) async fn session_body(web: &Web, account: &Account, csrf_token: &str,
         "server": {
             "hostname": web.settings().hostname,
             "version": env!("CARGO_PKG_VERSION"),
+            // What this installation started with: the portal marks only what came later as new.
+            "installedVersion": web.store().setting("installed_version").await.ok().flatten().unwrap_or_else(|| "0.0.0".into()),
             "brand": super::branding::brand_json(web).await,
         },
     })

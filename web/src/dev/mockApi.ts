@@ -169,7 +169,8 @@ const session = (): Session => ({
   account: { id: 1, login: "lorin@uwu.example", name: "Lorin", role: "admin" },
   csrfToken: "mock",
   preferences,
-  server: { hostname: "mail.uwu.example", version: "0.1.0", brand: brand() },
+  // Installed before any feature with a "New" tag, so they all show.
+  server: { hostname: "mail.uwu.example", version: "0.1.0", installedVersion: "0.0.0", brand: brand() },
   webmail: true,
 });
 
