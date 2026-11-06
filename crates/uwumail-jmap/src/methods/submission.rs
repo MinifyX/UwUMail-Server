@@ -189,6 +189,11 @@ fn submit_error(err: SubmitError, mail_from: &str) -> SetError {
         SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),
         SubmitError::MalformedHeaders => SetError::new("invalidEmail", "the email has a malformed header block"),
         SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),
+        SubmitError::Spam => SetError::new("forbiddenToSend", "the message looks like spam and was not sent"),
+        SubmitError::Suspended(minutes) => SetError::new(
+            "forbiddenToSend",
+            format!("sending to other servers is suspended for this account for {minutes} more minutes"),
+        ),
         SubmitError::Queue(err) => SetError::from(err),
     }
 }

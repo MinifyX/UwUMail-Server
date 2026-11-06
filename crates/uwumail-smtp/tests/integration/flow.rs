@@ -2268,3 +2268,116 @@ async fn internal_only_goes_with_a_shared_mailbox_and_through_forwarding_address
     assert!(bounce.contains("leni@elsewhere.test") && bounce.contains("kasse@a.test"), "{bounce}");
     assert!(store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn spam_for_other_servers_is_refused_and_strikes_suspend_sending() {
+    // docs/outbound-abuse.md: a taken-over account does not get to spoil the server's name.
+    let b = start("b.test", &["nyu"], &[]).await;
+    let config = SmtpConfig { suspend_after_strikes: 2, ..SmtpConfig::default() };
+    let feeds = uwumail_smtp::FeedsConfig { abuse_ch_key: Some("testkey123".into()), ..Default::default() };
+    let spam = SpamConfig { blocklists: false, greylist_delay_secs: 0, feeds, ..SpamConfig::default() };
+    let a = start_with_spam("a.test", &["mini", "ami"], &[("b.test", b.mx)], config, spam).await;
+    let store = a.smtp.store();
+    store.replace_feed("urlhaus", vec!["https://files.evil.example/rechnung.exe".into()], None).await.unwrap();
+    let spam = |to: &str| {
+        Message::builder()
+            .from("mini@a.test".parse::<LettreMailbox>().unwrap())
+            .to(to.parse::<LettreMailbox>().unwrap())
+            .subject("Rechnung")
+            .body(String::from("https://files.evil.example/rechnung.exe"))
+            .unwrap()
+    };
+    let mailer = a.mailer("mini@a.test", PASSWORD, false);
+
+    let refused = mailer.send(spam("nyu@b.test")).await.expect_err("spam");
+    assert!(refused.is_permanent() && refused.to_string().contains("looks like spam"), "{refused}");
+    // Within the server the scan does not apply: nobody else's reputation is at stake.
+    mailer.send(spam("ami@a.test")).await.unwrap();
+    mailer.send(spam("nyu@b.test")).await.expect_err("second strike");
+
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let now = unix_now();
+    let suspension = store.send_suspension(mini, now).await.unwrap().expect("two strikes suspend");
+    assert_eq!((suspension.reason.as_str(), suspension.until - suspension.since), ("spam", 3600));
+    let refused = mailer.send(mail("mini@a.test", &["nyu@b.test"], "Hallo")).await.expect_err("suspended");
+    assert!(refused.to_string().contains("suspended for this account for 60 more minutes"), "{refused}");
+    mailer.send(mail("mini@a.test", &["ami@a.test"], "Hallo")).await.unwrap();
+    // Nor does it leave through the account's own forwarding: the copy stays here instead.
+    let (_, token) = store.add_forward_target(mini, "nyu@b.test", true).await.unwrap();
+    store.confirm_forward_link(&token.unwrap()).await.unwrap();
+    store.set_forward_keep_copy(mini, false).await.unwrap();
+    mailer.send(mail("mini@a.test", &["mini@a.test"], "Selbst")).await.unwrap();
+    assert_eq!(a.wait_for_inbox("mini@a.test", 1).await[0].subject, "Selbst");
+
+    store.lift_send_suspension(mini, now).await.unwrap();
+    mailer.send(mail("mini@a.test", &["nyu@b.test"], "Hallo")).await.unwrap();
+    let arrived = b.wait_for_inbox("nyu@b.test", 1).await;
+    assert_eq!(arrived.iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["Hallo"]);
+    assert_eq!(a.wait_for_inbox("ami@a.test", 2).await.len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_complaint_about_sent_mail_is_kept_and_counts_against_its_sender() {
+    // A feedback loop like Microsoft's JMRP sends an ARF report to abuse@ with the original
+    // attached and the recipient blanked out; the sent Message-ID ties it to the account.
+    let b = start("b.test", &["staff", "nyu"], &[]).await;
+    let config = SmtpConfig { suspend_after_strikes: 1, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "abuse"], &[("b.test", b.mx)], config).await;
+    let delivery = DeliveryConfig { routes: [("a.test".to_string(), a.mx.to_string())].into(), ..Default::default() };
+    b.smtp.update_settings(SmtpConfig::default(), b.smtp.spam_settings(), delivery, ToneConfig::default()).unwrap();
+    // a.test trusts b.test's signature, so the report counts as really coming from b.test.
+    for key in uwumail_smtp::dkim::ensure_domain_keys(b.smtp.store(), "b.test").await.unwrap() {
+        let (name, value) = key.dns_record();
+        a.smtp.dns_cache().pin_txt(&name, &value).unwrap();
+    }
+    a.smtp.dns_cache().pin_no_txt("b.test");
+    a.smtp.dns_cache().pin_no_txt("mx.b.test");
+    a.smtp.dns_cache().pin_txt("_dmarc.b.test", "v=DMARC1; p=none").unwrap();
+
+    let sent = Message::builder()
+        .from("mini@a.test".parse::<LettreMailbox>().unwrap())
+        .to("nyu@b.test".parse::<LettreMailbox>().unwrap())
+        .subject("Angebot")
+        .message_id(Some("<angebot-1@a.test>".into()))
+        .body(String::from("Hallo"))
+        .unwrap();
+    a.mailer("mini@a.test", PASSWORD, false).send(sent).await.unwrap();
+    b.wait_for_inbox("nyu@b.test", 1).await;
+
+    let report = "From: staff@b.test\r\nTo: abuse@a.test\r\nSubject: complaint about message from 127.0.0.1\r\n\
+        MIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=feedback-report; boundary=\"b1\"\r\n\r\n\
+        --b1\r\nContent-Type: text/plain\r\n\r\nThis is an email abuse report.\r\n\
+        --b1\r\nContent-Type: message/feedback-report\r\n\r\nFeedback-Type: abuse\r\nUser-Agent: fbl/1.0\r\n\
+        Version: 1\r\nSource-IP: 192.0.2.10\r\n\r\n\
+        --b1\r\nContent-Type: message/rfc822\r\nContent-Disposition: inline\r\n\r\n\
+        From: mini@a.test\r\nTo: \r\nSubject: Angebot\r\nMessage-ID: <angebot-1@a.test>\r\n\r\nHallo\r\n\
+        --b1--\r\n";
+    let envelope =
+        lettre::address::Envelope::new(Some("staff@b.test".parse().unwrap()), vec!["abuse@a.test".parse().unwrap()])
+            .unwrap();
+    b.mailer("staff@b.test", PASSWORD, false).send_raw(&envelope, report.as_bytes()).await.unwrap();
+
+    // The report is still delivered like any mail, and kept for the admin.
+    assert_eq!(a.wait_for_inbox("abuse@a.test", 1).await.len(), 1);
+    let store = a.smtp.store();
+    let started = Instant::now();
+    let reports = loop {
+        let reports = store.abuse_reports(10).await.unwrap();
+        if !reports.is_empty() {
+            break reports;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "no abuse report");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    let report = &reports[0];
+    assert_eq!((report.login.as_deref(), report.feedback_type.as_str()), (Some("mini@a.test"), "abuse"));
+    assert!(report.authenticated && report.counted, "{report:?}");
+    assert_eq!(report.source_ip.as_deref(), Some("192.0.2.10"));
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let suspension = store.send_suspension(mini, unix_now()).await.unwrap().expect("one complaint suspends");
+    assert_eq!(suspension.reason, "complaint");
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+}

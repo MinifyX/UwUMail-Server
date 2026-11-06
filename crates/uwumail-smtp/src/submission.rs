@@ -2,10 +2,18 @@
 
 use mail_builder::headers::date::Date;
 use mail_parser::MessageParser;
-use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError};
+use uwumail_store::{
+    Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError, StrikeKind,
+};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, clamav, dkim, footer, forward, headers, profile_pictures, random_id, vacation};
+use crate::{Smtp, abuse, clamav, dkim, footer, forward, headers, profile_pictures, random_id, spam, vacation};
+
+/// The score from which mail our own people send elsewhere is refused, when the admin set no
+/// reject score for incoming mail. Higher than the junk score on purpose: a sender cannot fish a
+/// refused message out of Junk, so only mail that is spam beyond doubt is stopped
+/// (docs/outbound-abuse.md).
+const OUTBOUND_REJECT_SCORE: f32 = 10.0;
 
 pub struct Submission {
     pub account: Account,
@@ -71,6 +79,13 @@ pub enum SubmitError {
     MalformedHeaders,
     #[error("the message contains {0}")]
     Virus(String),
+    /// The spam filter is sure enough about a message for other servers that it is not sent.
+    #[error("the message looks like spam and was not sent")]
+    Spam,
+    /// Sending to other servers is suspended for this many more minutes (docs/outbound-abuse.md).
+    /// Mail to people on this server still goes.
+    #[error("sending to other servers is suspended for this account for {0} more minutes")]
+    Suspended(i64),
     #[error("the message could not be queued: {0}")]
     Queue(StoreError),
 }
@@ -139,11 +154,14 @@ fn strip_bcc(raw: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Whether a submitted message may leave this server, once known (see [`Smtp::may_leave`]).
+struct MayLeave(Option<bool>);
+
 impl Smtp {
     /// Checks the sender, completes and signs the message, delivers to local recipients and
     /// queues the rest. Failed local deliveries are bounced to the sender.
     pub async fn submit(&self, submission: Submission) -> Result<Submitted, SubmitError> {
-        let internal_only = self.checked_account(&submission).await?;
+        let (internal_only, outside) = self.checked_account(&submission).await?;
         let Submission { account, mail_from, recipients, raw, env_id, trace } = submission;
         let raw = headers::normalize_line_endings(&raw);
         let (from, _) = claimed_addresses(&raw)?;
@@ -153,8 +171,57 @@ impl Smtp {
             tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
             return Err(SubmitError::Virus(name));
         }
-        self.take_send_budget(&account, recipients.len())?;
-        self.submit_checked(account, internal_only, mail_from, recipients, raw, env_id, trace, from).await
+        // Spam our own people send elsewhere puts the server's address on blocklists, so it is
+        // refused before it leaves. Mail that stays here is judged like any other on arrival.
+        if outside && !internal_only && self.looks_like_spam(&account, &raw).await {
+            abuse::strike(&self.inner, account.id, StrikeKind::Spam).await;
+            return Err(SubmitError::Spam);
+        }
+        if let Err(err) = self.take_send_budget(&account, recipients.len()) {
+            abuse::strike(&self.inner, account.id, StrikeKind::RateLimit).await;
+            return Err(err);
+        }
+        // Checked already when it was for elsewhere; mail for people here may still leave through
+        // their forwarding, and is checked when it does.
+        let may_leave = MayLeave(if outside || internal_only { Some(true) } else { None });
+        self.submit_checked(account, internal_only, may_leave, mail_from, recipients, raw, env_id, trace, from).await
+    }
+
+    /// Whether the outbound spam scan refuses this message (docs/outbound-abuse.md).
+    async fn looks_like_spam(&self, account: &Account, raw: &[u8]) -> bool {
+        let live = self.inner.live();
+        if !live.spam.enabled {
+            return false;
+        }
+        let source = spam::Source { outbound: true, ..spam::Source::default() };
+        let reject = live.spam.reject_score.unwrap_or(OUTBOUND_REJECT_SCORE);
+        let score = spam::score(&self.inner, &live.spam, source, raw).await;
+        tracing::debug!(login = %account.login, points = ?score.as_ref().map(|score| score.points), "outbound spam scan");
+        match score {
+            Some(score) if score.points >= reject => {
+                let rules: Vec<&str> = score.hits.iter().map(|hit| hit.rule).collect();
+                tracing::warn!(login = %account.login, points = score.points, ?rules, "refused to send spam");
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether mail submitted for someone here may go on to their forwarding targets elsewhere:
+    /// not while the sender is suspended, and not when it is spam. Otherwise writing to one's own
+    /// forwarding mailbox would get around both (security review 0.28.0 OA-03). Asked once per
+    /// message, and only when a forward elsewhere comes up.
+    async fn may_leave(&self, account: &Account, may_leave: &mut MayLeave, raw: &[u8]) -> bool {
+        if let Some(known) = may_leave.0 {
+            return known;
+        }
+        let suspended = self.inner.store.send_suspension(account.id, crate::now()).await.ok().flatten().is_some();
+        let known = !suspended && !self.looks_like_spam(account, raw).await;
+        if !known {
+            tracing::warn!(login = %account.login, "not forwarding submitted mail to other servers");
+        }
+        may_leave.0 = Some(known);
+        known
     }
 
     /// The checks [`Smtp::submit`] makes before it touches the message: may this account send at
@@ -166,8 +233,8 @@ impl Smtp {
     }
 
     /// [`Smtp::check_submission`], returning whether this message may only go to addresses on this
-    /// server.
-    async fn checked_account(&self, submission: &Submission) -> Result<bool, SubmitError> {
+    /// server, and whether it is for anyone elsewhere.
+    async fn checked_account(&self, submission: &Submission) -> Result<(bool, bool), SubmitError> {
         let ctx = &self.inner;
         let Submission { account, mail_from, recipients, raw, .. } = submission;
         if recipients.is_empty() {
@@ -213,13 +280,16 @@ impl Smtp {
             let sending = std::iter::once(mail_from).chain(&from).chain(&sender).cloned().collect();
             ctx.store.addresses_internal_only(sending).await.map_err(SubmitError::Queue)?
         };
-        let mut any_internal = false;
+        let (mut any_internal, mut any_outside) = (false, false);
         for recipient in recipients {
             let Ok((_, domain)) = uwumail_store::normalize_address(&recipient.address) else {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             };
-            if internal_only && !any_internal {
-                any_internal = ctx.store.is_local_domain(&domain).await.unwrap_or(false);
+            if !(any_internal && any_outside) {
+                match ctx.store.is_local_domain(&domain).await.unwrap_or(false) {
+                    true => any_internal = true,
+                    false => any_outside = true,
+                }
             }
         }
         // An internal-only account with nobody on this server to write to: refused as a whole,
@@ -228,13 +298,21 @@ impl Smtp {
         if internal_only && !any_internal {
             return Err(SubmitError::InternalOnly);
         }
+        // A suspended account still writes to people here; only mail for elsewhere waits. Refused
+        // as a whole, so the person sees it at once rather than in a bounce.
+        if any_outside && !internal_only {
+            let now = crate::now();
+            if let Some(suspension) = ctx.store.send_suspension(account.id, now).await.map_err(SubmitError::Queue)? {
+                return Err(SubmitError::Suspended((suspension.until - now + 59) / 60));
+            }
+        }
         // The size limit holds for the message as it goes out, with the company footer in it
         // (security review 0.22 SIG-4), so a held message is refused now and not when it is due.
         let with_footer = self.with_company_footer(account, &from, raw, None).await;
         if with_footer.len() > live.smtp.max_message_size {
             return Err(SubmitError::TooLarge);
         }
-        Ok(internal_only)
+        Ok((internal_only, any_outside))
     }
 
     /// Counts `recipients` against the account's hourly and daily limit, or refuses for now. Only
@@ -262,6 +340,7 @@ impl Smtp {
         &self,
         account: Account,
         internal_only: bool,
+        mut may_leave: MayLeave,
         mail_from: String,
         recipients: Vec<SubmissionRecipient>,
         raw: Vec<u8>,
@@ -362,7 +441,18 @@ impl Smtp {
                         continue;
                     }
                     reached.push(target);
-                    match self.deliver_locally(target, &address, &mail_from, &signed, &from[0], false).await {
+                    match self
+                        .deliver_locally(
+                            target,
+                            &address,
+                            &mail_from,
+                            &signed,
+                            &from[0],
+                            false,
+                            (&account, &mut may_leave),
+                        )
+                        .await
+                    {
                         Ok(()) => got_it = true,
                         Err(error) => failure = Some(error),
                     }
@@ -405,7 +495,18 @@ impl Smtp {
                         tracing::warn!(%id, %err, "noting mail for a masked address failed");
                     }
                     let to_trash = masked.is_some_and(|masked| masked.state == MaskedState::Disabled);
-                    match self.deliver_locally(account_id, &address, &mail_from, &signed, &from[0], to_trash).await {
+                    match self
+                        .deliver_locally(
+                            account_id,
+                            &address,
+                            &mail_from,
+                            &signed,
+                            &from[0],
+                            to_trash,
+                            (&account, &mut may_leave),
+                        )
+                        .await
+                    {
                         Ok(()) => local_deliveries += 1,
                         Err(error) => failed.push(FailedRecipient { address, error }),
                     }
@@ -428,6 +529,11 @@ impl Smtp {
                                 if targets.is_empty() {
                                     continue;
                                 }
+                            }
+                            if targets.iter().any(|(_, local)| local.is_none())
+                                && !self.may_leave(&account, &mut may_leave, &signed).await
+                            {
+                                targets.retain(|(_, local)| local.is_some());
                             }
                             let forwarder = forward::Forwarder {
                                 name: &address,
@@ -453,6 +559,8 @@ impl Smtp {
         }
 
         let remote_recipients = remote.len();
+        let remote_domains: Vec<String> =
+            remote.iter().filter_map(|r| r.address.rsplit_once('@').map(|(_, domain)| domain.to_owned())).collect();
         let mut queue_message_id = None;
         if !remote.is_empty() {
             let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
@@ -462,6 +570,13 @@ impl Smtp {
                 .await
                 .map_err(SubmitError::Queue)?;
             queue_message_id = Some(queued);
+            // So a complaint about it can be traced back to this account (docs/outbound-abuse.md).
+            if let Some(message_id) = headers::first_value(&message, "Message-ID")
+                && let Err(err) =
+                    ctx.store.record_sent_message_id(account.id, &message_id, remote_domains, crate::now()).await
+            {
+                tracing::warn!(%id, %err, "noting the Message-ID of sent mail failed");
+            }
         }
         if local_deliveries == 0 && remote_recipients == 0 && failed.len() == recipients.len() {
             return Err(SubmitError::NobodyAccepted);
@@ -543,6 +658,7 @@ impl Smtp {
     /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the
     /// Trash, for a disabled masked address), a vacation reply and calendar invitations. The error
     /// is the answer for a bounce.
+    #[allow(clippy::too_many_arguments)]
     async fn deliver_locally(
         &self,
         account_id: i64,
@@ -551,6 +667,7 @@ impl Smtp {
         signed: &[u8],
         author: &str,
         to_trash: bool,
+        (sender, may_leave): (&Account, &mut MayLeave),
     ) -> Result<(), String> {
         let ctx = &self.inner;
         if to_trash {
@@ -563,7 +680,11 @@ impl Smtp {
             };
             return ctx.store.ingest(request).await.map(|_| ()).map_err(stored_error);
         }
-        let plan = forward::plan(ctx, account_id).await;
+        let mut plan = forward::plan(ctx, account_id).await;
+        if plan.targets.iter().any(|(_, local)| local.is_none()) && !self.may_leave(sender, may_leave, signed).await {
+            plan.targets.retain(|(_, local)| local.is_some());
+            plan.keep_copy = true;
+        }
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {

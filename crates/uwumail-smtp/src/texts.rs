@@ -195,6 +195,49 @@ pub fn bounce(tone: ToneConfig, recipient_is_local: bool, brand: &str) -> Bounce
     BounceTexts { sender_name: sender(tone.language, who, brand), subject, intro, outro }
 }
 
+/// A notice that a message is late (a delay DSN), for mail Microsoft blocks for now and that is
+/// tried again for two days (docs/microsoft.md). One tone for all: it is short and calm either way.
+pub fn delay(language: Language, recipient_is_local: bool, brand: &str) -> BounceTexts {
+    use Language as L;
+    let (subject, intro, outro) = match language {
+        L::De => (
+            "Verzögert: Deine Mail ist noch unterwegs",
+            "Deine Mail ist bei diesen Empfängern noch nicht angekommen. Der Server versucht es bis zu \
+             48 Stunden lang weiter:",
+            "Du musst nichts tun. Kommt sie bis dahin nicht an, bekommst du noch eine Nachricht.",
+        ),
+        L::En => (
+            "Delayed: your message is still on its way",
+            "Your message has not reached these recipients yet. The server keeps trying for up to 48 hours:",
+            "There is nothing you need to do. If it still cannot be delivered by then, you will hear again.",
+        ),
+        L::Fr => (
+            "Retardé : votre message est toujours en route",
+            "Votre message n'est pas encore parvenu à ces destinataires. Le serveur réessaie pendant 48 heures \
+             au maximum :",
+            "Vous n'avez rien à faire. S'il ne peut toujours pas être remis d'ici là, vous recevrez un autre \
+             message.",
+        ),
+        L::Nl => (
+            "Vertraagd: je bericht is nog onderweg",
+            "Je bericht is nog niet bij deze ontvangers aangekomen. De server blijft het tot 48 uur lang proberen:",
+            "Je hoeft niets te doen. Lukt het tot dan niet, dan krijg je nog een bericht.",
+        ),
+        L::Ja => (
+            "遅延: メールはまだ配送中です",
+            "次の宛先にはまだメールが届いていません。サーバーは最大 48 時間再試行します:",
+            "操作は不要です。それまでに配信できない場合は、改めてお知らせします。",
+        ),
+        L::Zh => (
+            "延迟：你的邮件仍在投递中",
+            "你的邮件尚未送达以下收件人。服务器会继续尝试，最长 48 小时：",
+            "你无需任何操作。如果届时仍无法投递，你会再收到一条通知。",
+        ),
+    };
+    let who = if recipient_is_local { Sender::Delivery } else { Sender::System };
+    BounceTexts { sender_name: sender(language, who, brand), subject, intro, outro }
+}
+
 /// The closing line of a bounce where every recipient failed for a reason the address can't fix
 /// (Microsoft blocking or throttling the server): the usual one without the hint to look for a typo.
 pub fn outro_without_typo_hint(tone: ToneConfig, recipient_is_local: bool) -> &'static str {

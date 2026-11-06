@@ -20,6 +20,16 @@ pub struct FailedRecipient {
 
 /// Tells the sender which recipients did not get the message.
 pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &[FailedRecipient]) {
+    notify(ctx, return_path, original, failed, false).await;
+}
+
+/// Tells the sender the message has not reached these recipients yet and is still being tried
+/// (RFC 3464 `Action: delayed`).
+pub async fn delayed(ctx: &Context, return_path: &str, original: &[u8], held: &[FailedRecipient]) {
+    notify(ctx, return_path, original, held, true).await;
+}
+
+async fn notify(ctx: &Context, return_path: &str, original: &[u8], failed: &[FailedRecipient], delayed: bool) {
     if return_path.is_empty() || failed.is_empty() {
         return;
     }
@@ -44,13 +54,18 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
         let preferences = ctx.store.preferences(account_id).await.unwrap_or_default();
         tone.language = Language::preferred(preferences.get("language").and_then(|v| v.as_str()), tone.language);
     }
-    let mut texts = texts::bounce(tone, local_account.is_some(), ctx.brand().name());
-    // A typo is not why Microsoft refused: don't send the person looking for one.
-    if only_microsoft(failed) {
-        texts.outro = texts::outro_without_typo_hint(tone, local_account.is_some());
-    }
-    let note = microsoft_kind(failed).map(|kind| texts::microsoft_note(tone.language, local_account.is_some(), kind));
-    let raw = match build(ctx, &texts, note, return_path, original, failed) {
+    let local = local_account.is_some();
+    let (texts, note) = if delayed {
+        (texts::delay(tone.language, local, ctx.brand().name()), None)
+    } else {
+        let mut texts = texts::bounce(tone, local, ctx.brand().name());
+        // A typo is not why Microsoft refused: don't send the person looking for one.
+        if only_microsoft(failed) {
+            texts.outro = texts::outro_without_typo_hint(tone, local);
+        }
+        (texts, microsoft_kind(failed).map(|kind| texts::microsoft_note(tone.language, local, kind)))
+    };
+    let raw = match build(ctx, &texts, note, return_path, original, failed, delayed) {
         Ok(raw) => raw,
         Err(err) => {
             tracing::error!(%err, "could not build a bounce message");
@@ -107,6 +122,7 @@ fn build(
     return_path: &str,
     original: &[u8],
     failed: &[FailedRecipient],
+    delayed: bool,
 ) -> std::io::Result<Vec<u8>> {
     let host = ctx.hostname.as_str();
 
@@ -123,10 +139,15 @@ fn build(
 
     let mut status = format!("Reporting-MTA: dns; {host}\r\nArrival-Date: {}\r\n", Date::now().to_rfc822());
     for recipient in failed {
+        let mut code = status_code(&recipient.error);
+        // A delay is a temporary state, whatever the last answer was (RFC 3464 section 2.3.4).
+        if delayed {
+            code.replace_range(..1, "4");
+        }
         status.push_str(&format!(
-            "\r\nFinal-Recipient: rfc822; {}\r\nAction: failed\r\nStatus: {}\r\nDiagnostic-Code: smtp; {}\r\n",
+            "\r\nFinal-Recipient: rfc822; {}\r\nAction: {}\r\nStatus: {code}\r\nDiagnostic-Code: smtp; {}\r\n",
             recipient.address,
-            status_code(&recipient.error),
+            if delayed { "delayed" } else { "failed" },
             single_line(&recipient.error),
         ));
     }

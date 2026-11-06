@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -282,6 +282,10 @@ pub struct AuthLimiter {
     remember: std::sync::OnceLock<Remember>,
     /// Never blocked, whatever comes from them: the admin's list.
     exempt: RwLock<Vec<Network>>,
+    /// Host names on the admin's list (a home line with dynamic DNS, say), each with the addresses
+    /// it last resolved to. Those addresses are exempt exactly, an IPv6 one as a /128: the /64
+    /// around a home line is the provider's to hand out to the neighbours.
+    exempt_hosts: RwLock<BTreeMap<String, Vec<IpAddr>>>,
 }
 
 /// IPv6 users usually own a whole /64, so failures count per /64. An IPv4-mapped address is
@@ -526,7 +530,44 @@ impl AuthLimiter {
 
     /// Whether `ip` is in the list of networks that are never blocked.
     pub fn is_exempt(&self, ip: IpAddr) -> bool {
-        self.exempt.read().expect("limiter poisoned").iter().any(|network| network.contains(ip))
+        self.exempt.read().expect("limiter poisoned").iter().any(|network| network.contains(ip)) || {
+            let ip = ip.to_canonical();
+            self.exempt_hosts.read().expect("limiter poisoned").values().flatten().any(|address| *address == ip)
+        }
+    }
+
+    /// The host names that are never blocked, with the addresses they resolved to last.
+    pub fn exempt_hosts(&self) -> Vec<(String, Vec<IpAddr>)> {
+        self.exempt_hosts.read().expect("limiter poisoned").iter().map(|(h, a)| (h.clone(), a.clone())).collect()
+    }
+
+    /// Replaces the host names that are never blocked. Names that stay keep their addresses until
+    /// they are resolved again.
+    pub fn set_exempt_hosts(&self, hosts: Vec<String>) {
+        let mut current = self.exempt_hosts.write().expect("limiter poisoned");
+        *current = hosts
+            .into_iter()
+            .map(|host| {
+                let addresses = current.get(&host).cloned().unwrap_or_default();
+                (host, addresses)
+            })
+            .collect();
+    }
+
+    /// What `host` resolves to now; ignored when it is no longer on the list. Those of the
+    /// addresses that are kept out right now are let back in, and returned.
+    pub fn set_host_addresses(&self, host: &str, addresses: Vec<IpAddr>) -> Vec<IpAddr> {
+        let blocked = self.blocked();
+        {
+            let mut hosts = self.exempt_hosts.write().expect("limiter poisoned");
+            let Some(current) = hosts.get_mut(host) else { return Vec::new() };
+            *current = addresses.into_iter().map(|ip| ip.to_canonical()).collect();
+        }
+        let inside: Vec<IpAddr> = blocked.into_iter().map(|block| block.ip).filter(|ip| self.is_exempt(*ip)).collect();
+        for ip in &inside {
+            self.unblock(*ip);
+        }
+        inside
     }
 
     /// The networks that are never blocked.
@@ -700,7 +741,14 @@ impl AuthLimiter {
 
     /// What the database remembers, put back after a start. Nothing is reported: whoever was told
     /// about these blocks was told when they were made.
-    pub(crate) fn restore(&self, blocks: Vec<Block>, known: Vec<(IpAddr, Known)>, exempt: Vec<Network>) {
+    pub(crate) fn restore(
+        &self,
+        blocks: Vec<Block>,
+        known: Vec<(IpAddr, Known)>,
+        exempt: Vec<Network>,
+        exempt_hosts: Vec<String>,
+    ) {
+        self.set_exempt_hosts(exempt_hosts);
         self.blocks.lock().expect("limiter poisoned").extend(blocks.into_iter().map(|block| (key(block.ip), block)));
         self.known.lock().expect("limiter poisoned").extend(known.into_iter().map(|(ip, known)| (key(ip), known)));
         *self.exempt.write().expect("limiter poisoned") = exempt;
@@ -1001,7 +1049,12 @@ mod tests {
 
         // A network written down before logins were is named by whoever comes first.
         let home: IpAddr = "198.51.100.21".parse().unwrap();
-        limiter.restore(vec![], vec![(home, Known { seen: unix_now(), login: String::new(), shared: false })], vec![]);
+        limiter.restore(
+            vec![],
+            vec![(home, Known { seen: unix_now(), login: String::new(), shared: false })],
+            vec![],
+            vec![],
+        );
         limiter.record_success(home, "mini@example.org");
         assert!(!limiter.is_shared(home));
         limiter.record_success(home, "nyu@example.org");

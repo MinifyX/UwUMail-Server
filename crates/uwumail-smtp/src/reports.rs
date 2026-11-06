@@ -21,7 +21,7 @@ const MAX_UNPACKED_BYTES: usize = 8 * 1024 * 1024;
 /// to [`MAX_UNPACKED_BYTES`] before it turns out to be nonsense — so a message full of small,
 /// densely packed parts costs far more to read than it costs to send. Anything this size is not a
 /// report, and refusing it here keeps that multiplication small.
-const MAX_REPORT_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_REPORT_BYTES: usize = 4 * 1024 * 1024;
 
 /// How many reports are read at the same time. The rest are let go rather than queued: the raw
 /// message would have to be held all the while, and another copy arrives with every connection.

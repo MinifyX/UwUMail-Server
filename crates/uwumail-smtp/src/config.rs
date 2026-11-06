@@ -14,6 +14,14 @@ pub struct SmtpConfig {
     pub max_recipients_per_hour: usize,
     /// The same within a day.
     pub max_recipients_per_day: usize,
+    /// Strikes (outbound spam refused, the sending limit reached, a complaint) within
+    /// `strike_window_minutes` after which the account may not send to other servers for
+    /// `suspend_minutes` (docs/outbound-abuse.md); 0 is never.
+    pub suspend_after_strikes: u32,
+    /// Hard bounces (another server's 5xx) within the window that do the same; 0 is never.
+    pub suspend_after_hard_bounces: u32,
+    pub strike_window_minutes: u32,
+    pub suspend_minutes: u32,
     /// Only offer AUTH after STARTTLS (or on the implicit TLS port).
     pub require_tls_for_auth: bool,
     /// Idle time before a connection is closed.
@@ -42,6 +50,10 @@ impl Default for SmtpConfig {
             max_recipients: 100,
             max_recipients_per_hour: 500,
             max_recipients_per_day: 2000,
+            suspend_after_strikes: 3,
+            suspend_after_hard_bounces: 25,
+            strike_window_minutes: 60,
+            suspend_minutes: 60,
             require_tls_for_auth: true,
             timeout_secs: 300,
             max_connections: 500,

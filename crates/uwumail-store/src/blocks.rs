@@ -144,9 +144,11 @@ impl Store {
             })
             .await?;
         let exempt: Vec<String> = exempt.and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default();
+        let hosts =
+            exempt.iter().filter(|entry| entry.parse::<Network>().is_err()).filter_map(|h| exempt_host(h)).collect();
         let exempt = exempt.iter().filter_map(|network| network.parse().ok()).collect();
         let limiter = self.auth_limiter();
-        limiter.restore(blocks, known, exempt);
+        limiter.restore(blocks, known, exempt, hosts);
 
         // Weak, or the store would hold itself through its own limiter.
         let inner = std::sync::Arc::downgrade(&self.inner);
@@ -273,17 +275,25 @@ impl Store {
         Ok(lifted || deleted > 0)
     }
 
-    /// Replaces the list of addresses and networks that are never blocked, and lets back in those
-    /// of them that are kept out. Returns the list as it is kept.
-    pub async fn set_block_exempt(&self, networks: &[String]) -> Result<Vec<String>> {
-        if networks.len() > BLOCK_EXEMPT_LIMIT {
+    /// Replaces the list of addresses, networks and host names that are never blocked, and lets
+    /// back in those of them that are kept out. Host names are kept as entered and resolved by the
+    /// server every few minutes (`uwumail_smtp::run_exempt_resolver`). Returns the list as kept.
+    pub async fn set_block_exempt(&self, entries: &[String]) -> Result<Vec<String>> {
+        if entries.len() > BLOCK_EXEMPT_LIMIT {
             return Err(StoreError::Invalid(format!("at most {BLOCK_EXEMPT_LIMIT} addresses can be excepted")));
         }
-        let mut parsed: Vec<Network> = Vec::with_capacity(networks.len());
-        for text in networks {
-            let network: Network = text
-                .parse()
-                .map_err(|()| StoreError::Invalid(format!("'{}' is not an address or a network", text.trim())))?;
+        let mut parsed: Vec<Network> = Vec::with_capacity(entries.len());
+        let mut hosts: Vec<String> = Vec::new();
+        for text in entries {
+            let Ok(network) = text.parse::<Network>() else {
+                let host = exempt_host(text).ok_or_else(|| {
+                    StoreError::Invalid(format!("'{}' is not an address, a network or a host name", text.trim()))
+                })?;
+                if !hosts.contains(&host) {
+                    hosts.push(host);
+                }
+                continue;
+            };
             // Half the internet is not an office: a list like that would switch the limits off.
             let least = if network.is_ipv4() { 8 } else { 16 };
             if network.prefix() < least {
@@ -293,20 +303,65 @@ impl Store {
                 parsed.push(network);
             }
         }
-        let kept: Vec<String> = parsed.iter().map(Network::to_string).collect();
+        let kept: Vec<String> = parsed.iter().map(Network::to_string).chain(hosts.iter().cloned()).collect();
         let json = serde_json::to_string(&kept).map_err(|err| StoreError::Internal(err.to_string()))?;
         self.set_setting(EXEMPT_SETTING, &json).await?;
-        for ip in self.auth_limiter().set_exempt(parsed) {
-            let network = key(ip).to_string();
-            self.write(move |tx| Ok(tx.execute("DELETE FROM ip_blocks WHERE network = ?1", [network])?)).await?;
+        let limiter = self.auth_limiter();
+        limiter.set_exempt_hosts(hosts);
+        for ip in limiter.set_exempt(parsed) {
+            self.forget_block(ip).await?;
         }
+        self.inner.exempt_hosts_changed.notify_one();
         Ok(kept)
+    }
+
+    /// Notes what an exempt host name resolves to now, and lets back in whoever of it is kept out.
+    pub async fn set_exempt_host_addresses(&self, host: &str, addresses: Vec<IpAddr>) -> Result<()> {
+        for ip in self.auth_limiter().set_host_addresses(host, addresses) {
+            self.forget_block(ip).await?;
+        }
+        Ok(())
+    }
+
+    /// Wakes when the list of exempt host names changed, so they are resolved at once.
+    pub async fn exempt_hosts_changed(&self) {
+        self.inner.exempt_hosts_changed.notified().await;
+    }
+
+    async fn forget_block(&self, ip: IpAddr) -> Result<()> {
+        let network = key(ip).to_string();
+        self.write(move |tx| Ok(tx.execute("DELETE FROM ip_blocks WHERE network = ?1", [network])?)).await?;
+        Ok(())
     }
 
     /// The addresses and networks that are never blocked.
     pub fn block_exempt(&self) -> Vec<String> {
         self.auth_limiter().exempt().iter().map(Network::to_string).collect()
     }
+
+    /// The host names that are never blocked, with what they resolved to last.
+    pub fn block_exempt_hosts(&self) -> Vec<(String, Vec<IpAddr>)> {
+        self.auth_limiter().exempt_hosts()
+    }
+}
+
+/// A host name for the exempt list, lower case and without the final dot, or `None` when `text`
+/// is not one: LDH labels of 1 to 63 characters, at least two of them, at most 253 in all, and a
+/// last label that is not a number (that would be a mistyped address, not a name).
+pub fn exempt_host(text: &str) -> Option<String> {
+    let host = text.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() || host.len() > 253 {
+        return None;
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    let label_ok = |label: &&str| {
+        (1..=63).contains(&label.len())
+            && label.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+    };
+    let last = labels.last()?;
+    (labels.len() >= 2 && labels.iter().all(label_ok) && !last.bytes().all(|b| b.is_ascii_digit())).then_some(host)
 }
 
 #[cfg(test)]
@@ -402,6 +457,59 @@ mod tests {
         assert!(!limiter.is_blocked(office), "counted, not kept out");
         limiter.record_success(home, "minifyx@example.org");
         assert!(limiter.is_shared(home), "the first login was remembered too");
+    }
+
+    #[test]
+    fn exempt_host_names_are_checked_strictly() {
+        assert_eq!(exempt_host(" Home.DDNS.example. ").as_deref(), Some("home.ddns.example"));
+        assert_eq!(exempt_host("xn--bcher-kva.example").as_deref(), Some("xn--bcher-kva.example"));
+        for bad in [
+            "",
+            "localhost",
+            "-a.example",
+            "a-.example",
+            "a..example",
+            "a_b.example",
+            "a b.example",
+            "büro.example",
+            "192.0.2.300",
+            "*.example",
+            "a.example/24",
+            &format!("{}.example", "a".repeat(64)),
+            &format!("{}example", "a.".repeat(130)),
+        ] {
+            assert_eq!(exempt_host(bad), None, "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn host_names_are_kept_and_their_addresses_exempt_exactly() {
+        let (store, _dir) = crate::test_support::store().await;
+        let kept = store
+            .set_block_exempt(&["203.0.113.0/24".into(), "Home.Example.".into(), "home.example".into()])
+            .await
+            .unwrap();
+        assert_eq!(kept, vec!["203.0.113.0/24".to_owned(), "home.example".to_owned()]);
+        assert!(store.set_block_exempt(&["not a host".into()]).await.is_err());
+        let limiter = store.auth_limiter();
+        let home: IpAddr = "2001:db8:1::5".parse().unwrap();
+        let neighbour: IpAddr = "2001:db8:1::6".parse().unwrap();
+        assert!(!limiter.is_exempt(home));
+        store.set_exempt_host_addresses("home.example", vec![home, "198.51.100.9".parse().unwrap()]).await.unwrap();
+        assert!(limiter.is_exempt(home) && !limiter.is_exempt(neighbour));
+        assert!(limiter.is_exempt("::ffff:198.51.100.9".parse().unwrap()));
+        // Not on the list: ignored.
+        store.set_exempt_host_addresses("other.example", vec![neighbour]).await.unwrap();
+        assert!(!limiter.is_exempt(neighbour));
+        // A new address replaces the old one.
+        store.set_exempt_host_addresses("home.example", vec![neighbour]).await.unwrap();
+        assert!(!limiter.is_exempt(home) && limiter.is_exempt(neighbour));
+        // Kept over a restart (the addresses come back with the next resolve).
+        let dir = _dir;
+        drop(store);
+        let store = Store::open(dir.path()).await.unwrap();
+        assert_eq!(store.block_exempt_hosts(), vec![("home.example".to_owned(), vec![])]);
+        assert_eq!(store.block_exempt(), vec!["203.0.113.0/24".to_owned()]);
     }
 
     #[test]

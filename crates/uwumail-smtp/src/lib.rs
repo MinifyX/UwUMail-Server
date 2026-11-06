@@ -5,6 +5,7 @@
 //! - [`run_queue`] delivers queued mail to other servers, retries, and bounces.
 //! - [`dkim`] creates and uses the signing keys of hosted domains.
 
+mod abuse;
 pub mod autoconfig;
 pub mod avatars;
 pub mod bimi;
@@ -65,6 +66,7 @@ use mail_auth::MessageAuthenticator;
 use tokio::sync::Semaphore;
 use uwumail_store::Store;
 
+pub use abuse::run_exempt_resolver;
 pub use checks::related_domains;
 pub use client::{Connector, connect_directly};
 pub use client_slots::{ClientSlot, ClientSlots};

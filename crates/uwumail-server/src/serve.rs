@@ -116,6 +116,7 @@ pub async fn run(
         tasks.spawn(managesieve.serve(listener, mail_tls.clone(), shutdown_rx.clone()));
     }
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
+    tasks.spawn(uwumail_smtp::run_exempt_resolver(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_list_updates(smtp.clone(), shutdown_rx.clone()));
     // A message's remote pictures, fetched here instead of by the reader; through a VPN when one is set.

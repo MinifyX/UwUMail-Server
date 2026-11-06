@@ -343,6 +343,9 @@ pub struct Source<'a> {
     pub verdict: Option<&'a Verdict>,
     /// Where a fetched message has been; see [`crate::fetched`].
     pub fetched: Option<&'a fetched::Provenance>,
+    /// A message one of our own people submitted to go out: there is no other server, so nothing
+    /// that judges one (greeting, address, reverse name, reputation) applies.
+    pub outbound: bool,
 }
 
 /// Scores a message from another server, or one taken out of a mailbox elsewhere.
@@ -351,7 +354,7 @@ pub struct Source<'a> {
 /// (the address here is the server it talked to), so what is left is a scanner, a NAS or another
 /// machine in the house, which has no reverse name, no blocklist entry and usually no DKIM.
 pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: &[u8]) -> Option<Score> {
-    let Source { ip, helo, verdict, fetched } = source;
+    let Source { ip, helo, verdict, fetched, outbound } = source;
     if ip.is_some_and(is_private) {
         return None;
     }
@@ -363,7 +366,7 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
 
     // A fetched message only answers for a greeting somebody wrote down; not knowing one says
     // nothing about it, while an SMTP client that greets with nothing has something to hide.
-    if (fetched.is_none() || !helo.is_empty()) && helo_looks_wrong(helo, &ctx.hostname) {
+    if !outbound && (fetched.is_none() || !helo.is_empty()) && helo_looks_wrong(helo, &ctx.hostname) {
         score.add("HELO_NOT_A_NAME", 1.0, Some(helo.trim().to_owned()));
     }
 
