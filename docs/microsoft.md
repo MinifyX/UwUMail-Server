@@ -31,20 +31,44 @@ Issues are kept per sending address (blocks, throttling) or sender domain
 often. The address is the one Microsoft names in its answer, else the
 connection's own when that is a public one.
 
-An issue is over when mail went through to Microsoft after the last refusal
-and that refusal is a day old. Behind NAT, where the server does not know the
+A block (the *blocked* kind) is over as soon as mail went through to Microsoft
+after the last refusal: the delisting worked. Other issues are over when mail
+went through after the last refusal and that refusal is a day old. Behind NAT, where the server does not know the
 address Microsoft sees, any mail that went through counts. An admin can also
 close an issue by hand, for example after Microsoft delisted the address.
+
+## Held mail
+
+When a Microsoft host refuses mail because it blocks the server's address (the
+*blocked* kind above), the mail does not bounce at once. Delisting usually takes
+a few hours, so the queue holds it and tries again every 45 minutes, for up to
+48 hours from when it was sent (or the queue's own lifetime, if that is
+shorter). Only then does it bounce, with the usual Microsoft text.
+
+On the first hold the sender gets a delay notice (a DSN with `Action: delayed`)
+saying the mail is late and why, unless the client asked for no delay notices
+(`NOTIFY` without `DELAY`). Further tries send nothing more.
+
+Mail is only held when the refusal came from a real Microsoft host, never through
+a relay or from a server that only talks like Microsoft: anyone could write
+`S3150` to keep mail waiting. Bounces caused by Microsoft blocking the server
+never count against the sending account (see [outbound abuse](outbound-abuse.md)).
 
 ## Who hears about it
 
 - **The overview** shows each open issue in the *Sending* area (`microsoftBlocked`
   and `microsoftAuth` red, `microsoftThrottled` yellow) and a banner at the top
-  with the code, the address and a link to Microsoft's delisting form,
-  <https://sender.office.com>.
+  with the code, the address, how many recipients are held, and a link to
+  Microsoft's delisting form, <https://sender.office.com>.
 - **Admins get a mail** through the usual [admin alerts](admin-alerts.md): when
   an issue is new, once a day while a block stays red and nobody clicked *Got
   it*, and once more when it is over. Throttling is mailed once.
+  The mail for a block names the address and lists the steps to get it lifted:
+  1. enter the address at <https://sender.office.com> and ask for delisting,
+  2. open the link in Microsoft's confirmation mail,
+  3. optionally sign up for SNDS at
+     <https://sendersupport.olc.protection.outlook.com/snds/> to watch the
+     address's standing.
 - **The sender's bounce** says in plain words, in their language, that
   Microsoft is blocking or throttling the server (or refusing the domain), that
   it is not their fault, and that the admins know. Throttled mail only bounces
@@ -65,6 +89,8 @@ and a checklist of Microsoft's rules for senders to Outlook.com (a must above
   a warning.
 - List-Unsubscribe with one click (RFC 8058) for newsletters sent through the
   server; UwUMail itself sends none.
+- While an address is blocked, the page shows the address, how many
+  recipients are held, and the three steps above.
 - Step by step: registering the addresses with SNDS (Smart Network Data
   Services) and the Junk Mail Reporting Program, and asking for delisting.
 
@@ -72,7 +98,7 @@ and a checklist of Microsoft's rules for senders to Outlook.com (a must above
 
 | | |
 | --- | --- |
-| `GET /api/admin/microsoft/issues` | `{ issues, delistUrl }`, open ones first, then those resolved in the last 30 days |
+| `GET /api/admin/microsoft/issues` | `{ issues, delistUrl, sndsUrl, heldCount }`, open ones first, then those resolved in the last 30 days; `heldCount` is the recipients the queue holds for a block |
 | `POST /api/admin/microsoft/issues/{id}/resolve` | Closes an issue (change log `microsoft.resolve`) |
 | `GET /api/admin/microsoft/checklist` | The checklist; reverse lookups are kept for an hour |
 | `POST /api/admin/microsoft/checklist` | Checks every domain's DNS and the reverse names now |
