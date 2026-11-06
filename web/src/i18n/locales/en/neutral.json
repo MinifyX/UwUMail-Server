@@ -353,13 +353,15 @@
       "certRenewalFailing": "Renewing the certificate keeps failing (first failure {{since}}).",
       "backupFailed": "The last backup failed.",
       "backupOld": "The last successful backup was {{time}}.",
-      "updateAvailable": "Version {{version}} is out."
+      "updateAvailable": "Version {{version}} is out.",
+      "sendingSuspended": "{{login}} may not send to other servers for a while."
     },
     "hints": {
       "certRenewalFailing": "The server log says why. Often a name does not point to this server (yet), or port 80 cannot be reached from outside.",
       "backupFailed": "The backups page shows the error. Check the target and start one by hand.",
       "backupOld": "Backups normally run every night. The backups page shows whether they are paused or what went wrong.",
-      "updateAvailable": "The updates page shows what is new and updates with one click."
+      "updateAvailable": "The updates page shows what is new and updates with one click.",
+      "sendingSuspended": "Too many refusals, bounces or complaints. The Sending tab under Logs shows why and lets you lift the pause."
     }
   },
   "stats": {
@@ -1637,7 +1639,8 @@
       "live": "Live log",
       "changes": "Changes",
       "blocks": "Blocks",
-      "shipping": "Log shipping"
+      "shipping": "Log shipping",
+      "sending": "Sending"
     },
     "shippingIntro": "Where the server also sends its logs, so they outlast a restart and sit in one place with other servers.",
     "blocksIntro": "Which addresses may not log in right now, why, and which ones are never blocked.",
@@ -1669,16 +1672,44 @@
       "unblocked": "{{ip}} is unblocked.",
       "exempt": {
         "title": "Never block",
-        "intro": "Addresses and networks in this list are never blocked, whatever is tried from there – your office or your monitoring, for example.",
-        "label": "Address or network",
-        "hint": "An IP address or a network, e.g. 192.0.2.10, 198.51.100.0/24 or 2001:db8::/32.",
+        "intro": "Addresses, networks and host names in this list are never blocked at login, whatever is tried from there – your office or your monitoring, for example.",
+        "label": "Address, network or host name",
+        "hint": "An IP address, a network or a host name (e.g. a dynamic DNS name), such as 192.0.2.10, 198.51.100.0/24, 2001:db8::/32 or office.example.net. Host names are looked up again every 5 minutes. They only count for the login block.",
         "add": "Add",
         "remove": "Remove {{network}}",
         "empty": "No exceptions yet.",
-        "invalid": "That is neither an IP address nor a network.",
+        "invalid": "That is neither an IP address, a network nor a host name.",
         "duplicate": "That is already in the list.",
-        "saved": "Exceptions saved."
+        "saved": "Exceptions saved.",
+        "notResolved": "not resolved yet"
       }
+    },
+    "sendingIntro": "Accounts that may not send to other servers for a while, and complaints about mail from this server.",
+    "sending": {
+      "suspensionsTitle": "Held back from sending",
+      "suspensionsIntro": "An account that collects too many strikes (refused as spam, rate limit hit, hard bounces, complaints) may not send to other servers for a while. It ends by itself.",
+      "empty": {
+        "title": "No account is held back",
+        "body": "As soon as an account is stopped from sending, it shows up here."
+      },
+      "reasons": {
+        "spam": "Mail refused as spam",
+        "rateLimit": "Sending limit hit too often",
+        "bounce": "Too many hard bounces",
+        "complaint": "Complaints from recipients"
+      },
+      "remaining": "{{duration}} left",
+      "lift": "Lift now",
+      "lifted": "{{login}} may send again."
+    },
+    "complaints": {
+      "title": "Complaints",
+      "intro": "Feedback reports (ARF, JMRP) sent to abuse@ of any of your domains are stored here and still delivered normally.",
+      "empty": "No complaints yet.",
+      "counted": "Counted as strike",
+      "notCounted": "Not counted",
+      "noSubject": "(no subject)",
+      "unknownAccount": "unknown account"
     }
   },
   "settings": {
@@ -1741,12 +1772,21 @@
       "intro": "Limits for incoming mail and mail servers in front of this one.",
       "maxSize": "Largest message (MB)",
       "maxRecipients": "Recipients per message",
+      "maxPerHour": "Recipients per account and hour",
+      "maxPerHourHint": "Counts every way of sending together (SMTP, webmail, apps). Beyond it, sending is asked to try again later. 0 = no limit.",
+      "maxPerDay": "Recipients per account and day",
       "verifySenders": "Check senders (SPF, DKIM, DMARC)",
       "verifySendersHint": "Only turn off for testing.",
       "enforceDmarc": "Honor DMARC \"reject\"",
       "enforceDmarcHint": "Mail that breaks the sender's policy is refused instead of going to spam.",
       "trustedRelays": "Upstream mail servers",
-      "trustedRelaysHint": "IP addresses or networks, one per line. UwUMail does their sender checks."
+      "trustedRelaysHint": "IP addresses or networks, one per line. UwUMail does their sender checks.",
+      "suspendStrikes": "Strikes until sending is paused",
+      "suspendStrikesHint": "Spam refusals, rate-limit hits and complaints count. Then the account may not send to other servers for a while. 0 = never.",
+      "suspendBounces": "Hard bounces until sending is paused",
+      "suspendBouncesHint": "Within the time window below. 0 = never.",
+      "strikeWindow": "Time window for strikes (minutes)",
+      "suspendMinutes": "Pause for sending (minutes)"
     },
     "spamLog": {
       "enabled": "Keep a history",
@@ -4607,7 +4647,17 @@
       "codes": "Code: {{codes}}",
       "ips": "IP: {{ips}}",
       "delist": "Request delisting",
-      "open": "Details and help"
+      "open": "Details and help",
+      "held_one": "{{count}} recipient held",
+      "held_other": "{{count}} recipients held"
+    },
+    "blocked": {
+      "title": "Microsoft blocks {{ip}}",
+      "held_one": "{{count}} recipient is held and retried every 45 minutes for up to 48 hours.",
+      "held_other": "{{count}} recipients are held and retried every 45 minutes for up to 48 hours.",
+      "step1": "Enter the IP address and request delisting at",
+      "step2": "Open the link in Microsoft's confirmation mail.",
+      "step3": "Optional: sign up for"
     }
   },
   "bimi": {

@@ -169,7 +169,8 @@ const session = (): Session => ({
   account: { id: 1, login: "lorin@uwu.example", name: "Lorin", role: "admin" },
   csrfToken: "mock",
   preferences,
-  server: { hostname: "mail.uwu.example", version: "0.1.0", brand: brand() },
+  // Installed before any feature with a "New" tag, so they all show.
+  server: { hostname: "mail.uwu.example", version: "0.1.0", installedVersion: "0.0.0", brand: brand() },
   webmail: true,
 });
 
@@ -1020,7 +1021,43 @@ const blocks: Block[] = [
     times: 1,
   },
 ];
-let exemptNetworks = ["192.0.2.0/24"];
+let exemptNetworks = ["192.0.2.0/24", "office.example.net"];
+const exemptHosts = () =>
+  exemptNetworks
+    .filter((entry) => /[a-z]{2}$/.test(entry))
+    .map((host) => ({ host, addresses: host === "office.example.net" ? ["192.0.2.44"] : [] }));
+
+let mockSuspensions = [
+  { accountId: 7, login: "nyu@example.org", since: now - 1200, until: now + 2400, reason: "spam" as const },
+];
+const mockAbuseReports = [
+  {
+    id: 2,
+    receivedAt: now - 5400,
+    domain: "example.org",
+    reporter: "staff@fbl.example.net",
+    authenticated: true,
+    feedbackType: "abuse",
+    userAgent: "ExampleFBL/1.0",
+    sourceIp: "203.0.113.25",
+    originalMessageId: "<abc123@example.org>",
+    originalFrom: "nyu@example.org",
+    originalSubject: "Our new offers",
+    login: "nyu@example.org",
+    counted: true,
+  },
+  {
+    id: 1,
+    receivedAt: now - 86_400,
+    domain: "example.org",
+    reporter: "staff@fbl.example.net",
+    authenticated: false,
+    feedbackType: "abuse",
+    originalSubject: null,
+    login: null,
+    counted: false,
+  },
+];
 
 const settings: Record<string, { value: unknown; source: "default" | "database" | "file"; set?: boolean }> = {
   "tone.language": { value: "de", source: "file" },
@@ -1038,6 +1075,12 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "delivery.max_lifetime_hours": { value: 120, source: "default" },
   "smtp.max_message_size": { value: 52_428_800, source: "default" },
   "smtp.max_recipients": { value: 100, source: "default" },
+  "smtp.max_recipients_per_hour": { value: 500, source: "default" },
+  "smtp.max_recipients_per_day": { value: 2000, source: "default" },
+  "smtp.suspend_after_strikes": { value: 3, source: "default" },
+  "smtp.suspend_after_hard_bounces": { value: 25, source: "default" },
+  "smtp.strike_window_minutes": { value: 60, source: "default" },
+  "smtp.suspend_minutes": { value: 60, source: "default" },
   "smtp.verify_senders": { value: true, source: "default" },
   "smtp.enforce_dmarc_reject": { value: true, source: "default" },
   "smtp.require_tls_for_auth": { value: true, source: "default" },
@@ -2815,6 +2858,8 @@ const microsoftIssuesView = (): MicrosoftIssues => ({
     (a, b) => Number(a.resolvedAt !== null) - Number(b.resolvedAt !== null) || b.lastSeen - a.lastSeen,
   ),
   delistUrl: "https://sender.office.com",
+  sndsUrl: "https://sendersupport.olc.protection.outlook.com/snds/",
+  heldCount: 4,
 });
 
 let mockChecklistAt = now - 1800;
@@ -3161,7 +3206,17 @@ const routes: [string, RegExp, Handler][] = [
       return [200, { lines, latest: logSeq }];
     },
   ],
-  ["GET", /^\/api\/admin\/blocks$/, () => [200, { blocks, exempt: exemptNetworks }]],
+  ["GET", /^\/api\/admin\/blocks$/, () => [200, { blocks, exempt: exemptNetworks, exemptHosts: exemptHosts() }]],
+  ["GET", /^\/api\/admin\/sending\/suspensions$/, () => [200, { suspensions: mockSuspensions, now }]],
+  [
+    "POST",
+    /^\/api\/admin\/sending\/suspensions\/(\d+)\/lift$/,
+    (_body, [id]) => {
+      mockSuspensions = mockSuspensions.filter((s) => s.accountId !== Number(id));
+      return [200, { suspensions: mockSuspensions, now }];
+    },
+  ],
+  ["GET", /^\/api\/admin\/abuse-reports$/, () => [200, { reports: mockAbuseReports }]],
   [
     "POST",
     /^\/api\/admin\/blocks\/unblock$/,
@@ -3177,11 +3232,13 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/blocks\/exempt$/,
     (body) => {
       const networks = (body as { networks: string[] }).networks.map((entry) => entry.trim().toLowerCase());
-      // The real one parses every entry; here a host name is enough to see the server's answer.
-      const bad = networks.find((entry) => !/^[0-9a-f:.]+(\/\d{1,3})?$/.test(entry));
+      // The real one parses every entry; host names are taken as they are.
+      const bad = networks.find(
+        (entry) => !/^[0-9a-f:.]+(\/\d{1,3})?$/.test(entry) && !/^[a-z0-9.-]+\.[a-z]+$/.test(entry),
+      );
       if (bad !== undefined) return [400, { code: "invalid", detail: `${bad} is not an address or network` }];
       exemptNetworks = [...new Set(networks)];
-      return [200, { exempt: exemptNetworks }];
+      return [200, { exempt: exemptNetworks, exemptHosts: exemptHosts() }];
     },
   ],
   [

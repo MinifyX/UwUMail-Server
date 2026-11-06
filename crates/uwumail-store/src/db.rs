@@ -89,6 +89,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0080_scim.sql"),
     include_str!("migrations/0081_verification.sql"),
     include_str!("migrations/0082_internal_only.sql"),
+    include_str!("migrations/0083_outbound_abuse.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -159,6 +160,10 @@ fn migrate(conn: &mut Connection) -> Result<()> {
         tx.commit()?;
         tracing::info!(version = index + 1, "applied database migration");
     }
+    // The version this installation started with, so the portal marks only what came with an
+    // update as new. A database from before this setting was installed with an older version.
+    let installed = if current == 0 { env!("CARGO_PKG_VERSION") } else { "0.0.0" };
+    conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('installed_version', ?1)", [installed])?;
     Ok(())
 }
 
@@ -269,6 +274,20 @@ mod tests {
         // Running again changes nothing.
         migrate(&mut conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());
+        assert_eq!(get_setting(&conn, "installed_version").unwrap().as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn a_database_from_before_the_installed_version_counts_as_older() {
+        let mut conn = connection();
+        migrate(&mut conn).unwrap();
+        delete_setting(&conn, "installed_version").unwrap();
+        migrate(&mut conn).unwrap();
+        assert_eq!(get_setting(&conn, "installed_version").unwrap().as_deref(), Some("0.0.0"));
+        // An installation keeps the version it started with.
+        set_setting(&conn, "installed_version", "0.20.0").unwrap();
+        migrate(&mut conn).unwrap();
+        assert_eq!(get_setting(&conn, "installed_version").unwrap().as_deref(), Some("0.20.0"));
     }
 
     #[test]

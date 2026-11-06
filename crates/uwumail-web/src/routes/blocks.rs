@@ -33,7 +33,8 @@ pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value
             "times": block.times,
         })).collect::<Vec<_>>(),
         "total": total,
-        "exempt": web.store().block_exempt(),
+        "exempt": exempt_list(&web),
+        "exemptHosts": exempt_hosts(&web),
     })))
 }
 
@@ -69,5 +70,17 @@ pub async fn set_exempt(
 ) -> ApiResult<Json<Value>> {
     let exempt = web.store().set_block_exempt(&request.networks).await?;
     audit(&web, &session, "blocks.exempt", "", json!({ "networks": exempt })).await;
-    Ok(Json(json!({ "exempt": exempt })))
+    Ok(Json(json!({ "exempt": exempt, "exemptHosts": exempt_hosts(&web) })))
+}
+
+/// The networks and host names as the admin entered them, for editing.
+fn exempt_list(web: &Web) -> Vec<String> {
+    let hosts = web.store().block_exempt_hosts().into_iter().map(|(host, _)| host);
+    web.store().block_exempt().into_iter().chain(hosts).collect()
+}
+
+/// Each exempt host name with the addresses it resolved to last; empty until the first lookup.
+fn exempt_hosts(web: &Web) -> Vec<Value> {
+    let hosts = web.store().block_exempt_hosts();
+    hosts.into_iter().map(|(host, addresses)| json!({ "host": host, "addresses": addresses })).collect()
 }

@@ -353,13 +353,15 @@
       "certRenewalFailing": "Das Zertifikat lässt sich nicht erneuern (erster Fehlschlag {{since}}).",
       "backupFailed": "Das letzte Backup ist fehlgeschlagen.",
       "backupOld": "Das letzte erfolgreiche Backup war {{time}}.",
-      "updateAvailable": "Version {{version}} ist erschienen."
+      "updateAvailable": "Version {{version}} ist erschienen.",
+      "sendingSuspended": "{{login}} darf eine Zeit lang nicht an andere Server senden."
     },
     "hints": {
       "certRenewalFailing": "Im Server-Log steht, warum. Oft zeigt ein Name (noch) nicht auf diesen Server oder Port 80 ist von außen nicht erreichbar.",
       "backupFailed": "Auf der Backup-Seite steht der Fehler. Prüfe das Ziel und starte eins von Hand.",
       "backupOld": "Backups laufen normalerweise jede Nacht. Auf der Backup-Seite siehst du, ob sie pausiert sind oder was schiefging.",
-      "updateAvailable": "Auf der Update-Seite steht, was neu ist, und ein Klick aktualisiert."
+      "updateAvailable": "Auf der Update-Seite steht, was neu ist, und ein Klick aktualisiert.",
+      "sendingSuspended": "Zu viele Ablehnungen, Bounces oder Beschwerden. Der Tab „Versand“ unter Protokolle zeigt den Grund und hebt die Pause auf."
     }
   },
   "stats": {
@@ -1637,7 +1639,8 @@
       "live": "Live-Log",
       "changes": "Änderungen",
       "blocks": "Sperren",
-      "shipping": "Log-Versand"
+      "shipping": "Log-Versand",
+      "sending": "Versand"
     },
     "shippingIntro": "Wohin der Server seine Logs zusätzlich schickt, damit sie auch nach einem Neustart und an einem Ort mit anderen Servern bleiben.",
     "blocksIntro": "Welche Adressen sich gerade nicht anmelden dürfen, warum, und welche nie gesperrt werden.",
@@ -1669,16 +1672,44 @@
       "unblocked": "{{ip}} ist entsperrt.",
       "exempt": {
         "title": "Nie sperren",
-        "intro": "Adressen und Netze in dieser Liste werden nie gesperrt, egal was von dort versucht wird – zum Beispiel dein Büro oder dein Monitoring.",
-        "label": "Adresse oder Netz",
-        "hint": "Eine IP-Adresse oder ein Netz, z. B. 192.0.2.10, 198.51.100.0/24 oder 2001:db8::/32.",
+        "intro": "Adressen, Netze und Hostnamen in dieser Liste werden beim Login nie gesperrt, egal was von dort versucht wird – zum Beispiel dein Büro oder dein Monitoring.",
+        "label": "Adresse, Netz oder Hostname",
+        "hint": "Eine IP-Adresse, ein Netz oder ein Hostname (z. B. ein Dynamic-DNS-Name), etwa 192.0.2.10, 198.51.100.0/24, 2001:db8::/32 oder office.example.net. Hostnamen werden alle 5 Minuten neu aufgelöst. Sie gelten nur für die Login-Sperre.",
         "add": "Hinzufügen",
         "remove": "{{network}} entfernen",
         "empty": "Noch keine Ausnahmen.",
-        "invalid": "Das ist weder eine IP-Adresse noch ein Netz.",
+        "invalid": "Das ist weder eine IP-Adresse, ein Netz noch ein Hostname.",
         "duplicate": "Das steht schon in der Liste.",
-        "saved": "Ausnahmen gespeichert."
+        "saved": "Ausnahmen gespeichert.",
+        "notResolved": "noch nicht aufgelöst"
       }
+    },
+    "sendingIntro": "Konten, die eine Zeit lang nicht an andere Server senden dürfen, und Beschwerden über Mails von diesem Server.",
+    "sending": {
+      "suspensionsTitle": "Vom Senden ausgebremst",
+      "suspensionsIntro": "Ein Konto, das zu viele Verwarnungen sammelt (als Spam abgelehnt, Limit erreicht, harte Bounces, Beschwerden), darf eine Zeit lang nicht an andere Server senden. Das endet von selbst.",
+      "empty": {
+        "title": "Kein Konto ist ausgebremst",
+        "body": "Sobald ein Konto am Senden gehindert wird, erscheint es hier."
+      },
+      "reasons": {
+        "spam": "Mails als Spam abgelehnt",
+        "rateLimit": "Sendegrenze zu oft erreicht",
+        "bounce": "Zu viele harte Bounces",
+        "complaint": "Beschwerden von Empfängern"
+      },
+      "remaining": "noch {{duration}}",
+      "lift": "Jetzt aufheben",
+      "lifted": "{{login}} darf wieder senden."
+    },
+    "complaints": {
+      "title": "Beschwerden",
+      "intro": "Feedback-Berichte (ARF, JMRP) an abuse@ einer deiner Domains werden hier gespeichert und trotzdem normal zugestellt.",
+      "empty": "Noch keine Beschwerden.",
+      "counted": "Als Verwarnung gezählt",
+      "notCounted": "Nicht gezählt",
+      "noSubject": "(kein Betreff)",
+      "unknownAccount": "unbekanntes Konto"
     }
   },
   "settings": {
@@ -1741,12 +1772,21 @@
       "intro": "Grenzen für eingehende Mails und vorgeschaltete Mailserver.",
       "maxSize": "Größte Mail (MB)",
       "maxRecipients": "Empfänger pro Mail",
+      "maxPerHour": "Empfänger pro Konto und Stunde",
+      "maxPerHourHint": "Gilt für alle Wege zusammen (SMTP, Webmail, Apps). Darüber heißt es „später erneut versuchen“. 0 = keine Grenze.",
+      "maxPerDay": "Empfänger pro Konto und Tag",
       "verifySenders": "Absender prüfen (SPF, DKIM, DMARC)",
       "verifySendersHint": "Nur zum Testen ausschalten.",
       "enforceDmarc": "DMARC „reject“ beachten",
       "enforceDmarcHint": "Mails, die die Richtlinie des Absenders verletzen, werden abgelehnt statt in Spam gelegt.",
       "trustedRelays": "Vorgeschaltete Mailserver",
-      "trustedRelaysHint": "IP-Adressen oder Netze, eine pro Zeile. Deren Absender-Prüfung übernimmt UwUMail."
+      "trustedRelaysHint": "IP-Adressen oder Netze, eine pro Zeile. Deren Absender-Prüfung übernimmt UwUMail.",
+      "suspendStrikes": "Verwarnungen bis zur Sendepause",
+      "suspendStrikesHint": "Zählt Spam-Ablehnungen, erreichte Sendegrenzen und Beschwerden. Danach darf das Konto eine Zeit lang nicht an andere Server senden. 0 = nie.",
+      "suspendBounces": "Harte Bounces bis zur Sendepause",
+      "suspendBouncesHint": "Innerhalb des Zeitfensters unten. 0 = nie.",
+      "strikeWindow": "Zeitfenster für Verwarnungen (Minuten)",
+      "suspendMinutes": "Dauer der Sendepause (Minuten)"
     },
     "spamLog": {
       "enabled": "Verlauf mitschreiben",
@@ -4607,7 +4647,17 @@
       "codes": "Code: {{codes}}",
       "ips": "IP: {{ips}}",
       "delist": "Freigabe beantragen",
-      "open": "Details und Hilfe"
+      "open": "Details und Hilfe",
+      "held_one": "{{count}} Empfänger zurückgehalten",
+      "held_other": "{{count}} Empfänger zurückgehalten"
+    },
+    "blocked": {
+      "title": "Microsoft blockiert {{ip}}",
+      "held_one": "{{count}} Empfänger wird zurückgehalten und alle 45 Minuten bis zu 48 Stunden lang erneut versucht.",
+      "held_other": "{{count}} Empfänger werden zurückgehalten und alle 45 Minuten bis zu 48 Stunden lang erneut versucht.",
+      "step1": "Gib die IP-Adresse ein und beantrage die Entsperrung bei",
+      "step2": "Öffne den Link in der Bestätigungsmail von Microsoft.",
+      "step3": "Optional: Melde dich an bei"
     }
   },
   "bimi": {

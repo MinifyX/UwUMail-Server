@@ -384,6 +384,12 @@ trusted_proxies = []           # reverse proxies whose X-Forwarded-For/-Proto ar
 [smtp]
 max_message_size = 52428800
 max_recipients = 100
+max_recipients_per_hour = 500   # recipients one account may send to per hour, all doors together; 0 = no limit
+max_recipients_per_day = 2000   # the same per day; beyond either the client is told 451 4.7.1 (try later)
+suspend_after_strikes = 3       # spam refusals, rate-limit hits and complaints that suspend sending
+suspend_after_hard_bounces = 25 # hard bounces that do the same; 0 turns either off (docs/outbound-abuse.md)
+strike_window_minutes = 60      # how far back strikes count
+suspend_minutes = 60            # how long the account may not send to other servers then
 require_tls_for_auth = true
 timeout_secs = 300
 max_connections = 500

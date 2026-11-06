@@ -165,6 +165,12 @@ fn bracketed_ip(text: &str) -> Option<IpAddr> {
     text.split('[').skip(1).find_map(|rest| rest.split(']').next()?.trim().parse().ok())
 }
 
+/// Whether a Microsoft host's answer blocks our address (S3150 and its kin), the kind of refusal
+/// mail is held for until the address is delisted (docs/microsoft.md).
+pub fn holds(reply: &str) -> bool {
+    classify(reply, true).is_some_and(|refusal| refusal.group.kind() == IssueKind::Blocked)
+}
+
 /// Signs in the text itself that the answer came from Microsoft, for when the host is not known
 /// (a bounce built from the stored error).
 fn sounds_like_microsoft(lower: &str) -> bool {
@@ -257,6 +263,14 @@ mod tests {
         assert_eq!(refusal.group.scope(), IssueScope::Ip);
         // The block list code is Microsoft's alone, so the stored text is enough.
         assert_eq!(classify("550 5.7.1 ... on our block list (S3140)", false).unwrap().code, "S3140");
+    }
+
+    #[test]
+    fn only_blocks_of_our_address_hold_mail() {
+        assert!(holds("550 5.7.1 ... part of their network is on our block list (S3150)."));
+        assert!(holds("550 5.7.511 Access denied, banned sender[198.51.100.7]. To request removal"));
+        assert!(!holds("451 4.7.650 The mail server [203.0.113.5] has been temporarily rate limited (S775)"));
+        assert!(!holds("550 5.1.1 User unknown"));
     }
 
     #[test]

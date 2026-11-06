@@ -8,6 +8,7 @@
 //! thread pool. One writer connection serializes writes; reads use a small
 //! pool of read-only connections.
 
+mod abuse;
 mod acl;
 mod address;
 mod admin;
@@ -98,6 +99,7 @@ use tokio::sync::{Notify, broadcast};
 /// is paused with `interrupted` instead of started again (security review 0.22 M-1).
 pub const INTERRUPTIONS: i64 = 3;
 
+pub use abuse::{AbuseReport, NewAbuseReport, SendSuspension, StrikeKind, StrikeLimits};
 pub use acl::{ALL_RIGHTS, AclEntry, ShareLevel, SharePerson, SharedMailbox, has_rights, normalize_rights};
 pub use address::{EmailAddress, normalize_address, normalize_domain};
 pub use admin::{
@@ -121,7 +123,7 @@ pub use bayes::{
 };
 pub use bimi::{BimiUpdate, DomainBimi};
 pub use blobs::{BlobCleanupPause, BlobHash};
-pub use blocks::BLOCK_EXEMPT_LIMIT;
+pub use blocks::{BLOCK_EXEMPT_LIMIT, exempt_host};
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
 pub use calendar_alerts::{CalendarAlertFired, DueAlert, PlannedAlert};
 pub use calendar_notifications::{
@@ -318,6 +320,8 @@ struct Inner {
     queue_wakeup: Notify,
     /// Wakes the AI assistant's label worker when delivered mail was queued for it.
     assist_wakeup: Notify,
+    /// Wakes the resolver of exempt host names when their list changed (blocks.rs).
+    exempt_hosts_changed: Notify,
     /// The labels' counts per account, as of the account's last change (labels.rs).
     label_counts: Arc<labels::LabelCountCache>,
     data_dir: PathBuf,
@@ -357,6 +361,7 @@ impl Store {
                 verifications,
                 queue_wakeup: Notify::new(),
                 assist_wakeup: Notify::new(),
+                exempt_hosts_changed: Notify::new(),
                 label_counts: Arc::default(),
                 data_dir,
                 stats: stats::Stats::default(),

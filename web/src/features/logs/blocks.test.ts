@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOG_CATEGORIES, looksLikeNetwork, toggleCategory } from "./blocks";
+import { LOG_CATEGORIES, looksLikeHost, looksLikeNetwork, toggleCategory } from "./blocks";
 
 describe("toggleCategory", () => {
   it("switches kinds on and off and keeps them in the order of the chips", () => {
@@ -35,5 +35,15 @@ describe("looksLikeNetwork", () => {
     expect(looksLikeNetwork("2001:db8")).toBe(false);
     expect(looksLikeNetwork("2001:db8:0:0:0:0:0:0:1")).toBe(false);
     expect(looksLikeNetwork("2001:db8::12345")).toBe(false);
+  });
+});
+
+describe("looksLikeHost", () => {
+  it("takes host names, not addresses", () => {
+    expect(looksLikeHost("office.example.net")).toBe(true);
+    expect(looksLikeHost("my-home.dyn.example.org")).toBe(true);
+    expect(looksLikeHost("localhost")).toBe(false);
+    expect(looksLikeHost("192.0.2.10")).toBe(false);
+    expect(looksLikeHost("a..example.net")).toBe(false);
   });
 });

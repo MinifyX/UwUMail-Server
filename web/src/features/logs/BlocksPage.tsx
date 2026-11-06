@@ -11,7 +11,7 @@ import { api, type Block, type BlocksView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime, formatDuration, formatRelative } from "@/lib/format";
 import { toast } from "@/state/toasts";
-import { looksLikeNetwork } from "./blocks";
+import { looksLikeHost, looksLikeNetwork } from "./blocks";
 
 const BLOCKS_KEY = ["admin", "blocks"];
 
@@ -66,7 +66,7 @@ function BlockRow({ block, now }: { block: Block; now: number }) {
 }
 
 /** The addresses and networks that are never blocked; every change is saved at once. */
-function ExemptCard({ exempt }: { exempt: string[] }) {
+function ExemptCard({ exempt, hosts }: { exempt: string[]; hosts: BlocksView["exemptHosts"] }) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const errorText = useErrorText();
@@ -74,10 +74,13 @@ function ExemptCard({ exempt }: { exempt: string[] }) {
   const [problem, setProblem] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: (networks: string[]) =>
-      api<{ exempt: string[] }>("/api/admin/blocks/exempt", { method: "PUT", body: { networks } }),
+      api<Pick<BlocksView, "exempt" | "exemptHosts">>("/api/admin/blocks/exempt", {
+        method: "PUT",
+        body: { networks },
+      }),
     onSuccess: (result) => {
       // The server's spelling, so the list shows what is really in force.
-      queryClient.setQueryData<BlocksView>(BLOCKS_KEY, (view) => view && { ...view, exempt: result.exempt });
+      queryClient.setQueryData<BlocksView>(BLOCKS_KEY, (view) => view && { ...view, ...result });
       setDraft("");
       toast(t("logs.blocks.exempt.saved"), "success");
     },
@@ -88,7 +91,7 @@ function ExemptCard({ exempt }: { exempt: string[] }) {
     event.preventDefault();
     const value = draft.trim();
     if (!value) return;
-    if (!looksLikeNetwork(value)) return setProblem(t("logs.blocks.exempt.invalid"));
+    if (!looksLikeNetwork(value) && !looksLikeHost(value)) return setProblem(t("logs.blocks.exempt.invalid"));
     if (exempt.includes(value.toLowerCase())) return setProblem(t("logs.blocks.exempt.duplicate"));
     setProblem(null);
     save.mutate([...exempt, value]);
@@ -118,6 +121,21 @@ function ExemptCard({ exempt }: { exempt: string[] }) {
                     save.mutate(exempt.filter((entry) => entry !== network));
                   }}
                 />
+              </li>
+            ))}
+          </ul>
+        )}
+        {hosts.length > 0 && (
+          <ul className="flex flex-col gap-1 text-[13px] text-muted">
+            {hosts.map(({ host, addresses }) => (
+              <li key={host}>
+                <span className="font-mono break-all">{host}</span>
+                {" → "}
+                {addresses.length > 0 ? (
+                  <span className="font-mono break-all">{addresses.join(", ")}</span>
+                ) : (
+                  t("logs.blocks.exempt.notResolved")
+                )}
               </li>
             ))}
           </ul>
@@ -179,7 +197,7 @@ export function BlocksPage() {
           ))}
         </ul>
       )}
-      <ExemptCard exempt={blocks.data.exempt} />
+      <ExemptCard exempt={blocks.data.exempt} hosts={blocks.data.exemptHosts} />
       <Card title={t("logs.blocks.rulesTitle")}>
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted">
           <li>{t("logs.blocks.rules.instant")}</li>

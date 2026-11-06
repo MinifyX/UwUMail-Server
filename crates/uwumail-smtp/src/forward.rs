@@ -65,7 +65,7 @@ impl<'a> Proof<'a> {
 }
 
 /// Whether two domains count as one for DMARC's relaxed alignment: the same registrable domain.
-fn aligned(a: &str, b: &str) -> bool {
+pub(crate) fn aligned(a: &str, b: &str) -> bool {
     let organizational = |domain: &str| {
         let domain = domain.trim_end_matches('.').to_ascii_lowercase();
         psl::domain_str(&domain).map(str::to_owned).unwrap_or(domain)

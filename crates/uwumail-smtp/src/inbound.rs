@@ -25,7 +25,9 @@ use crate::dsn::{self, FailedRecipient};
 use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, clamav, fetched, forward, headers, labels, random_id, relay, reports, rules, spam, srs, vacation};
+use crate::{
+    Smtp, abuse, clamav, fetched, forward, headers, labels, random_id, relay, reports, rules, spam, srs, vacation,
+};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -1689,6 +1691,7 @@ pub(crate) async fn receive(
         helo: client.as_ref().map_or("", |(_, helo)| helo.as_str()),
         verdict: verdict.as_ref(),
         fetched: provenance.as_ref(),
+        outbound: false,
     };
     let score = if live.spam.enabled && (client.is_some() || provenance.is_some()) {
         spam::score(&ctx, &live.spam, source, &raw).await
@@ -1990,6 +1993,17 @@ pub(crate) async fn receive(
             mailbox: mailbox.map(str::to_owned),
         });
     };
+    // A complaint report for an abuse desk of ours is read on the side; the message itself goes
+    // wherever abuse@ leads, like any other (docs/outbound-abuse.md).
+    if let Some(desk) = recipients.iter().find(|recipient| {
+        !recipient.trap
+            && recipient.srs_return.is_none()
+            && recipient.report.is_none()
+            && abuse::is_abuse_address(&recipient.address)
+    }) {
+        let authenticated = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
+        abuse::receive_soon(ctx.clone(), desk.address.clone(), envelope.address.clone(), &raw, authenticated);
+    }
     for ((recipient, decision), theirs) in recipients.iter().zip(&decisions).zip(&personal) {
         if let Some(original) = &recipient.srs_return {
             returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
@@ -2426,9 +2440,20 @@ impl Session {
             }
             Err(SubmitError::AccountLocked) => "550 5.7.1 This account is disabled or in the trash\r\n".into(),
             Err(SubmitError::TooManyRecipients) => "452 4.5.3 Too many recipients\r\n".into(),
+            Err(SubmitError::RateLimited(window)) => {
+                format!("451 4.7.1 Sending limit for this {window} reached, please try again later\r\n")
+            }
+            Err(SubmitError::OverLimit(window)) => {
+                format!("550 5.5.3 This message has more recipients than this account may send to in one {window}\r\n")
+            }
             Err(SubmitError::TooLarge) => "552 5.3.4 The message is too large\r\n".into(),
             Err(SubmitError::MalformedHeaders) => "550 5.6.0 The message has a malformed header block\r\n".into(),
             Err(SubmitError::Virus(name)) => format!("554 5.7.0 This message contains {name}\r\n"),
+            Err(SubmitError::Spam) => "550 5.7.1 This message looks like spam and was not sent\r\n".into(),
+            Err(SubmitError::Suspended(minutes)) => format!(
+                "550 5.7.1 Sending to other servers is suspended for this account for {minutes} more minutes; \
+                 ask your admin if this is a mistake\r\n"
+            ),
             Err(SubmitError::Queue(err)) => {
                 tracing::error!(%err, "queueing a message failed");
                 "451 4.3.0 Could not queue the message, please try again\r\n".into()

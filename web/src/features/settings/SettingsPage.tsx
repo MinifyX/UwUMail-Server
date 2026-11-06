@@ -382,7 +382,17 @@ export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
             title={t("settings.receiving.title")}
             intro={t("settings.receiving.intro")}
             view={view}
-            keys={["smtp.max_message_size", "smtp.max_recipients", "smtp.trusted_relays"]}
+            keys={[
+              "smtp.max_message_size",
+              "smtp.max_recipients",
+              "smtp.max_recipients_per_hour",
+              "smtp.max_recipients_per_day",
+              "smtp.suspend_after_strikes",
+              "smtp.suspend_after_hard_bounces",
+              "smtp.strike_window_minutes",
+              "smtp.suspend_minutes",
+              "smtp.trusted_relays",
+            ]}
           >
             {(form) => (
               <>
@@ -396,6 +406,39 @@ export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
                   form={form}
                   settingKey="smtp.max_recipients"
                   label={t("settings.receiving.maxRecipients")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.max_recipients_per_hour"
+                  label={t("settings.receiving.maxPerHour")}
+                  hint={t("settings.receiving.maxPerHourHint")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.max_recipients_per_day"
+                  label={t("settings.receiving.maxPerDay")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.suspend_after_strikes"
+                  label={t("settings.receiving.suspendStrikes")}
+                  hint={t("settings.receiving.suspendStrikesHint")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.suspend_after_hard_bounces"
+                  label={t("settings.receiving.suspendBounces")}
+                  hint={t("settings.receiving.suspendBouncesHint")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.strike_window_minutes"
+                  label={t("settings.receiving.strikeWindow")}
+                />
+                <NumberField
+                  form={form}
+                  settingKey="smtp.suspend_minutes"
+                  label={t("settings.receiving.suspendMinutes")}
                 />
                 <Field
                   label={t("settings.receiving.trustedRelays")}

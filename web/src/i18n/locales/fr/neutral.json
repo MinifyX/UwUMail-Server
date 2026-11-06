@@ -361,13 +361,15 @@
       "certRenewalFailing": "Le renouvellement du certificat échoue toujours (premier échec {{since}}).",
       "backupFailed": "La dernière sauvegarde a échoué.",
       "backupOld": "La dernière sauvegarde réussie date de {{time}}.",
-      "updateAvailable": "La version {{version}} est sortie."
+      "updateAvailable": "La version {{version}} est sortie.",
+      "sendingSuspended": "{{login}} ne peut plus envoyer vers d'autres serveurs pendant un moment."
     },
     "hints": {
       "certRenewalFailing": "Le journal du serveur indique pourquoi. Souvent, un nom ne pointe pas (encore) vers ce serveur, ou le port 80 n'est pas joignable de l'extérieur.",
       "backupFailed": "La page des sauvegardes affiche l'erreur. Vérifiez la destination et lancez-en une à la main.",
       "backupOld": "Les sauvegardes ont normalement lieu chaque nuit. La page des sauvegardes indique si elles sont en pause ou ce qui s'est mal passé.",
-      "updateAvailable": "La page des mises à jour montre les nouveautés et met à jour en un clic."
+      "updateAvailable": "La page des mises à jour montre les nouveautés et met à jour en un clic.",
+      "sendingSuspended": "Trop de refus, de rebonds ou de plaintes. L'onglet Envoi sous Journaux en donne la raison et permet de lever la pause."
     }
   },
   "stats": {
@@ -1669,7 +1671,8 @@
       "live": "Journal en direct",
       "changes": "Modifications",
       "blocks": "Blocages",
-      "shipping": "Envoi des journaux"
+      "shipping": "Envoi des journaux",
+      "sending": "Envoi"
     },
     "shippingIntro": "Où le serveur envoie aussi ses journaux, pour qu'ils survivent à un redémarrage et soient réunis au même endroit avec ceux d'autres serveurs.",
     "blocksIntro": "Quelles adresses ne peuvent pas se connecter en ce moment, pourquoi, et lesquelles ne sont jamais bloquées.",
@@ -1701,16 +1704,44 @@
       "unblocked": "{{ip}} est débloquée.",
       "exempt": {
         "title": "Ne jamais bloquer",
-        "intro": "Les adresses et réseaux de cette liste ne sont jamais bloqués, quoi qu'on tente depuis là – votre bureau ou votre supervision, par exemple.",
-        "label": "Adresse ou réseau",
-        "hint": "Une adresse IP ou un réseau, p. ex. 192.0.2.10, 198.51.100.0/24 ou 2001:db8::/32.",
+        "intro": "Les adresses, réseaux et noms d'hôte de cette liste ne sont jamais bloqués à la connexion, quoi qu'on essaie depuis là – votre bureau ou votre supervision, par exemple.",
+        "label": "Adresse, réseau ou nom d'hôte",
+        "hint": "Une adresse IP, un réseau ou un nom d'hôte (p. ex. un nom DNS dynamique), comme 192.0.2.10, 198.51.100.0/24, 2001:db8::/32 ou office.example.net. Les noms d'hôte sont résolus à nouveau toutes les 5 minutes. Ils ne valent que pour le blocage à la connexion.",
         "add": "Ajouter",
         "remove": "Retirer {{network}}",
         "empty": "Aucune exception pour l'instant.",
-        "invalid": "Ce n'est ni une adresse IP ni un réseau.",
+        "invalid": "Ce n'est ni une adresse IP, ni un réseau, ni un nom d'hôte.",
         "duplicate": "C'est déjà dans la liste.",
-        "saved": "Exceptions enregistrées."
+        "saved": "Exceptions enregistrées.",
+        "notResolved": "pas encore résolu"
       }
+    },
+    "sendingIntro": "Comptes qui ne peuvent plus envoyer vers d'autres serveurs pendant un moment, et plaintes concernant le courrier de ce serveur.",
+    "sending": {
+      "suspensionsTitle": "Envoi suspendu",
+      "suspensionsIntro": "Un compte qui cumule trop d'avertissements (refus pour spam, limite atteinte, rebonds définitifs, plaintes) ne peut plus envoyer vers d'autres serveurs pendant un moment. Cela s'arrête tout seul.",
+      "empty": {
+        "title": "Aucun compte n'est suspendu",
+        "body": "Dès qu'un compte est empêché d'envoyer, il apparaît ici."
+      },
+      "reasons": {
+        "spam": "Courrier refusé comme spam",
+        "rateLimit": "Limite d'envoi trop souvent atteinte",
+        "bounce": "Trop de rebonds définitifs",
+        "complaint": "Plaintes de destinataires"
+      },
+      "remaining": "encore {{duration}}",
+      "lift": "Lever maintenant",
+      "lifted": "{{login}} peut de nouveau envoyer."
+    },
+    "complaints": {
+      "title": "Plaintes",
+      "intro": "Les rapports de retour (ARF, JMRP) envoyés à abuse@ de l'un de vos domaines sont conservés ici et restent distribués normalement.",
+      "empty": "Aucune plainte pour l'instant.",
+      "counted": "Compté comme avertissement",
+      "notCounted": "Non compté",
+      "noSubject": "(sans objet)",
+      "unknownAccount": "compte inconnu"
     }
   },
   "settings": {
@@ -1773,12 +1804,21 @@
       "intro": "Limites pour le courrier entrant et serveurs de messagerie placés devant celui-ci.",
       "maxSize": "Taille maximale d'un message (Mo)",
       "maxRecipients": "Destinataires par message",
+      "maxPerHour": "Destinataires par compte et par heure",
+      "maxPerHourHint": "Compte tous les moyens d’envoi ensemble (SMTP, webmail, applications). Au-delà, l’envoi est prié de réessayer plus tard. 0 = sans limite.",
+      "maxPerDay": "Destinataires par compte et par jour",
       "verifySenders": "Vérifier les expéditeurs (SPF, DKIM, DMARC)",
       "verifySendersHint": "À désactiver uniquement pour des tests.",
       "enforceDmarc": "Respecter DMARC « reject »",
       "enforceDmarcHint": "Le courrier qui enfreint la politique de l'expéditeur est refusé au lieu d'aller en spam.",
       "trustedRelays": "Serveurs de messagerie en amont",
-      "trustedRelaysHint": "Adresses IP ou réseaux, un par ligne. UwUMail effectue leurs vérifications d'expéditeur."
+      "trustedRelaysHint": "Adresses IP ou réseaux, un par ligne. UwUMail effectue leurs vérifications d'expéditeur.",
+      "suspendStrikes": "Avertissements avant la pause d'envoi",
+      "suspendStrikesHint": "Comptent : refus pour spam, limites atteintes et plaintes. Ensuite, le compte ne peut plus envoyer vers d'autres serveurs pendant un moment. 0 = jamais.",
+      "suspendBounces": "Rebonds définitifs avant la pause d'envoi",
+      "suspendBouncesHint": "Dans la fenêtre de temps ci-dessous. 0 = jamais.",
+      "strikeWindow": "Fenêtre de temps des avertissements (minutes)",
+      "suspendMinutes": "Durée de la pause d'envoi (minutes)"
     },
     "spamLog": {
       "enabled": "Conserver un historique",
@@ -4693,7 +4733,19 @@
       "codes": "Code : {{codes}}",
       "ips": "IP : {{ips}}",
       "delist": "Demander le retrait",
-      "open": "Détails et aide"
+      "open": "Détails et aide",
+      "held_one": "{{count}} destinataire retenu",
+      "held_many": "{{count}} destinataires retenus",
+      "held_other": "{{count}} destinataires retenus"
+    },
+    "blocked": {
+      "title": "Microsoft bloque {{ip}}",
+      "held_one": "{{count}} destinataire est retenu et réessayé toutes les 45 minutes pendant 48 heures au plus.",
+      "held_many": "{{count}} destinataires sont retenus et réessayés toutes les 45 minutes pendant 48 heures au plus.",
+      "held_other": "{{count}} destinataires sont retenus et réessayés toutes les 45 minutes pendant 48 heures au plus.",
+      "step1": "Saisissez l'adresse IP et demandez le retrait de la liste sur",
+      "step2": "Ouvrez le lien dans le courriel de confirmation de Microsoft.",
+      "step3": "Facultatif : inscrivez-vous à"
     }
   },
   "bimi": {

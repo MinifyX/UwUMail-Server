@@ -34,6 +34,7 @@ pub mod reports;
 pub mod rules;
 pub mod scim;
 pub mod security;
+pub mod sending;
 pub mod settings;
 pub mod setup;
 pub mod sharing;

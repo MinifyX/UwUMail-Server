@@ -7,14 +7,17 @@ use serde_json::{Value, json};
 use uwumail_smtp::bimi::dmarc_fit;
 use uwumail_smtp::dnscheck::{CheckStatus, DomainReport, RecordCheck};
 use uwumail_smtp::health::Route;
-use uwumail_smtp::microsoft::{DELIST_URL, IssueGroup};
-use uwumail_store::DkimKeyState;
+use uwumail_smtp::microsoft::{DELIST_URL, IssueGroup, holds};
+use uwumail_store::{DkimKeyState, QueueRecipientStatus};
 
 use super::audit;
 use crate::Web;
 use crate::error::ApiResult;
 use crate::health::unix_now;
 use crate::session::Admin;
+
+/// Microsoft's page where a sender looks up its standing and signs up for SNDS data.
+const SNDS_URL: &str = "https://sendersupport.olc.protection.outlook.com/snds/";
 
 /// Reverse lookups this fresh are shown again instead of asked anew.
 const ADDRESSES_FRESH_SECS: i64 = 3600;
@@ -35,7 +38,18 @@ async fn issues_json(web: &Web) -> ApiResult<Value> {
             value
         })
         .collect();
-    Ok(json!({ "issues": issues, "delistUrl": DELIST_URL }))
+    // Recipients waiting for a delisting, so the admin sees what the block costs.
+    let held = web
+        .store()
+        .queue_entries()
+        .await?
+        .iter()
+        .flat_map(|entry| &entry.recipients)
+        .filter(|recipient| {
+            recipient.status == QueueRecipientStatus::Pending && recipient.last_error.as_deref().is_some_and(holds)
+        })
+        .count();
+    Ok(json!({ "issues": issues, "delistUrl": DELIST_URL, "sndsUrl": SNDS_URL, "heldCount": held }))
 }
 
 pub async fn issues(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {

@@ -157,7 +157,8 @@ impl Store {
     }
 
     /// Closes issues that are over at `at`: mail went through since the last refusal, and that
-    /// refusal is a day old. Issues about an unknown address or domain close once any mail went
+    /// refusal is a day old. A block (S3150 and the like) is over with the first mail through:
+    /// Microsoft does not take mail from a listed address at all, so one accepted means delisted. Issues about an unknown address or domain close once any mail went
     /// through, and so do address issues on a server that never learns its own public address
     /// (behind NAT, only Microsoft's answer names it). Old resolved ones are forgotten. Returns
     /// how many were closed.
@@ -165,7 +166,7 @@ impl Store {
         self.write(move |tx| {
             let closed = tx.execute(
                 "UPDATE microsoft_issues SET resolved_at = ?1, resolved_by = 'auto'
-                 WHERE resolved_at IS NULL AND last_seen <= ?2
+                 WHERE resolved_at IS NULL AND (last_seen <= ?2 OR grp IN ('blockList', 'banned', 'ipRefused'))
                    AND EXISTS (SELECT 1 FROM microsoft_deliveries AS d
                                WHERE d.at >= microsoft_issues.last_seen
                                  AND (d.scope = microsoft_issues.scope AND d.subject = microsoft_issues.subject
@@ -243,6 +244,19 @@ mod tests {
         }
     }
 
+    fn throttled(code: &str, ip: &str) -> MicrosoftRefusal {
+        MicrosoftRefusal { group: "throttled", ..refusal(code, ip) }
+    }
+
+    #[tokio::test]
+    async fn a_block_ends_with_the_first_mail_through() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.record_microsoft_refusal(refusal("S3150", "203.0.113.5"), T0).await.unwrap();
+        assert_eq!(store.resolve_microsoft_issues(T0 + HOUR).await.unwrap(), 0);
+        store.record_microsoft_delivery(Some("203.0.113.5".into()), "example.org".into(), T0 + HOUR).await.unwrap();
+        assert_eq!(store.resolve_microsoft_issues(T0 + HOUR + 1).await.unwrap(), 1);
+    }
+
     #[tokio::test]
     async fn refusals_count_up_per_address_and_code() {
         let (store, _dir) = crate::test_support::store().await;
@@ -274,7 +288,7 @@ mod tests {
     #[tokio::test]
     async fn issues_end_a_day_after_the_last_refusal_once_mail_went_through() {
         let (store, _dir) = crate::test_support::store().await;
-        store.record_microsoft_refusal(refusal("S3150", "203.0.113.5"), T0).await.unwrap();
+        store.record_microsoft_refusal(throttled("S3150", "203.0.113.5"), T0).await.unwrap();
         // No mail through yet: open however long it has been.
         assert_eq!(store.resolve_microsoft_issues(T0 + 48 * HOUR).await.unwrap(), 0);
         // Mail through from another address changes nothing.
@@ -289,7 +303,7 @@ mod tests {
         assert_eq!(issues[0].resolved_by.as_deref(), Some("auto"));
         assert!(store.open_microsoft_issues().await.unwrap().is_empty());
         // A new refusal opens a new issue.
-        assert!(store.record_microsoft_refusal(refusal("S3150", "203.0.113.5"), T0 + 25 * HOUR).await.unwrap());
+        assert!(store.record_microsoft_refusal(throttled("S3150", "203.0.113.5"), T0 + 25 * HOUR).await.unwrap());
         // Resolved ones fall out of the list after 30 days and out of the table after 90.
         store.resolve_microsoft_issue(issues[0].id + 1, "admin@example.org", T0 + 26 * HOUR).await.unwrap();
         assert_eq!(store.microsoft_issues(T0 + 26 * HOUR).await.unwrap().len(), 2);

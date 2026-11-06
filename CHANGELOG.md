@@ -3,6 +3,49 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.28.0
+
+### Added
+
+- Outgoing spam scan: mail that one of the server's own people sends to other servers (SMTP
+  submission and JMAP) is checked with the word lists, the Bayes filter, the link and URI lists
+  and the virus scanner before it leaves. At or above the reject threshold (`spam.reject_score`,
+  10 points by default) it is refused with "550 5.7.1 This message looks like spam and was not
+  sent" (JMAP: `forbiddenToSend`). Mail within the server is not affected. See
+  `docs/outbound-abuse.md`.
+- Sending limits per account: at most 500 recipients an hour and 2000 a day, from every door
+  together (`smtp.max_recipients_per_hour` / `_per_day`, 0 = no limit). Over the limit, SMTP
+  answers 451 4.7.1 and JMAP `rateLimit`; a single message with more recipients than a whole
+  hour or day allows is refused for good (550 5.5.3, JMAP `tooManyRecipients`).
+- Send suspension: spam refusals, hitting the sending limit (once per window) and complaints
+  count as strikes, and refusals for addresses that do not exist (5.1.x) are counted on their own. After 3 strikes or 25 hard bounces within 60 minutes,
+  the account may not send to other servers for 60 minutes. Mail inside the server still works.
+  All four values are settings (*Settings → Receiving*, 0 turns a limit off). The person gets a
+  clear error with the minutes left, and admins get an alert. *Server → Logs → Sending* lists the
+  suspensions with the time left and can lift one early. Suspensions survive a restart.
+- Complaints: ARF feedback reports sent to `abuse@` of any of the server's domains (for example
+  from Microsoft's JMRP) are stored and listed on *Server → Logs → Sending*. They are tied to the
+  sending account by the original Message-ID, never by the recipient. A complaint counts as a
+  strike only when it passed DMARC and comes from the domain the mail went to (or from
+  Microsoft's JMRP), at most once per reporter domain and window. The mail itself is still
+  delivered normally.
+- Login block exemptions accept host names (for example a dynamic DNS name). The server resolves
+  them every 5 minutes (A and AAAA, at most 16 addresses each) and keeps the last addresses when a
+  lookup fails. Only public addresses are used. The Blocks page shows each name with its
+  addresses. Only the login block is affected.
+
+### Changed
+
+- Portal: the "New" tag in the menu now only appears for features that came with an update of
+  the server (not on fresh installs of that version) and disappears on all devices once you open
+  the entry.
+- When Microsoft blocks the server's address (S3150 and similar), mail is no longer bounced at
+  once. It is held and tried again every 45 minutes for up to 48 hours, and only then bounced.
+  The sender gets a delay notice on the first hold. The Microsoft page and the admin mail show the
+  address, how many recipients are held, and the steps to get delisted (sender.office.com, the
+  confirmation mail, SNDS). A block counts as over as soon as mail to Microsoft goes through
+  again.
+
 ## 0.27.0
 
 ### Fixed

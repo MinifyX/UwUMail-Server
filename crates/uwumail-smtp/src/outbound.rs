@@ -5,9 +5,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use mail_auth::{DnsError, IpLookupStrategy};
-use smtp_proto::RCPT_NOTIFY_NEVER;
+use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_NEVER};
 use tokio::sync::watch;
-use uwumail_store::{QueueRecipient, QueuedMessage};
+use uwumail_store::{QueueRecipient, QueuedMessage, StrikeKind};
 
 use crate::client::{Client, Reply};
 use crate::config::{RelayConfig, RelaySecurity};
@@ -17,12 +17,24 @@ use crate::health::{DeliveryEvent, ProbeStage, Route};
 use crate::microsoft;
 use crate::mta_sts;
 use crate::tlsrpt::{self, PolicyType, ReportPolicy, ResultType};
-use crate::{Context, Smtp, now};
+use crate::{Context, Smtp, abuse, now};
 
 /// How long claimed recipients stay reserved for one delivery attempt.
 const LEASE_SECS: i64 = 3600;
 const MAX_HOSTS: usize = 5;
 const MAX_ADDRESSES_PER_HOST: usize = 3;
+/// How long mail Microsoft blocks is kept to try again (docs/microsoft.md): getting an address off
+/// its list takes a day or two, and the mail can go then instead of coming back.
+const HOLD_SECS: i64 = 48 * 3600;
+/// How often held mail is tried again: often enough that it goes soon after a delisting, rarely
+/// enough not to look like a server that does not listen.
+const HOLD_RETRY_SECS: i64 = 45 * 60;
+
+/// Whether a refusal says the address does not exist (RFC 3463 5.1.0, 5.1.1, 5.1.10). Full
+/// mailboxes, oversized mail and the other side's policy say nothing about the list it came from.
+fn is_unknown_user(error: &str) -> bool {
+    matches!(dsn::status_code(error).as_str(), "5.1.0" | "5.1.1" | "5.1.10")
+}
 
 /// Runs until `shutdown` changes.
 pub async fn run_queue(smtp: Smtp, mut shutdown: watch::Receiver<bool>) {
@@ -71,6 +83,8 @@ enum Outcome {
     Delivered(String),
     Deferred(String),
     Failed(String),
+    /// Microsoft refused the mail because it blocks our address; kept to try again for a while.
+    Held(String),
 }
 
 impl Outcome {
@@ -92,11 +106,16 @@ fn retry_delay(attempt: i64) -> i64 {
 }
 
 async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, recipients: Vec<QueueRecipient>) {
+    // Whether the other side had its say, so its refusals can count against the sending account.
+    let mut remote = false;
     let outcomes = match ctx.store.blob(&message.blob).await {
         Ok(raw) => {
             let outcomes = match held_inside(ctx, &message, &recipients).await {
                 Some(outcomes) => outcomes,
-                None => deliver_domain(ctx, &domain, &message, &raw, &recipients).await,
+                None => {
+                    remote = true;
+                    deliver_domain(ctx, &domain, &message, &raw, &recipients).await
+                }
             };
             Some((raw, outcomes))
         }
@@ -113,6 +132,9 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
     };
 
     let mut failed = Vec::new();
+    let mut delayed = Vec::new();
+    let mut unknown_user = false;
+    let hold_until = message.expires_at.min(message.created_at + HOLD_SECS);
     for (recipient, outcome) in recipients.iter().zip(outcomes) {
         let result = match &outcome {
             Outcome::Delivered(reply) => {
@@ -135,13 +157,27 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
                     ctx.store.mark_recipient_deferred(recipient.id, error, next).await
                 }
             }
-            Outcome::Failed(error) => {
+            Outcome::Held(error) if now() + HOLD_RETRY_SECS <= hold_until => {
+                tracing::warn!(message = message.id, to = %recipient.address, %error, "Microsoft blocks us, holding mail");
+                ctx.stats.record(DeliveryEvent::Deferred);
+                ctx.store.stats().count(uwumail_store::Stat::Deferred);
+                // The sender hears once that the mail is late, not with every try (RFC 3461: no
+                // NOTIFY at all leaves it to us, a NOTIFY without DELAY means not at all).
+                let first = !recipient.last_error.as_deref().is_some_and(microsoft::holds);
+                let wants = recipient.notify_flags == 0 || recipient.notify_flags & RCPT_NOTIFY_DELAY != 0;
+                if first && wants {
+                    delayed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
+                }
+                ctx.store.mark_recipient_deferred(recipient.id, error, now() + HOLD_RETRY_SECS).await
+            }
+            Outcome::Failed(error) | Outcome::Held(error) => {
                 tracing::warn!(message = message.id, to = %recipient.address, %error, "delivery failed");
                 ctx.stats.record(DeliveryEvent::Failed);
                 ctx.store.stats().count(uwumail_store::Stat::Bounced);
                 if recipient.notify_flags & RCPT_NOTIFY_NEVER == 0 {
                     failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
                 }
+                unknown_user |= is_unknown_user(error);
                 ctx.store.mark_recipient_failed(recipient.id, error).await
             }
         };
@@ -159,6 +195,20 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
 
     if !failed.is_empty() && !raw.is_empty() {
         dsn::bounce(ctx, &message.return_path, &raw, &failed).await;
+    }
+    if !delayed.is_empty() && !raw.is_empty() {
+        dsn::delayed(ctx, &message.return_path, &raw, &delayed).await;
+    }
+    // Many addresses that do not exist is what sending to a bought list looks like. Only mail the
+    // person sent counts (their own return path, not a forward or a vacation reply, which go out
+    // with somebody else's or none), and one strike per message and domain, however many
+    // recipients it had there (security review 0.28.0 OA-02).
+    if remote
+        && unknown_user
+        && let Some(account_id) = message.account_id
+        && ctx.store.address_owner(&message.return_path).await.ok().flatten() == Some(account_id)
+    {
+        abuse::strike(ctx, account_id, StrikeKind::Bounce).await;
     }
     if let Err(err) = ctx.store.complete_queue_message(message.id).await {
         tracing::error!(%err, message = message.id, "cleaning up the queue failed");
@@ -285,6 +335,16 @@ impl<'a> MicrosoftWatch<'a> {
             .await;
         if let Err(err) = recorded {
             tracing::error!(%err, "recording a refusal by Microsoft failed");
+        }
+    }
+
+    /// What `reply` means for the recipients it answers for. A block by Microsoft is held to try
+    /// again, but only from a Microsoft host: anyone could answer with Microsoft's words.
+    fn outcome(&self, reply: &Reply) -> Outcome {
+        if self.microsoft && reply.is_permanent() && microsoft::holds(&reply.to_string()) {
+            Outcome::Held(reply.to_string())
+        } else {
+            Outcome::from_reply(reply)
         }
     }
 
@@ -705,7 +765,7 @@ async fn session(
     if !reply.is_positive() {
         microsoft_watch.refused(&reply).await;
         client.quit().await;
-        return Ok(everyone(Outcome::from_reply(&reply)));
+        return Ok(everyone(microsoft_watch.outcome(&reply)));
     }
 
     let mut outcomes: Vec<Option<Outcome>> = vec![None; recipients.len()];
@@ -716,7 +776,7 @@ async fn session(
             accepted.push(index);
         } else {
             microsoft_watch.refused(&reply).await;
-            outcomes[index] = Some(Outcome::from_reply(&reply));
+            outcomes[index] = Some(microsoft_watch.outcome(&reply));
         }
     }
 
@@ -724,7 +784,7 @@ async fn session(
         let reply = client.send("DATA\r\n").await.map_err(io)?;
         let final_outcome = if reply.code != 354 {
             microsoft_watch.refused(&reply).await;
-            Outcome::from_reply(&reply)
+            microsoft_watch.outcome(&reply)
         } else {
             let data_timeout = Duration::from_secs(settings.command_timeout_secs.max(60) * 2);
             match client.data(raw, data_timeout).await {
@@ -734,7 +794,7 @@ async fn session(
                     } else {
                         microsoft_watch.refused(&reply).await;
                     }
-                    Outcome::from_reply(&reply)
+                    microsoft_watch.outcome(&reply)
                 }
                 // The message may or may not have arrived; retrying later is the safe choice.
                 Err(err) => {
@@ -756,6 +816,15 @@ async fn session(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_unknown_addresses_count_as_bounce_strikes() {
+        assert!(is_unknown_user("550 5.1.1 <ami@example.com>: Recipient address rejected"));
+        assert!(is_unknown_user("550 5.1.10 RESOLVER.ADR.RecipientNotFound"));
+        for other in ["552 5.2.2 Mailbox full", "552 5.3.4 Message too big", "550 5.7.1 Policy", "550 No such user"] {
+            assert!(!is_unknown_user(other), "{other}");
+        }
+    }
 
     #[test]
     fn retry_delays_grow_and_cap() {

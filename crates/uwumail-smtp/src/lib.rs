@@ -5,6 +5,7 @@
 //! - [`run_queue`] delivers queued mail to other servers, retries, and bounces.
 //! - [`dkim`] creates and uses the signing keys of hosted domains.
 
+mod abuse;
 pub mod autoconfig;
 pub mod avatars;
 pub mod bimi;
@@ -43,6 +44,7 @@ mod reports;
 mod rules;
 pub mod scheduling;
 mod scheduling_texts;
+mod send_limit;
 mod sender_lists;
 pub mod servercheck;
 pub mod sieve;
@@ -64,6 +66,7 @@ use mail_auth::MessageAuthenticator;
 use tokio::sync::Semaphore;
 use uwumail_store::Store;
 
+pub use abuse::run_exempt_resolver;
 pub use checks::related_domains;
 pub use client::{Connector, connect_directly};
 pub use client_slots::{ClientSlot, ClientSlots};
@@ -155,6 +158,8 @@ pub(crate) struct Context {
     brand: RwLock<Arc<BrandConfig>>,
     /// Signing in at Microsoft and Google for fetched mailboxes, and their tokens.
     pub(crate) provider_oauth: provider_oauth::ProviderOAuth,
+    /// Recipients each account sent to lately, for `smtp.max_recipients_per_hour` and `_per_day`.
+    pub(crate) send_limits: send_limit::SendLimits,
 }
 
 /// The settings in effect right now. Take a snapshot per connection or delivery.
@@ -253,6 +258,7 @@ impl Smtp {
                 connector: RwLock::new(None),
                 brand: RwLock::new(Arc::new(BrandConfig::default())),
                 provider_oauth: provider_oauth::ProviderOAuth::default(),
+                send_limits: send_limit::SendLimits::default(),
             }),
         })
     }

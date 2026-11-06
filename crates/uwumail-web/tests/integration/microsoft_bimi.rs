@@ -173,7 +173,15 @@ async fn microsoft_refusals_show_up_are_mailed_once_and_can_be_closed() {
     let person = login(&server.app, "leni@example.org").await;
     let (status, body) = api(&server.app, "GET", "/api/admin/microsoft/issues", &admin).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "issues": [], "delistUrl": "https://sender.office.com" }));
+    assert_eq!(
+        body,
+        json!({
+            "issues": [],
+            "delistUrl": "https://sender.office.com",
+            "sndsUrl": "https://sendersupport.olc.protection.outlook.com/snds/",
+            "heldCount": 0
+        })
+    );
     for path in ["/api/admin/microsoft/issues", "/api/admin/microsoft/checklist"] {
         assert_eq!(api(&server.app, "GET", path, &person).await.0, StatusCode::FORBIDDEN);
     }

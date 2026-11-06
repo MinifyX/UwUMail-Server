@@ -35,6 +35,7 @@ export function MicrosoftBanner() {
         <p className="text-[13px] text-muted">
           {t("microsoft.banner.codes", { codes: codes.join(", ") })}
           {ips.length > 0 && ` · ${t("microsoft.banner.ips", { ips: ips.join(", ") })}`}
+          {(query.data?.heldCount ?? 0) > 0 && ` · ${t("microsoft.banner.held", { count: query.data?.heldCount })}`}
         </p>
         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
           {delist && (

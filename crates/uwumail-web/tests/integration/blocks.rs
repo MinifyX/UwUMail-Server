@@ -234,3 +234,73 @@ async fn refused_mail_can_be_read_after_the_queue_forgot_it() {
     let (_, body, _) = call(&app, ADMIN, "GET", "/api/admin/queue/refused", None, session).await;
     assert_eq!(body["refused"], json!([]));
 }
+
+#[tokio::test]
+async fn exempt_host_names_are_kept_as_entered_and_shown_with_their_addresses() {
+    let (app, store, _dir) = setup().await;
+    let (cookie, csrf) = admin(&app).await;
+    let session = Some((cookie.as_str(), csrf.as_str()));
+    let exempt = Some(json!({ "networks": ["203.0.113.0/24", "Office.Example.NET."] }));
+    let (status, body, _) = call(&app, ADMIN, "PUT", "/api/admin/blocks/exempt", exempt, session).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["exempt"], json!(["203.0.113.0/24", "office.example.net"]));
+    assert_eq!(body["exemptHosts"], json!([{ "host": "office.example.net", "addresses": [] }]));
+
+    // What the resolver found lets that address in, and nothing else of its network.
+    let office: IpAddr = "192.0.2.44".parse().unwrap();
+    let (status, ..) = try_login(&app, "192.0.2.44", "root", "toor").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(store.auth_limiter().is_blocked(office));
+    store.set_exempt_host_addresses("office.example.net", vec![office]).await.unwrap();
+    assert!(!store.auth_limiter().is_blocked(office));
+    try_login(&app, "192.0.2.45", "root", "toor").await;
+    assert!(store.auth_limiter().is_blocked("192.0.2.45".parse().unwrap()));
+
+    let (_, view, _) = call(&app, ADMIN, "GET", "/api/admin/blocks", None, session).await;
+    assert_eq!(view["exempt"], json!(["203.0.113.0/24", "office.example.net"]), "editing round-trips: {view}");
+    assert_eq!(view["exemptHosts"], json!([{ "host": "office.example.net", "addresses": ["192.0.2.44"] }]));
+}
+
+#[tokio::test]
+async fn admins_see_and_lift_send_suspensions_and_read_complaints() {
+    use uwumail_store::{NewAbuseReport, StrikeKind, StrikeLimits};
+    let (app, store, _dir) = setup().await;
+    let (cookie, csrf) = admin(&app).await;
+    let session = Some((cookie.as_str(), csrf.as_str()));
+    let account = store.account("minifyx@example.org").await.unwrap().unwrap().id;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let limits = StrikeLimits { strikes: 1, bounces: 0, window_secs: 3600, suspend_secs: 3600 };
+    store.record_send_strike(account, StrikeKind::Spam, now, limits).await.unwrap().expect("suspended");
+    let report = NewAbuseReport {
+        received_at: now,
+        domain: "example.org".into(),
+        reporter: "staff@fbl.example.net".into(),
+        authenticated: true,
+        feedback_type: "abuse".into(),
+        original_message_id: Some("<x1@example.org>".into()),
+        account_id: Some(account),
+        may_count: true,
+        ..Default::default()
+    };
+    store.add_abuse_report(report).await.unwrap();
+
+    let (status, ..) = call(&app, ADMIN, "GET", "/api/admin/sending/suspensions", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, view, _) = call(&app, ADMIN, "GET", "/api/admin/sending/suspensions", None, session).await;
+    assert_eq!(status, StatusCode::OK);
+    let suspension = &view["suspensions"][0];
+    assert_eq!(
+        (suspension["login"].as_str(), suspension["reason"].as_str()),
+        (Some("minifyx@example.org"), Some("spam"))
+    );
+    let (_, reports, _) = call(&app, ADMIN, "GET", "/api/admin/abuse-reports", None, session).await;
+    let listed = &reports["reports"][0];
+    assert_eq!((listed["login"].as_str(), listed["counted"].as_bool()), (Some("minifyx@example.org"), Some(true)));
+    assert_eq!(listed["originalMessageId"].as_str(), Some("x1@example.org"), "{reports}");
+
+    let path = format!("/api/admin/sending/suspensions/{account}/lift");
+    let (status, view, _) = call(&app, ADMIN, "POST", &path, None, session).await;
+    assert_eq!((status, &view["suspensions"]), (StatusCode::OK, &json!([])));
+    let (status, ..) = call(&app, ADMIN, "POST", &path, None, session).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "nothing left to lift");
+}

@@ -339,13 +339,15 @@
       "certRenewalFailing": "证书续期一直失败（第一次失败：{{since}}）。",
       "backupFailed": "上一次备份失败了。",
       "backupOld": "最近一次成功的备份是在{{time}}。",
-      "updateAvailable": "版本 {{version}} 已发布。"
+      "updateAvailable": "版本 {{version}} 已发布。",
+      "sendingSuspended": "{{login}} 暂时不能向其他服务器发送邮件。"
     },
     "hints": {
       "certRenewalFailing": "服务器日志里写着原因。常见情况是某个域名（还）没有指向这台服务器，或者外部无法访问 80 端口。",
       "backupFailed": "备份页面上显示了错误。请检查备份目标，并手动运行一次。",
       "backupOld": "备份通常每晚运行。在备份页面上可以看到是否已暂停或出了什么问题。",
-      "updateAvailable": "更新页面会显示新内容，点一下即可更新。"
+      "updateAvailable": "更新页面会显示新内容，点一下即可更新。",
+      "sendingSuspended": "拒收、退信或投诉过多。日志中的“发送”标签页会显示原因，并可解除暂停。"
     }
   },
   "stats": {
@@ -1598,7 +1600,8 @@
       "live": "实时日志",
       "changes": "更改记录",
       "blocks": "封禁",
-      "shipping": "日志转发"
+      "shipping": "日志转发",
+      "sending": "发送"
     },
     "shippingIntro": "服务器还会将日志发送到哪里，让它们在重启后依然保留，并与其他服务器的日志集中存放。",
     "blocksIntro": "哪些地址目前不能登录、原因是什么，以及哪些地址永不封禁。",
@@ -1630,16 +1633,44 @@
       "unblocked": "已解除对 {{ip}} 的封禁。",
       "exempt": {
         "title": "永不封禁",
-        "intro": "此列表中的地址和网络永远不会被封禁，无论从那里尝试什么，例如你的办公室或监控系统。",
-        "label": "地址或网络",
-        "hint": "IP 地址或网络，例如 192.0.2.10、198.51.100.0/24 或 2001:db8::/32。",
+        "intro": "此列表中的地址、网络和主机名在登录时永远不会被封锁，无论从那里尝试什么，例如您的办公室或监控。",
+        "label": "地址、网络或主机名",
+        "hint": "IP 地址、网络或主机名（例如动态 DNS 名称），如 192.0.2.10、198.51.100.0/24、2001:db8::/32 或 office.example.net。主机名每 5 分钟重新解析一次，仅对登录封锁有效。",
         "add": "添加",
         "remove": "移除 {{network}}",
         "empty": "还没有例外。",
-        "invalid": "这既不是 IP 地址，也不是网络。",
+        "invalid": "这既不是 IP 地址、网络，也不是主机名。",
         "duplicate": "已在列表中。",
-        "saved": "例外已保存。"
+        "saved": "例外已保存。",
+        "notResolved": "尚未解析"
       }
+    },
+    "sendingIntro": "暂时不能向其他服务器发送邮件的账户，以及针对此服务器邮件的投诉。",
+    "sending": {
+      "suspensionsTitle": "已暂停发送",
+      "suspensionsIntro": "警告过多（被当作垃圾邮件拒收、触及限制、硬退信、投诉）的账户会暂时不能向其他服务器发送邮件，之后会自动解除。",
+      "empty": {
+        "title": "没有账户被暂停",
+        "body": "账户一旦被禁止发送，就会显示在这里。"
+      },
+      "reasons": {
+        "spam": "邮件被当作垃圾邮件拒收",
+        "rateLimit": "多次触及发送限制",
+        "bounce": "硬退信过多",
+        "complaint": "收件人投诉"
+      },
+      "remaining": "还剩 {{duration}}",
+      "lift": "立即解除",
+      "lifted": "{{login}} 可以再次发送。"
+    },
+    "complaints": {
+      "title": "投诉",
+      "intro": "发到您任一域名 abuse@ 的反馈报告（ARF、JMRP）会保存在这里，并仍会正常投递。",
+      "empty": "暂无投诉。",
+      "counted": "计为警告",
+      "notCounted": "未计入",
+      "noSubject": "（无主题）",
+      "unknownAccount": "未知账户"
     }
   },
   "settings": {
@@ -1702,12 +1733,21 @@
       "intro": "对收到的邮件以及位于此服务器之前的邮件服务器的限制。",
       "maxSize": "最大邮件大小（MB）",
       "maxRecipients": "每封邮件的收件人数",
+      "maxPerHour": "每个账户每小时的收件人数",
+      "maxPerHourHint": "所有发送方式（SMTP、网页邮箱、应用）合并计算。超出后会要求稍后重试。0 = 不限制。",
+      "maxPerDay": "每个账户每天的收件人数",
       "verifySenders": "检查发件人（SPF、DKIM、DMARC）",
       "verifySendersHint": "仅在测试时关闭。",
       "enforceDmarc": "遵守 DMARC“reject”",
       "enforceDmarcHint": "违反发件人策略的邮件会被拒收，而不是放入垃圾邮件。",
       "trustedRelays": "上游邮件服务器",
-      "trustedRelaysHint": "IP 地址或网段，每行一个。UwUMail 会代为执行它们的发件人检查。"
+      "trustedRelaysHint": "IP 地址或网段，每行一个。UwUMail 会代为执行它们的发件人检查。",
+      "suspendStrikes": "暂停发送前的警告次数",
+      "suspendStrikesHint": "垃圾邮件拒收、触及限制和投诉都会计入。达到后，账户会暂时不能向其他服务器发送邮件。0 = 从不。",
+      "suspendBounces": "暂停发送前的硬退信数",
+      "suspendBouncesHint": "在下方时间窗口内。0 = 从不。",
+      "strikeWindow": "警告的时间窗口（分钟）",
+      "suspendMinutes": "暂停发送时长（分钟）"
     },
     "spamLog": {
       "enabled": "保留历史记录",
@@ -4510,7 +4550,15 @@
       "codes": "代码：{{codes}}",
       "ips": "IP：{{ips}}",
       "delist": "申请移出",
-      "open": "详情与帮助"
+      "open": "详情与帮助",
+      "held_other": "{{count}} 个收件人被暂扣"
+    },
+    "blocked": {
+      "title": "Microsoft 正在封锁 {{ip}}",
+      "held_other": "{{count}} 个收件人被暂扣，每 45 分钟重试一次，最长 48 小时。",
+      "step1": "输入该 IP 地址并申请解除封锁：",
+      "step2": "打开 Microsoft 确认邮件中的链接。",
+      "step3": "可选：注册"
     }
   },
   "bimi": {
