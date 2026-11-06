@@ -14,7 +14,7 @@ import { useAdminPrefs, useSaveAdminPref, type AlertMails } from "./adminPrefs";
 import { LEVELS, useFindingText } from "./HealthCard";
 
 /** Codes the health overview does not know; they have their own texts. */
-const OWN_CODES = ["certRenewalFailing", "backupFailed", "backupOld", "updateAvailable"];
+const OWN_CODES = ["certRenewalFailing", "backupFailed", "backupOld", "updateAvailable", "sendingSuspended"];
 
 const LEVEL_OF: Record<AlertLevel, HealthLevel> = { info: "ok", warning: "warning", problem: "problem" };
 

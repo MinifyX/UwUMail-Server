@@ -242,14 +242,36 @@ function ResolvedRow({ issue }: { issue: MicrosoftIssue }) {
   );
 }
 
+/** While Microsoft blocks the address: how many recipients wait, and the steps to get delisted. */
+function BlockedGuide({ ip, heldCount, delistUrl, sndsUrl }: { ip: string; heldCount: number; delistUrl: string; sndsUrl: string }) {
+  const { t } = useT();
+  return (
+    <div className="flex flex-col gap-2 rounded-card border border-hairline bg-surface p-5">
+      <h3 className="text-[15px] font-bold">{t("microsoft.blocked.title", { ip: ip || t("microsoft.issues.theIp") })}</h3>
+      {heldCount > 0 && <p className="text-[13px] text-muted">{t("microsoft.blocked.held", { count: heldCount })}</p>}
+      <Steps>
+        <li>
+          {t("microsoft.blocked.step1")}{" "}
+          <ExternalAnchor href={delistUrl}>{delistUrl.replace(/^https:\/\//, "")}</ExternalAnchor>
+        </li>
+        <li>{t("microsoft.blocked.step2")}</li>
+        <li>
+          {t("microsoft.blocked.step3")} <ExternalAnchor href={sndsUrl}>SNDS</ExternalAnchor>
+        </li>
+      </Steps>
+    </div>
+  );
+}
+
 function Issues() {
   const { t } = useT();
   const query = useMicrosoftIssues();
   if (query.isPending) return <Loading />;
   if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
-  const { issues, delistUrl } = query.data;
+  const { issues, delistUrl, sndsUrl, heldCount } = query.data;
   const open = issues.filter(isOpen);
   const resolved = issues.filter((issue) => !isOpen(issue));
+  const blocked = open.find((issue) => issue.kind === "blocked");
   return (
     <section className="flex flex-col gap-3" aria-labelledby="microsoft-issues">
       <h2 id="microsoft-issues" className="text-[15px] font-bold">
@@ -271,6 +293,14 @@ function Issues() {
             <IssueCard key={issue.id} issue={issue} delistUrl={delistUrl || DELIST_URL} />
           ))}
         </ul>
+      )}
+      {blocked && (
+        <BlockedGuide
+          ip={issueIp(blocked)}
+          heldCount={heldCount}
+          delistUrl={delistUrl || DELIST_URL}
+          sndsUrl={sndsUrl || SNDS_URL}
+        />
       )}
       {resolved.length > 0 && (
         <details className="rounded-card border border-hairline bg-surface px-5 py-3">

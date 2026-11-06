@@ -740,8 +740,48 @@ export interface Block {
 
 export interface BlocksView {
   blocks: Block[];
-  /** Addresses and networks that are never blocked. */
+  /** Addresses, networks and host names (as entered) that are never blocked. */
   exempt: string[];
+  /** The host names among them and the addresses they last resolved to; empty before the first lookup. */
+  exemptHosts: { host: string; addresses: string[] }[];
+}
+
+export type SuspensionReason = "spam" | "rateLimit" | "bounce" | "complaint";
+
+/** An account that may not send to other servers for a while. */
+export interface SendingSuspension {
+  accountId: number;
+  login: string;
+  /** Unix time. */
+  since: number;
+  /** Unix time. */
+  until: number;
+  reason: SuspensionReason;
+}
+
+export interface SendingSuspensions {
+  suspensions: SendingSuspension[];
+  /** The server's clock, unix time. */
+  now: number;
+}
+
+/** A feedback report (ARF) sent to abuse@ of a local domain. */
+export interface AbuseReport {
+  id: number;
+  receivedAt: number;
+  domain: string;
+  reporter: string;
+  authenticated: boolean;
+  feedbackType: string;
+  userAgent?: string | null;
+  sourceIp?: string | null;
+  originalMessageId?: string | null;
+  originalFrom?: string | null;
+  originalSubject?: string | null;
+  /** The local account the reported mail came from, when known. */
+  login?: string | null;
+  /** Whether it counted as a strike against that account. */
+  counted: boolean;
 }
 
 /** How sending the log to Grafana Loki goes. */
@@ -2211,6 +2251,9 @@ export interface MicrosoftIssues {
   /** Open ones first, newest first; then those resolved in the last 30 days. */
   issues: MicrosoftIssue[];
   delistUrl: string;
+  sndsUrl: string;
+  /** Recipients at Microsoft that are held back and retried. */
+  heldCount: number;
 }
 
 export interface MicrosoftAddress {

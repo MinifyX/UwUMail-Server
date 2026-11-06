@@ -353,13 +353,15 @@
       "certRenewalFailing": "Het certificaat vernieuwen blijft mislukken (eerste keer {{since}}).",
       "backupFailed": "De laatste back-up is mislukt.",
       "backupOld": "De laatste geslaagde back-up was {{time}}.",
-      "updateAvailable": "Versie {{version}} is uit."
+      "updateAvailable": "Versie {{version}} is uit.",
+      "sendingSuspended": "{{login}} mag een tijd niet naar andere servers verzenden."
     },
     "hints": {
       "certRenewalFailing": "In het serverlog staat waarom. Vaak wijst een naam (nog) niet naar deze server, of is poort 80 van buitenaf niet bereikbaar.",
       "backupFailed": "Op de back-uppagina staat de fout. Controleer het doel en start er één met de hand.",
       "backupOld": "Back-ups lopen normaal elke nacht. Op de back-uppagina zie je of ze gepauzeerd zijn of wat er misging.",
-      "updateAvailable": "Op de updatepagina staat wat er nieuw is, en één klik werkt bij."
+      "updateAvailable": "Op de updatepagina staat wat er nieuw is, en één klik werkt bij.",
+      "sendingSuspended": "Te veel weigeringen, bounces of klachten. Het tabblad Verzenden onder Logboeken toont de reden en heft de pauze op."
     }
   },
   "stats": {
@@ -1637,7 +1639,8 @@
       "live": "Live log",
       "changes": "Wijzigingen",
       "blocks": "Blokkades",
-      "shipping": "Logs doorsturen"
+      "shipping": "Logs doorsturen",
+      "sending": "Verzenden"
     },
     "shippingIntro": "Waar de server zijn logs ook naartoe stuurt, zodat ze een herstart overleven en samen met andere servers op één plek staan.",
     "blocksIntro": "Welke adressen nu niet mogen inloggen, waarom, en welke nooit worden geblokkeerd.",
@@ -1669,16 +1672,44 @@
       "unblocked": "{{ip}} is gedeblokkeerd.",
       "exempt": {
         "title": "Nooit blokkeren",
-        "intro": "Adressen en netwerken in deze lijst worden nooit geblokkeerd, wat er ook vandaan wordt geprobeerd – je kantoor of je monitoring bijvoorbeeld.",
-        "label": "Adres of netwerk",
-        "hint": "Een IP-adres of een netwerk, bv. 192.0.2.10, 198.51.100.0/24 of 2001:db8::/32.",
+        "intro": "Adressen, netwerken en hostnamen in deze lijst worden bij het inloggen nooit geblokkeerd, wat er ook vandaar wordt geprobeerd – bijvoorbeeld je kantoor of je monitoring.",
+        "label": "Adres, netwerk of hostnaam",
+        "hint": "Een IP-adres, een netwerk of een hostnaam (bijv. een dynamische DNS-naam), zoals 192.0.2.10, 198.51.100.0/24, 2001:db8::/32 of office.example.net. Hostnamen worden elke 5 minuten opnieuw opgezocht. Ze gelden alleen voor de inlogblokkade.",
         "add": "Toevoegen",
         "remove": "{{network}} verwijderen",
         "empty": "Nog geen uitzonderingen.",
-        "invalid": "Dat is geen IP-adres en ook geen netwerk.",
+        "invalid": "Dat is geen IP-adres, netwerk of hostnaam.",
         "duplicate": "Dat staat al in de lijst.",
-        "saved": "Uitzonderingen opgeslagen."
+        "saved": "Uitzonderingen opgeslagen.",
+        "notResolved": "nog niet opgezocht"
       }
+    },
+    "sendingIntro": "Accounts die een tijd niet naar andere servers mogen verzenden, en klachten over mail van deze server.",
+    "sending": {
+      "suspensionsTitle": "Verzenden geblokkeerd",
+      "suspensionsIntro": "Een account met te veel waarschuwingen (als spam geweigerd, limiet bereikt, harde bounces, klachten) mag een tijd niet naar andere servers verzenden. Dat stopt vanzelf.",
+      "empty": {
+        "title": "Geen account is geblokkeerd",
+        "body": "Zodra een account niet meer mag verzenden, verschijnt het hier."
+      },
+      "reasons": {
+        "spam": "Mail als spam geweigerd",
+        "rateLimit": "Verzendlimiet te vaak bereikt",
+        "bounce": "Te veel harde bounces",
+        "complaint": "Klachten van ontvangers"
+      },
+      "remaining": "nog {{duration}}",
+      "lift": "Nu opheffen",
+      "lifted": "{{login}} mag weer verzenden."
+    },
+    "complaints": {
+      "title": "Klachten",
+      "intro": "Feedbackrapporten (ARF, JMRP) naar abuse@ van een van je domeinen worden hier bewaard en toch gewoon bezorgd.",
+      "empty": "Nog geen klachten.",
+      "counted": "Geteld als waarschuwing",
+      "notCounted": "Niet geteld",
+      "noSubject": "(geen onderwerp)",
+      "unknownAccount": "onbekend account"
     }
   },
   "settings": {
@@ -1749,7 +1780,13 @@
       "enforceDmarc": "DMARC \"reject\" respecteren",
       "enforceDmarcHint": "Mail die het beleid van de afzender schendt, wordt geweigerd in plaats van naar spam te gaan.",
       "trustedRelays": "Voorliggende mailservers",
-      "trustedRelaysHint": "IP-adressen of netwerken, één per regel. UwUMail doet hun afzendercontroles."
+      "trustedRelaysHint": "IP-adressen of netwerken, één per regel. UwUMail doet hun afzendercontroles.",
+      "suspendStrikes": "Waarschuwingen tot verzendpauze",
+      "suspendStrikesHint": "Tellen mee: spamweigeringen, bereikte limieten en klachten. Daarna mag het account een tijd niet naar andere servers verzenden. 0 = nooit.",
+      "suspendBounces": "Harde bounces tot verzendpauze",
+      "suspendBouncesHint": "Binnen het tijdvenster hieronder. 0 = nooit.",
+      "strikeWindow": "Tijdvenster voor waarschuwingen (minuten)",
+      "suspendMinutes": "Duur van de verzendpauze (minuten)"
     },
     "spamLog": {
       "enabled": "Geschiedenis bijhouden",
@@ -4610,7 +4647,17 @@
       "codes": "Code: {{codes}}",
       "ips": "IP: {{ips}}",
       "delist": "Verwijdering aanvragen",
-      "open": "Details en hulp"
+      "open": "Details en hulp",
+      "held_one": "{{count}} ontvanger vastgehouden",
+      "held_other": "{{count}} ontvangers vastgehouden"
+    },
+    "blocked": {
+      "title": "Microsoft blokkeert {{ip}}",
+      "held_one": "{{count}} ontvanger wordt vastgehouden en elke 45 minuten tot 48 uur opnieuw geprobeerd.",
+      "held_other": "{{count}} ontvangers worden vastgehouden en elke 45 minuten tot 48 uur opnieuw geprobeerd.",
+      "step1": "Voer het IP-adres in en vraag de opheffing van de blokkade aan op",
+      "step2": "Open de link in de bevestigingsmail van Microsoft.",
+      "step3": "Optioneel: meld je aan bij"
     }
   },
   "bimi": {

@@ -30,6 +30,11 @@ function isV6(address: string): boolean {
   return halves.length === 2 ? groups.length < 8 : groups.length === 8;
 }
 
+/** Whether a value looks like a host name (e.g. a dynamic DNS name); the server resolves it. */
+export function looksLikeHost(value: string): boolean {
+  return /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/i.test(value.trim());
+}
+
 /**
  * Whether a value could be an IP address or a network in CIDR form, v4 or v6. Only a sanity check
  * before saving: the server parses the value and has the last word.
