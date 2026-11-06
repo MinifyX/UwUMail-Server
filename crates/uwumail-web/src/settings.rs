@@ -69,6 +69,11 @@ pub const SETTINGS: &[SettingSpec] = &[
     // Recipients per account and hour or day, from every door; 0 is no limit (security audit 2026-11 M-02).
     spec("smtp.max_recipients_per_hour", SettingKind::Integer { min: 0, max: 1_000_000 }),
     spec("smtp.max_recipients_per_day", SettingKind::Integer { min: 0, max: 10_000_000 }),
+    // Strikes that suspend sending to other servers (docs/outbound-abuse.md); 0 is never.
+    spec("smtp.suspend_after_strikes", SettingKind::Integer { min: 0, max: 1000 }),
+    spec("smtp.suspend_after_hard_bounces", SettingKind::Integer { min: 0, max: 100_000 }),
+    spec("smtp.strike_window_minutes", SettingKind::Integer { min: 1, max: 10_080 }),
+    spec("smtp.suspend_minutes", SettingKind::Integer { min: 1, max: 10_080 }),
     spec("smtp.verify_senders", SettingKind::Bool),
     spec("smtp.enforce_dmarc_reject", SettingKind::Bool),
     spec("smtp.require_tls_for_auth", SettingKind::Bool),

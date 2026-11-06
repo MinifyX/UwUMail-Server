@@ -161,6 +161,18 @@ impl Web {
             }
             Err(err) => tracing::debug!(%err, "reading how certificate orders went failed"),
         }
+        // One alert per account, so a second suspension is news and lifting one resolves only it.
+        match self.store().send_suspensions(now).await {
+            Ok(suspensions) => found.extend(suspensions.into_iter().map(|suspension| AlertObservation {
+                kind: "sending".into(),
+                key: format!("sendingSuspended:{}", suspension.login),
+                code: "sendingSuspended".into(),
+                level: AlertLevel::Warning,
+                params: json!({ "login": suspension.login, "until": suspension.until, "reason": suspension.reason }),
+                link: Some("/admin/logs/sending".into()),
+            })),
+            Err(err) => tracing::debug!(%err, "reading send suspensions failed"),
+        }
         let build = crate::updates::build();
         let info = self.update_info().await;
         if build.release
@@ -276,6 +288,7 @@ impl Web {
             let text = alert_texts::finding(language, &alert.code)
                 .replace("{domain}", param("domain"))
                 .replace("{ip}", param("ip"))
+                .replace("{login}", param("login"))
                 .replace("{code}", param("code"));
             let label = alert_texts::label(language, notice.event, alert.level);
             let separator = if matches!(language, Language::Ja | Language::Zh) { "：" } else { ": " };
@@ -285,6 +298,7 @@ impl Web {
                 // Where Microsoft takes requests to lift a block.
                 if alert.code == "microsoftBlocked" {
                     items.push_str(&format!("  {}\n", uwumail_smtp::microsoft::DELIST_URL));
+                    items.push_str(alert_texts::microsoft_steps(language));
                 }
             }
         }

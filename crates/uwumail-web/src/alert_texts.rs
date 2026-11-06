@@ -70,6 +70,9 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "Ein Admin meldet sich ohne zweiten Faktor an.",
             "backupFailed" => "Das letzte Backup ist fehlgeschlagen.",
             "backupOld" => "Das letzte erfolgreiche Backup ist älter als zwei Tage.",
+            "sendingSuspended" => {
+                "Für das Konto {login} ist der Versand an andere Server wegen Missbrauchsverdacht vorübergehend gesperrt."
+            }
             "microsoftBlocked" => "Microsoft (Outlook, Hotmail) lehnt Mail von {ip} ab ({code}).",
             "microsoftThrottled" => "Microsoft (Outlook, Hotmail) drosselt Mail von {ip} ({code}).",
             "microsoftAuth" => {
@@ -108,6 +111,9 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "An admin logs in without a second factor.",
             "backupFailed" => "The last backup failed.",
             "backupOld" => "The last successful backup is more than two days old.",
+            "sendingSuspended" => {
+                "Sending to other servers is suspended for a while for the account {login}, as it looks like abuse."
+            }
             "microsoftBlocked" => "Microsoft (Outlook, Hotmail) refuses mail from {ip} ({code}).",
             "microsoftThrottled" => "Microsoft (Outlook, Hotmail) throttles mail from {ip} ({code}).",
             "microsoftAuth" => {
@@ -146,6 +152,9 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "Un admin se connecte sans second facteur.",
             "backupFailed" => "La dernière sauvegarde a échoué.",
             "backupOld" => "La dernière sauvegarde réussie date de plus de deux jours.",
+            "sendingSuspended" => {
+                "L'envoi vers d'autres serveurs est suspendu pour un temps pour le compte {login}, car il ressemble à un abus."
+            }
             "microsoftBlocked" => "Microsoft (Outlook, Hotmail) refuse le courrier de {ip} ({code}).",
             "microsoftThrottled" => "Microsoft (Outlook, Hotmail) limite le courrier de {ip} ({code}).",
             "microsoftAuth" => {
@@ -184,6 +193,9 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "Een admin logt in zonder tweede factor.",
             "backupFailed" => "De laatste back-up is mislukt.",
             "backupOld" => "De laatste geslaagde back-up is meer dan twee dagen oud.",
+            "sendingSuspended" => {
+                "Verzenden naar andere servers is tijdelijk geblokkeerd voor het account {login}, omdat het op misbruik lijkt."
+            }
             "microsoftBlocked" => "Microsoft (Outlook, Hotmail) weigert mail van {ip} ({code}).",
             "microsoftThrottled" => "Microsoft (Outlook, Hotmail) remt mail van {ip} af ({code}).",
             "microsoftAuth" => "Microsoft weigert mail van {domain}, omdat SPF, DKIM of DMARC niet voldoen ({code}).",
@@ -220,6 +232,9 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "2段階認証なしでログインしている管理者がいます。",
             "backupFailed" => "前回のバックアップが失敗しました。",
             "backupOld" => "最後に成功したバックアップから2日以上経っています。",
+            "sendingSuspended" => {
+                "アカウント {login} は不正利用の疑いがあるため、他のサーバーへの送信が一時的に停止されています。"
+            }
             "microsoftBlocked" => "Microsoft（Outlook、Hotmail）が {ip} からのメールを拒否しています（{code}）。",
             "microsoftThrottled" => "Microsoft（Outlook、Hotmail）が {ip} からのメールを制限しています（{code}）。",
             "microsoftAuth" => {
@@ -258,6 +273,7 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "有管理员登录时没有使用第二重验证。",
             "backupFailed" => "上一次备份失败了。",
             "backupOld" => "最近一次成功的备份已超过两天。",
+            "sendingSuspended" => "账户 {login} 疑似被滥用，已暂时停止向其他服务器发送邮件。",
             "microsoftBlocked" => "Microsoft（Outlook、Hotmail）拒收来自 {ip} 的邮件（{code}）。",
             "microsoftThrottled" => "Microsoft（Outlook、Hotmail）正在限制来自 {ip} 的邮件（{code}）。",
             "microsoftAuth" => "由于 SPF、DKIM 或 DMARC 不符合要求，Microsoft 拒收来自 {domain} 的邮件（{code}）。",
@@ -272,6 +288,30 @@ pub(crate) enum Mood {
     Problem,
     Warning,
     Fine,
+}
+
+/// How to get a Microsoft block lifted, below its alert line; mail waits in the queue meanwhile.
+pub(crate) fn microsoft_steps(language: Language) -> &'static str {
+    match language {
+        Language::De => {
+            "  1. Im Formular oben die IP eintragen und die Aufhebung beantragen.\n  2. Den Link in Microsofts Bestätigungsmail öffnen.\n  3. Optional bei SNDS anmelden: https://sendersupport.olc.protection.outlook.com/snds/\n  Zurückgehaltene Mail wird bis zu 48 Stunden lang erneut versucht.\n"
+        }
+        Language::En => {
+            "  1. Enter the IP in the form above and ask for the block to be lifted.\n  2. Open the link in Microsoft's confirmation mail.\n  3. Optionally sign up for SNDS: https://sendersupport.olc.protection.outlook.com/snds/\n  Held mail is tried again for up to 48 hours.\n"
+        }
+        Language::Fr => {
+            "  1. Saisissez l'IP dans le formulaire ci-dessus et demandez la levée du blocage.\n  2. Ouvrez le lien du mail de confirmation de Microsoft.\n  3. Facultatif : inscrivez-vous à SNDS : https://sendersupport.olc.protection.outlook.com/snds/\n  Le courrier retenu est réessayé pendant 48 heures au plus.\n"
+        }
+        Language::Nl => {
+            "  1. Vul het IP in het formulier hierboven in en vraag om opheffing van de blokkade.\n  2. Open de link in de bevestigingsmail van Microsoft.\n  3. Meld je eventueel aan bij SNDS: https://sendersupport.olc.protection.outlook.com/snds/\n  Tegengehouden mail wordt tot 48 uur opnieuw geprobeerd.\n"
+        }
+        Language::Ja => {
+            "  1. 上のフォームに IP を入力し、ブロック解除を申請します。\n  2. Microsoft からの確認メールのリンクを開きます。\n  3. 必要に応じて SNDS に登録します: https://sendersupport.olc.protection.outlook.com/snds/\n  保留中のメールは最大 48 時間再試行されます。\n"
+        }
+        Language::Zh => {
+            "  1. 在上方表单中填写 IP 并申请解除封锁。\n  2. 打开 Microsoft 确认邮件中的链接。\n  3. 可选：注册 SNDS：https://sendersupport.olc.protection.outlook.com/snds/\n  被保留的邮件会在最多 48 小时内重试。\n"
+        }
+    }
 }
 
 pub(crate) fn subject(language: Language, tone: InternalTone, mood: Mood, hostname: &str) -> String {
@@ -459,6 +499,7 @@ mod tests {
         "adminsWithoutSecondFactor",
         "backupFailed",
         "backupOld",
+        "sendingSuspended",
     ];
 
     #[test]
@@ -473,6 +514,7 @@ mod tests {
                     ["tlsFailures", "dmarcOwnFailures", "dnsDomain", "microsoftAuth"].contains(code)
                 );
                 assert_eq!(text.contains("{ip}"), ["microsoftBlocked", "microsoftThrottled"].contains(code));
+                assert_eq!(text.contains("{login}"), *code == "sendingSuspended");
             }
         }
     }
