@@ -2330,6 +2330,28 @@ async fn spam_for_other_servers_is_refused_and_strikes_suspend_sending() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_outbound_scan_does_not_count_headers_the_server_adds() {
+    // Mail programs may leave Date and Message-ID to the submission server (RFC 6409 §8), which
+    // adds them after the scan; those missing must not push a plain message towards a refusal.
+    use uwumail_smtp::{Submission, SubmissionRecipient};
+    let b = start("b.test", &["nyu"], &[]).await;
+    let spam =
+        SpamConfig { blocklists: false, greylist_delay_secs: 0, reject_score: Some(1.0), ..SpamConfig::default() };
+    let a = start_with_spam("a.test", &["mini"], &[("b.test", b.mx)], SmtpConfig::default(), spam).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let submission = Submission {
+        account,
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("nyu@b.test")],
+        raw: b"From: mini@a.test\r\nTo: nyu@b.test\r\nSubject: Hallo Nyu\r\n\r\nWie geht es dir?\r\n".to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    a.smtp.submit(submission).await.expect("a plain message without Date and Message-ID goes out");
+    assert_eq!(b.wait_for_inbox("nyu@b.test", 1).await.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_complaint_about_sent_mail_is_kept_and_counts_against_its_sender() {
     // A feedback loop like Microsoft's JMRP sends an ARF report to abuse@ with the original
     // attached and the recipient blanked out; the sent Message-ID ties it to the account.

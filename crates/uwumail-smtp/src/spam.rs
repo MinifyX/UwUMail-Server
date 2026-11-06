@@ -439,6 +439,10 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
     }
 
     for hit in content_hits {
+        // Submitted mail gets its Date and Message-ID from this server after the scan (RFC 6409 §8).
+        if outbound && matches!(hit.rule, "MISSING_DATE" | "MISSING_MESSAGE_ID") {
+            continue;
+        }
         score.add(hit.rule, hit.points, hit.detail);
     }
     for (domain, listing) in domains {
