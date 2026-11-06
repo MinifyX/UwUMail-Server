@@ -328,6 +328,12 @@ async fn an_account_sends_to_only_so_many_people_an_hour() {
         .await
         .expect_err("over the limit in one message");
     assert!(refused.is_permanent() && refused.to_string().contains("more recipients"), "{refused}");
+    // A message held for later (JMAP undo window) is refused for that at once, not when it is due.
+    let many = Submission {
+        recipients: ["ami@a.test", "bea@a.test", "cem@a.test", "dan@a.test"].map(SubmissionRecipient::new).to_vec(),
+        ..submit()
+    };
+    assert!(matches!(a.smtp.check_submission(&many).await, Err(SubmitError::OverLimit("hour"))));
     // Someone else's budget is their own.
     a.mailer("ami@a.test", PASSWORD, false)
         .send(mail("ami@a.test", &["mini@a.test", "bea@a.test"], "x"))

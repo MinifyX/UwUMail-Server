@@ -158,6 +158,18 @@ fn strip_bcc(raw: &[u8]) -> Vec<u8> {
     out
 }
 
+/// More recipients in one message than a whole hour or day allows (0 = no limit). Answered as
+/// permanent: a temporary refusal would have the client retry it forever.
+fn over_limit(recipients: usize, per_hour: usize, per_day: usize) -> Result<(), SubmitError> {
+    if per_hour > 0 && recipients > per_hour {
+        return Err(SubmitError::OverLimit("hour"));
+    }
+    if per_day > 0 && recipients > per_day {
+        return Err(SubmitError::OverLimit("day"));
+    }
+    Ok(())
+}
+
 /// Whether a submitted message may leave this server, once known (see [`Smtp::may_leave`]).
 struct MayLeave(Option<bool>);
 
@@ -233,7 +245,10 @@ impl Smtp {
     /// (JMAP's undo window and send later), so a message that could never go is refused at once and
     /// not only when its time comes. `submit` checks everything again.
     pub async fn check_submission(&self, submission: &Submission) -> Result<(), SubmitError> {
-        self.checked_account(submission).await.map(|_| ())
+        self.checked_account(submission).await?;
+        // A message over a whole window's limit could never go: refused now, not when it is due.
+        let smtp = &self.inner.live().smtp;
+        over_limit(submission.recipients.len(), smtp.max_recipients_per_hour, smtp.max_recipients_per_day)
     }
 
     /// [`Smtp::check_submission`], returning whether this message may only go to addresses on this
@@ -325,13 +340,7 @@ impl Smtp {
     fn take_send_budget(&self, account: &Account, recipients: usize) -> Result<(), SubmitError> {
         let live = self.inner.live();
         let (per_hour, per_day) = (live.smtp.max_recipients_per_hour, live.smtp.max_recipients_per_day);
-        // Answered as permanent: a temporary refusal would have the client retry it forever.
-        if per_hour > 0 && recipients > per_hour {
-            return Err(SubmitError::OverLimit("hour"));
-        }
-        if per_day > 0 && recipients > per_day {
-            return Err(SubmitError::OverLimit("day"));
-        }
+        over_limit(recipients, per_hour, per_day)?;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         self.inner.send_limits.take(account.id, recipients, per_hour, per_day, now).map_err(|window| {
             tracing::warn!(
