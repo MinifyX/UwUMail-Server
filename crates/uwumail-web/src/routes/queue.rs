@@ -59,6 +59,17 @@ pub async fn refused(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Va
     Ok(Json(json!({ "refused": web.store().refused_deliveries(REFUSED_SHOWN).await? })))
 }
 
+/// Marks a refused mail as fixed and sends it, and the others refused for the same reason, again.
+pub async fn resend_refused(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Value>> {
+    let outcome = web.store().resend_refused(id).await?;
+    audit(&web, &session, "queue.refused.resend", &format!("#{id}"), json!(outcome)).await;
+    Ok(Json(json!(outcome)))
+}
+
 pub async fn clear_refused(State(web): State<Web>, Admin(session): Admin) -> ApiResult<StatusCode> {
     let cleared = web.store().clear_refused_deliveries().await?;
     audit(&web, &session, "queue.refused.clear", "", json!({ "cleared": cleared })).await;

@@ -54,6 +54,18 @@ a relay or from a server that only talks like Microsoft: anyone could write
 `S3150` to keep mail waiting. Bounces caused by Microsoft blocking the server
 never count against the sending account (see [outbound abuse](outbound-abuse.md)).
 
+Mail that bounced anyway (the block lasted longer, or it was refused before the
+hold existed) is listed under *Server → Queue → Refused mail*. Once the address
+is delisted, **Fixed** on one entry puts it back into the queue, together with
+every other refusal with the same cause: for Microsoft the same block list code
+(`S3150` for hotmail.com, outlook.com and live.com alike), otherwise the same
+reply code to the same domain. Only mail sent by the server's own accounts keeps
+a copy for this (up to 10 MB), for the 30 days the list keeps it; bounces, forwards and
+entries from before 0.28.1 are only taken off the list, and the toast says to
+send them again from *Sent*. Mail of a sender who is suspended, in the trash or
+deleted stays on the list (`skipped`). `POST /api/admin/queue/refused/{id}/resend` returns
+`{ resent, dropped, skipped }`.
+
 ## Who hears about it
 
 - **The overview** shows each open issue in the *Sending* area (`microsoftBlocked`

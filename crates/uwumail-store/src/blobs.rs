@@ -167,6 +167,8 @@ impl Store {
         let hashes: Vec<String> = self
             .write(move |tx| {
                 tx.execute("DELETE FROM uploads WHERE created_at <= ?1", [now() - crate::UPLOAD_LIFETIME_SECS])?;
+                // Old refused mails let go of the copies they kept for sending again.
+                tx.execute("DELETE FROM refused_deliveries WHERE at < ?1", [now() - crate::queue::REFUSED_KEPT_SECS])?;
                 let mut stmt = tx.prepare("DELETE FROM blobs WHERE refs <= 0 AND created_at <= ?1 RETURNING hash")?;
                 let rows = stmt.query_map([cutoff], |row| row.get(0))?.collect::<Result<Vec<String>, _>>()?;
                 Ok(rows)

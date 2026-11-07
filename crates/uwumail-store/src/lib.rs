@@ -210,7 +210,9 @@ pub use push::{
     push_credential_for_app_password, push_credential_for_oauth_grant, push_credential_for_session,
 };
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
-pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage, RefusedDelivery};
+pub use queue::{
+    NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage, RefusedDelivery, RefusedResend,
+};
 pub use reports::{
     CachedStsPolicy, DMARC_REPORT_ADDRESS, DmarcRow, DmarcSource, DmarcSummary, MtaStsMode, MtaStsSettings,
     NewDmarcReport, NewTlsReport, REPORT_RETENTION_SECS, ReportEntry, ReportKind, ReportStored, ReportSummary,

@@ -827,6 +827,8 @@ impl Store {
                 let members = crate::shared_mailboxes::sending_members(tx, id)?;
                 // Threads are only referenced by emails of the same account.
                 tx.execute("DELETE FROM emails WHERE account_id = ?1", [id])?;
+                // Their refused mail and the copies kept to send it again go with them.
+                tx.execute("DELETE FROM refused_deliveries WHERE account_id = ?1", [id])?;
                 tx.execute("DELETE FROM accounts WHERE id = ?1", [id])?;
                 // What the spam filter learned for this person has no foreign key to cascade.
                 for table in ["bayes_tokens", "bayes_totals", "bayes_learned", "bayes_queue"] {

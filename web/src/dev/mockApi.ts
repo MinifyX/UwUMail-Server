@@ -904,6 +904,7 @@ let refused: RefusedMail[] = [
     to: "opa@example.org",
     error: "550 5.7.1 rejected by policy",
     gaveUp: false,
+    canResend: true,
   },
   {
     id: 2,
@@ -912,6 +913,7 @@ let refused: RefusedMail[] = [
     to: "newsletter@example.net",
     error: "550 5.1.1 <newsletter@example.net>: Recipient address rejected: User unknown in virtual mailbox table",
     gaveUp: false,
+    canResend: false,
   },
   {
     id: 1,
@@ -920,6 +922,7 @@ let refused: RefusedMail[] = [
     to: "oma@mail.example.com",
     error: "451 4.7.1 Greylisted, please try again later",
     gaveUp: true,
+    canResend: true,
   },
 ];
 
@@ -3154,6 +3157,17 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["GET", /^\/api\/admin\/queue$/, () => [200, queue]],
   ["GET", /^\/api\/admin\/queue\/refused$/, () => [200, { refused }]],
+  [
+    "POST",
+    /^\/api\/admin\/queue\/refused\/(\d+)\/resend$/,
+    (_body, match) => {
+      // shortcut: the mock fixes only the one entry, the server also every other with the same cause.
+      const mail = refused.find((entry) => entry.id === Number(match[0]));
+      if (!mail) return problem(404, "notFound");
+      refused = refused.filter((entry) => entry !== mail);
+      return [200, { resent: mail.canResend ? 1 : 0, dropped: mail.canResend ? 0 : 1, skipped: 0 }];
+    },
+  ],
   [
     "DELETE",
     /^\/api\/admin\/queue\/refused$/,

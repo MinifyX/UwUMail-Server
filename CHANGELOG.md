@@ -3,6 +3,19 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.28.1
+
+### Added
+
+- Refused mail can be marked **Fixed** (*Server → Queue → Refused mail*): it goes back into the
+  queue, together with every other refusal with the same cause (for Microsoft the same block
+  list code such as S3150 across hotmail.com, outlook.com and live.com, otherwise the same reply
+  code to the same domain). For this, a refused mail from one of the server's own accounts keeps
+  its message (up to 10 MB) for the 30 days it stays on the list; bounces and forwards keep
+  nothing. Mail of a sender who is suspended, in the trash or deleted stays on the list. Entries
+  from before this version have no copy and are only taken off the list. See
+  `docs/microsoft.md`.
+
 ## 0.28.0
 
 ### Added

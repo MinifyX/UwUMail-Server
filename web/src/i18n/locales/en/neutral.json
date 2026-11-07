@@ -1549,7 +1549,7 @@
     },
     "refused": {
       "title": "Refused mail",
-      "hint": "Mail of the last 30 days that another server did not accept.",
+      "hint": "Mail of the last 30 days that another server did not accept. “Fixed” sends a mail again, along with all refused for the same reason.",
       "from": "from",
       "to": "to",
       "gaveUp": "given up after retries",
@@ -1559,6 +1559,14 @@
       },
       "clear": "Empty list",
       "clearConfirm": "Empty the list of refused mail? This changes nothing about the mails themselves.",
+      "resend": "Fixed",
+      "resendLabel": "Fixed: send again, along with all refused for the same reason",
+      "resent_one": "{{count}} mail is being sent again",
+      "resent_other": "{{count}} mails are being sent again",
+      "dropped_one": "1 entry without a kept copy removed, please send it again from Sent",
+      "dropped_other": "{{count}} entries without a kept copy removed, please send them again from Sent",
+      "skipped_one": "{{count}} mail stays on the list: its sender is suspended or deleted",
+      "skipped_other": "{{count}} mails stay on the list: their senders are suspended or deleted",
       "cleared": "List emptied"
     }
   },

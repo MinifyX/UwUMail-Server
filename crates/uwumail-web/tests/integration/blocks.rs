@@ -228,6 +228,17 @@ async fn refused_mail_can_be_read_after_the_queue_forgot_it() {
         (Some("minifyx@example.org"), Some("mini@example.com"), Some("451 4.3.0 try again later"))
     );
     assert!(given_up["at"].as_i64().unwrap() > 0 && given_up["id"].is_i64());
+    assert_eq!(given_up["canResend"], false, "a mail no account sent keeps no copy");
+
+    let path = format!("/api/admin/queue/refused/{}/resend", given_up["id"]);
+    let (status, ..) = call(&app, ADMIN, "POST", &path, None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, body, _) = call(&app, ADMIN, "POST", &path, None, session).await;
+    assert_eq!((status, body), (StatusCode::OK, json!({ "resent": 0, "dropped": 1, "skipped": 0 })));
+    let (status, ..) = call(&app, ADMIN, "POST", &path, None, session).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, body, _) = call(&app, ADMIN, "GET", "/api/admin/queue/refused", None, session).await;
+    assert_eq!(body["refused"].as_array().unwrap().len(), 1, "the other cause stays: {body}");
 
     let (status, ..) = call(&app, ADMIN, "DELETE", "/api/admin/queue/refused", None, session).await;
     assert_eq!(status, StatusCode::NO_CONTENT);

@@ -90,6 +90,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0081_verification.sql"),
     include_str!("migrations/0082_internal_only.sql"),
     include_str!("migrations/0083_outbound_abuse.sql"),
+    include_str!("migrations/0084_refused_resend.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

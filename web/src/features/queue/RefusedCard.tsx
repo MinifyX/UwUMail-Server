@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { CircleCheck, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
-import { api, type RefusedMail } from "@/lib/api";
+import { api, type RefusedMail, type RefusedResend } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { toast } from "@/state/toasts";
@@ -15,7 +15,16 @@ import { toast } from "@/state/toasts";
 export const REFUSED_ID = "refused";
 const REFUSED_KEY = ["admin", "queue", "refused"];
 
-export function RefusedList({ refused }: { refused: RefusedMail[] }) {
+export function RefusedList({
+  refused,
+  onResend,
+  resending,
+}: {
+  refused: RefusedMail[];
+  /** Marks a mail as fixed; missing where the list is only shown. */
+  onResend?: (id: number) => void;
+  resending?: number;
+}) {
   const { t, i18n } = useT();
   return (
     <ul className="flex flex-col">
@@ -29,6 +38,20 @@ export function RefusedList({ refused }: { refused: RefusedMail[] }) {
               <span className="inline-flex h-6 items-center rounded-full bg-warning-tint px-2.5 text-[12px] font-semibold text-warning">
                 {t("queue.refused.gaveUp")}
               </span>
+            )}
+            {onResend && (
+              <Button
+                size="sm"
+                icon={CircleCheck}
+                className="ml-auto"
+                aria-label={t("queue.refused.resendLabel")}
+                title={t("queue.refused.resendLabel")}
+                busy={resending === mail.id}
+                disabled={resending !== undefined}
+                onClick={() => onResend(mail.id)}
+              >
+                {t("queue.refused.resend")}
+              </Button>
             )}
           </div>
           <p className="text-sm break-words">
@@ -58,6 +81,17 @@ export function RefusedCard() {
     onSuccess: () => {
       toast(t("queue.refused.cleared"), "success");
       void queryClient.invalidateQueries({ queryKey: REFUSED_KEY });
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+
+  const resend = useMutation({
+    mutationFn: (id: number) => api<RefusedResend>(`/api/admin/queue/refused/${id}/resend`, { method: "POST" }),
+    onSuccess: ({ resent, dropped, skipped }) => {
+      if (resent > 0) toast(t("queue.refused.resent", { count: resent }), "success");
+      if (dropped > 0) toast(t("queue.refused.dropped", { count: dropped }), "info");
+      if (skipped > 0) toast(t("queue.refused.skipped", { count: skipped }), "error");
+      void queryClient.invalidateQueries({ queryKey: ["admin", "queue"] });
     },
     onError: (error) => toast(errorText(error), "error"),
   });
@@ -101,7 +135,11 @@ export function RefusedCard() {
       ) : list.length === 0 ? (
         <EmptyState compact scene="inbox" title={t("queue.refused.empty.title")} body={t("queue.refused.empty.body")} />
       ) : (
-        <RefusedList refused={list} />
+        <RefusedList
+          refused={list}
+          onResend={(id) => resend.mutate(id)}
+          resending={resend.isPending ? resend.variables : undefined}
+        />
       )}
     </Card>
   );

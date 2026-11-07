@@ -1549,7 +1549,7 @@
     },
     "refused": {
       "title": "Abgelehnte Mails",
-      "hint": "Mails der letzten 30 Tage, die ein anderer Server nicht angenommen hat.",
+      "hint": "Mails der letzten 30 Tage, die ein anderer Server nicht angenommen hat. „Behoben“ sendet eine Mail und alle mit demselben Fehler erneut.",
       "from": "von",
       "to": "an",
       "gaveUp": "nach Wiederholungen aufgegeben",
@@ -1559,6 +1559,14 @@
       },
       "clear": "Liste leeren",
       "clearConfirm": "Die Liste der abgelehnten Mails leeren? An den Mails selbst ändert das nichts.",
+      "resend": "Behoben",
+      "resendLabel": "Behoben: erneut senden, auch alle mit demselben Fehler",
+      "resent_one": "{{count}} Mail wird erneut gesendet",
+      "resent_other": "{{count}} Mails werden erneut gesendet",
+      "dropped_one": "1 Eintrag ohne gespeicherte Kopie entfernt, bitte aus „Gesendet“ neu schicken",
+      "dropped_other": "{{count}} Einträge ohne gespeicherte Kopie entfernt, bitte aus „Gesendet“ neu schicken",
+      "skipped_one": "{{count}} Mail bleibt liegen: Absender gesperrt oder gelöscht",
+      "skipped_other": "{{count}} Mails bleiben liegen: Absender gesperrt oder gelöscht",
       "cleared": "Liste geleert"
     }
   },

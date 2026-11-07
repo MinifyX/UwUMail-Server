@@ -763,6 +763,7 @@ impl Web {
             .route("/api/admin/audit", get(routes::admin::audit))
             .route("/api/admin/queue", get(routes::queue::list))
             .route("/api/admin/queue/refused", get(routes::queue::refused).delete(routes::queue::clear_refused))
+            .route("/api/admin/queue/refused/{id}/resend", post(routes::queue::resend_refused))
             .route("/api/admin/queue/{id}/retry", post(routes::queue::retry))
             .route("/api/admin/queue/{id}", delete(routes::queue::drop))
             .route("/api/admin/logs", get(routes::queue::logs))
