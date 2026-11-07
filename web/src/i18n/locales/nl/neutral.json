@@ -1549,7 +1549,7 @@
     },
     "refused": {
       "title": "Geweigerde mails",
-      "hint": "Mails van de afgelopen 30 dagen die een andere server niet heeft aangenomen.",
+      "hint": "Mails van de afgelopen 30 dagen die een andere server niet heeft aangenomen. „Opgelost” verstuurt een mail opnieuw, samen met alle mails met dezelfde fout.",
       "from": "van",
       "to": "aan",
       "gaveUp": "opgegeven na herhaalde pogingen",
@@ -1559,6 +1559,14 @@
       },
       "clear": "Lijst leegmaken",
       "clearConfirm": "De lijst met geweigerde mails leegmaken? Aan de mails zelf verandert dat niets.",
+      "resend": "Opgelost",
+      "resendLabel": "Opgelost: opnieuw versturen, samen met alle mails met dezelfde fout",
+      "resent_one": "{{count}} mail wordt opnieuw verstuurd",
+      "resent_other": "{{count}} mails worden opnieuw verstuurd",
+      "dropped_one": "1 item zonder bewaarde kopie verwijderd, verstuur het opnieuw vanuit Verzonden",
+      "dropped_other": "{{count}} items zonder bewaarde kopie verwijderd, verstuur ze opnieuw vanuit Verzonden",
+      "skipped_one": "{{count}} mail blijft in de lijst: afzender geblokkeerd of verwijderd",
+      "skipped_other": "{{count}} mails blijven in de lijst: afzenders geblokkeerd of verwijderd",
       "cleared": "Lijst leeggemaakt"
     }
   },

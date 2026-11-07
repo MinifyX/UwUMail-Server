@@ -1580,7 +1580,7 @@
     },
     "refused": {
       "title": "Messages refusés",
-      "hint": "Les messages des 30 derniers jours qu'un autre serveur n'a pas acceptés.",
+      "hint": "Les messages des 30 derniers jours qu'un autre serveur n'a pas acceptés. « Résolu » renvoie un mail ainsi que tous ceux refusés pour la même raison.",
       "from": "de",
       "to": "à",
       "gaveUp": "abandonné après plusieurs essais",
@@ -1590,6 +1590,14 @@
       },
       "clear": "Vider la liste",
       "clearConfirm": "Vider la liste des messages refusés ? Cela ne change rien aux messages eux-mêmes.",
+      "resend": "Résolu",
+      "resendLabel": "Résolu : renvoyer, ainsi que tous ceux refusés pour la même raison",
+      "resent_one": "{{count}} mail est renvoyé",
+      "resent_other": "{{count}} mails sont renvoyés",
+      "dropped_one": "1 entrée sans copie conservée retirée, renvoie-le depuis Envoyés",
+      "dropped_other": "{{count}} entrées sans copie conservée retirées, renvoie-les depuis Envoyés",
+      "skipped_one": "{{count}} mail reste dans la liste : expéditeur suspendu ou supprimé",
+      "skipped_other": "{{count}} mails restent dans la liste : expéditeurs suspendus ou supprimés",
       "cleared": "Liste vidée"
     }
   },

@@ -703,6 +703,16 @@ export interface RefusedMail {
   error: string;
   /** True when it was retried until the message expired, false when it was refused outright. */
   gaveUp: boolean;
+  /** A copy was kept, so marking it fixed sends it again; false for bounces and older entries. */
+  canResend: boolean;
+}
+
+/** What marking a refused mail fixed did: mails queued again, and entries without a copy removed. */
+export interface RefusedResend {
+  resent: number;
+  dropped: number;
+  /** Left on the list because the sender is suspended, in the trash or deleted. */
+  skipped: number;
 }
 
 /** What a log line is about; the live log can be narrowed to some of them. */

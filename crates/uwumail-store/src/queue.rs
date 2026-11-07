@@ -11,6 +11,8 @@ use crate::{Result, Store, StoreError, now};
 pub const REFUSED_KEPT_SECS: i64 = 30 * 24 * 3600;
 /// And how many of them at most, so a flood of bounces cannot fill the disk.
 const REFUSED_KEPT_ROWS: i64 = 5000;
+/// Larger mail is not kept for sending again, so refusals cannot fill the disk with copies.
+const REFUSED_COPY_MAX_BYTES: i64 = 10 * 1024 * 1024;
 /// What the other server said can be a page of text; the list keeps the start of it.
 const REFUSED_ERROR_MAX_CHARS: usize = 500;
 
@@ -26,6 +28,40 @@ pub struct RefusedDelivery {
     pub error: String,
     /// Put off until the message expired, rather than refused outright.
     pub gave_up: bool,
+    /// The message was kept, so it can be sent again; older entries and bounces have none.
+    pub can_resend: bool,
+}
+
+/// What marking a refused mail as fixed did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefusedResend {
+    /// Mails put back into the queue.
+    pub resent: usize,
+    /// Entries taken off the list without a copy to send.
+    pub dropped: usize,
+    /// Left on the list: the sender's account is gone, in the trash, or may not send right now.
+    pub skipped: usize,
+}
+
+/// Which refusals share a cause, so fixing one fixes them all: the reply code and the domain, or
+/// for Microsoft the named block list, which is the same for hotmail.com, outlook.com and live.com.
+fn refusal_cause(recipient: &str, error: &str) -> String {
+    let mut words = error.split_whitespace();
+    let code = words.next().filter(|word| word.len() == 3 && word.bytes().all(|b| b.is_ascii_digit()));
+    let enhanced = code.and(words.next()).filter(|word| word.split('.').count() == 3);
+    let code = format!("{} {}", code.unwrap_or(""), enhanced.unwrap_or(""));
+    let microsoft_list =
+        error.split('(').skip(1).filter_map(|rest| rest.split_once(')')).map(|(inside, _)| inside).find(|inside| {
+            inside.len() > 1 && inside.starts_with('S') && inside[1..].bytes().all(|b| b.is_ascii_digit())
+        });
+    let domain = recipient.rsplit_once('@').map_or(recipient, |(_, domain)| domain);
+    // Only Microsoft's own domains: anyone else could write "(S3150)" to join the group.
+    let microsoft = ["hotmail.", "outlook.", "live.", "msn."].iter().any(|prefix| domain.starts_with(prefix));
+    match microsoft_list.filter(|_| microsoft) {
+        Some(list) => format!("{code} {list}"),
+        None => format!("{code} @{domain}"),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -258,10 +294,19 @@ impl Store {
         self.write(move |tx| {
             let now = now();
             tx.execute(
-                "INSERT INTO refused_deliveries (at, sender, recipient, error, gave_up)
-                 SELECT ?1, m.return_path, r.address, ?2, ?3
+                "INSERT INTO refused_deliveries
+                     (at, sender, recipient, error, gave_up, blob_hash, account_id, env_id, notify_flags, orcpt, lifetime)
+                 SELECT ?1, m.return_path, r.address, ?2, ?3,
+                        -- Only what a person here wrote: forwards (SRS return path) and bounces keep nothing.
+                        CASE WHEN EXISTS (
+                            SELECT 1 FROM addresses a JOIN domains d ON d.id = a.domain_id
+                            JOIN accounts acc ON acc.id = a.account_id
+                            WHERE a.account_id = m.account_id AND acc.deleted_at IS NULL AND m.size <= ?5
+                              AND a.local_part || '@' || d.name = lower(m.return_path)
+                        ) THEN m.blob_hash END,
+                        m.account_id, m.env_id, r.notify_flags, r.orcpt, m.expires_at - m.created_at
                  FROM queue_recipients r JOIN queue_messages m ON m.id = r.message_id WHERE r.id = ?4",
-                params![now, error, gave_up, recipient_id],
+                params![now, error, gave_up, recipient_id, REFUSED_COPY_MAX_BYTES],
             )?;
             tx.execute("DELETE FROM refused_deliveries WHERE at < ?1", [now - REFUSED_KEPT_SECS])?;
             tx.execute(
@@ -277,7 +322,7 @@ impl Store {
     pub async fn refused_deliveries(&self, limit: usize) -> Result<Vec<RefusedDelivery>> {
         self.read(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, at, sender, recipient, error, gave_up FROM refused_deliveries
+                "SELECT id, at, sender, recipient, error, gave_up, blob_hash IS NOT NULL FROM refused_deliveries
                  WHERE at >= ?1 ORDER BY at DESC, id DESC LIMIT ?2",
             )?;
             let rows = stmt.query_map(params![now() - REFUSED_KEPT_SECS, limit as i64], |row| {
@@ -288,11 +333,88 @@ impl Store {
                     to: row.get(3)?,
                     error: row.get(4)?,
                     gave_up: row.get(5)?,
+                    can_resend: row.get(6)?,
                 })
             })?;
             Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
         })
         .await
+    }
+
+    /// Marks a refused mail as fixed: it and every other refusal with the same cause leave the list,
+    /// and those with a kept copy go back into the queue.
+    pub async fn resend_refused(&self, id: i64) -> Result<RefusedResend> {
+        let outcome = self
+            .write(move |tx| {
+                let now = now();
+                let mut stmt = tx.prepare(
+                    "SELECT r.id, r.recipient, r.error, r.blob_hash, r.sender,
+                            CASE WHEN acc.deleted_at IS NULL AND NOT EXISTS (
+                                SELECT 1 FROM send_suspensions s WHERE s.account_id = acc.id AND s.until > ?2
+                            ) THEN acc.id END,
+                            r.env_id, r.notify_flags, r.orcpt, r.lifetime
+                     FROM refused_deliveries r LEFT JOIN accounts acc ON acc.id = r.account_id WHERE r.at >= ?1",
+                )?;
+                type Row = (i64, String, String, Option<String>, String, Option<i64>, Option<String>, i64, Option<String>, i64);
+                let rows = stmt
+                    .query_map([now - REFUSED_KEPT_SECS, now], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                            row.get(7)?,
+                            row.get(8)?,
+                            row.get(9)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<Row>>>()?;
+                drop(stmt);
+                let Some(fixed) = rows.iter().find(|row| row.0 == id) else {
+                    return Err(StoreError::NotFound(format!("refused mail {id}")));
+                };
+                let cause = refusal_cause(&fixed.1, &fixed.2);
+                let mut outcome = RefusedResend { resent: 0, dropped: 0, skipped: 0 };
+                for (row_id, recipient, error, blob, sender, account_id, env_id, notify_flags, orcpt, lifetime) in &rows {
+                    if refusal_cause(recipient, error) != cause {
+                        continue;
+                    }
+                    // Mail of a sender who may not send now stays, so fixing one entry never sends theirs.
+                    if blob.is_some() && account_id.is_none() {
+                        outcome.skipped += 1;
+                        continue;
+                    }
+                    let queued = match blob {
+                        Some(blob) => tx.execute(
+                            "INSERT INTO queue_messages (blob_hash, return_path, account_id, size, env_id, created_at, expires_at)
+                             SELECT hash, ?2, ?3, size, ?4, ?5, ?6 FROM blobs WHERE hash = ?1",
+                            params![blob, sender, account_id, env_id, now, now + (*lifetime).max(3600)],
+                        )? == 1,
+                        None => false,
+                    };
+                    if queued {
+                        let domain = recipient.rsplit_once('@').map_or("", |(_, domain)| domain);
+                        tx.execute(
+                            "INSERT INTO queue_recipients (message_id, address, domain, next_attempt_at, notify_flags, orcpt, updated_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?4)",
+                            params![tx.last_insert_rowid(), recipient, domain, now, notify_flags, orcpt],
+                        )?;
+                        outcome.resent += 1;
+                    } else {
+                        outcome.dropped += 1;
+                    }
+                    tx.execute("DELETE FROM refused_deliveries WHERE id = ?1", [row_id])?;
+                }
+                Ok(outcome)
+            })
+            .await?;
+        if outcome.resent > 0 {
+            self.inner.queue_wakeup.notify_one();
+        }
+        Ok(outcome)
     }
 
     /// Empties the list of refused mails. Returns how many there were.
@@ -436,6 +558,91 @@ mod tests {
         assert_eq!(store.clear_refused_deliveries().await.unwrap(), 1);
         assert!(store.refused_deliveries(10).await.unwrap().is_empty());
         assert_eq!(store.collect_garbage(0).await.unwrap(), 1);
+    }
+
+    #[test]
+    fn refusals_share_a_cause_by_code_and_domain_or_microsoft_list() {
+        let s3150 = "550 5.7.1 Unfortunately, messages from [192.0.2.6] weren't sent. part of their network is on our block list (S3150). [AGT=PFA]";
+        assert_eq!(refusal_cause("a@hotmail.com", s3150), refusal_cause("b@outlook.com", s3150));
+        assert_ne!(refusal_cause("a@example.com", "550 5.7.1 no"), refusal_cause("a@example.net", "550 5.7.1 no"));
+        assert_ne!(refusal_cause("a@example.com", s3150), refusal_cause("b@hotmail.com", s3150), "only Microsoft's");
+        assert_ne!(refusal_cause("a@example.com", "550 5.7.1 no"), refusal_cause("b@example.com", "550 5.1.1 no"));
+        assert_eq!(refusal_cause("a@example.com", "connection refused"), refusal_cause("b@example.com", "timed out"));
+    }
+
+    #[tokio::test]
+    async fn a_fixed_refusal_sends_again_what_shares_its_cause() {
+        let (store, _dir) = store().await;
+        store.create_domain("uwu.test").await.unwrap();
+        let account = crate::NewAccount {
+            address: "mini@uwu.test".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let account = store.create_account(account).await.unwrap().id;
+        let s3150 = "550 5.7.1 part of their network is on our block list (S3150).";
+        let mine = vec![recipient("a@hotmail.com"), recipient("b@outlook.com"), recipient("c@example.net")];
+        let id = store.enqueue("mini@uwu.test", mine, b"Subject: hi\r\n\r\nhi\r\n", Some(account), None, 7200).await;
+        let id = id.unwrap();
+        let bounce = store.enqueue("", vec![recipient("d@live.com")], b"bounce", None, None, 600).await.unwrap();
+        // A forward is queued for the forwarding account, but with someone else's mail.
+        let forward =
+            store.enqueue("SRS0=x=y@uwu.test", vec![recipient("e@live.com")], b"fwd", Some(account), None, 600);
+        let forward = forward.await.unwrap();
+        let claimed = store.claim_due_deliveries(10, 600).await.unwrap();
+        let ids: Vec<i64> = claimed.iter().flat_map(|entry| entry.recipients.iter().map(|r| r.id)).collect();
+        for (n, recipient) in ids.iter().enumerate() {
+            store
+                .mark_recipient_failed(*recipient, if n == 2 { "550 5.1.1 no such user" } else { s3150 })
+                .await
+                .unwrap();
+        }
+        for message in [id, bounce, forward] {
+            assert!(store.complete_queue_message(message).await.unwrap());
+        }
+        // The copy outlives the queue, kept by the refusals that still point at it.
+        assert_eq!(store.collect_garbage(0).await.unwrap(), 2, "the bounce's and the forward's files go");
+        let refused = store.refused_deliveries(10).await.unwrap();
+        assert_eq!(refused.iter().filter(|mail| mail.can_resend).count(), 3, "{refused:?}");
+
+        let hotmail = refused.iter().find(|mail| mail.to == "a@hotmail.com").unwrap().id;
+        // While the sender may not send, their mail stays on the list.
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "INSERT INTO send_suspensions (account_id, since, until, reason) VALUES (?1, 0, ?2, 'spam')",
+                    params![account, now() + 600],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let outcome = store.resend_refused(hotmail).await.unwrap();
+        assert_eq!(
+            outcome,
+            RefusedResend { resent: 0, dropped: 2, skipped: 2 },
+            "the bounce and the forward have no copy"
+        );
+        store.lift_send_suspension(account, now()).await.unwrap();
+        let outcome = store.resend_refused(hotmail).await.unwrap();
+        assert_eq!(outcome, RefusedResend { resent: 2, dropped: 0, skipped: 0 }, "outlook.com too");
+        let left = store.refused_deliveries(10).await.unwrap();
+        assert_eq!(left.iter().map(|mail| mail.to.as_str()).collect::<Vec<_>>(), ["c@example.net"]);
+        let queued = store.claim_due_deliveries(10, 600).await.unwrap();
+        let mut again: Vec<_> = queued.iter().map(|entry| entry.recipients[0].address.as_str()).collect();
+        again.sort();
+        assert_eq!(again, ["a@hotmail.com", "b@outlook.com"]);
+        assert!(
+            queued.iter().all(|entry| entry.message.account_id == Some(account) && entry.message.expires_at > now())
+        );
+        assert_eq!(store.blob(&queued[0].message.blob).await.unwrap(), b"Subject: hi\r\n\r\nhi\r\n");
+        assert!(matches!(store.resend_refused(hotmail).await, Err(StoreError::NotFound(_))));
+        // Deleting the person takes their refused mail and its copies along.
+        store.delete_account("mini@uwu.test").await.unwrap();
+        assert!(store.refused_deliveries(10).await.unwrap().is_empty());
     }
 
     #[tokio::test]
