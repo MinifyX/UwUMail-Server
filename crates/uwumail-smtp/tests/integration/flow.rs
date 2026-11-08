@@ -2238,6 +2238,34 @@ async fn queued_mail_stays_here_once_its_account_is_internal_only() {
     assert_eq!(inbox.iter().map(|email| email.subject.as_str()).collect::<Vec<_>>(), ["System"]);
 }
 
+/// A recipient that is given up on once the message expires gets the sender a bounce, unless it
+/// asked for none (NOTIFY=NEVER).
+#[tokio::test(flavor = "multi_thread")]
+async fn giving_up_with_notify_never_sends_no_bounce() {
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini"], &[("c.test", unreachable)]).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap();
+    for (to, notify_flags) in [("never@c.test", smtp_proto::RCPT_NOTIFY_NEVER), ("asked@c.test", 0)] {
+        let to = vec![uwumail_store::NewQueueRecipient { address: to.into(), notify_flags, orcpt: None }];
+        let raw = "From: mini@a.test\r\nSubject: Bald weg\r\n\r\nHallo\r\n";
+        // Gone before the next try would be due: the first deferral gives up.
+        store.enqueue("mini@a.test", to, raw.as_bytes(), Some(mini.id), None, 1).await.unwrap();
+    }
+    a.wait_for_inbox("mini@a.test", 1).await;
+    let started = Instant::now();
+    while !store.queue_entries().await.unwrap().is_empty() {
+        assert!(started.elapsed() < Duration::from_secs(20), "queue did not drain");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let inbox = a.inbox("mini@a.test").await;
+    assert_eq!(inbox.len(), 1, "one bounce, for the recipient that asked");
+    let bounce = a.raw(&inbox[0]).await;
+    assert!(bounce.contains("asked@c.test") && !bounce.contains("never@c.test"), "{bounce}");
+    let refused = store.refused_deliveries(10).await.unwrap();
+    assert!(refused.len() == 2 && refused.iter().all(|mail| mail.gave_up), "{refused:?}");
+}
+
 /// The switch on a shared mailbox holds for its members when they send as it, and a forwarding
 /// address passes an internal-only sender's mail on only to people here (docs/jmap-sending.md).
 #[tokio::test(flavor = "multi_thread")]

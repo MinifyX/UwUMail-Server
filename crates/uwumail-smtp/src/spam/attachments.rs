@@ -155,13 +155,14 @@ fn program_in_zip(bytes: &[u8]) -> Option<String> {
     }
     // Opening the archive reads its whole directory into memory, so the entries are counted
     // first: every one starts with this signature, and an archive can hold no more of them than
-    // that (security audit 2026-11 N-09).
+    // that (security audit 2026-11 N-09). So many entries are suspect in themselves: they could
+    // hide a program from this check.
     if memchr::memmem::find_iter(bytes, CENTRAL_DIRECTORY_ENTRY).take(MAX_ZIP_ENTRIES + 1).count() > MAX_ZIP_ENTRIES {
-        return None;
+        return Some("too many entries".into());
     }
     let archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
     if archive.len() > MAX_ZIP_ENTRIES {
-        return None;
+        return Some("too many entries".into());
     }
     let found = archive.file_names().find(|name| matches!(kind(name), Kind::Program | Kind::Macro))?;
     Some(shown(found))
@@ -325,10 +326,10 @@ mod tests {
         assert!(rules(&message_with(&[("fotos.zip", &fine)])).is_empty());
         // Not a zip at all: nothing to find, nothing to fail.
         assert!(rules(&message_with(&[("kaputt.zip", b"PK not really")])).is_empty());
-        // Too many entries: refused before the directory is read.
+        // Too many entries: refused before the directory is read, and suspect for that alone.
         let names: Vec<String> = (0..=MAX_ZIP_ENTRIES).map(|n| format!("{n}.txt")).collect();
         let crowded = zipped(&names.iter().map(String::as_str).collect::<Vec<_>>());
-        assert_eq!(program_in_zip(&crowded), None);
+        assert_eq!(program_in_zip(&crowded).as_deref(), Some("too many entries"));
         let few = zipped(&["a.txt", "b.js"]);
         assert_eq!(program_in_zip(&few).as_deref(), Some("b.js"));
     }

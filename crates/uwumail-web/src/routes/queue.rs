@@ -19,6 +19,8 @@ pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value
     Ok(Json(Value::Array(
         entries
             .iter()
+            // shortcut: a queue longer than this lists only its oldest 500, page it if that hurts admins.
+            .take(500)
             .map(|entry| {
                 json!({
                     "id": entry.message.id,
