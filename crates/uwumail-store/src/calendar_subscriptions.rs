@@ -358,7 +358,8 @@ impl Store {
         .await
     }
 
-    /// Asks for a run as soon as the worker comes by. `false` when one ran within the last minute.
+    /// Takes a run the portal makes right away, so the worker does not make the same one and a
+    /// second click waits. `false` when one ran within the last minute.
     pub async fn subscription_due_now(&self, account_id: i64, id: i64) -> Result<bool> {
         let at = now();
         self.write(move |tx| {
@@ -366,7 +367,7 @@ impl Store {
             if subscription.last_run_at.is_some_and(|last| at - last < SUBSCRIPTION_REFRESH_PAUSE_SECS) {
                 return Ok(false);
             }
-            tx.execute("UPDATE calendar_subscriptions SET next_run_at = 0 WHERE id = ?1", [id])?;
+            tx.execute("UPDATE calendar_subscriptions SET last_run_at = ?1 WHERE id = ?2", params![at, id])?;
             Ok(true)
         })
         .await
@@ -448,7 +449,8 @@ mod tests {
 
         assert!(store.calendar_subscriptions_due(10).await.unwrap().is_empty(), "the first run is the portal's");
         assert!(store.subscription_due_now(mini, sub.id).await.unwrap());
-        assert_eq!(store.calendar_subscriptions_due(10).await.unwrap().len(), 1);
+        assert!(store.calendar_subscriptions_due(10).await.unwrap().is_empty(), "the portal runs it itself");
+        assert!(!store.subscription_due_now(mini, sub.id).await.unwrap(), "a second click waits");
         store.note_subscription_run(sub.id, Err("feedUnreachable".into())).await.unwrap();
         let failed = store.calendar_subscription(mini, sub.id).await.unwrap();
         assert_eq!((failed.failures, failed.last_error.as_str()), (1, "feedUnreachable"));

@@ -238,6 +238,7 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                     account.shared_mailbox.then_some("shared mailbox"),
                     (account.is_service() && !account.shared_mailbox).then_some("service"),
                     (account.is_service() && !account.has_mailbox()).then_some("sends only"),
+                    account.internal_only.then_some("sends within this server only"),
                     account.disabled.then_some("disabled"),
                     account.deleted_at.is_some().then_some("in the trash"),
                 ]
@@ -362,7 +363,7 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
             audit(store, "sharedMailbox.end", &account.login, json!({})).await;
             println!("{} is a plain service again; its members no longer see it.", account.login);
         }
-        AccountCommand::Protocols { address, smtp, imap, jmap, calendar, contacts, redirect } => {
+        AccountCommand::Protocols { address, smtp, imap, jmap, calendar, contacts, redirect, internal_only } => {
             let account = store.account(&address).await?.ok_or_else(|| anyhow::anyhow!("no account {address}"))?;
             let switch = |wanted: Option<Switch>, current: bool| wanted.map_or(current, |state| state == Switch::On);
             let protocols = uwumail_store::Protocols {
@@ -375,14 +376,23 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
             let updated = store
                 .update_account(
                     &account.login,
-                    AccountUpdate { protocols: Some(protocols), redirect_to: redirect, ..Default::default() },
+                    AccountUpdate {
+                        protocols: Some(protocols),
+                        redirect_to: redirect,
+                        internal_only: internal_only.map(|state| state == Switch::On),
+                        ..Default::default()
+                    },
                 )
                 .await?;
             audit(
                 store,
                 "account.protocols",
                 &updated.login,
-                json!({ "protocols": updated.protocols, "redirectTo": updated.redirect_to }),
+                json!({
+                    "protocols": updated.protocols,
+                    "redirectTo": updated.redirect_to,
+                    "internalOnly": updated.internal_only,
+                }),
             )
             .await;
             let on = |yes: bool| if yes { "on" } else { "off" };
@@ -395,6 +405,9 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                 on(updated.protocols.caldav),
                 on(updated.protocols.carddav)
             );
+            if updated.internal_only {
+                println!("Sends only to addresses on this server; nothing leaves in its name.");
+            }
             if !updated.has_mailbox() {
                 match updated.redirect_to.as_str() {
                     "" => println!("No mailbox, so mail to this address is refused."),
@@ -1148,6 +1161,48 @@ pub async fn gateway(config: &Config, store: &Store, command: GatewayCommand) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_internal_only_switch_is_set_from_the_command_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        store.create_domain("example.org").await.unwrap();
+        store
+            .create_account(uwumail_store::NewAccount {
+                address: "webserver@example.org".into(),
+                display_name: "Webserver".into(),
+                password: None,
+                role: uwumail_store::Role::Service,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+        let protocols = |internal_only| AccountCommand::Protocols {
+            address: "webserver@example.org".into(),
+            smtp: None,
+            imap: None,
+            jmap: None,
+            calendar: None,
+            contacts: None,
+            redirect: None,
+            internal_only,
+        };
+        let config = Config::default();
+
+        account(&config, &store, protocols(None)).await.unwrap();
+        let held = store.account("webserver@example.org").await.unwrap().unwrap().internal_only;
+        assert!(!held, "off unless asked for");
+        account(&config, &store, protocols(Some(Switch::On))).await.unwrap();
+        let held = store.account("webserver@example.org").await.unwrap().unwrap().internal_only;
+        assert!(held);
+        account(&config, &store, protocols(None)).await.unwrap();
+        let held = store.account("webserver@example.org").await.unwrap().unwrap().internal_only;
+        assert!(held, "other changes leave it alone");
+        account(&config, &store, protocols(Some(Switch::Off))).await.unwrap();
+        let held = store.account("webserver@example.org").await.unwrap().unwrap().internal_only;
+        assert!(!held);
+    }
 
     #[tokio::test]
     async fn a_gateway_is_paired_from_the_command_line() {

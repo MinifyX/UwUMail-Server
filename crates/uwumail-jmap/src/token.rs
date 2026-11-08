@@ -109,9 +109,6 @@ pub async fn handle(
     };
     let mut method = "password";
     if security.second_factor {
-        if auth.second_factor_locked(account.id) {
-            return problem(StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many wrong codes, try again later.");
-        }
         let Some(code) = request.code.as_deref().map(str::trim).filter(|code| !code.is_empty()) else {
             // The password was right; the program asks for the code and tries again.
             return problem(
@@ -120,10 +117,18 @@ pub async fn handle(
                 "Enter the code from your authenticator app or a recovery code.",
             );
         };
-        match store.check_second_factor_code(account.id, code).await {
+        // Counted before it is checked (security audit 2026-11 M-03).
+        if !auth.second_factor_attempt(account.id) {
+            return problem(StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many wrong codes, try again later.");
+        }
+        let checked = store.check_second_factor_code(account.id, code).await;
+        // Only a wrong code costs a try; a right one or a database error gives it back.
+        if !matches!(checked, Ok(CodeCheck::Invalid)) {
+            auth.second_factor_right(account.id);
+        }
+        match checked {
             Ok(CodeCheck::Invalid) => {
                 auth.failed(client, &account.login);
-                auth.second_factor_failed(account.id);
                 tracing::warn!(login = %account.login, ip = %client.ip, "wrong second factor for a JMAP token");
                 return problem(StatusCode::UNAUTHORIZED, "invalidCode", "The code is wrong or was used before.");
             }

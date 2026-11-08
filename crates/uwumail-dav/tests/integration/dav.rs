@@ -222,11 +222,27 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
         calendar,
         &[],
         r#"<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:getetag/><C:calendar-data/></D:prop>
-<D:href>/dav/calendars/mini%40example.org/personal/friseur.ics</D:href><D:href>/dav/calendars/mini@example.org/personal/weg.ics</D:href></C:calendar-multiget>"#,
+<D:href>/dav/calendars/mini%40example.org/personal/friseur.ics</D:href><D:href>/dav/calendars/mini@example.org/personal/weg.ics</D:href>
+<D:href>/dav/calendars/mini@example.org/personal/friseur.ics</D:href></C:calendar-multiget>"#,
     )
     .await;
     assert!(multiget.body.contains("SUMMARY:Friseur"), "{}", multiget.body);
+    assert_eq!(multiget.body.matches("SUMMARY:Friseur").count(), 1, "a repeated href is answered once");
     assert!(multiget.body.contains("weg.ics</d:href><d:status>HTTP/1.1 404 Not Found"));
+    let hrefs: String =
+        (0..501).map(|i| format!("<D:href>/dav/calendars/mini@example.org/personal/{i}.ics</D:href>")).collect();
+    let too_many = as_mini(
+        &app,
+        "REPORT",
+        calendar,
+        &[],
+        &format!(
+            r#"<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:getetag/></D:prop>{hrefs}</C:calendar-multiget>"#
+        ),
+    )
+    .await;
+    assert_eq!(too_many.status, StatusCode::INSUFFICIENT_STORAGE);
+    assert!(too_many.body.contains("number-of-matches-within-limits"), "{}", too_many.body);
 
     let query = |start: &str, end: &str| {
         format!(

@@ -108,7 +108,7 @@ fn retry_delay(attempt: i64) -> i64 {
 async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, recipients: Vec<QueueRecipient>) {
     // Whether the other side had its say, so its refusals can count against the sending account.
     let mut remote = false;
-    let outcomes = match ctx.store.blob(&message.blob).await {
+    let (raw, outcomes) = match ctx.store.blob(&message.blob).await {
         Ok(raw) => {
             let outcomes = match held_inside(ctx, &message, &recipients).await {
                 Some(outcomes) => outcomes,
@@ -117,17 +117,16 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
                     deliver_domain(ctx, &domain, &message, &raw, &recipients).await
                 }
             };
-            Some((raw, outcomes))
+            (raw, outcomes)
         }
         Err(err) => {
-            tracing::error!(%err, message = message.id, "queued message content is missing");
-            None
-        }
-    };
-    let (raw, outcomes) = match outcomes {
-        Some((raw, outcomes)) => (raw, outcomes),
-        None => {
-            (Vec::new(), recipients.iter().map(|_| Outcome::Failed("the message content was lost".into())).collect())
+            tracing::error!(%err, message = message.id, "reading the queued message failed");
+            // Only content that is gone fails; a read error (disk busy, storage away) may pass.
+            let outcome = |_: &QueueRecipient| match &err {
+                uwumail_store::StoreError::NotFound(_) => Outcome::Failed("the message content was lost".into()),
+                _ => Outcome::Deferred("the message content could not be read".into()),
+            };
+            (Vec::new(), recipients.iter().map(outcome).collect())
         }
     };
 
@@ -150,7 +149,9 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
                 if next > message.expires_at {
                     tracing::warn!(message = message.id, to = %recipient.address, %error, "giving up after retries");
                     ctx.store.stats().count(uwumail_store::Stat::Bounced);
-                    failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
+                    if recipient.notify_flags & RCPT_NOTIFY_NEVER == 0 {
+                        failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
+                    }
                     ctx.store.mark_recipient_given_up(recipient.id, error).await
                 } else {
                     tracing::info!(message = message.id, to = %recipient.address, %error, "delivery deferred");

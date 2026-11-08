@@ -434,20 +434,27 @@ impl Authenticator {
         self.limiter().record_success(client.ip, login);
     }
 
-    /// Whether this account's second factor is locked after too many wrong codes, from any network.
-    pub fn second_factor_locked(&self, account_id: i64) -> bool {
-        let failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
-        failures
-            .get(&account_id)
-            .is_some_and(|(count, since)| *count >= MAX_FAILURES && since.elapsed() < FAILURE_WINDOW)
-    }
-
-    /// Counts a wrong second factor for an account.
-    pub fn second_factor_failed(&self, account_id: i64) {
+    /// Takes one try at an account's second factor before the code is checked, or says no while it
+    /// is locked after too many wrong codes from any network. The try counts at once, so tries sent
+    /// side by side cannot all be checked before the first wrong ones are counted (security audit
+    /// 2026-11 M-03). A right code gives it back with [`Authenticator::second_factor_right`].
+    pub fn second_factor_attempt(&self, account_id: i64) -> bool {
         let mut failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
         failures.retain(|_, (_, since)| since.elapsed() < FAILURE_WINDOW);
         let entry = failures.entry(account_id).or_insert((0, Instant::now()));
+        if entry.0 >= MAX_FAILURES {
+            return false;
+        }
         entry.0 += 1;
+        true
+    }
+
+    /// The code of a try taken with [`Authenticator::second_factor_attempt`] was right: it does not count.
+    pub fn second_factor_right(&self, account_id: i64) {
+        let mut failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
+        if let Some(entry) = failures.get_mut(&account_id) {
+            entry.0 = entry.0.saturating_sub(1);
+        }
     }
 
     pub(crate) fn store(&self) -> &Store {
@@ -486,5 +493,20 @@ mod tests {
         assert!(constant_time_eq("abc", "abc"));
         assert!(!constant_time_eq("abc", "abd"));
         assert!(!constant_time_eq("abc", "ab"));
+    }
+
+    #[tokio::test]
+    async fn second_factor_tries_run_out_and_a_right_code_gives_one_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let auth = super::Authenticator::new(uwumail_store::Store::open(dir.path()).await.unwrap());
+        for _ in 0..super::MAX_FAILURES {
+            assert!(auth.second_factor_attempt(7));
+        }
+        assert!(!auth.second_factor_attempt(7));
+        // Another account has its own tries.
+        assert!(auth.second_factor_attempt(8));
+        auth.second_factor_right(7);
+        assert!(auth.second_factor_attempt(7));
+        assert!(!auth.second_factor_attempt(7));
     }
 }

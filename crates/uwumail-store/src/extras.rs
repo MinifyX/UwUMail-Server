@@ -119,7 +119,9 @@ pub(crate) fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) ->
     let full = format!("{local}@{domain}");
     // The third case is a mailbox elsewhere that this account fetches and may answer from. It hangs
     // on the account, not on the address: two people can fetch the same provider, and neither may
-    // send as the other's. Without a server to send through it is no address to send from either.
+    // send as the other's. Without a server to send through it is no address to send from either,
+    // and neither is one that has not shown it is the account's: a successful fetch only proves the
+    // login, not the address typed in next to it (security audit 2026-11 M-01).
     //
     // Then the addresses that come with a membership: a group whose members may send as it, a
     // shared mailbox the account may send for, and the account's own masked addresses that are
@@ -131,7 +133,8 @@ pub(crate) fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) ->
                         WHERE s.account_id = ?1 AND d.name = ?2)
              OR EXISTS (SELECT 1 FROM fetch_accounts f
                         WHERE f.account_id = ?1 AND f.address = ?5
-                          AND f.send_enabled = 1 AND f.smtp_host <> '')
+                          AND f.send_enabled = 1 AND f.smtp_host <> ''
+                          AND f.sender_verified_at IS NOT NULL)
              OR EXISTS (SELECT 1 FROM groups g JOIN group_members m ON m.group_id = g.id
                         JOIN domains d ON d.id = g.domain_id
                         WHERE m.account_id = ?1 AND g.members_may_send_as = 1 AND d.name = ?2

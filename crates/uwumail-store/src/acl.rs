@@ -285,7 +285,9 @@ impl Store {
         let visible = serde_json::to_string(&visible).unwrap_or_default();
         self.read(move |conn| {
             let (current, sharing) = shared_state_of(conn, owner_id, &visible)?;
-            if since < 0 || since > current || sharing > since {
+            // Below the floor changes may be gone, unless nothing the viewer sees changed since.
+            let pruned = since < current && since < crate::objects::changes_floor(conn, owner_id)?;
+            if since < 0 || since > current || sharing > since || pruned {
                 return Err(StoreError::Invalid(format!("cannot calculate changes since {since}")));
             }
             let mut stmt = conn.prepare(&format!(
@@ -293,12 +295,7 @@ impl Store {
                  SELECT modseq, object_id, change FROM changes
                  WHERE account_id = ?1 AND kind = ?4 AND modseq IN relevant ORDER BY modseq, object_id"
             ))?;
-            let rows = stmt
-                .query_map(params![owner_id, visible, since, kind], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok(crate::objects::aggregate(&rows, current, max_changes))
+            crate::objects::read_changes(stmt.query(params![owner_id, visible, since, kind])?, current, max_changes)
         })
         .await
     }

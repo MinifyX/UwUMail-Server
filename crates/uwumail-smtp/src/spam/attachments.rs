@@ -95,6 +95,8 @@ const HARMLESS_LOOKING: &[&str] = &[
 /// Zip archives larger than this are not opened, and neither are ones with more entries.
 const MAX_ZIP: usize = 25 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: usize = 10_000;
+/// How each entry of a zip archive's central directory begins.
+const CENTRAL_DIRECTORY_ENTRY: &[u8] = b"PK\x01\x02";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -145,15 +147,25 @@ fn is_disguised(name: &str) -> bool {
         .is_some_and(|(_, inner)| HARMLESS_LOOKING.contains(&inner.to_ascii_lowercase().as_str()))
 }
 
+/// What [`program_in_zip`] answers for an archive too crowded to look into.
+const TOO_MANY_ENTRIES: &str = "too many entries";
+
 /// The first program or macro file inside a zip archive, read from its directory without unpacking.
 /// Encrypted archives still show their file names, so they are covered too.
 fn program_in_zip(bytes: &[u8]) -> Option<String> {
     if bytes.len() > MAX_ZIP {
         return None;
     }
+    // Opening the archive reads its whole directory into memory, so the entries are counted
+    // first: every one starts with this signature, and an archive can hold no more of them than
+    // that (security audit 2026-11 N-09). So many entries are suspect in themselves: they could
+    // hide a program from this check.
+    if memchr::memmem::find_iter(bytes, CENTRAL_DIRECTORY_ENTRY).take(MAX_ZIP_ENTRIES + 1).count() > MAX_ZIP_ENTRIES {
+        return Some(TOO_MANY_ENTRIES.into());
+    }
     let archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
     if archive.len() > MAX_ZIP_ENTRIES {
-        return None;
+        return Some(TOO_MANY_ENTRIES.into());
     }
     let found = archive.file_names().find(|name| matches!(kind(name), Kind::Program | Kind::Macro))?;
     Some(shown(found))
@@ -204,8 +216,13 @@ fn judge_one(hits: &mut Vec<Hit>, name: &str, zipped: bool, contents: &[u8]) {
     if matches!(kind, Kind::Program | Kind::Macro) && is_disguised(name) {
         once(hits, "DISGUISED_ATTACHMENT", 2.0, shown(name));
     }
-    if zipped && let Some(inside) = program_in_zip(contents) {
-        once(hits, "ARCHIVE_WITH_PROGRAM", 3.0, format!("{}: {inside}", shown(name)));
+    match program_in_zip(contents) {
+        // Big archives are mostly harmless, so not having looked is worth far less than a find (R29-07).
+        Some(inside) if zipped && inside == TOO_MANY_ENTRIES => {
+            once(hits, "ARCHIVE_UNCHECKED", 0.5, format!("{}: {inside}", shown(name)));
+        }
+        Some(inside) if zipped => once(hits, "ARCHIVE_WITH_PROGRAM", 3.0, format!("{}: {inside}", shown(name))),
+        _ => {}
     }
 }
 
@@ -317,5 +334,12 @@ mod tests {
         assert!(rules(&message_with(&[("fotos.zip", &fine)])).is_empty());
         // Not a zip at all: nothing to find, nothing to fail.
         assert!(rules(&message_with(&[("kaputt.zip", b"PK not really")])).is_empty());
+        // Too many entries: refused before the directory is read, and suspect for that alone.
+        let names: Vec<String> = (0..=MAX_ZIP_ENTRIES).map(|n| format!("{n}.txt")).collect();
+        let crowded = zipped(&names.iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(program_in_zip(&crowded).as_deref(), Some(TOO_MANY_ENTRIES));
+        assert_eq!(rules(&message_with(&[("gross.zip", &crowded)])), ["ARCHIVE_UNCHECKED"]);
+        let few = zipped(&["a.txt", "b.js"]);
+        assert_eq!(program_in_zip(&few).as_deref(), Some("b.js"));
     }
 }

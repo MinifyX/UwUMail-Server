@@ -180,6 +180,24 @@ async fn second_factors_app_passwords_and_notices() {
     }
     assert_eq!(security["sessions"].as_array().unwrap().iter().filter(|s| s["current"] == true).count(), 1);
 
+    // Tries sent side by side count before they are checked (security audit 2026-11 M-03): a burst
+    // gets the five tries of one pending login, not one per request.
+    let burst = call(&app, "POST", "/api/auth/login", Some(credentials.clone()), None).await;
+    let burst_token = burst.body["secondFactor"]["token"].as_str().unwrap().to_owned();
+    let mut tries = tokio::task::JoinSet::new();
+    for _ in 0..12 {
+        let (app, body) = (app.clone(), json!({ "token": burst_token, "code": "abcdef" }));
+        tries.spawn(async move { call(&app, "POST", "/api/auth/second-factor", Some(body), None).await });
+    }
+    let mut answers = Vec::new();
+    while let Some(answer) = tries.join_next().await {
+        answers.push(answer.unwrap().body["code"].as_str().unwrap_or_default().to_owned());
+    }
+    answers.sort();
+    let invalid = answers.iter().filter(|code| *code == "codeInvalid").count();
+    let expired = answers.iter().filter(|code| *code == "loginExpired").count();
+    assert_eq!((invalid, expired), (5, 7), "{answers:?}");
+
     // Changing the password: the current one must be right, and other browsers are logged out.
     let other = call(&app, "POST", "/api/auth/login", Some(credentials.clone()), None).await;
     let other_token = other.body["secondFactor"]["token"].as_str().unwrap().to_owned();
@@ -201,4 +219,64 @@ async fn second_factors_app_passwords_and_notices() {
     let health = call(&app, "GET", "/api/admin/health", None, Some(&auth)).await.body;
     let security_area = health["areas"].as_array().unwrap().iter().find(|a| a["area"] == "security").unwrap();
     assert_eq!(security_area["findings"][0]["code"], "adminsSecure");
+}
+
+/// A store error while looking up the passkey is no wrong try: it is handed back, so a broken
+/// database cannot use up the pending login or lock the account.
+#[tokio::test]
+async fn a_store_error_at_passkey_login_takes_no_try() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).await.unwrap();
+    store.create_domain("example.org").await.unwrap();
+    let nyu = store
+        .create_account(NewAccount {
+            address: "nyu@example.org".into(),
+            display_name: "Nyu".into(),
+            password: Some(PASSWORD.into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    store.add_passkey(nyu.id, vec![1, 2, 3], vec![4, 5, 6], 0, "Stick").await.unwrap();
+    let settings = SmtpSettings {
+        hostname: "mail.example.org".into(),
+        smtp: Default::default(),
+        spam: Default::default(),
+        delivery: Default::default(),
+        tone: Default::default(),
+        server_tls: None,
+    };
+    let web = Web::new(
+        Smtp::new(store.clone(), settings).unwrap(),
+        WebSettings {
+            hostname: "mail.example.org".into(),
+            started: Instant::now(),
+            logs: None,
+            loki: None,
+            config: None,
+            certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        },
+    );
+    let app = web.router();
+    let credentials = json!({ "login": "nyu@example.org", "password": PASSWORD });
+    let first_step = call(&app, "POST", "/api/auth/login", Some(credentials), None).await;
+    let token = first_step.body["secondFactor"]["token"].as_str().unwrap().to_owned();
+    let options = call(&app, "POST", "/api/auth/passkey/options", Some(json!({ "token": token })), None).await;
+    assert_eq!(options.status, StatusCode::OK, "{}", options.body);
+
+    let db = rusqlite::Connection::open(dir.path().join("uwumail.db")).unwrap();
+    db.execute_batch("ALTER TABLE passkeys RENAME TO passkeys_away").unwrap();
+    let credential = json!({ "id": "AQID", "clientDataJson": "AA", "authenticatorData": "AA", "signature": "AA" });
+    let body = json!({ "token": token, "credential": credential });
+    // More store errors than a pending login has tries.
+    for _ in 0..6 {
+        let failed = call(&app, "POST", "/api/auth/passkey", Some(body.clone()), None).await;
+        assert_eq!(failed.status, StatusCode::INTERNAL_SERVER_ERROR, "{}", failed.body);
+    }
+    db.execute_batch("ALTER TABLE passkeys_away RENAME TO passkeys").unwrap();
+    let wrong = call(&app, "POST", "/api/auth/passkey", Some(body), None).await;
+    assert_eq!(wrong.body["code"], "passkeyInvalid", "the pending login still has its tries");
 }

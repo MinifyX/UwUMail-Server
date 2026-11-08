@@ -15,7 +15,8 @@ use crate::logs::level_rank;
 use crate::session::Admin;
 
 pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
-    let entries = web.store().queue_entries().await?;
+    // shortcut: a queue longer than this lists only its oldest 500, page it if that hurts admins.
+    let entries = web.store().oldest_queue_entries(500).await?;
     Ok(Json(Value::Array(
         entries
             .iter()

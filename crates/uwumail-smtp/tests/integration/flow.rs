@@ -824,6 +824,11 @@ async fn forged_mail_from_our_own_domain_is_not_forwarded_elsewhere() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
     assert!(return_path.starts_with("SRS0=") && return_path.ends_with("=a.test=chef@a.test"), "{return_path}");
+    // Should the forward fail, nobody gets a bounce: the named sender may never have sent it
+    // (security audit 2026-11 N-09).
+    let entries = store.queue_entries().await.unwrap();
+    let oma = entries.iter().flat_map(|e| &e.recipients).find(|r| r.address == "oma@c.test").unwrap();
+    assert_ne!(oma.notify_flags & smtp_proto::RCPT_NOTIFY_NEVER, 0, "{oma:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -2233,6 +2238,34 @@ async fn queued_mail_stays_here_once_its_account_is_internal_only() {
     assert_eq!(inbox.iter().map(|email| email.subject.as_str()).collect::<Vec<_>>(), ["System"]);
 }
 
+/// A recipient that is given up on once the message expires gets the sender a bounce, unless it
+/// asked for none (NOTIFY=NEVER).
+#[tokio::test(flavor = "multi_thread")]
+async fn giving_up_with_notify_never_sends_no_bounce() {
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini"], &[("c.test", unreachable)]).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap();
+    for (to, notify_flags) in [("never@c.test", smtp_proto::RCPT_NOTIFY_NEVER), ("asked@c.test", 0)] {
+        let to = vec![uwumail_store::NewQueueRecipient { address: to.into(), notify_flags, orcpt: None }];
+        let raw = "From: mini@a.test\r\nSubject: Bald weg\r\n\r\nHallo\r\n";
+        // Gone before the next try would be due: the first deferral gives up.
+        store.enqueue("mini@a.test", to, raw.as_bytes(), Some(mini.id), None, 1).await.unwrap();
+    }
+    a.wait_for_inbox("mini@a.test", 1).await;
+    let started = Instant::now();
+    while !store.queue_entries().await.unwrap().is_empty() {
+        assert!(started.elapsed() < Duration::from_secs(20), "queue did not drain");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let inbox = a.inbox("mini@a.test").await;
+    assert_eq!(inbox.len(), 1, "one bounce, for the recipient that asked");
+    let bounce = a.raw(&inbox[0]).await;
+    assert!(bounce.contains("asked@c.test") && !bounce.contains("never@c.test"), "{bounce}");
+    let refused = store.refused_deliveries(10).await.unwrap();
+    assert!(refused.len() == 2 && refused.iter().all(|mail| mail.gave_up), "{refused:?}");
+}
+
 /// The switch on a shared mailbox holds for its members when they send as it, and a forwarding
 /// address passes an internal-only sender's mail on only to people here (docs/jmap-sending.md).
 #[tokio::test(flavor = "multi_thread")]
@@ -2415,4 +2448,54 @@ async fn a_complaint_about_sent_mail_is_kept_and_counts_against_its_sender() {
 
 fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+}
+
+/// A confirmed forwarding target elsewhere, without a copy staying here.
+async fn forwards_away(server: &TestServer, login: &str) {
+    let store = server.smtp.store();
+    let account = store.account(login).await.unwrap().unwrap();
+    let (_, token) = store.add_forward_target(account.id, "oma@c.test", true).await.unwrap();
+    store.confirm_forward_link(&token.unwrap()).await.unwrap();
+    store.set_forward_keep_copy(account.id, false).await.unwrap();
+}
+
+/// Someone here who forwards elsewhere does not carry an internal-only sender's mail out: it stays
+/// with them, also when it came through a group, and their forwarding goes on for everyone else
+/// (docs/jmap-sending.md).
+#[tokio::test(flavor = "multi_thread")]
+async fn internal_only_mail_does_not_leave_through_someone_who_forwards() {
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini", "leni", "ami", "webserver"], &[("c.test", unreachable)]).await;
+    let store = a.smtp.store();
+    let only_here = uwumail_store::AccountUpdate { internal_only: Some(true), ..Default::default() };
+    store.update_account("webserver@a.test", only_here).await.unwrap();
+    forwards_away(&a, "leni@a.test").await;
+    forwards_away(&a, "ami@a.test").await;
+    store
+        .create_group(uwumail_store::NewGroup {
+            address: "vorstand@a.test".into(),
+            name: "Vorstand".into(),
+            who_may_send: uwumail_store::WhoMaySend::Anyone,
+            members_may_send_as: false,
+            members: vec!["ami@a.test".into(), "mini@a.test".into()],
+        })
+        .await
+        .unwrap();
+
+    let webserver = a.mailer("webserver@a.test", PASSWORD, false);
+    webserver.send(mail("webserver@a.test", &["leni@a.test"], "Kontakt")).await.unwrap();
+    webserver.send(mail("webserver@a.test", &["vorstand@a.test"], "Sitzung")).await.unwrap();
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Kontakt", "it stays, without a copy set");
+    assert_eq!(a.wait_for_inbox("ami@a.test", 1).await[0].subject, "Sitzung");
+    assert_eq!(a.wait_for_inbox("mini@a.test", 1).await[0].subject, "Sitzung");
+    assert!(store.queue_entries().await.unwrap().is_empty(), "nothing goes outside");
+
+    // The same forwarding carries everyone else's mail out, and keeps no copy.
+    a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["leni@a.test"], "Hallo")).await.unwrap();
+    let started = Instant::now();
+    while store.queue_entries().await.unwrap().is_empty() {
+        assert!(started.elapsed() < Duration::from_secs(10), "the forward was not queued");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await.len(), 1);
 }

@@ -91,12 +91,3 @@ export function blocklistLines(check: ServerCheck): CheckLineData[] {
     return lines;
   });
 }
-
-const ORDER: LineLevel[] = ["ok", "unknown", "warning", "problem"];
-
-export function worstLevel(lines: CheckLineData[]): LineLevel {
-  return lines.reduce<LineLevel>(
-    (worst, entry) => (ORDER.indexOf(entry.level) > ORDER.indexOf(worst) ? entry.level : worst),
-    "ok",
-  );
-}

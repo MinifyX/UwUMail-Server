@@ -27,6 +27,16 @@ pub(crate) async fn plan(ctx: &Context, account_id: i64) -> Plan {
     }
 }
 
+impl Plan {
+    /// The plan for a message from an internal-only sender: the recipient's forwarding only goes
+    /// as far as other people here, and what can go nowhere else stays.
+    pub(crate) fn only_here(mut self) -> Plan {
+        self.targets.retain(|(_, local)| local.is_some());
+        self.keep_copy |= self.targets.is_empty();
+        self
+    }
+}
+
 /// Whose mail is forwarded: a person's, or a forwarding address's, which has no account.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Forwarder<'a> {
@@ -125,7 +135,13 @@ pub(crate) async fn send(
                     }
                 }
             }
-            None => remote.push(NewQueueRecipient { address: address.clone(), notify_flags: 0, orcpt: None }),
+            // A sender nothing proved may be forged: a forward that fails then goes quiet
+            // instead of bouncing to whoever was named (security audit 2026-11 N-09).
+            None => remote.push(NewQueueRecipient {
+                address: address.clone(),
+                notify_flags: if forwarder.proof.envelope { 0 } else { smtp_proto::RCPT_NOTIFY_NEVER },
+                orcpt: None,
+            }),
         }
     }
 

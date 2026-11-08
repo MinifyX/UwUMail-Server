@@ -22,6 +22,8 @@ pub const DAV_RESOURCES_PER_COLLECTION: i64 = 50_000;
 pub const DAV_RESOURCES_PER_COLLECTION: i64 = 300;
 pub const DAV_RESOURCE_MAX_BYTES: usize = 1024 * 1024;
 pub const DAV_COLLECTIONS_PER_ACCOUNT: i64 = 100;
+/// Bytes of entries all collections of an account may hold together, or its quota when that is lower.
+pub const DAV_BYTES_PER_ACCOUNT: i64 = 1 << 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -270,6 +272,9 @@ pub(crate) struct ChangeLog {
     /// Who makes the write, when those who see a calendar are to be told about its events
     /// (calendar_notifications.rs); `None` for writes nobody is told about.
     pub(crate) author: Option<crate::Author>,
+    /// Per owner: the bytes its entries take and the most they may take, summed once per write so
+    /// an import of many entries does not sum them again for each.
+    dav_bytes: BTreeMap<i64, (i64, i64)>,
 }
 
 /// The change numbers a write took, per account, to tell push listeners about once it is committed.
@@ -286,16 +291,40 @@ pub(crate) fn audience(conn: &Connection, collection: &DavCollection) -> Result<
 
 impl ChangeLog {
     pub(crate) fn new(account_id: i64) -> ChangeLog {
-        ChangeLog { account_id, modseqs: BTreeMap::new(), author: None }
+        ChangeLog { account_id, modseqs: BTreeMap::new(), author: None, dav_bytes: BTreeMap::new() }
     }
 
     /// The same, telling those who see a calendar about what `author` does to its events.
     pub(crate) fn by(account_id: i64, author: crate::Author) -> ChangeLog {
-        ChangeLog { account_id, modseqs: BTreeMap::new(), author: Some(author) }
+        ChangeLog { account_id, modseqs: BTreeMap::new(), author: Some(author), dav_bytes: BTreeMap::new() }
     }
 
     pub(crate) fn account_id(&self) -> i64 {
         self.account_id
+    }
+
+    /// Takes `grow` more bytes of entries for `owner`, or fails with [`StoreError::QuotaExceeded`]
+    /// when they would not fit [`DAV_BYTES_PER_ACCOUNT`] or its quota.
+    fn take_dav_bytes(&mut self, conn: &Connection, owner: i64, grow: i64) -> Result<()> {
+        let (used, budget) = match self.dav_bytes.get(&owner) {
+            Some(known) => *known,
+            None => conn.query_row(
+                "SELECT COALESCE((SELECT SUM(r.size) FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
+                     WHERE c.account_id = ?1), 0),
+                     (SELECT quota_bytes FROM accounts WHERE id = ?1)",
+                [owner],
+                |row| {
+                    let quota: Option<i64> = row.get(1)?;
+                    let quota = quota.unwrap_or(0);
+                    Ok((row.get(0)?, if quota > 0 { quota.min(DAV_BYTES_PER_ACCOUNT) } else { DAV_BYTES_PER_ACCOUNT }))
+                },
+            )?,
+        };
+        if grow > 0 && used + grow > budget {
+            return Err(StoreError::QuotaExceeded);
+        }
+        self.dav_bytes.insert(owner, (used + grow, budget));
+        Ok(())
     }
 
     /// The change number this write took for an account, once something was logged for it.
@@ -652,6 +681,9 @@ pub(crate) fn move_entry(
     let new_name = if free { name.to_owned() } else { new_entry_name(tx, target.id, &write.uid, extension)? };
     let old_content: String =
         tx.query_row("SELECT content FROM dav_resources WHERE id = ?1", [id], |row| row.get(0))?;
+    let source_owner = collection_by_id(tx, source_id)?.account_id;
+    let kept = if source_owner == target.account_id { old_content.len() as i64 } else { 0 };
+    log.take_dav_bytes(tx, target.account_id, write.content.len() as i64 - kept)?;
     let old_change = next_change(tx, source_id)?;
     tx.execute(
         "INSERT OR REPLACE INTO dav_tombstones (collection_id, name, change) VALUES (?1, ?2, ?3)",
@@ -1042,6 +1074,11 @@ pub(crate) fn put_entry_unchecked(
             return Err(StoreError::QuotaExceeded);
         }
     }
+    let old_size: i64 = match &current {
+        Some((id, ..)) => tx.query_row("SELECT size FROM dav_resources WHERE id = ?1", [id], |row| row.get(0))?,
+        None => 0,
+    };
+    log.take_dav_bytes(tx, collection.account_id, write.content.len() as i64 - old_size)?;
     let etag = dav_etag(&write.content);
     let change = next_change(tx, collection.id)?;
     let id: i64 = tx.query_row(
@@ -1231,6 +1268,32 @@ mod tests {
         let contents = store.dav_resource_contents(mini, id, Some(vec!["b.ics".into(), "a.ics".into()])).await.unwrap();
         assert_eq!(contents.len(), 1);
         assert!(contents[0].content.contains("SUMMARY:Friseur"));
+    }
+
+    #[tokio::test]
+    async fn entries_stay_within_the_account_quota() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = store
+            .create_account(NewAccount {
+                address: "mini@example.org".into(),
+                display_name: String::new(),
+                password: None,
+                role: Role::User,
+                quota_bytes: 300,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let id = store.dav_collections(mini, DavKind::Calendar, calendar()).await.unwrap()[0].id;
+        let put =
+            |name: &str, summary: &str| store.dav_put(mini, id, event(name, name, summary), DavPrecondition::default());
+        put("a.ics", "eins").await.unwrap();
+        assert!(matches!(put("b.ics", &"x".repeat(200)).await, Err(StoreError::QuotaExceeded)));
+        put("a.ics", "eins, etwas länger").await.unwrap();
+        assert!(store.dav_delete(mini, id, "a.ics", None).await.unwrap());
+        put("b.ics", &"x".repeat(200)).await.unwrap();
     }
 
     #[tokio::test]

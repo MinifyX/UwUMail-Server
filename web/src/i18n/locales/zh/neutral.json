@@ -2306,7 +2306,8 @@
       "paused": "已暂停",
       "waiting": "尚未收取",
       "lastRun": "上次收取：{{date}}",
-      "takingExisting": "邮箱中已有的邮件正在迁移过来…"
+      "takingExisting": "邮箱中已有的邮件正在迁移过来…",
+      "senderUnverified": "发件地址等待确认；为此必须运行收取。"
     },
     "actions": {
       "edit": "编辑",

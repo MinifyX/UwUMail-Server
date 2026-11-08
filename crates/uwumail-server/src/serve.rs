@@ -476,6 +476,11 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
             Ok(removed) => tracing::info!(removed, "forgot rare and old Bayes filter entries"),
             Err(err) => tracing::warn!(%err, "cleaning up the Bayes filter failed"),
         }
+        match store.prune_changes(uwumail_store::CHANGES_RETENTION_SECS).await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "forgot changes older than 90 days"),
+            Err(err) => tracing::warn!(%err, "cleaning up the change log failed"),
+        }
         match store.collect_garbage(3600).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "removed unused message files"),

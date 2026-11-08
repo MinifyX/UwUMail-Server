@@ -777,6 +777,9 @@ export function FetchPage() {
                       )}
                     </span>
                     <Status account={account} />
+                    {account.sendEnabled && !account.senderVerified && (
+                      <span className="block text-[12px] text-muted">{t("fetch.status.senderUnverified")}</span>
+                    )}
                     {account.backlogAt !== null && (
                       <span className="block text-[12px] text-muted">{t("fetch.status.takingExisting")}</span>
                     )}

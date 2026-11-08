@@ -15,8 +15,6 @@ export const UNDO_CHOICES = ["0", "5", "10", "20", "30"] as const;
 /** What the server uses when nobody chose. */
 export const DEFAULT_UNDO = "10";
 
-export const identitiesKey = ["account", "identities"] as const;
-
 function UndoSetting() {
   const { t } = useT();
   const errorText = useErrorText();

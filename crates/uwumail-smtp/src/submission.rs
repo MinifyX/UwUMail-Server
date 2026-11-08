@@ -470,6 +470,7 @@ impl Smtp {
                             &from[0],
                             false,
                             (&account, &mut may_leave),
+                            internal_only,
                         )
                         .await
                     {
@@ -524,6 +525,7 @@ impl Smtp {
                             &from[0],
                             to_trash,
                             (&account, &mut may_leave),
+                            internal_only,
                         )
                         .await
                     {
@@ -677,7 +679,8 @@ impl Smtp {
 
     /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the
     /// Trash, for a disabled masked address), a vacation reply and calendar invitations. The error
-    /// is the answer for a bounce.
+    /// is the answer for a bounce. An internal-only sender's mail goes no further than this server,
+    /// whatever the recipient's forwarding says (docs/jmap-sending.md).
     #[allow(clippy::too_many_arguments)]
     async fn deliver_locally(
         &self,
@@ -688,6 +691,7 @@ impl Smtp {
         author: &str,
         to_trash: bool,
         (sender, may_leave): (&Account, &mut MayLeave),
+        internal_only: bool,
     ) -> Result<(), String> {
         let ctx = &self.inner;
         if to_trash {
@@ -701,7 +705,11 @@ impl Smtp {
             return ctx.store.ingest(request).await.map(|_| ()).map_err(stored_error);
         }
         let mut plan = forward::plan(ctx, account_id).await;
-        if plan.targets.iter().any(|(_, local)| local.is_none()) && !self.may_leave(sender, may_leave, signed).await {
+        if internal_only {
+            plan = plan.only_here();
+        } else if plan.targets.iter().any(|(_, local)| local.is_none())
+            && !self.may_leave(sender, may_leave, signed).await
+        {
             plan.targets.retain(|(_, local)| local.is_some());
             plan.keep_copy = true;
         }
@@ -727,7 +735,9 @@ impl Smtp {
             received_at: None,
         };
         ctx.store.ingest(request).await.map_err(stored_error)?;
-        // The sender is an authenticated local account, so it is verified.
+        // The sender is an authenticated local account and every From address was checked to be its
+        // own -- a fetched one only once it has proven it (security audit 2026-11 M-01) -- so it is
+        // verified.
         vacation::maybe_reply(ctx, account_id, mail_from, true, signed).await;
         // Calendar apps that send invitations themselves reach people here too; the From address
         // was checked to be the sender's own.

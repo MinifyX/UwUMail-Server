@@ -18,7 +18,7 @@ pub mod objects;
 mod props;
 pub mod xml;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::Router;
@@ -50,6 +50,8 @@ const SHARED_PREFIX: &str = "shared~";
 const MAX_FREE_BUSY_SECS: i64 = 400 * 86_400;
 /// Attendees one free-busy lookup may ask about.
 const MAX_FREE_BUSY_ATTENDEES: usize = 100;
+/// The most distinct hrefs one multiget REPORT may ask for.
+const MULTIGET_LIMIT: usize = 500;
 /// How long one free-busy lookup may spend on expanding calendars, for all its attendees together;
 /// those left when it is up are answered "try later" (security-audit-0.16.0 PROTOCOLS-13).
 const FREE_BUSY_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -1051,6 +1053,7 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
             props::response(&Target::Resource(view.clone(), resource.info, Some(resource.content)), &requested, &who)
         };
         if root.is(CALDAV, "calendar-multiget") || root.is(CARDDAV, "addressbook-multiget") {
+            let mut seen = HashSet::new();
             let names: Vec<String> = root
                 .children_named(DAV, "href")
                 .filter_map(|href| {
@@ -1064,15 +1067,20 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
                         .filter(|name| !name.is_empty() && !name.contains('/'))
                         .map(str::to_owned)
                 })
+                .filter(|name| seen.insert(name.clone()))
                 .collect();
-            let found = match self.store().dav_resource_contents(owner, collection_id, Some(names.clone())).await {
-                Ok(found) => found,
-                Err(err) => return store_failure(err),
-            };
+            if names.len() > MULTIGET_LIMIT {
+                return precondition(StatusCode::INSUFFICIENT_STORAGE, DAV, "number-of-matches-within-limits", "");
+            }
+            let mut found: HashMap<String, uwumail_store::DavResource> =
+                match self.store().dav_resource_contents(owner, collection_id, Some(names.clone())).await {
+                    Ok(found) => found.into_iter().map(|resource| (resource.info.name.clone(), resource)).collect(),
+                    Err(err) => return store_failure(err),
+                };
             let mut responses = Vec::new();
             for name in names {
-                match found.iter().find(|resource| resource.info.name == name) {
-                    Some(found) => responses.push(resource(found.clone())),
+                match found.remove(&name) {
+                    Some(found) => responses.push(resource(found)),
                     None => responses.push(props::not_found(&format!("{base}{name}"))),
                 }
             }

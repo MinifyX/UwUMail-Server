@@ -154,6 +154,11 @@ pub(crate) fn parse_rows(data: &[u8], code_page: u32, budget: &mut usize) -> (Ve
     let mut rows = Vec::new();
     let Ok(count) = reader.u32() else { return (rows, false) };
     for _ in 0..count {
+        // An empty row costs a property too, so a small file cannot declare millions of them.
+        if *budget == 0 {
+            return (rows, false);
+        }
+        *budget -= 1;
         let mut props = Properties::default();
         let ok = read_props(&mut reader, code_page, budget, &mut props).is_ok();
         rows.push(props);
@@ -358,5 +363,15 @@ mod tests {
         let (props, complete) = parse_block(&data, 1252, &mut budget);
         assert!(!complete);
         assert!(props.is_empty());
+    }
+
+    #[test]
+    fn empty_rows_count_against_the_budget() {
+        let mut data = 1_000_000u32.to_le_bytes().to_vec();
+        data.resize(4 + 4 * 1_000_000, 0);
+        let mut budget = 1000;
+        let (rows, complete) = parse_rows(&data, 1252, &mut budget);
+        assert!(!complete);
+        assert_eq!(rows.len(), 1000);
     }
 }

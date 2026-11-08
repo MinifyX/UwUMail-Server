@@ -12,6 +12,7 @@ use uwumail_store::{Account, CodeCheck, Role, SecurityEvent};
 
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
+use crate::login;
 use crate::notices::{Notice, Origin, notify};
 use crate::session::{self, SESSION_LIFETIME_SECS, Session};
 use crate::webauthn::{self, RelyingParty};
@@ -244,17 +245,21 @@ pub async fn passkey_login(
     let challenge = pending.challenge.clone().ok_or_else(expired)?;
     let account =
         web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
-    if web.login_state().second_factor_locked(account.id) {
-        return Err(ApiError::TooManyAttempts);
-    }
+    let attempt = take_attempt(&web, &request.token)?;
 
+    // A store error is not a wrong try: the try goes back, as for codes.
+    let found = match webauthn::decode(&request.credential.id) {
+        Ok(credential_id) => match web.store().passkey_by_credential(&credential_id).await {
+            Ok(found) => Ok(found),
+            Err(err) => {
+                web.login_state().give_back(&request.token, account.id, attempt);
+                return Err(err.into());
+            }
+        },
+        Err(detail) => Err(detail),
+    };
     let checked = async {
-        let credential_id = webauthn::decode(&request.credential.id)?;
-        let passkey = web
-            .store()
-            .passkey_by_credential(&credential_id)
-            .await
-            .map_err(|err| err.to_string())?
+        let passkey = found?
             .filter(|passkey| passkey.account_id == account.id)
             .ok_or("this passkey does not belong to the account")?;
         let rp = RelyingParty::for_hostname(&web.settings().hostname);
@@ -273,7 +278,7 @@ pub async fn passkey_login(
     let (passkey, count) = match checked {
         Ok(ok) => ok,
         Err(detail) => {
-            second_factor_failed(&web, &account, client, &request.token).await;
+            second_factor_failed(&web, &account, client, &request.token, attempt).await;
             tracing::warn!(login = %account.login, ip = %client.ip, %detail, "passkey login refused");
             return Err(ApiError::Rule("passkeyInvalid", detail));
         }
@@ -287,11 +292,20 @@ pub async fn passkey_login(
     complete_login(&web, &account, client, &headers, method).await
 }
 
+/// Takes one try at the second factor before it is checked, or refuses: a used-up pending login
+/// has to start over and a locked account waits (security audit 2026-11 M-03).
+fn take_attempt(web: &Web, token: &str) -> ApiResult<login::Attempt> {
+    web.login_state().attempt(token).map_err(|refused| match refused {
+        login::Refused::Expired => ApiError::Rule("loginExpired", "start the login again".into()),
+        login::Refused::Locked => ApiError::TooManyAttempts,
+    })
+}
+
 /// A wrong second factor counts for the network, the pending login and the account. When it is the
 /// one that locks the account, its owner hears of it: whoever tries knows the password.
-async fn second_factor_failed(web: &Web, account: &Account, client: ClientInfo, token: &str) {
+async fn second_factor_failed(web: &Web, account: &Account, client: ClientInfo, token: &str, attempt: login::Attempt) {
     web.limiter().record_failure(client.ip, &account.login);
-    if web.login_state().failed(token) {
+    if web.login_state().wrong(token, attempt) {
         tracing::warn!(login = %account.login, ip = %client.ip, "too many wrong second factors, locked for a while");
         let ip = client.ip.to_string();
         notify(web, account, Notice::SecondFactorLocked, Origin { actor: "", ip: &ip }).await;
@@ -312,12 +326,16 @@ pub async fn second_factor(
     let pending = web.login_state().get(&request.token).ok_or_else(expired)?;
     let account =
         web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
-    if web.login_state().second_factor_locked(account.id) {
-        return Err(ApiError::TooManyAttempts);
-    }
-    let check = web.store().check_second_factor_code(account.id, &request.code).await?;
+    let attempt = take_attempt(&web, &request.token)?;
+    let check = match web.store().check_second_factor_code(account.id, &request.code).await {
+        Ok(check) => check,
+        Err(err) => {
+            web.login_state().give_back(&request.token, account.id, attempt);
+            return Err(err.into());
+        }
+    };
     if check == CodeCheck::Invalid {
-        second_factor_failed(&web, &account, client, &request.token).await;
+        second_factor_failed(&web, &account, client, &request.token, attempt).await;
         tracing::warn!(login = %account.login, ip = %client.ip, "wrong second factor code");
         return Err(ApiError::Rule("codeInvalid", "the code is wrong or was used before".into()));
     }

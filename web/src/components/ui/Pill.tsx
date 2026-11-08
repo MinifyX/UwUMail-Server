@@ -26,20 +26,6 @@ export function Pill({ active, count, className, children, ...rest }: PillProps)
   );
 }
 
-export function Badge({ count, className }: { count: number; className?: string }) {
-  if (count <= 0) return null;
-  return (
-    <span
-      className={clsx(
-        "inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-pink px-1.5 text-[11px] font-bold text-white",
-        className,
-      )}
-    >
-      {count > 999 ? "999+" : count}
-    </span>
-  );
-}
-
 export type TagTone = "pink" | "success" | "warning" | "danger" | "info" | "neutral";
 
 const TAG_TONES: Record<TagTone, string> = {

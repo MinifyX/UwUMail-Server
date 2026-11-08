@@ -30,6 +30,10 @@ pub const FETCH_HOLD_LIMIT_SECS: i64 = 24 * 3600;
 /// How long a fetched message is remembered by name, so a provider that renumbers its folders does
 /// not deliver everything a second time.
 pub const FETCH_SEEN_SECS: i64 = 30 * 24 * 3600;
+/// How long a fetched address waits before its proof code is mailed to it again, by any row.
+const SENDER_PROOF_RESEND_SECS: i64 = 24 * 3600;
+/// How many proof codes one account may have mailed a day, whatever addresses it names.
+const SENDER_PROOFS_PER_ACCOUNT: u32 = 10;
 /// Where the key for sealing provider passwords is kept.
 const SECRET_KEY: &str = "fetch.secret_key";
 
@@ -250,6 +254,10 @@ pub struct FetchAccount {
     pub smtp_port: u16,
     pub smtp_security: SendSecurity,
     pub send_enabled: bool,
+    /// Whether the address has shown it is the owner's: a message with a secret code was mailed to
+    /// it and turned up in this fetched mailbox. Until then sending as it stays off, whatever
+    /// `send_enabled` says (security audit 2026-11 M-01).
+    pub sender_verified: bool,
     pub created_at: i64,
     pub last_run_at: Option<i64>,
     pub last_ok_at: Option<i64>,
@@ -265,6 +273,14 @@ pub struct FetchAccount {
     /// The provider takes no passwords any more (Microsoft's "Basic authentication is disabled"):
     /// only signing in with OAuth helps.
     pub password_refused: bool,
+}
+
+/// A code to mail to a fetched address, to see whether it turns up in the fetched mailbox.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SenderProof {
+    pub account_id: i64,
+    pub address: String,
+    pub code: String,
 }
 
 #[derive(Clone)]
@@ -380,7 +396,7 @@ impl FetchFolder {
 const COLUMNS: &str = "id, account_id, address, host, port, security, username, after_fetch, fetch_junk, \
                        interval_secs, enabled, auth_serv_id, smtp_host, smtp_port, smtp_security, send_enabled, \
                        created_at, last_run_at, last_ok_at, last_error, last_fetched, total_fetched, backlog_at, \
-                       auth, oauth_expired, password_refused";
+                       auth, oauth_expired, password_refused, sender_verified_at IS NOT NULL";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<FetchAccount> {
     let security: String = row.get(5)?;
@@ -414,6 +430,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<FetchAccount> {
         auth: FetchAuth::parse(&auth).unwrap_or(FetchAuth::Password),
         login_expired: row.get(24)?,
         password_refused: row.get(25)?,
+        sender_verified: row.get(26)?,
     })
 }
 
@@ -463,6 +480,16 @@ pub(crate) fn unseal(conn: &Connection, sealed: &[u8]) -> Result<String> {
 }
 
 /// Keeps a provider's error message short enough for a table and a page.
+/// The setting that remembers when a fetched address was last mailed its proof code.
+fn sender_proof_limit_key(address: &str) -> String {
+    format!("sender-proof:{}", address.to_lowercase())
+}
+
+/// The setting that counts the proof codes an account had mailed today: "<since> <count>".
+fn sender_proof_account_key(account_id: i64) -> String {
+    format!("sender-proof-account:{account_id}")
+}
+
 fn shorten(value: &str, max: usize) -> String {
     let value = value.trim();
     match value.char_indices().nth(max) {
@@ -844,12 +871,133 @@ impl Store {
                     ));
                 }
                 set("send_enabled", &send)?;
+                // Switched on for an address that has not shown it is the owner's: the next run
+                // comes at once, and it mails the address its code.
+                let unproven: bool = tx.query_row(
+                    "SELECT sender_verified_at IS NULL FROM fetch_accounts WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )?;
+                if send && unproven {
+                    set("last_run_at", &None::<i64>)?;
+                }
             }
             Ok(tx.query_row(
                 &format!("SELECT {COLUMNS} FROM fetch_accounts WHERE id = ?1 AND account_id = ?2"),
                 params![id, account_id],
                 from_row,
             )?)
+        })
+        .await
+    }
+
+    /// The code to mail to a fetched address that may send but has not shown it is its owner's, when
+    /// one is due: never for a verified address or one that may not send, and at most once a day
+    /// for the same address, whichever rows or accounts name it, so a stranger's address is not
+    /// flooded. The code stays the same until it is used, so a message that comes late still
+    /// counts. The send is claimed here; [`Store::release_sender_proof`] gives it back when the
+    /// message could not be queued.
+    pub async fn fetch_sender_proof_due(&self, id: i64) -> Result<Option<SenderProof>> {
+        let at = now();
+        self.write(move |tx| {
+            let row = tx
+                .query_row(
+                    "SELECT f.account_id, f.address, f.sender_proof, f.sender_proof_sent_at
+                     FROM fetch_accounts f JOIN accounts a ON a.id = f.account_id
+                     WHERE f.id = ?1 AND f.send_enabled = 1 AND f.smtp_host <> '' AND f.sender_verified_at IS NULL
+                       -- The proof leaves from postmaster outside every sending limit, so only an
+                       -- account that may send at all gets one (R29-01).
+                       AND a.deleted_at IS NULL AND a.disabled = 0 AND a.smtp_enabled = 1 AND a.internal_only = 0
+                       AND NOT EXISTS (SELECT 1 FROM send_suspensions s WHERE s.account_id = a.id AND s.until > ?2)",
+                    params![id, at],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<i64>>(3)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((account_id, address, code, sent_at)) = row else { return Ok(None) };
+            if sent_at.is_some_and(|sent| at - sent < SENDER_PROOF_RESEND_SECS) {
+                return Ok(None);
+            }
+            // Kept in the settings and not on the row, so neither a second row nor deleting and
+            // adding the mailbox again sends the address another one the same day.
+            let limit = sender_proof_limit_key(&address);
+            let last = crate::db::get_setting(tx, &limit)?.and_then(|value| value.parse::<i64>().ok());
+            if last.is_some_and(|sent| at - sent < SENDER_PROOF_RESEND_SECS) {
+                return Ok(None);
+            }
+            // And an account cannot name new addresses all day: rows can be deleted and added again,
+            // the account's own count stays (R29-01).
+            let per_account = sender_proof_account_key(account_id);
+            let (since, count) = crate::db::get_setting(tx, &per_account)?
+                .and_then(|value| {
+                    let (since, count) = value.split_once(' ')?;
+                    Some((since.parse::<i64>().ok()?, count.parse::<u32>().ok()?))
+                })
+                .filter(|(since, _)| at - since < SENDER_PROOF_RESEND_SECS)
+                .unwrap_or((at, 0));
+            if count >= SENDER_PROOFS_PER_ACCOUNT {
+                return Ok(None);
+            }
+            crate::db::set_setting(tx, &per_account, &format!("{since} {}", count + 1))?;
+            crate::db::set_setting(tx, &limit, &at.to_string())?;
+            // The marks of a day ago are not needed any more (R29-02).
+            tx.execute(
+                "DELETE FROM settings WHERE key LIKE 'sender-proof%' AND CAST(value AS INTEGER) <= ?1",
+                params![at - SENDER_PROOF_RESEND_SECS],
+            )?;
+            let code = code.unwrap_or_else(|| hex::encode(random_bytes::<16>()));
+            tx.execute(
+                "UPDATE fetch_accounts SET sender_proof = ?2, sender_proof_sent_at = ?3 WHERE id = ?1",
+                params![id, code, at],
+            )?;
+            Ok(Some(SenderProof { account_id, address, code }))
+        })
+        .await
+    }
+
+    /// Gives back a send claimed by [`Store::fetch_sender_proof_due`] whose message never made it into
+    /// the queue, so the next run tries again instead of a day later.
+    pub async fn release_sender_proof(&self, id: i64, address: String) -> Result<()> {
+        self.write(move |tx| {
+            tx.execute("UPDATE fetch_accounts SET sender_proof_sent_at = NULL WHERE id = ?1", params![id])?;
+            crate::db::delete_setting(tx, &sender_proof_limit_key(&address))?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// The code that is out for a fetched address, while it is not verified.
+    pub async fn fetch_sender_proof(&self, id: i64) -> Result<Option<String>> {
+        self.read(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT sender_proof FROM fetch_accounts WHERE id = ?1 AND sender_verified_at IS NULL",
+                    params![id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten())
+        })
+        .await
+    }
+
+    /// Takes a fetched address as its owner's: the message with `code` arrived in the fetched
+    /// mailbox. Only the code that is out for this row counts. Whether it did.
+    pub async fn confirm_fetch_sender(&self, id: i64, code: String) -> Result<bool> {
+        let at = now();
+        self.write(move |tx| {
+            let changed = tx.execute(
+                "UPDATE fetch_accounts SET sender_verified_at = ?3, sender_proof = NULL
+                 WHERE id = ?1 AND sender_proof = ?2 AND sender_verified_at IS NULL",
+                params![id, code, at],
+            )?;
+            Ok(changed == 1)
         })
         .await
     }
@@ -909,7 +1057,8 @@ impl Store {
                 .query_row(
                     "SELECT account_id, address, smtp_host, smtp_port, smtp_security, username, password, id, auth
                      FROM fetch_accounts
-                     WHERE account_id = ?2 AND address = ?1 AND send_enabled = 1 AND smtp_host <> ''",
+                     WHERE account_id = ?2 AND address = ?1 AND send_enabled = 1 AND smtp_host <> ''
+                       AND sender_verified_at IS NOT NULL",
                     params![address, account_id],
                     |row| {
                         let security: String = row.get(4)?;
@@ -1611,11 +1760,35 @@ mod tests {
         );
         assert!(!store.account_owns_address(account_id, &address).await.unwrap());
 
-        // One successful fetch proves control; now the owner may answer from it -- and only the owner.
+        // One successful fetch lets the switch go on, but it only proves the login, not the address
+        // typed in next to it (M-01): sending waits until the code mailed to the address arrives.
         store.note_fetch_run(fetched.id, 1, None).await.unwrap();
         let turn_on = FetchAccountUpdate { send_enabled: Some(true), ..Default::default() };
         let saved = store.update_fetch_account(account_id, fetched.id, turn_on).await.unwrap();
         assert!(saved.send_enabled && saved.smtp_port == 465);
+        assert!(!saved.sender_verified);
+        assert!(saved.last_run_at.is_none(), "the next run comes at once, to mail the code");
+        assert!(!store.account_owns_address(account_id, &address).await.unwrap(), "not before the proof");
+        assert!(store.fetch_sender(account_id, &address).await.unwrap().is_none());
+
+        // A message that could not be queued gives its send back: the next run tries again, same code.
+        let first = store.fetch_sender_proof_due(fetched.id).await.unwrap().unwrap();
+        store.release_sender_proof(fetched.id, first.address.clone()).await.unwrap();
+        let proof = store.fetch_sender_proof_due(fetched.id).await.unwrap().unwrap();
+        assert_eq!(proof.code, first.code);
+        assert_eq!((proof.account_id, proof.address.as_str()), (account_id, address.as_str()));
+        assert_eq!(proof.code.len(), 32);
+        assert!(store.fetch_sender_proof_due(fetched.id).await.unwrap().is_none(), "mailed at most once a day");
+        assert_eq!(store.fetch_sender_proof(fetched.id).await.unwrap().as_deref(), Some(proof.code.as_str()));
+        assert!(!store.confirm_fetch_sender(fetched.id, "0".repeat(32)).await.unwrap(), "only its own code counts");
+        assert!(!store.account_owns_address(account_id, &address).await.unwrap());
+        assert!(store.confirm_fetch_sender(fetched.id, proof.code.clone()).await.unwrap());
+        assert!(!store.confirm_fetch_sender(fetched.id, proof.code).await.unwrap(), "a code counts once");
+        assert!(store.fetch_account(account_id, fetched.id).await.unwrap().unwrap().sender_verified);
+        assert!(store.fetch_sender_proof(fetched.id).await.unwrap().is_none());
+        assert!(store.fetch_sender_proof_due(fetched.id).await.unwrap().is_none(), "nothing to mail once proven");
+
+        // Now the owner may answer from it -- and only the owner.
         assert!(store.account_owns_address(account_id, &address).await.unwrap());
         assert!(!store.account_owns_address(other, &address).await.unwrap(), "not somebody else's address");
 
@@ -1684,10 +1857,62 @@ mod tests {
             };
             store.update_fetch_account(id, row, on).await.unwrap();
         }
+        // The address gets one proof a day, whichever account asks: the second waits its turn.
+        let proof = store.fetch_sender_proof_due(a_row.id).await.unwrap().unwrap();
+        assert!(store.confirm_fetch_sender(a_row.id, proof.code).await.unwrap());
+        assert!(store.fetch_sender_proof_due(b_row.id).await.unwrap().is_none(), "one a day per address");
+        // A day later (the mark wiped by hand here) it is the second account's turn.
+        assert!(store.delete_setting(&sender_proof_limit_key(&address)).await.unwrap());
+        let proof = store.fetch_sender_proof_due(b_row.id).await.unwrap().unwrap();
+        assert!(store.confirm_fetch_sender(b_row.id, proof.code).await.unwrap());
 
         // Each account routes through its own server, whatever the row order in the table is.
         assert_eq!(store.fetch_sender(a, &address).await.unwrap().unwrap().host, "smtp.a.example");
         assert_eq!(store.fetch_sender(b, &address).await.unwrap().unwrap().host, "smtp.b.example");
+    }
+
+    #[tokio::test]
+    async fn proof_codes_stay_within_what_the_account_may_send() {
+        // The proof leaves outside every sending limit, so an account naming address after address
+        // gets a few a day at most, and one that may not send gets none (R29-01).
+        let (store, _dir, account_id) = store_with_person().await;
+        let ready = async |address: String| {
+            let row = store.create_fetch_account(NewFetchAccount { address, ..new_account(account_id) }).await.unwrap();
+            store.note_fetch_run(row.id, 1, None).await.unwrap();
+            let on = FetchAccountUpdate {
+                smtp_host: Some("smtp.example.com".into()),
+                smtp_port: Some(465),
+                smtp_security: Some(SendSecurity::Tls),
+                send_enabled: Some(true),
+                ..Default::default()
+            };
+            store.update_fetch_account(account_id, row.id, on).await.unwrap();
+            row.id
+        };
+
+        let disabled = crate::AccountUpdate { disabled: Some(true), ..Default::default() };
+        store.update_account("mini@uwu.test", disabled).await.unwrap();
+        let row = ready("first@example.com".into()).await;
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_none(), "a disabled account gets none");
+        let enabled = crate::AccountUpdate { disabled: Some(false), ..Default::default() };
+        store.update_account("mini@uwu.test", enabled).await.unwrap();
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_some());
+        store.delete_fetch_account(account_id, row).await.unwrap();
+
+        for n in 1..SENDER_PROOFS_PER_ACCOUNT {
+            let row = ready(format!("victim{n}@example.com")).await;
+            assert!(store.fetch_sender_proof_due(row).await.unwrap().is_some(), "proof {n}");
+            store.delete_fetch_account(account_id, row).await.unwrap();
+        }
+        let row = ready("one-more@example.com".into()).await;
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_none(), "the day's count is used up");
+
+        // A day later the count starts again, and the old marks are cleared on the way.
+        let yesterday = now() - SENDER_PROOF_RESEND_SECS;
+        store.set_setting(&sender_proof_account_key(account_id), &format!("{yesterday} 99")).await.unwrap();
+        store.set_setting(&sender_proof_limit_key("victim1@example.com"), &yesterday.to_string()).await.unwrap();
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_some());
+        assert!(store.setting(&sender_proof_limit_key("victim1@example.com")).await.unwrap().is_none());
     }
 
     #[tokio::test]

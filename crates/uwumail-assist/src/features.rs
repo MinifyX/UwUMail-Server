@@ -1735,6 +1735,7 @@ const RULE_MEANINGS: &[(&str, &str)] = &[
     ("HTML_ATTACHMENT", "an attachment is a web page"),
     ("DISGUISED_ATTACHMENT", "an attachment's name hides its real type"),
     ("ARCHIVE_WITH_PROGRAM", "an archive attached holds a program"),
+    ("ARCHIVE_UNCHECKED", "an archive attached has too many files to look into"),
     ("FETCHED", "the mail was fetched from another mailbox"),
     ("PROVIDER_JUNK", "the other mail provider had put it in Junk"),
     ("PROVIDER_SPAM_FLAG", "the other mail provider marked it as spam"),

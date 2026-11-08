@@ -187,6 +187,20 @@ impl Store {
         Ok(())
     }
 
+    /// A refused token login (OAUTHBEARER or XOAUTH2). The name next to the token is the client's
+    /// to choose, so it only counts for that login when there is such an account here, as a wrong
+    /// password would; otherwise only the network counts it. Unchecked names would let anyone fill
+    /// the per-login counts or space out the logins of people they only guessed (security audit
+    /// 2026-11 N-09).
+    pub async fn token_refused(&self, ip: IpAddr, login: &str) {
+        let known = !login.trim().is_empty() && matches!(self.account(login).await, Ok(Some(_)));
+        if known {
+            self.auth_limiter().record_failure(ip, login);
+        } else {
+            self.auth_limiter().record_wrong_token(ip);
+        }
+    }
+
     /// Somebody at `ip` tried `login`, and there is no such login here.
     ///
     /// When it cannot have been meant for anyone — it is not an address, or it resembles none of
@@ -523,5 +537,37 @@ mod tests {
         assert_eq!(count("nyu", "abc"), None);
         assert_eq!(count("käse", "kaese"), Some(2));
         assert_eq!(count("admin", "marvin"), None);
+    }
+
+    #[tokio::test]
+    async fn a_refused_token_counts_for_a_login_only_when_it_is_one() {
+        // Security audit 2026-11 N-09: the name beside a token is the client's to choose.
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        store.create_domain("example.org").await.unwrap();
+        let nyu = crate::NewAccount {
+            address: "nyu@example.org".into(),
+            display_name: "Nyu".into(),
+            password: Some("katzenpfote-123".into()),
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        store.create_account(nyu).await.unwrap();
+        let limiter = store.auth_limiter();
+        for network in 0..10 {
+            let ip: IpAddr = format!("198.51.100.{network}").parse().unwrap();
+            store.token_refused(ip, "ghost@example.org").await;
+            store.token_refused(ip, "nyu@example.org").await;
+        }
+        assert!(!limiter.account_throttled("ghost@example.org"), "a made-up name is not counted");
+        assert!(limiter.account_throttled("nyu@example.org"), "a real one is, like a wrong password");
+        // The network counts both, whatever the name.
+        let one: IpAddr = "203.0.113.9".parse().unwrap();
+        for _ in 0..5 {
+            store.token_refused(one, "ghost@example.org").await;
+            store.token_refused(one, "").await;
+        }
+        assert!(limiter.is_blocked(one));
     }
 }

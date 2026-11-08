@@ -10,13 +10,13 @@ use uwumail_labels::{
     AiVerdict, Base, Decision, Detector, Facts, Label, Likeness, MAIN_THRESHOLD, Mail, Rules, ai_candidates, ask_about,
     choose, merge,
 };
-use uwumail_store::{Account, AssistLabel, EmailRecord, KeywordsChange, LabelLogWrite};
+use uwumail_store::{Account, AssistLabel, EmailRecord, KeywordsChange, LabelLogWrite, mime_limits};
 
 use crate::access::Embedder;
 use crate::features::TYPICAL_LABEL_TOKENS_PER_LABEL;
 use crate::features::{LabelPick, authentication, delivered_headers, parse_labels};
 use crate::llm;
-use crate::mail::MailText;
+use crate::mail::{MAX_PARSE_BYTES, MailText};
 use crate::prompts::{self, MAX_PROMPT_SHOTS, PromptLabel, PromptShot};
 use crate::{Assist, AssistError, Result};
 
@@ -24,8 +24,6 @@ use crate::{Assist, AssistError, Result};
 const LABEL_MAIL_CHARS: usize = 4000;
 /// Characters of a mail an embedding is made of.
 const EMBED_TEXT_CHARS: usize = 2000;
-/// Bytes of a message parsed for the facts, at most (as at delivery).
-const MAX_PARSE_BYTES: usize = 4 * 1024 * 1024;
 /// Labeled mails without an embedding that get one along with each new mail.
 const BACKFILL_PER_MAIL: usize = 8;
 /// A cheap way's finding this sure is shown to the model as a hint.
@@ -120,7 +118,9 @@ impl Assist {
         let mail_text = MailText::read(&record, &raw, LABEL_MAIL_CHARS);
         let cut = raw[..raw.len().min(MAX_PARSE_BYTES)].to_vec();
         let (mut mail, tokens) = tokio::task::spawn_blocking(move || {
-            let mail = Mail::parse(&cut);
+            // `uwumail-labels` depends on no other crate of ours: the MIME limits are checked here
+            // (security audit 2026-11 N-09).
+            let mail = if mime_limits::check(&cut).is_ok() { Mail::parse(&cut) } else { Mail::default() };
             let tokens: Vec<i64> =
                 uwumail_labels::tokens(&mail).iter().map(|token| uwumail_labels::token_hash(token)).collect();
             (mail, tokens)

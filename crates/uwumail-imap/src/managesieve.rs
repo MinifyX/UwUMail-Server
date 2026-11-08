@@ -594,7 +594,7 @@ impl Session {
                 Ok(Flow::Continue)
             }
             Ok(_) => {
-                limiter.record_failure(self.peer.ip(), &username);
+                self.sieve.store.token_refused(self.peer.ip(), &username).await;
                 self.auth_failures += 1;
                 tracing::warn!(login = %username, peer = %self.peer, "failed managesieve token login");
                 tokio::time::sleep(Duration::from_secs(1)).await;

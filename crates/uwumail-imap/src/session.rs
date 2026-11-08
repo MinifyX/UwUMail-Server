@@ -88,16 +88,16 @@ impl Selected {
     /// Positions (0-based) of the messages a set names, in order.
     fn resolve(&self, set: &SequenceSet, uid: bool) -> Vec<usize> {
         if uid {
-            let largest = self.largest_uid();
+            let set = set.sorted(self.largest_uid());
             self.messages
                 .iter()
                 .enumerate()
-                .filter(|(_, known)| set.contains(known.uid, largest))
+                .filter(|(_, known)| set.contains(known.uid))
                 .map(|(index, _)| index)
                 .collect()
         } else {
-            let count = self.messages.len() as u32;
-            (0..self.messages.len()).filter(|index| set.contains(*index as u32 + 1, count)).collect()
+            let set = set.sorted(self.messages.len() as u32);
+            (0..self.messages.len()).filter(|index| set.contains(*index as u32 + 1)).collect()
         }
     }
 
@@ -671,6 +671,9 @@ where
                     // A phone still using the right account password should not lock out its network.
                     MailAuthDenied::AppPasswordRequired => {}
                     MailAuthDenied::UnknownLogin => self.store.unknown_login(self.peer.ip(), username, "imap").await,
+                    // A token names its login itself; the name beside it is only believed for a
+                    // real account (security audit 2026-11 N-09).
+                    _ if challenge.is_some() => self.store.token_refused(self.peer.ip(), username).await,
                     _ => self.imap.limiter.record_failure(self.peer.ip(), username),
                 }
                 self.auth_failures += 1;
@@ -1112,11 +1115,10 @@ where
         {
             let mut vanished = self.store.imap_vanished(owner, found.mailbox.id, qresync.modseq).await?;
             if let Some(known) = &qresync.known_uids {
-                let largest = u32::MAX;
-                vanished.retain(|uid| known.contains(*uid, largest));
+                vanished = known.sorted(u32::MAX).intersect(&vanished);
             }
             if !vanished.is_empty() {
-                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::sequence_set(&vanished)));
+                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::range_set(&vanished)));
             }
             for (index, message) in state.messages.iter().enumerate() {
                 if message.modseq > qresync.modseq {
@@ -1481,7 +1483,8 @@ where
         }
         let (mailbox_id, owner, largest) = (selected.mailbox_id, selected.owner, selected.largest_uid());
         let uid_list = uids.map(|set| {
-            selected.messages.iter().map(|known| known.uid).filter(|uid| set.contains(*uid, largest)).collect()
+            let set = set.sorted(largest);
+            selected.messages.iter().map(|known| known.uid).filter(|uid| set.contains(*uid)).collect()
         });
         let removed = self.store.imap_expunge(owner, mailbox_id, uid_list).await?;
         self.report_removed(&removed).await.map_err(io_error)?;
@@ -1655,10 +1658,15 @@ where
 
         if vanished && let Some(since) = changed_since {
             let largest = selected.largest_uid();
-            let mut gone = self.store.imap_vanished(account, mailbox_id, since).await?;
-            gone.retain(|uid| set.contains(*uid, largest.max(*uid)));
+            let gone = self.store.imap_vanished(account, mailbox_id, since).await?;
+            // `*` stands for a vanished UID past the largest one still there, as in `set.contains(uid, largest.max(uid))`.
+            let mut wanted = set.clone();
+            if set.uses_largest() {
+                wanted.0.push((SeqNum::Value(largest.saturating_add(1)), SeqNum::Value(u32::MAX)));
+            }
+            let gone = wanted.sorted(largest).intersect(&gone);
             if !gone.is_empty() {
-                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::sequence_set(&gone)));
+                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::range_set(&gone)));
             }
         }
 

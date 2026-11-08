@@ -1117,7 +1117,7 @@ impl Session {
                 Ok(Next::Continue)
             }
             Ok(_) => {
-                ctx.auth_limiter.record_failure(self.peer, &username);
+                ctx.store.token_refused(self.peer, &username).await;
                 self.auth_failures += 1;
                 tracing::warn!(login = %username, peer = %self.peer, "failed smtp token login");
                 tokio::time::sleep(Duration::from_secs(1)).await;

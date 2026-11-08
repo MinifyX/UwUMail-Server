@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { MoveInfo } from "@/lib/api";
+import { escapeHtml } from "@/lib/format";
 import {
   emptyRow,
-  escapeHtml,
   isBlank,
   isBusy,
   csvCell,

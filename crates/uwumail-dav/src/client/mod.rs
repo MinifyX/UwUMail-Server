@@ -31,7 +31,7 @@ use uwumail_smtp::egress::{Dialer, DialerConnector};
 pub use discover::{Discovered, RemoteCollection, discover};
 pub use fetch::{MAX_IMPORT_BYTES, fetch_collection};
 pub use providers::{Provider, provider_of};
-pub use subscription::{FeedFetch, feed_url, fetch_feed, refresh_subscription, run_subscriptions};
+pub use subscription::{FeedFetch, feed_url, fetch_feed, refresh_subscription, run_subscription, run_subscriptions};
 
 use crate::xml::{self, DAV, Element};
 

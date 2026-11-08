@@ -475,59 +475,72 @@ impl Store {
 
     /// Destroys a mailbox. With `remove_emails`, emails only in this mailbox are destroyed
     /// and the others just leave it; without, a mailbox that still has emails is refused.
+    /// A big mailbox is emptied a thousand emails per write, so other writers are not held up for
+    /// long; each block is whole, and should a later one fail, the mailbox stays with the rest.
     pub async fn destroy_mailbox(&self, account_id: i64, id: i64, remove_emails: bool) -> Result<()> {
-        let modseq = self
-            .write(move |tx| {
-                if !mailbox_belongs(tx, account_id, id)? {
-                    return Err(StoreError::NotFound(format!("mailbox {id}")));
-                }
-                let children: i64 =
-                    tx.query_row("SELECT count(*) FROM mailboxes WHERE parent_id = ?1", [id], |row| row.get(0))?;
-                if children > 0 {
-                    return Err(rule("mailboxHasChild", "the mailbox has child mailboxes"));
-                }
-                let mut stmt = tx.prepare(
-                    "SELECT em.email_id, (SELECT count(*) FROM email_mailboxes o WHERE o.email_id = em.email_id)
-                     FROM email_mailboxes em WHERE em.mailbox_id = ?1",
-                )?;
-                let emails = stmt
-                    .query_map([id], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
-                    .collect::<Result<Vec<_>, _>>()?;
-                drop(stmt);
-                if !emails.is_empty() && !remove_emails {
-                    return Err(rule("mailboxHasEmail", "the mailbox still has emails"));
-                }
-                let mut batch = Batch::new(account_id);
-                let modseq = batch.modseq(tx)?;
-                for (email, memberships) in emails {
-                    if memberships <= 1 {
-                        destroy_one(tx, &mut batch, email)?;
-                    } else {
-                        tx.execute(
-                            "DELETE FROM email_mailboxes WHERE email_id = ?1 AND mailbox_id = ?2",
-                            params![email, id],
-                        )?;
-                        tx.execute("UPDATE emails SET updated_modseq = ?1 WHERE id = ?2", params![modseq, email])?;
-                        record_change(tx, account_id, modseq, "Email", email, "updated")?;
+        const BLOCK: usize = if cfg!(test) { 3 } else { 1000 };
+        loop {
+            let (modseq, done) = self
+                .write(move |tx| {
+                    if !mailbox_belongs(tx, account_id, id)? {
+                        return Err(StoreError::NotFound(format!("mailbox {id}")));
                     }
-                }
-                // A folder others saw is gone for them too.
-                let shared: bool = tx.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM mailbox_acl WHERE mailbox_id = ?1)
-                         OR EXISTS (SELECT 1 FROM shared_mailbox_members WHERE account_id = ?2)",
-                    params![id, account_id],
-                    |row| row.get(0),
-                )?;
-                if shared {
-                    crate::acl::sharing_changed(tx, account_id, modseq)?;
-                }
-                tx.execute("DELETE FROM mailboxes WHERE id = ?1", [id])?;
-                record_change(tx, account_id, modseq, "Mailbox", id, "destroyed")?;
-                Ok(modseq)
-            })
-            .await?;
-        self.notify_change(account_id, modseq);
-        Ok(())
+                    let children: i64 =
+                        tx.query_row("SELECT count(*) FROM mailboxes WHERE parent_id = ?1", [id], |row| row.get(0))?;
+                    if children > 0 {
+                        return Err(rule("mailboxHasChild", "the mailbox has child mailboxes"));
+                    }
+                    let mut stmt = tx.prepare(
+                        "SELECT em.email_id, (SELECT count(*) FROM email_mailboxes o WHERE o.email_id = em.email_id)
+                         FROM email_mailboxes em WHERE em.mailbox_id = ?1 LIMIT ?2",
+                    )?;
+                    let emails = stmt
+                        .query_map(params![id, BLOCK as i64], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    drop(stmt);
+                    if !emails.is_empty() && !remove_emails {
+                        return Err(rule("mailboxHasEmail", "the mailbox still has emails"));
+                    }
+                    let mut batch = Batch::new(account_id);
+                    let modseq = batch.modseq(tx)?;
+                    let full = emails.len() == BLOCK;
+                    for (email, memberships) in emails {
+                        if memberships <= 1 {
+                            destroy_one(tx, &mut batch, email)?;
+                        } else {
+                            tx.execute(
+                                "DELETE FROM email_mailboxes WHERE email_id = ?1 AND mailbox_id = ?2",
+                                params![email, id],
+                            )?;
+                            tx.execute("UPDATE emails SET updated_modseq = ?1 WHERE id = ?2", params![modseq, email])?;
+                            record_change(tx, account_id, modseq, "Email", email, "updated")?;
+                        }
+                    }
+                    if full {
+                        tx.execute("UPDATE mailboxes SET updated_modseq = ?1 WHERE id = ?2", params![modseq, id])?;
+                        record_change(tx, account_id, modseq, "Mailbox", id, "updated")?;
+                        return Ok((modseq, false));
+                    }
+                    // A folder others saw is gone for them too.
+                    let shared: bool = tx.query_row(
+                        "SELECT EXISTS (SELECT 1 FROM mailbox_acl WHERE mailbox_id = ?1)
+                             OR EXISTS (SELECT 1 FROM shared_mailbox_members WHERE account_id = ?2)",
+                        params![id, account_id],
+                        |row| row.get(0),
+                    )?;
+                    if shared {
+                        crate::acl::sharing_changed(tx, account_id, modseq)?;
+                    }
+                    tx.execute("DELETE FROM mailboxes WHERE id = ?1", [id])?;
+                    record_change(tx, account_id, modseq, "Mailbox", id, "destroyed")?;
+                    Ok((modseq, true))
+                })
+                .await?;
+            self.notify_change(account_id, modseq);
+            if done {
+                return Ok(());
+            }
+        }
     }
 }
 
@@ -654,5 +667,25 @@ mod tests {
             .unwrap();
         assert!(store.mailboxes(account).await.unwrap().iter().any(|m| m.name == "Katzen & Co"));
         assert!(store.mailboxes(account).await.unwrap().iter().any(|m| m.id == inbox));
+    }
+
+    #[tokio::test]
+    async fn a_big_mailbox_is_destroyed_in_blocks() {
+        let (store, _dir, account, inbox, _) = setup().await;
+        let folder = store.create_mailbox(account, "Viele", None, None, 0, true).await.unwrap();
+        let mut ids = Vec::new();
+        // More than two blocks of three (the test size), one email kept elsewhere as well.
+        for n in 0..7 {
+            let id = email(&store, account, &format!("{n}@x")).await.id;
+            let mailboxes = if n == 0 { vec![folder, inbox] } else { vec![folder] };
+            let update = EmailUpdate { id, mailboxes: MailboxesChange::Replace(mailboxes), ..Default::default() };
+            store.update_emails(account, vec![update]).await.unwrap();
+            ids.push(id);
+        }
+        store.destroy_mailbox(account, folder, true).await.unwrap();
+        assert!(!store.mailboxes(account).await.unwrap().iter().any(|m| m.id == folder));
+        let left = store.emails_by_ids(account, ids.clone()).await.unwrap();
+        assert_eq!(left.iter().map(|e| e.id).collect::<Vec<_>>(), vec![ids[0]]);
+        assert_eq!(left[0].mailbox_ids.len(), 1);
     }
 }
