@@ -81,7 +81,7 @@ RUN chmod 755 /usr/local/bin/uwumail-server \
 # The runtime is distroless: glibc, ca-certificates and tzdata, but no shell and no package
 # manager, so a break-in has almost nothing to build on. Pinned by digest; cc-debian13 is trixie,
 # so its glibc matches the binary.
-FROM gcr.io/distroless/cc-debian13@sha256:58e12be899275afaa05f1b03051ab19037ed7f252528e57a3a9ad7e220a62578
+FROM gcr.io/distroless/cc-debian13@sha256:e1f5543d45a2cd7c02a5b43dda5f0ff30729b4832113759d01ed39b0b152cddb
 COPY --from=prep /usr/local/bin/uwumail-server /usr/local/bin/uwumail-server
 COPY --from=prep --chown=10001:10001 /data /data
 COPY --from=ocr /ocr/ /
