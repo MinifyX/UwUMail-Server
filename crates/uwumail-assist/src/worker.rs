@@ -141,7 +141,13 @@ impl Assist {
         let raw = self.store().blob(&record.blob).await?;
         // Reading a message is plain computing: on the blocking pool, not on a worker of the server.
         let tokens = tokio::task::spawn_blocking(move || {
-            let mail = uwumail_labels::Mail::parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
+            let raw = &raw[..raw.len().min(MAX_PARSE_BYTES)];
+            // The MIME limits first, as in labeling (security audit 2026-11 N-09).
+            let mail = if uwumail_store::mime_limits::check(raw).is_ok() {
+                uwumail_labels::Mail::parse(raw)
+            } else {
+                uwumail_labels::Mail::default()
+            };
             uwumail_labels::tokens(&mail).iter().map(|token| uwumail_labels::token_hash(token)).collect()
         })
         .await

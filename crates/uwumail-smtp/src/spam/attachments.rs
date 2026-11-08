@@ -95,6 +95,8 @@ const HARMLESS_LOOKING: &[&str] = &[
 /// Zip archives larger than this are not opened, and neither are ones with more entries.
 const MAX_ZIP: usize = 25 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: usize = 10_000;
+/// How each entry of a zip archive's central directory begins.
+const CENTRAL_DIRECTORY_ENTRY: &[u8] = b"PK\x01\x02";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -149,6 +151,12 @@ fn is_disguised(name: &str) -> bool {
 /// Encrypted archives still show their file names, so they are covered too.
 fn program_in_zip(bytes: &[u8]) -> Option<String> {
     if bytes.len() > MAX_ZIP {
+        return None;
+    }
+    // Opening the archive reads its whole directory into memory, so the entries are counted
+    // first: every one starts with this signature, and an archive can hold no more of them than
+    // that (security audit 2026-11 N-09).
+    if memchr::memmem::find_iter(bytes, CENTRAL_DIRECTORY_ENTRY).take(MAX_ZIP_ENTRIES + 1).count() > MAX_ZIP_ENTRIES {
         return None;
     }
     let archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
@@ -317,5 +325,11 @@ mod tests {
         assert!(rules(&message_with(&[("fotos.zip", &fine)])).is_empty());
         // Not a zip at all: nothing to find, nothing to fail.
         assert!(rules(&message_with(&[("kaputt.zip", b"PK not really")])).is_empty());
+        // Too many entries: refused before the directory is read.
+        let names: Vec<String> = (0..=MAX_ZIP_ENTRIES).map(|n| format!("{n}.txt")).collect();
+        let crowded = zipped(&names.iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(program_in_zip(&crowded), None);
+        let few = zipped(&["a.txt", "b.js"]);
+        assert_eq!(program_in_zip(&few).as_deref(), Some("b.js"));
     }
 }

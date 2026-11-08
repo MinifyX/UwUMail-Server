@@ -824,6 +824,11 @@ async fn forged_mail_from_our_own_domain_is_not_forwarded_elsewhere() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
     assert!(return_path.starts_with("SRS0=") && return_path.ends_with("=a.test=chef@a.test"), "{return_path}");
+    // Should the forward fail, nobody gets a bounce: the named sender may never have sent it
+    // (security audit 2026-11 N-09).
+    let entries = store.queue_entries().await.unwrap();
+    let oma = entries.iter().flat_map(|e| &e.recipients).find(|r| r.address == "oma@c.test").unwrap();
+    assert_ne!(oma.notify_flags & smtp_proto::RCPT_NOTIFY_NEVER, 0, "{oma:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

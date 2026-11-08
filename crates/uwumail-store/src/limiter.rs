@@ -409,12 +409,18 @@ impl AuthLimiter {
             if accounts.len() > MAX_ENTRIES {
                 accounts.retain(|_, account| account.last.elapsed() <= WINDOW);
             }
-            let account = accounts.entry(login.clone()).or_insert(AccountFailures { count: 0, last: Instant::now() });
-            if account.last.elapsed() > WINDOW {
-                account.count = 0;
+            // Still full of fresh entries: a login not counted yet is left out rather than letting
+            // the map grow without end; the network still counts the try (security audit 2026-11
+            // N-09).
+            if accounts.len() <= MAX_ENTRIES || accounts.contains_key(&login) {
+                let account =
+                    accounts.entry(login.clone()).or_insert(AccountFailures { count: 0, last: Instant::now() });
+                if account.last.elapsed() > WINDOW {
+                    account.count = 0;
+                }
+                account.count += 1;
+                account.last = Instant::now();
             }
-            account.count += 1;
-            account.last = Instant::now();
         }
         self.record(ip, Tried::Wrong(Some(login)));
     }
