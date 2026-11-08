@@ -113,7 +113,9 @@ Logging out of the webmail stops nothing: scheduled mail survives the session.
 An admin can mark an account as one that may only send to addresses on this
 server: Admin → People → the person → Protocols → "Only send within this
 server" (`PATCH /api/admin/people/{login}` with `{"internalOnly": true}`,
-logged as `account.update`). It is off for everyone. On the inside counts
+logged as `account.update`), or on the command line with
+`uwumail-server account protocols someone@example.com --internal-only on`.
+It is off for everyone. On the inside counts
 every domain this server holds, mail and masked-only domains alike; an
 unknown address on one of them is refused as unknown, as for anyone else.
 
@@ -139,6 +141,11 @@ What else stays inside while it is on:
   passes mail on) still reach their targets here when an internal-only
   account writes to them; their targets elsewhere are left out, and the sender
   gets a bounce for the forwarding address with the same `550 5.7.1` reason.
+- **People here who forward elsewhere** get the message, also through a group,
+  and it stays with them even if they keep no copies otherwise: their forwarding
+  to other servers stops for this message. Their forwarding to people on this
+  server still goes. The sender is not told, because where someone forwards
+  their mail is theirs to know.
 - **Away replies** only answer senders on this server.
 - **Sending through a fetch account's provider** is switched off with the
   switch and cannot be switched back on (`internalOnly` error).

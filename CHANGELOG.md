@@ -3,6 +3,21 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+### Added
+
+- `account protocols --internal-only on|off` sets "Only send within this server" on the command
+  line, and `account list` shows it.
+
+### Fixed
+
+- Mail from an account that may only send within this server could still leave through someone
+  here who forwards elsewhere, also as a member of a group: their forwarding sent it on as usual.
+  Now it stays with them, and only this message's forwarding to other servers stops; forwarding to
+  people here and for everyone else's mail goes on. See
+  [docs/jmap-sending.md](docs/jmap-sending.md#sending-only-within-this-server).
+
 ## 0.28.1
 
 ### Added
