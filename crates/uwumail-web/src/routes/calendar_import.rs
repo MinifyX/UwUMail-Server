@@ -336,16 +336,8 @@ pub async fn refresh(State(web): State<Web>, session: Session, Path(id): Path<i6
     polite(&web, &session)?;
     let subscription = web.store().calendar_subscription(session.account.id, id).await?;
     let transport = web.dav_transport();
-    let run =
-        tokio::time::timeout(FEED_LIMIT, client::refresh_subscription(web.store(), transport.as_ref(), &subscription));
-    let failed = match run.await {
-        Ok(Ok(_)) => None,
-        Ok(Err(err)) => Some(err),
-        Err(_) => Some(RemoteError::Timeout),
-    };
-    if let Some(err) = failed {
-        web.store().note_subscription_run(id, Err(err.code().to_owned())).await?;
-    }
+    // How it went is noted on the subscription, which the answer shows.
+    let _ = client::run_subscription(web.store(), transport.as_ref(), &subscription).await;
     answer(&web, &session, json!({})).await
 }
 

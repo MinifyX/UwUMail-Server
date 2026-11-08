@@ -100,6 +100,21 @@ pub async fn refresh_subscription(
     Ok(Some(report))
 }
 
+/// Runs one subscription within [`RUN_LIMIT`] and notes a failure; a success notes itself. The
+/// worker and the portal's refresh button both come through here.
+pub async fn run_subscription(
+    store: &Store,
+    transport: &dyn Transport,
+    subscription: &CalendarSubscription,
+) -> Result<Option<DavMirrorReport>, RemoteError> {
+    let run = tokio::time::timeout(RUN_LIMIT, refresh_subscription(store, transport, subscription));
+    let result = run.await.unwrap_or(Err(RemoteError::Timeout));
+    if let Err(err) = &result {
+        let _ = store.note_subscription_run(subscription.id, Err(err.code().to_owned())).await;
+    }
+    result
+}
+
 /// Refreshes every subscription whose turn it is, until `shutdown` changes. Requests leave the way
 /// fetched mailboxes do, through the VPN when that is set for them.
 pub async fn run_subscriptions(store: Store, egress: Egress, mut shutdown: watch::Receiver<bool>) {
@@ -117,27 +132,19 @@ pub async fn run_subscriptions(store: Store, egress: Egress, mut shutdown: watch
                 if *shutdown.borrow() {
                     return;
                 }
-                let run = tokio::time::timeout(RUN_LIMIT, refresh_subscription(&store, &transport, &subscription));
-                let failed = match run.await {
-                    Ok(Ok(report)) => {
-                        if let Some(report) = report {
-                            tracing::debug!(
-                                subscription = subscription.id,
-                                source = %subscription.source,
-                                created = report.created,
-                                updated = report.updated,
-                                deleted = report.deleted,
-                                "calendar subscription refreshed"
-                            );
-                        }
-                        None
+                match run_subscription(&store, &transport, &subscription).await {
+                    Ok(Some(report)) => tracing::debug!(
+                        subscription = subscription.id,
+                        source = %subscription.source,
+                        created = report.created,
+                        updated = report.updated,
+                        deleted = report.deleted,
+                        "calendar subscription refreshed"
+                    ),
+                    Ok(None) => {}
+                    Err(err) => {
+                        tracing::info!(subscription = subscription.id, source = %subscription.source, %err, "a calendar feed failed")
                     }
-                    Ok(Err(err)) => Some(err),
-                    Err(_) => Some(RemoteError::Timeout),
-                };
-                if let Some(err) = failed {
-                    tracing::info!(subscription = subscription.id, source = %subscription.source, %err, "a calendar feed failed");
-                    let _ = store.note_subscription_run(subscription.id, Err(err.code().to_owned())).await;
                 }
             }
         }

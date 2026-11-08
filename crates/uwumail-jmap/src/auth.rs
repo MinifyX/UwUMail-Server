@@ -494,4 +494,19 @@ mod tests {
         assert!(!constant_time_eq("abc", "abd"));
         assert!(!constant_time_eq("abc", "ab"));
     }
+
+    #[tokio::test]
+    async fn second_factor_tries_run_out_and_a_right_code_gives_one_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let auth = super::Authenticator::new(uwumail_store::Store::open(dir.path()).await.unwrap());
+        for _ in 0..super::MAX_FAILURES {
+            assert!(auth.second_factor_attempt(7));
+        }
+        assert!(!auth.second_factor_attempt(7));
+        // Another account has its own tries.
+        assert!(auth.second_factor_attempt(8));
+        auth.second_factor_right(7);
+        assert!(auth.second_factor_attempt(7));
+        assert!(!auth.second_factor_attempt(7));
+    }
 }

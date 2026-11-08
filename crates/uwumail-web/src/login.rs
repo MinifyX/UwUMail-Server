@@ -133,6 +133,19 @@ impl LoginState {
         attempt.locks
     }
 
+    /// The try could not be checked (the database failed): it counts neither for the login nor for
+    /// the account.
+    pub fn give_back(&self, token: &str, account_id: i64, _attempt: Attempt) {
+        let mut pending = self.pending.lock().expect("pending logins poisoned");
+        if let Some(login) = pending.get_mut(token) {
+            login.attempts = login.attempts.saturating_sub(1);
+        }
+        let mut failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
+        if let Some((count, _)) = failures.get_mut(&account_id) {
+            *count = count.saturating_sub(1);
+        }
+    }
+
     /// Whether the account's second factor is locked: no code, passkey or recovery code is even
     /// looked at until the lock runs out. Another account's success does not lift it. The routes
     /// learn it from [`LoginState::attempt`].
@@ -257,5 +270,17 @@ mod tests {
         // A right code among them forgives the account, as one alone would.
         state.second_factor_passed(7);
         assert!(state.attempt(&state.start(7)).is_ok());
+    }
+
+    #[test]
+    fn a_try_that_could_not_be_checked_is_given_back() {
+        let state = LoginState::default();
+        let token = state.start(7);
+        for _ in 0..MAX_ATTEMPTS * 2 {
+            let attempt = state.attempt(&token).unwrap();
+            state.give_back(&token, 7, attempt);
+        }
+        assert!(state.get(&token).is_some());
+        assert!(!state.second_factor_locked(7));
     }
 }

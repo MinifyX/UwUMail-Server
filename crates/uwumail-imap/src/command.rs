@@ -45,6 +45,37 @@ impl SequenceSet {
             (a.min(b), a.max(b))
         })
     }
+
+    /// The set sorted and merged once, for asking about many numbers: [`SequenceSet::contains`]
+    /// walks every range on each call.
+    pub fn sorted(&self, largest: u32) -> SortedSet {
+        let mut ranges: Vec<(u32, u32)> = self.ranges(largest).collect();
+        ranges.sort_unstable();
+        let mut merged: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
+        for (from, to) in ranges {
+            match merged.last_mut() {
+                Some(last) if from <= last.1.saturating_add(1) => last.1 = last.1.max(to),
+                _ => merged.push((from, to)),
+            }
+        }
+        SortedSet(merged)
+    }
+
+    /// Whether the set names `*` anywhere.
+    pub fn uses_largest(&self) -> bool {
+        self.0.iter().any(|(from, to)| *from == SeqNum::Largest || *to == SeqNum::Largest)
+    }
+}
+
+/// A [`SequenceSet`] with `*` resolved, as sorted ranges that neither overlap nor touch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SortedSet(Vec<(u32, u32)>);
+
+impl SortedSet {
+    pub fn contains(&self, number: u32) -> bool {
+        let at = self.0.partition_point(|(_, to)| *to < number);
+        self.0.get(at).is_some_and(|(from, _)| *from <= number)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,4 +339,29 @@ pub enum SearchKey {
     /// Received within the last so many seconds (WITHIN).
     Younger(u64),
     Older(u64),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SeqNum, SequenceSet};
+
+    #[test]
+    fn a_sorted_set_matches_like_the_set() {
+        use SeqNum::{Largest, Value};
+        // Overlapping, touching, reversed and `*` ranges.
+        let set = SequenceSet(vec![
+            (Value(20), Value(15)),
+            (Value(3), Value(5)),
+            (Value(4), Value(9)),
+            (Value(10), Value(10)),
+            (Largest, Value(40)),
+            (Value(2), Value(2)),
+        ]);
+        let sorted = set.sorted(30);
+        for number in 0..60 {
+            assert_eq!(sorted.contains(number), set.contains(number, 30), "{number}");
+        }
+        assert_eq!(sorted, super::SortedSet(vec![(2, 10), (15, 20), (30, 40)]));
+        assert!(set.uses_largest() && !SequenceSet(vec![(Value(1), Value(2))]).uses_largest());
+    }
 }

@@ -321,7 +321,13 @@ pub async fn second_factor(
     let account =
         web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
     let attempt = take_attempt(&web, &request.token)?;
-    let check = web.store().check_second_factor_code(account.id, &request.code).await?;
+    let check = match web.store().check_second_factor_code(account.id, &request.code).await {
+        Ok(check) => check,
+        Err(err) => {
+            web.login_state().give_back(&request.token, account.id, attempt);
+            return Err(err.into());
+        }
+    };
     if check == CodeCheck::Invalid {
         second_factor_failed(&web, &account, client, &request.token, attempt).await;
         tracing::warn!(login = %account.login, ip = %client.ip, "wrong second factor code");

@@ -101,6 +101,8 @@ pub fn matches(key: &SearchKey, target: &Target<'_>, scope: &Scope, prepared: &P
         SearchKey::And(keys) => keys.iter().all(|key| matches(key, target, scope, prepared)),
         SearchKey::Or(left, right) => matches(left, target, scope, prepared) || matches(right, target, scope, prepared),
         SearchKey::Not(inner) => !matches(inner, target, scope, prepared),
+        // shortcut: walks the set for every message; sort it once (`SequenceSet::sorted`) in
+        // `prepare` if searches with long sets get slow.
         SearchKey::SequenceSet(set) => set.contains(target.msn, scope.largest_msn),
         SearchKey::Uid(set) => set.contains(email.uid, scope.largest_uid),
         SearchKey::Keyword(keyword) => has(keyword),

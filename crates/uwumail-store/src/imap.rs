@@ -493,9 +493,29 @@ impl Store {
     }
 
     /// UIDs that left a mailbox after the change `since`, in UID order.
+    /// Below the oldest change still kept ([`Store::prune_changes`]) that is every UID under
+    /// UIDNEXT that is not in the mailbox: RFC 7162 lets a server name UIDs the client never had,
+    /// so this answer is still complete.
     pub async fn imap_vanished(&self, account_id: i64, mailbox_id: i64, since: u64) -> Result<Vec<u32>> {
         self.read(move |conn| {
-            own_mailbox(conn, account_id, mailbox_id)?;
+            let mailbox = own_mailbox(conn, account_id, mailbox_id)?;
+            // A mailbox untouched since `since` lost nothing, whatever was pruned.
+            if (since as i64) < crate::objects::changes_floor(conn, account_id)?
+                && since < mailbox_modseq(conn, mailbox_id)?
+            {
+                // shortcut: lists every missing UID in memory, fine up to millions; send ranges if
+                // mailboxes ever get far past that.
+                let mut stmt = conn.prepare("SELECT uid FROM email_mailboxes WHERE mailbox_id = ?1 ORDER BY uid")?;
+                let mut gone = Vec::new();
+                let mut next = 1u32;
+                for uid in stmt.query_map([mailbox_id], |row| row.get::<_, i64>(0))? {
+                    let uid = uid? as u32;
+                    gone.extend(next..uid);
+                    next = uid.saturating_add(1);
+                }
+                gone.extend(next..mailbox.uid_next);
+                return Ok(gone);
+            }
             let mut stmt =
                 conn.prepare("SELECT uid FROM imap_vanished WHERE mailbox_id = ?1 AND modseq > ?2 ORDER BY uid")?;
             let rows = stmt.query_map(params![mailbox_id, since as i64], |row| row.get::<_, i64>(0))?;
@@ -583,6 +603,26 @@ mod tests {
         assert_eq!(skipped, vec![first], "the first message changed after the client's state");
         let status = store.imap_status(account, inbox).await.unwrap();
         assert_eq!((status.messages, status.unseen), (2, 1));
+    }
+
+    #[tokio::test]
+    async fn below_the_pruned_changes_every_missing_uid_is_vanished() {
+        let (store, _dir, account, roles) = setup().await;
+        let inbox = roles[&MailboxRole::Inbox];
+        let state = store.imap_messages(account, inbox).await.unwrap().highest_modseq;
+        let uids = [deliver(&store, account, "eins").await, deliver(&store, account, "zwei").await];
+        deliver(&store, account, "drei").await;
+        store
+            .imap_store_flags(account, inbox, uids.to_vec(), FlagChange::Add(vec![DELETED_KEYWORD.into()]), None)
+            .await
+            .unwrap();
+        store.imap_expunge(account, inbox, None).await.unwrap();
+        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), uids.to_vec());
+        store.prune_changes(0).await.unwrap();
+        // The log is gone, so every UID below UIDNEXT that is not there counts as vanished.
+        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), uids.to_vec());
+        let now = store.imap_messages(account, inbox).await.unwrap().highest_modseq;
+        assert!(store.imap_vanished(account, inbox, now).await.unwrap().is_empty());
     }
 
     #[tokio::test]

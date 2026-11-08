@@ -122,7 +122,8 @@ pub async fn handle(
             return problem(StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many wrong codes, try again later.");
         }
         let checked = store.check_second_factor_code(account.id, code).await;
-        if matches!(checked, Ok(CodeCheck::Totp | CodeCheck::RecoveryCode { .. })) {
+        // Only a wrong code costs a try; a right one or a database error gives it back.
+        if !matches!(checked, Ok(CodeCheck::Invalid)) {
             auth.second_factor_right(account.id);
         }
         match checked {

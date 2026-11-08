@@ -1,13 +1,17 @@
 //! Reading mail objects the way JMAP and IMAP need them: by id, per thread, and as changes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use rusqlite::{OptionalExtension, Row, params};
 use serde::Serialize;
 
 use crate::address::EmailAddress;
 use crate::blobs::BlobHash;
-use crate::{Result, Store, StoreError};
+use crate::{Result, Store, StoreError, now};
+
+/// How long the change log and the vanished IMAP UIDs are kept: a client that was away for longer
+/// loads its mail again.
+pub const CHANGES_RETENTION_SECS: i64 = 90 * 24 * 3600;
 
 /// Everything the store knows about an email without reading its blob.
 #[derive(Debug, Clone, Serialize)]
@@ -168,25 +172,91 @@ impl Store {
             if since < 0 || since > current {
                 return Err(StoreError::Invalid(format!("unknown state {since}")));
             }
+            if since < changes_floor(conn, account_id)? {
+                return Err(StoreError::Invalid(format!("the changes since {since} are no longer kept")));
+            }
             let mut stmt = conn.prepare(
                 "SELECT modseq, object_id, change FROM changes
                  WHERE account_id = ?1 AND kind = ?2 AND modseq > ?3 ORDER BY modseq, object_id",
             )?;
-            let rows = stmt
-                .query_map(params![account_id, kind, since], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
+            read_changes(stmt.query(params![account_id, kind, since])?, current, max_changes)
+        })
+        .await
+    }
 
-            Ok(aggregate(&rows, current, max_changes))
+    /// Forgets changes older than `retention_secs`, for JMAP and IMAP alike, and remembers per
+    /// account the lowest state that can still be answered. Once a day the account's modseq is
+    /// noted with the time, since the change rows have none. Returns the change rows removed.
+    pub async fn prune_changes(&self, retention_secs: i64) -> Result<usize> {
+        self.write(move |tx| {
+            let now = now();
+            tx.execute(
+                "INSERT INTO change_marks (account_id, at, modseq)
+                 SELECT id, ?1, modseq FROM accounts a
+                 WHERE NOT EXISTS (SELECT 1 FROM change_marks m WHERE m.account_id = a.id AND m.at > ?1 - 86400)",
+                [now],
+            )?;
+            // Per account the newest mark that is old enough, where it moves the floor up.
+            let floors = tx
+                .prepare(
+                    "SELECT m.account_id, m.at, m.modseq FROM change_marks m JOIN accounts a ON a.id = m.account_id
+                     WHERE m.at = (SELECT max(at) FROM change_marks WHERE account_id = m.account_id AND at <= ?1)
+                       AND m.modseq > a.changes_floor",
+                )?
+                .query_map([now - retention_secs], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get(2)?))
+                })?
+                .collect::<rusqlite::Result<Vec<(i64, i64, i64)>>>()?;
+            let mut removed = 0;
+            for (account_id, at, floor) in floors {
+                removed += tx.execute(
+                    "DELETE FROM changes WHERE account_id = ?1 AND modseq <= ?2",
+                    params![account_id, floor],
+                )?;
+                tx.execute(
+                    "DELETE FROM imap_vanished WHERE modseq <= ?2
+                       AND mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1)",
+                    params![account_id, floor],
+                )?;
+                tx.execute("UPDATE accounts SET changes_floor = ?2 WHERE id = ?1", params![account_id, floor])?;
+                tx.execute("DELETE FROM change_marks WHERE account_id = ?1 AND at < ?2", params![account_id, at])?;
+            }
+            Ok(removed)
         })
         .await
     }
 }
 
+/// The lowest state whose changes are still kept (see [`Store::prune_changes`]).
+pub(crate) fn changes_floor(conn: &rusqlite::Connection, account_id: i64) -> rusqlite::Result<i64> {
+    conn.query_row("SELECT changes_floor FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
+        .optional()
+        .map(Option::unwrap_or_default)
+}
+
+/// Reads change log rows (modseq, object, change) in modseq order and folds them with
+/// [`aggregate`]. With `max_changes` it stops at the first modseq after more objects than that,
+/// instead of reading the whole log.
+pub(crate) fn read_changes(mut rows: rusqlite::Rows<'_>, current: i64, max_changes: usize) -> Result<Changes> {
+    let mut read: Vec<(i64, i64, String)> = Vec::new();
+    let mut objects = HashSet::new();
+    let mut truncated = false;
+    while let Some(row) = rows.next()? {
+        let row = (row.get(0)?, row.get(1)?, row.get(2)?);
+        if max_changes > 0 && objects.len() > max_changes && read.last().map(|last| last.0) != Some(row.0) {
+            truncated = true;
+            break;
+        }
+        objects.insert(row.1);
+        read.push(row);
+    }
+    Ok(aggregate(&read, current, max_changes, truncated))
+}
+
 /// Folds change log rows (modseq, object, change), in modseq order, into what changed per
 /// object. With `max_changes`, stops before the modseq that would pass it, and says so.
-pub(crate) fn aggregate(rows: &[(i64, i64, String)], current: i64, max_changes: usize) -> Changes {
+/// `truncated` says more rows follow the last one given, which end with a whole modseq.
+pub(crate) fn aggregate(rows: &[(i64, i64, String)], current: i64, max_changes: usize, truncated: bool) -> Changes {
     let mut objects: BTreeMap<i64, Seen> = BTreeMap::new();
     let mut new_state = current;
     let mut has_more = false;
@@ -214,6 +284,11 @@ pub(crate) fn aggregate(rows: &[(i64, i64, String)], current: i64, max_changes: 
             objects.insert(*object, next);
         }
         index = group_end;
+    }
+    if truncated && !has_more {
+        // The first modseq alone held more objects than asked for; the rest comes next time.
+        new_state = rows.last().map_or(current, |last| last.0);
+        has_more = true;
     }
 
     let mut changes = Changes { new_state, has_more, ..Changes::default() };
@@ -288,5 +363,26 @@ mod tests {
         let mailboxes = store.changes(account.id, "Mailbox", start, 0).await.unwrap();
         assert_eq!(mailboxes.updated.len(), 2);
         assert!(store.changes(account.id, "Email", 10_000, 0).await.is_err());
+
+        // Pruned changes cannot be answered any more; from the floor on everything still can.
+        let now = store.account_modseq(account.id).await.unwrap();
+        assert!(store.prune_changes(0).await.unwrap() > 0);
+        assert!(matches!(store.changes(account.id, "Email", start, 0).await, Err(crate::StoreError::Invalid(_))));
+        let none = store.changes(account.id, "Email", now, 0).await.unwrap();
+        assert!(none.created.is_empty() && !none.has_more);
+        assert_eq!(store.prune_changes(0).await.unwrap(), 0, "one mark a day");
+    }
+
+    #[test]
+    fn a_change_list_cut_short_ends_with_a_whole_state() {
+        let row = |modseq, object, change: &str| (modseq, object, change.to_owned());
+        // The first state alone holds more than asked for: it comes whole, and more follows.
+        let rows = [row(5, 1, "created"), row(5, 2, "created"), row(5, 3, "created")];
+        let changes = super::aggregate(&rows, 9, 2, true);
+        assert_eq!((changes.created.len(), changes.new_state, changes.has_more), (3, 5, true));
+        // Rows overlapping the same object count once.
+        let rows = [row(5, 1, "created"), row(6, 1, "updated"), row(7, 2, "created"), row(8, 3, "created")];
+        let changes = super::aggregate(&rows, 9, 2, true);
+        assert_eq!((changes.created, changes.new_state, changes.has_more), (vec![1, 2], 7, true));
     }
 }
