@@ -316,14 +316,21 @@ async fn no_backup_runs_while_a_restore_is_fetched() {
     assert_eq!(backups.fetching().state, "ready", "{}", backups.fetching().error);
 }
 
-/// A backup the command line runs is only in the status, and one by hand waits for it too.
+/// A backup or restore in another process holds the lock file, and one by hand waits for it. A run
+/// that was killed only left its status behind, and that does not stop the next one.
 #[tokio::test]
 async fn a_backup_by_hand_waits_for_one_in_another_process() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _mini) = server(&dir.path().join("data")).await;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
-    let status = uwumail_backup::BackupStatus { started_at: Some(now - 60), ..Default::default() };
-    store.set_setting("backup.status", &serde_json::to_string(&status).unwrap()).await.unwrap();
+    let killed = uwumail_backup::BackupStatus { started_at: Some(now - 60), ..Default::default() };
+    store.set_setting("backup.status", &serde_json::to_string(&killed).unwrap()).await.unwrap();
     let backups = uwumail_backup::Backups::new(store, "mail.example.org", "0.1.0");
+
+    let other = std::fs::File::create(dir.path().join("data").join(uwumail_backup::LOCK_FILE)).unwrap();
+    other.try_lock().unwrap();
     assert!(matches!(backups.run_now().await, Err(Error::Busy(_))));
+    drop(other);
+    // No backup server is set up, so it fails, but no longer for being busy.
+    assert!(!matches!(backups.run_now().await, Err(Error::Busy(_))));
 }

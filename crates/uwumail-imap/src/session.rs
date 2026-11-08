@@ -1115,11 +1115,10 @@ where
         {
             let mut vanished = self.store.imap_vanished(owner, found.mailbox.id, qresync.modseq).await?;
             if let Some(known) = &qresync.known_uids {
-                let known = known.sorted(u32::MAX);
-                vanished.retain(|uid| known.contains(*uid));
+                vanished = known.sorted(u32::MAX).intersect(&vanished);
             }
             if !vanished.is_empty() {
-                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::sequence_set(&vanished)));
+                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::range_set(&vanished)));
             }
             for (index, message) in state.messages.iter().enumerate() {
                 if message.modseq > qresync.modseq {
@@ -1659,12 +1658,15 @@ where
 
         if vanished && let Some(since) = changed_since {
             let largest = selected.largest_uid();
-            let mut gone = self.store.imap_vanished(account, mailbox_id, since).await?;
+            let gone = self.store.imap_vanished(account, mailbox_id, since).await?;
             // `*` stands for a vanished UID past the largest one still there, as in `set.contains(uid, largest.max(uid))`.
-            let (sorted, star) = (set.sorted(largest), set.uses_largest());
-            gone.retain(|uid| sorted.contains(*uid) || (star && *uid > largest));
+            let mut wanted = set.clone();
+            if set.uses_largest() {
+                wanted.0.push((SeqNum::Value(largest.saturating_add(1)), SeqNum::Value(u32::MAX)));
+            }
+            let gone = wanted.sorted(largest).intersect(&gone);
             if !gone.is_empty() {
-                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::sequence_set(&gone)));
+                out.raw(&format!("* VANISHED (EARLIER) {}\r\n", response::range_set(&gone)));
             }
         }
 

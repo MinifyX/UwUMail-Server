@@ -131,6 +131,7 @@ delivery and the mail apps.
 | `HTML_ATTACHMENT` | +1.5 | a web page is attached, a common way to bring in a fake login page |
 | `DISGUISED_ATTACHMENT` | +2.0 | such a file hides its real ending: "rechnung.pdf.exe", a long gap of spaces, or direction marks |
 | `ARCHIVE_WITH_PROGRAM` | +3.0 | a zip archive holds a program or a macro file |
+| `ARCHIVE_UNCHECKED` | +0.5 | a zip archive has more than 10,000 entries, too many to look into |
 | `MISSING_DATE` | +1.0 | no readable `Date` header |
 | `MISSING_MESSAGE_ID` | +1.0 | no `Message-ID` |
 | `DATE_IN_FUTURE` | +2.0 | the date is more than a day ahead |

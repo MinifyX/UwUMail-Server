@@ -27,8 +27,8 @@ pub use format::{Codec, Manifest, RepoConfig, RepoKey};
 pub use mailbox::{MailboxProgress, MailboxRestoreReport, SnapshotFolder, SnapshotPerson};
 pub use retention::Retention;
 pub use service::{
-    BackupSettings, BackupStatus, Backups, Fetching, Look, MailboxRestore, MailboxRestoreDone, READY_FILE, STAGING_DIR,
-    Staged,
+    BackupSettings, BackupStatus, Backups, Fetching, LOCK_FILE, Look, MailboxRestore, MailboxRestoreDone, READY_FILE,
+    STAGING_DIR, Staged,
 };
 pub use sftp::{Login, SftpTarget};
 pub use storage::Storage;
@@ -237,6 +237,7 @@ fn other_files(data_dir: &Path) -> Vec<(String, PathBuf)> {
                     || name == "cache"
                     || name == TEMP_DIR
                     || name == STAGING_DIR
+                    || name == LOCK_FILE
                     || name.starts_with("uwumail.db"))
             {
                 continue;

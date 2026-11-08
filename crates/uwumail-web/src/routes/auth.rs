@@ -247,13 +247,19 @@ pub async fn passkey_login(
         web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
     let attempt = take_attempt(&web, &request.token)?;
 
+    // A store error is not a wrong try: the try goes back, as for codes.
+    let found = match webauthn::decode(&request.credential.id) {
+        Ok(credential_id) => match web.store().passkey_by_credential(&credential_id).await {
+            Ok(found) => Ok(found),
+            Err(err) => {
+                web.login_state().give_back(&request.token, account.id, attempt);
+                return Err(err.into());
+            }
+        },
+        Err(detail) => Err(detail),
+    };
     let checked = async {
-        let credential_id = webauthn::decode(&request.credential.id)?;
-        let passkey = web
-            .store()
-            .passkey_by_credential(&credential_id)
-            .await
-            .map_err(|err| err.to_string())?
+        let passkey = found?
             .filter(|passkey| passkey.account_id == account.id)
             .ok_or("this passkey does not belong to the account")?;
         let rp = RelyingParty::for_hostname(&web.settings().hostname);

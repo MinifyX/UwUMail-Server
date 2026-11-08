@@ -9,8 +9,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 - Fetched mailboxes that could send before this version have to prove their address once before
   it can be used as a sender again. This happens on its own with the next fetch run (a mail with
-  a code goes to the address, the fetch picks it up); a paused fetch has to be resumed first. The
-  portal's fetch page shows which addresses are still waiting.
+  a code goes to the address, the fetch picks it up); a paused fetch has to be resumed first. When
+  the other provider sorts that mail into Junk, turn on fetching Junk for that mailbox or move the
+  mail to the inbox there. The portal's fetch page shows which addresses are still waiting.
 - Web sessions now end 30 days after login at the latest, so sessions older than that end with
   the update and people sign in again.
 - Three database migrations run on start (an index on emails, the sender proof, the change
@@ -26,7 +27,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 - Sending as a fetched address needs proof that the address is the account's: the next fetch run
   mails the address a code, which the fetch brings back in. At most one such mail a day per
-  address, however many fetched mailboxes or accounts name it. See `docs/fetch.md`.
+  address, however many fetched mailboxes or accounts name it, and at most 10 a day per account;
+  accounts that are disabled, suspended, internal-only or without SMTP get none. See
+  `docs/fetch.md`.
 - Second-factor codes: tries are counted before they are checked, so parallel requests cannot
   try more codes than allowed (portal login and JMAP token endpoint). A database error while
   checking no longer counts as a wrong code.
@@ -38,8 +41,8 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   calendars and address books of one account hold at most 1 GiB, or the account's quota when
   that is lower (507 Insufficient Storage).
 - winmail.dat: a recipient table that declares millions of empty rows no longer takes memory
-  without limit. ZIP attachments with more than 10,000 entries count as suspicious, and entries
-  are counted before the archive is opened.
+  without limit. ZIP attachments with more than 10,000 entries are not looked into and score
+  `ARCHIVE_UNCHECKED` (+0.5), and entries are counted before the archive is opened.
 - Kept copies of refused mail are capped at 1 GiB in total.
 - Dependencies: pageant 0.2.5; `cargo audit` passes again.
 
@@ -57,15 +60,21 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   failing at once.
 - Backups: the daily backup no longer starts while a whole-server restore is being fetched, the
   fetched restore is not backed up itself, and *Back up now* waits for a backup the command line
-  is running. A restore that fails halfway puts the previous database and its journal back.
-- `update.sh` checks that the rolled-back version really comes up after a failed update, and says
-  plainly when the new version had already migrated the database and what to do.
+  is running. Backups, restores and the restore swap at start share a file lock
+  (`backup.lock`), so the command line and the server no longer run one at the same time, and a
+  crashed backup no longer blocks the next. A restore that fails halfway puts every file it
+  replaced back, not only the database and its journal.
+- `update.sh` waits up to 15 minutes while the new version is still migrating, checks that the
+  rolled-back version really comes up after a failed update, and never rolls back once the new
+  version has migrated the database; it says so plainly and what to do.
+- A database error during passkey login no longer counts as a wrong try.
 - Refreshing a calendar subscription from the portal no longer fetches it twice.
 
 ### Changed
 
 - JMAP change history and IMAP vanished UIDs are kept for 90 days. A client with an older state
   gets `cannotCalculateChanges` (JMAP) or a full VANISHED list (IMAP QRESYNC) and syncs again.
+  Old history is pruned in small batches, and VANISHED is worked out as UID ranges.
 - Deleting a large mailbox works in blocks and no longer holds up other writes.
 - Faster IMAP sequence sets, blob lookups (new index), thread visibility checks and the queue list
   (the portal lists the oldest 500 messages).

@@ -76,6 +76,20 @@ impl SortedSet {
         let at = self.0.partition_point(|(_, to)| *to < number);
         self.0.get(at).is_some_and(|(from, _)| *from <= number)
     }
+
+    /// The parts of sorted, non-overlapping inclusive `ranges` that are in the set.
+    pub fn intersect(&self, ranges: &[(u32, u32)]) -> Vec<(u32, u32)> {
+        let mut out = Vec::new();
+        let (mut i, mut j) = (0, 0);
+        while i < self.0.len() && j < ranges.len() {
+            let (from, to) = (self.0[i].0.max(ranges[j].0), self.0[i].1.min(ranges[j].1));
+            if from <= to {
+                out.push((from, to));
+            }
+            if self.0[i].1 < ranges[j].1 { i += 1 } else { j += 1 }
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,5 +377,6 @@ mod tests {
         }
         assert_eq!(sorted, super::SortedSet(vec![(2, 10), (15, 20), (30, 40)]));
         assert!(set.uses_largest() && !SequenceSet(vec![(Value(1), Value(2))]).uses_largest());
+        assert_eq!(sorted.intersect(&[(1, 3), (8, 16), (25, 50)]), vec![(2, 3), (8, 10), (15, 16), (30, 40)]);
     }
 }

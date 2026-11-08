@@ -381,8 +381,10 @@ Two things follow from that:
   it in the `X-UwUMail-Sender-Proof` header or the text. Until then the row's
   `senderVerified` is `false` and sending as the address is refused as if the
   switch were off. An address is mailed a code at most once a day, however many
-  rows or accounts name it, and a message that could not be queued does not
-  count, so the next run tries again. The code only comes back through a fetch,
+  rows or accounts name it, and one account gets at most 10 codes mailed a day
+  (only while it may send at all: not disabled, suspended, internal-only or
+  without SMTP). A message that could not be queued does not count for its
+  address, so the next run tries again. The code only comes back through a fetch,
   so a paused mailbox never gets proven: the portal says so next to the row.
   Rows that could send before this check existed start out unproven and get
   their code the same way, once their fetch runs (security audit 2026-11 M-01).

@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
-use uwumail_backup::{READY_FILE as READY, STAGING_DIR as STAGING, Staged};
+use uwumail_backup::{LOCK_FILE, READY_FILE as READY, STAGING_DIR as STAGING, Staged};
 
 /// What the database that was here before is called afterwards. Kept, not deleted: it is the only
 /// copy of whatever was on this machine, and a restore is exactly the moment someone might realise
@@ -58,6 +58,18 @@ pub fn waiting(data_dir: &Path) -> Option<Staged> {
 /// Answers what happened, for the server to write into the database it has just been handed. A
 /// restore that cannot be finished is not fatal: the staging directory goes, the server starts on
 /// what it had, and the portal says why.
+/// Holds the lock backups and restores share, waiting for whoever has it now.
+async fn lock_backups(data_dir: &Path) -> std::io::Result<std::fs::File> {
+    let path = data_dir.join(LOCK_FILE);
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::options().create(true).truncate(false).write(true).open(path)?;
+        file.lock()?;
+        Ok(file)
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
 pub async fn take_over(data_dir: &Path) -> Option<Done> {
     let ready = waiting(data_dir)?;
     let mut done = Done {
@@ -73,6 +85,12 @@ pub async fn take_over(data_dir: &Path) -> Option<Done> {
         from = %ready.hostname,
         "putting a backup back before starting; the data that is here now is moved aside"
     );
+    // A backup the command line runs meanwhile must not read files halfway through the swap, so
+    // this waits for it to end (R29-10).
+    let lock = lock_backups(data_dir).await;
+    if let Err(err) = &lock {
+        tracing::warn!(%err, "could not take the backup lock; putting the backup back anyway");
+    }
     match swap(data_dir, &ready).await {
         Ok(()) => {
             done.kept_gateway = ready.keep_gateway;
@@ -117,16 +135,36 @@ async fn swap(data_dir: &Path, ready: &Staged) -> anyhow::Result<()> {
         }
     }
 
-    // Everything the snapshot brought, into place. Blobs are named after their content, so a name
-    // that is already here holds the same bytes and is left alone.
+    // Everything the snapshot brought, into place.
+    let mut moved = Vec::new();
     let result = async {
-        move_into(&staging, data_dir).await.context("moving the restored files into place")?;
+        move_into(&staging, data_dir, ready.asked_at, &mut moved)
+            .await
+            .context("moving the restored files into place")?;
         tokio::fs::rename(&fresh, &current).await.with_context(|| format!("putting {} in place", current.display()))
     }
     .await;
-    if result.is_err() && moved_aside {
-        // The server starts on the database it had. Files the snapshot already brought stay; the
-        // database is what matters.
+    if result.is_ok() {
+        // Only now is nothing left to put back. The old database stays aside, see [`REPLACED`].
+        for (_, aside) in moved {
+            if let Some(aside) = aside {
+                let _ = tokio::fs::remove_file(aside).await;
+            }
+        }
+        return result;
+    }
+    // The server starts on what it had: keys and certificates that do not match the old database
+    // would be as broken as no database. Last moved goes back first.
+    for (target, aside) in moved.iter().rev() {
+        let back = match aside {
+            Some(aside) => tokio::fs::rename(aside, target).await,
+            None => tokio::fs::remove_file(target).await,
+        };
+        if let Err(err) = back {
+            tracing::error!(%err, path = %target.display(), "could not put a file back after the restore failed");
+        }
+    }
+    if moved_aside {
         tokio::fs::rename(&aside, &current)
             .await
             .with_context(|| format!("putting {} back after the restore failed", aside.display()))?;
@@ -137,11 +175,22 @@ async fn swap(data_dir: &Path, ready: &Staged) -> anyhow::Result<()> {
     result
 }
 
+/// A file the snapshot put in place, and where the one it replaced went, if there was one.
+type Moved = Vec<(PathBuf, Option<PathBuf>)>;
+
 /// Moves everything in `from` into `to`, merging directories and leaving `uwumail.db` where it is:
-/// that one goes last, so the data directory never looks complete before it is.
-async fn move_into(from: &Path, to: &Path) -> std::io::Result<()> {
-    let mut entries = tokio::fs::read_dir(from).await?;
-    while let Some(entry) = entries.next_entry().await? {
+/// that one goes last, so the data directory never looks complete before it is. What it replaces
+/// is renamed to `<name>.replaced.<asked_at>` and noted in `moved`, for [`swap`] to put back or
+/// throw away.
+async fn move_into(from: &Path, to: &Path, asked_at: i64, moved: &mut Moved) -> std::io::Result<()> {
+    let mut entries = Vec::new();
+    let mut dir = tokio::fs::read_dir(from).await?;
+    while let Some(entry) = dir.next_entry().await? {
+        entries.push(entry);
+    }
+    // In name order, so a restore does the same thing every time.
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
         let name = entry.file_name();
         if name == "uwumail.db" {
             continue;
@@ -149,13 +198,21 @@ async fn move_into(from: &Path, to: &Path) -> std::io::Result<()> {
         let target = to.join(&name);
         if entry.file_type().await?.is_dir() {
             tokio::fs::create_dir_all(&target).await?;
-            Box::pin(move_into(&entry.path(), &target)).await?;
+            Box::pin(move_into(&entry.path(), &target, asked_at, moved)).await?;
             let _ = tokio::fs::remove_dir(entry.path()).await;
         } else {
             // A blob already here is the same content under the same name; anything else the
             // snapshot brought wins, because putting the snapshot back is the whole point.
-            let _ = tokio::fs::remove_file(&target).await;
-            tokio::fs::rename(entry.path(), &target).await?;
+            let mut aside = None;
+            if tokio::fs::try_exists(&target).await? {
+                let mut name = target.as_os_str().to_owned();
+                name.push(format!(".replaced.{asked_at}"));
+                tokio::fs::rename(&target, &name).await?;
+                aside = Some(PathBuf::from(name));
+            }
+            let result = tokio::fs::rename(entry.path(), &target).await;
+            moved.push((target, aside));
+            result?;
         }
     }
     Ok(())
@@ -298,5 +355,46 @@ mod tests {
         assert_eq!(std::fs::read(data.join("uwumail.db")).unwrap(), b"old database");
         assert_eq!(std::fs::read(data.join("uwumail.db-wal")).unwrap(), b"old journal", "with its journal");
         assert!(!data.join("uwumail.db.replaced.42").exists());
+    }
+
+    #[tokio::test]
+    async fn a_restore_that_fails_after_replacing_files_puts_every_one_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path();
+        std::fs::write(data.join("uwumail.db"), b"old database").unwrap();
+        std::fs::write(data.join("dkim.key"), b"my key").unwrap();
+        // A file where the snapshot brings a directory, after `dkim.key` in name order.
+        std::fs::write(data.join("tls"), b"not a directory").unwrap();
+        let staging = staging_dir(data);
+        std::fs::create_dir_all(staging.join("tls")).unwrap();
+        std::fs::write(staging.join("tls/cert.pem"), b"their certificate").unwrap();
+        std::fs::write(staging.join("dkim.key"), b"their key").unwrap();
+        std::fs::write(staging.join("added.txt"), b"only in the snapshot").unwrap();
+        std::fs::write(staging.join("uwumail.db"), b"restored database").unwrap();
+        ready(data);
+
+        let done = take_over(data).await.expect("a restore was waiting");
+        assert!(done.error.contains("moving the restored files"), "{}", done.error);
+        assert_eq!(std::fs::read(data.join("uwumail.db")).unwrap(), b"old database");
+        assert_eq!(std::fs::read(data.join("dkim.key")).unwrap(), b"my key", "the key matches the database again");
+        assert_eq!(std::fs::read(data.join("tls")).unwrap(), b"not a directory");
+        assert!(!data.join("added.txt").exists());
+        assert!(!data.join("dkim.key.replaced.42").exists());
+    }
+
+    #[tokio::test]
+    async fn a_restore_that_works_throws_the_replaced_files_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path();
+        std::fs::write(data.join("uwumail.db"), b"old database").unwrap();
+        std::fs::write(data.join("dkim.key"), b"my key").unwrap();
+        std::fs::create_dir_all(staging_dir(data)).unwrap();
+        std::fs::write(staging_dir(data).join("dkim.key"), b"their key").unwrap();
+        std::fs::write(staging_dir(data).join("uwumail.db"), b"restored database").unwrap();
+        ready(data);
+
+        assert_eq!(take_over(data).await.unwrap().error, "");
+        assert_eq!(std::fs::read(data.join("dkim.key")).unwrap(), b"their key");
+        assert!(!data.join("dkim.key.replaced.42").exists());
     }
 }

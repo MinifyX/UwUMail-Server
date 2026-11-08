@@ -111,6 +111,13 @@ pub fn sequence_set(numbers: &[u32]) -> String {
     out
 }
 
+/// `1:3,5` from sorted inclusive ranges.
+pub fn range_set(ranges: &[(u32, u32)]) -> String {
+    let parts: Vec<String> =
+        ranges.iter().map(|(from, to)| if from == to { from.to_string() } else { format!("{from}:{to}") }).collect();
+    parts.join(",")
+}
+
 /// IMAP flags for stored keywords.
 ///
 /// A keyword that is no IMAP atom is left out, whatever the store holds: written as it is, it
@@ -496,6 +503,7 @@ mod tests {
     #[test]
     fn numbers_flags_and_dates() {
         assert_eq!(sequence_set(&[1, 2, 3, 5, 7, 8]), "1:3,5,7:8");
+        assert_eq!(range_set(&[(1, 3), (5, 5), (7, 4_000_000)]), "1:3,5,7:4000000");
         assert_eq!(flags(&["$seen".into(), "$forwarded".into()]), "(\\Seen $Forwarded)");
         assert_eq!(internal_date(0), "\"01-Jan-1970 00:00:00 +0000\"");
         assert_eq!(internal_date(1_789_634_096), "\"17-Sep-2026 08:34:56 +0000\"");

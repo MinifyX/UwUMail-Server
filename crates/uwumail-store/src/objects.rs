@@ -187,45 +187,77 @@ impl Store {
     /// Forgets changes older than `retention_secs`, for JMAP and IMAP alike, and remembers per
     /// account the lowest state that can still be answered. Once a day the account's modseq is
     /// noted with the time, since the change rows have none. Returns the change rows removed.
+    ///
+    /// Each account gets its own writes and rows go in batches, so the first prune of a big
+    /// history does not hold the write lock for long. The floor moves up before any row goes:
+    /// a `changes` call in between answers "no longer kept" rather than a delta with gaps.
     pub async fn prune_changes(&self, retention_secs: i64) -> Result<usize> {
-        self.write(move |tx| {
-            let now = now();
-            tx.execute(
-                "INSERT INTO change_marks (account_id, at, modseq)
-                 SELECT id, ?1, modseq FROM accounts a
-                 WHERE NOT EXISTS (SELECT 1 FROM change_marks m WHERE m.account_id = a.id AND m.at > ?1 - 86400)",
-                [now],
-            )?;
-            // Per account the newest mark that is old enough, where it moves the floor up.
-            let floors = tx
-                .prepare(
-                    "SELECT m.account_id, m.at, m.modseq FROM change_marks m JOIN accounts a ON a.id = m.account_id
-                     WHERE m.at = (SELECT max(at) FROM change_marks WHERE account_id = m.account_id AND at <= ?1)
-                       AND m.modseq > a.changes_floor",
-                )?
-                .query_map([now - retention_secs], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get(2)?))
-                })?
-                .collect::<rusqlite::Result<Vec<(i64, i64, i64)>>>()?;
-            let mut removed = 0;
-            for (account_id, at, floor) in floors {
-                removed += tx.execute(
-                    "DELETE FROM changes WHERE account_id = ?1 AND modseq <= ?2",
-                    params![account_id, floor],
-                )?;
+        let floors = self
+            .write(move |tx| {
+                let now = now();
                 tx.execute(
-                    "DELETE FROM imap_vanished WHERE modseq <= ?2
-                       AND mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1)",
+                    "INSERT INTO change_marks (account_id, at, modseq)
+                     SELECT id, ?1, modseq FROM accounts a
+                     WHERE NOT EXISTS (SELECT 1 FROM change_marks m WHERE m.account_id = a.id AND m.at > ?1 - 86400)",
+                    [now],
+                )?;
+                // Per account the newest mark that is old enough, where it moves the floor up.
+                let floors = tx
+                    .prepare(
+                        "SELECT m.account_id, m.at, m.modseq FROM change_marks m JOIN accounts a ON a.id = m.account_id
+                         WHERE m.at = (SELECT max(at) FROM change_marks WHERE account_id = m.account_id AND at <= ?1)
+                           AND m.modseq > a.changes_floor",
+                    )?
+                    .query_map([now - retention_secs], |row| {
+                        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get(2)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<(i64, i64, i64)>>>()?;
+                Ok(floors)
+            })
+            .await?;
+        let mut removed = 0;
+        for (account_id, at, floor) in floors {
+            self.write(move |tx| {
+                tx.execute(
+                    "UPDATE accounts SET changes_floor = max(changes_floor, ?2) WHERE id = ?1",
                     params![account_id, floor],
                 )?;
-                tx.execute("UPDATE accounts SET changes_floor = ?2 WHERE id = ?1", params![account_id, floor])?;
                 tx.execute("DELETE FROM change_marks WHERE account_id = ?1 AND at < ?2", params![account_id, at])?;
+                Ok(())
+            })
+            .await?;
+            // Rows at or below the floor are never read any more, so a crash between batches
+            // only leaves rows that the next floor move takes along.
+            loop {
+                let (changes, vanished) = self
+                    .write(move |tx| {
+                        let changes = tx.execute(
+                            "DELETE FROM changes WHERE (account_id, modseq, kind, object_id) IN
+                               (SELECT account_id, modseq, kind, object_id FROM changes
+                                WHERE account_id = ?1 AND modseq <= ?2 LIMIT ?3)",
+                            params![account_id, floor, PRUNE_BATCH as i64],
+                        )?;
+                        let vanished = tx.execute(
+                            "DELETE FROM imap_vanished WHERE (mailbox_id, uid) IN
+                               (SELECT mailbox_id, uid FROM imap_vanished WHERE modseq <= ?2
+                                  AND mailbox_id IN (SELECT id FROM mailboxes WHERE account_id = ?1) LIMIT ?3)",
+                            params![account_id, floor, PRUNE_BATCH as i64],
+                        )?;
+                        Ok((changes, vanished))
+                    })
+                    .await?;
+                removed += changes;
+                if changes < PRUNE_BATCH && vanished < PRUNE_BATCH {
+                    break;
+                }
             }
-            Ok(removed)
-        })
-        .await
+        }
+        Ok(removed)
     }
 }
+
+/// Rows [`Store::prune_changes`] removes per write.
+const PRUNE_BATCH: usize = if cfg!(test) { 3 } else { 5000 };
 
 /// The lowest state whose changes are still kept (see [`Store::prune_changes`]).
 pub(crate) fn changes_floor(conn: &rusqlite::Connection, account_id: i64) -> rusqlite::Result<i64> {
@@ -366,7 +398,22 @@ mod tests {
 
         // Pruned changes cannot be answered any more; from the floor on everything still can.
         let now = store.account_modseq(account.id).await.unwrap();
-        assert!(store.prune_changes(0).await.unwrap() > 0);
+        // More rows than one batch (3 in tests): all go, and the floor is the current state.
+        let before = store.changes(account.id, "Email", start, 0).await.unwrap().created.len()
+            + store.changes(account.id, "Thread", start, 0).await.unwrap().created.len();
+        assert!(before > super::PRUNE_BATCH);
+        assert!(store.prune_changes(0).await.unwrap() >= before);
+        let (left, floor) = store
+            .read(move |conn| {
+                let left: i64 =
+                    conn.query_row("SELECT count(*) FROM changes WHERE account_id = ?1", [account.id], |row| {
+                        row.get(0)
+                    })?;
+                Ok((left, super::changes_floor(conn, account.id)?))
+            })
+            .await
+            .unwrap();
+        assert_eq!((left, floor), (0, now));
         assert!(matches!(store.changes(account.id, "Email", start, 0).await, Err(crate::StoreError::Invalid(_))));
         let none = store.changes(account.id, "Email", now, 0).await.unwrap();
         assert!(none.created.is_empty() && !none.has_more);

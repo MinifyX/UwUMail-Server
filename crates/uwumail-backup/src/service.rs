@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, Notify, watch};
+use tokio::sync::{Notify, watch};
 use uwumail_store::Store;
 
 use crate::mailbox::{MailboxProgress, MailboxRestoreReport, SnapshotPerson};
@@ -19,6 +19,10 @@ const STATUS_KEY: &str = "backup.status";
 pub const READY_FILE: &str = "restore.ready";
 /// The directory a snapshot is put together in before it does.
 pub const STAGING_DIR: &str = "restore";
+/// The file in the data directory whose lock is held by whatever reads or writes the backup server
+/// at length. A lock of the operating system, so the command line in another process sees it too,
+/// and it goes with the process that held it.
+pub const LOCK_FILE: &str = "backup.lock";
 /// After a failed run, the next attempt waits this long.
 const RETRY_SECS: i64 = 3600;
 /// A run that has not finished after this long was cut short by a restart, not still going. Without
@@ -183,11 +187,7 @@ struct Inner {
     hostname: String,
     version: String,
     wakeup: Notify,
-    /// Held while anything reads or writes the backup server at length: a backup, or taking a
-    /// mailbox out of a snapshot. A backup prunes what no snapshot needs, and must not do that
-    /// under a restore that is reading it.
-    running: Arc<Mutex<()>>,
-    /// Whether the one holding `running` is a backup.
+    /// Whether the one holding [`LOCK_FILE`] in this process is a backup.
     backing_up: AtomicBool,
     mailbox: std::sync::Mutex<MailboxRestore>,
     /// Where the server keeps its data. Only set when a restore is possible at all -- the command
@@ -211,7 +211,6 @@ impl Backups {
                 hostname: hostname.to_owned(),
                 version: version.to_owned(),
                 wakeup: Notify::new(),
-                running: Arc::new(Mutex::new(())),
                 backing_up: AtomicBool::new(false),
                 mailbox: std::sync::Mutex::default(),
                 data_dir: std::sync::OnceLock::new(),
@@ -313,12 +312,7 @@ impl Backups {
             return Err(Error::Busy("a mailbox is being restored right now".into()));
         }
         // Held until the fetching ends, so the daily backup does not start (and prune) under it.
-        let running = self
-            .inner
-            .running
-            .clone()
-            .try_lock_owned()
-            .map_err(|_| Error::Busy("a backup is running right now".into()))?;
+        let running = self.hold(|| "a backup is running right now".into())?;
         // Claimed here, under the lock and before anything is awaited. Checking first and setting
         // after would let two clicks a moment apart both get through, and the second one empties the
         // staging directory the first is still filling.
@@ -467,6 +461,21 @@ impl Backups {
         }
     }
 
+    /// Takes [`LOCK_FILE`]: a backup prunes what no snapshot needs, and must not do that under a
+    /// restore that is reading it. Held until the file is dropped; `busy` says who else has it.
+    fn hold(&self, busy: impl FnOnce() -> String) -> Result<std::fs::File, Error> {
+        let file = std::fs::File::options()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(self.inner.store.data_dir().join(LOCK_FILE))?;
+        match file.try_lock() {
+            Ok(()) => Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) => Err(Error::Busy(busy())),
+            Err(std::fs::TryLockError::Error(err)) => Err(err.into()),
+        }
+    }
+
     pub fn is_running(&self) -> bool {
         self.inner.backing_up.load(Ordering::SeqCst)
     }
@@ -498,18 +507,15 @@ impl Backups {
 
     /// Backs up now, unless one is running already.
     pub async fn run_now(&self) -> Result<BackupReport, Error> {
-        let _running = self.inner.running.try_lock().map_err(|_| {
-            Error::Busy(if self.mailbox_busy() {
+        // A backup the command line started in another process holds it too.
+        let _running = self.hold(|| {
+            if self.mailbox_busy() {
                 "a mailbox is being restored from a snapshot right now".into()
             } else {
-                "a backup is running already".into()
-            })
+                "a backup or a restore is running already".into()
+            }
         })?;
         let mut status = self.status().await;
-        // A backup the command line started is only in the status.
-        if running_at(&status, now()) {
-            return Err(Error::Busy("a backup is running already".into()));
-        }
         let _flag = RunningFlag::raise(&self.inner.backing_up);
         let started = now();
         status.last_attempt_at = Some(started);
@@ -619,11 +625,7 @@ impl Backups {
     }
 
     /// Takes the slot for a job on a snapshot: the backup server to itself, and the state moved on.
-    fn claim_mailbox(
-        &self,
-        state: &str,
-        start: impl FnOnce(&mut MailboxRestore),
-    ) -> Result<tokio::sync::OwnedMutexGuard<()>, Error> {
+    fn claim_mailbox(&self, state: &str, start: impl FnOnce(&mut MailboxRestore)) -> Result<std::fs::File, Error> {
         if self.staged().is_some() || self.fetching().state == "fetching" {
             return Err(Error::Busy("the whole server is being restored".into()));
         }
@@ -634,12 +636,7 @@ impl Backups {
         if state == "restoring" && job.state != "open" {
             return Err(Error::Config("open a snapshot first".into()));
         }
-        let running = self
-            .inner
-            .running
-            .clone()
-            .try_lock_owned()
-            .map_err(|_| Error::Busy("a backup is running right now".into()))?;
+        let running = self.hold(|| "a backup is running right now".into())?;
         start(&mut job);
         Ok(running)
     }
@@ -814,12 +811,7 @@ impl Backups {
             .ok_or_else(|| {
                 Error::Config(format!("there is no mailbox {target} on this server to put the mail into"))
             })?;
-        let _running = self
-            .inner
-            .running
-            .clone()
-            .try_lock_owned()
-            .map_err(|_| Error::Busy("a backup is running right now".into()))?;
+        let _running = self.hold(|| "a backup is running right now".into())?;
         let dir = self.inner.store.data_dir().join(crate::TEMP_DIR).join("restore-mailbox-cli");
         let path = dir.join("uwumail.db");
         let result = async {

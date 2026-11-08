@@ -32,6 +32,8 @@ pub const FETCH_HOLD_LIMIT_SECS: i64 = 24 * 3600;
 pub const FETCH_SEEN_SECS: i64 = 30 * 24 * 3600;
 /// How long a fetched address waits before its proof code is mailed to it again, by any row.
 const SENDER_PROOF_RESEND_SECS: i64 = 24 * 3600;
+/// How many proof codes one account may have mailed a day, whatever addresses it names.
+const SENDER_PROOFS_PER_ACCOUNT: u32 = 10;
 /// Where the key for sealing provider passwords is kept.
 const SECRET_KEY: &str = "fetch.secret_key";
 
@@ -483,6 +485,11 @@ fn sender_proof_limit_key(address: &str) -> String {
     format!("sender-proof:{}", address.to_lowercase())
 }
 
+/// The setting that counts the proof codes an account had mailed today: "<since> <count>".
+fn sender_proof_account_key(account_id: i64) -> String {
+    format!("sender-proof-account:{account_id}")
+}
+
 fn shorten(value: &str, max: usize) -> String {
     let value = value.trim();
     match value.char_indices().nth(max) {
@@ -895,9 +902,14 @@ impl Store {
         self.write(move |tx| {
             let row = tx
                 .query_row(
-                    "SELECT account_id, address, sender_proof, sender_proof_sent_at FROM fetch_accounts
-                     WHERE id = ?1 AND send_enabled = 1 AND smtp_host <> '' AND sender_verified_at IS NULL",
-                    params![id],
+                    "SELECT f.account_id, f.address, f.sender_proof, f.sender_proof_sent_at
+                     FROM fetch_accounts f JOIN accounts a ON a.id = f.account_id
+                     WHERE f.id = ?1 AND f.send_enabled = 1 AND f.smtp_host <> '' AND f.sender_verified_at IS NULL
+                       -- The proof leaves from postmaster outside every sending limit, so only an
+                       -- account that may send at all gets one (R29-01).
+                       AND a.deleted_at IS NULL AND a.disabled = 0 AND a.smtp_enabled = 1 AND a.internal_only = 0
+                       AND NOT EXISTS (SELECT 1 FROM send_suspensions s WHERE s.account_id = a.id AND s.until > ?2)",
+                    params![id, at],
                     |row| {
                         Ok((
                             row.get::<_, i64>(0)?,
@@ -919,7 +931,26 @@ impl Store {
             if last.is_some_and(|sent| at - sent < SENDER_PROOF_RESEND_SECS) {
                 return Ok(None);
             }
+            // And an account cannot name new addresses all day: rows can be deleted and added again,
+            // the account's own count stays (R29-01).
+            let per_account = sender_proof_account_key(account_id);
+            let (since, count) = crate::db::get_setting(tx, &per_account)?
+                .and_then(|value| {
+                    let (since, count) = value.split_once(' ')?;
+                    Some((since.parse::<i64>().ok()?, count.parse::<u32>().ok()?))
+                })
+                .filter(|(since, _)| at - since < SENDER_PROOF_RESEND_SECS)
+                .unwrap_or((at, 0));
+            if count >= SENDER_PROOFS_PER_ACCOUNT {
+                return Ok(None);
+            }
+            crate::db::set_setting(tx, &per_account, &format!("{since} {}", count + 1))?;
             crate::db::set_setting(tx, &limit, &at.to_string())?;
+            // The marks of a day ago are not needed any more (R29-02).
+            tx.execute(
+                "DELETE FROM settings WHERE key LIKE 'sender-proof%' AND CAST(value AS INTEGER) <= ?1",
+                params![at - SENDER_PROOF_RESEND_SECS],
+            )?;
             let code = code.unwrap_or_else(|| hex::encode(random_bytes::<16>()));
             tx.execute(
                 "UPDATE fetch_accounts SET sender_proof = ?2, sender_proof_sent_at = ?3 WHERE id = ?1",
@@ -1838,6 +1869,50 @@ mod tests {
         // Each account routes through its own server, whatever the row order in the table is.
         assert_eq!(store.fetch_sender(a, &address).await.unwrap().unwrap().host, "smtp.a.example");
         assert_eq!(store.fetch_sender(b, &address).await.unwrap().unwrap().host, "smtp.b.example");
+    }
+
+    #[tokio::test]
+    async fn proof_codes_stay_within_what_the_account_may_send() {
+        // The proof leaves outside every sending limit, so an account naming address after address
+        // gets a few a day at most, and one that may not send gets none (R29-01).
+        let (store, _dir, account_id) = store_with_person().await;
+        let ready = async |address: String| {
+            let row = store.create_fetch_account(NewFetchAccount { address, ..new_account(account_id) }).await.unwrap();
+            store.note_fetch_run(row.id, 1, None).await.unwrap();
+            let on = FetchAccountUpdate {
+                smtp_host: Some("smtp.example.com".into()),
+                smtp_port: Some(465),
+                smtp_security: Some(SendSecurity::Tls),
+                send_enabled: Some(true),
+                ..Default::default()
+            };
+            store.update_fetch_account(account_id, row.id, on).await.unwrap();
+            row.id
+        };
+
+        let disabled = crate::AccountUpdate { disabled: Some(true), ..Default::default() };
+        store.update_account("mini@uwu.test", disabled).await.unwrap();
+        let row = ready("first@example.com".into()).await;
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_none(), "a disabled account gets none");
+        let enabled = crate::AccountUpdate { disabled: Some(false), ..Default::default() };
+        store.update_account("mini@uwu.test", enabled).await.unwrap();
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_some());
+        store.delete_fetch_account(account_id, row).await.unwrap();
+
+        for n in 1..SENDER_PROOFS_PER_ACCOUNT {
+            let row = ready(format!("victim{n}@example.com")).await;
+            assert!(store.fetch_sender_proof_due(row).await.unwrap().is_some(), "proof {n}");
+            store.delete_fetch_account(account_id, row).await.unwrap();
+        }
+        let row = ready("one-more@example.com".into()).await;
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_none(), "the day's count is used up");
+
+        // A day later the count starts again, and the old marks are cleared on the way.
+        let yesterday = now() - SENDER_PROOF_RESEND_SECS;
+        store.set_setting(&sender_proof_account_key(account_id), &format!("{yesterday} 99")).await.unwrap();
+        store.set_setting(&sender_proof_limit_key("victim1@example.com"), &yesterday.to_string()).await.unwrap();
+        assert!(store.fetch_sender_proof_due(row).await.unwrap().is_some());
+        assert!(store.setting(&sender_proof_limit_key("victim1@example.com")).await.unwrap().is_none());
     }
 
     #[tokio::test]

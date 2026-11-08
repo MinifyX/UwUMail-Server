@@ -510,16 +510,24 @@ impl Store {
 
     /// Every queued message with its recipients, oldest first, in two queries.
     pub async fn queue_entries(&self) -> Result<Vec<QueueEntry>> {
-        self.read(|conn| {
-            let mut stmt = conn.prepare(&format!("SELECT {RECIPIENT_COLUMNS} FROM queue_recipients ORDER BY id"))?;
+        self.oldest_queue_entries(-1).await
+    }
+
+    /// The `limit` oldest queued messages with their recipients; -1 for all of them.
+    pub async fn oldest_queue_entries(&self, limit: i64) -> Result<Vec<QueueEntry>> {
+        self.read(move |conn| {
+            let mut stmt = conn
+                .prepare(&format!("SELECT {MESSAGE_COLUMNS} FROM queue_messages ORDER BY created_at, id LIMIT ?1"))?;
+            let messages = stmt.query_map([limit], message_row)?.collect::<Result<Vec<_>, _>>()?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {RECIPIENT_COLUMNS} FROM queue_recipients
+                 WHERE message_id IN (SELECT id FROM queue_messages ORDER BY created_at, id LIMIT ?1) ORDER BY id"
+            ))?;
             let mut recipients: std::collections::HashMap<i64, Vec<QueueRecipient>> = Default::default();
-            for recipient in stmt.query_map([], recipient_from_row)? {
+            for recipient in stmt.query_map([limit], recipient_from_row)? {
                 let recipient = recipient?;
                 recipients.entry(recipient.message_id).or_default().push(recipient);
             }
-            let mut stmt =
-                conn.prepare(&format!("SELECT {MESSAGE_COLUMNS} FROM queue_messages ORDER BY created_at, id"))?;
-            let messages = stmt.query_map([], message_row)?.collect::<Result<Vec<_>, _>>()?;
             messages
                 .into_iter()
                 .map(|row| {
@@ -776,6 +784,8 @@ mod tests {
             .map(|entry| (entry.message.id, entry.recipients.iter().map(|r| r.address.as_str()).collect::<Vec<_>>()))
             .collect();
         assert_eq!(listed, [(first, vec!["a@example.net", "b@example.org"]), (second, vec!["c@example.net"])]);
+        let oldest = store.oldest_queue_entries(1).await.unwrap();
+        assert_eq!((oldest.len(), oldest[0].message.id, oldest[0].recipients.len()), (1, first, 2));
     }
 
     #[tokio::test]

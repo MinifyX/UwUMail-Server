@@ -492,34 +492,45 @@ impl Store {
         Ok(removed)
     }
 
-    /// UIDs that left a mailbox after the change `since`, in UID order.
+    /// UIDs that left a mailbox after the change `since`, as sorted ranges (inclusive) that
+    /// neither overlap nor touch.
     /// Below the oldest change still kept ([`Store::prune_changes`]) that is every UID under
     /// UIDNEXT that is not in the mailbox: RFC 7162 lets a server name UIDs the client never had,
     /// so this answer is still complete.
-    pub async fn imap_vanished(&self, account_id: i64, mailbox_id: i64, since: u64) -> Result<Vec<u32>> {
+    pub async fn imap_vanished(&self, account_id: i64, mailbox_id: i64, since: u64) -> Result<Vec<(u32, u32)>> {
         self.read(move |conn| {
             let mailbox = own_mailbox(conn, account_id, mailbox_id)?;
             // A mailbox untouched since `since` lost nothing, whatever was pruned.
             if (since as i64) < crate::objects::changes_floor(conn, account_id)?
                 && since < mailbox_modseq(conn, mailbox_id)?
             {
-                // shortcut: lists every missing UID in memory, fine up to millions; send ranges if
-                // mailboxes ever get far past that.
+                // The gaps between the UIDs still there.
                 let mut stmt = conn.prepare("SELECT uid FROM email_mailboxes WHERE mailbox_id = ?1 ORDER BY uid")?;
                 let mut gone = Vec::new();
                 let mut next = 1u32;
                 for uid in stmt.query_map([mailbox_id], |row| row.get::<_, i64>(0))? {
                     let uid = uid? as u32;
-                    gone.extend(next..uid);
+                    if next < uid {
+                        gone.push((next, uid - 1));
+                    }
                     next = uid.saturating_add(1);
                 }
-                gone.extend(next..mailbox.uid_next);
+                if next < mailbox.uid_next {
+                    gone.push((next, mailbox.uid_next - 1));
+                }
                 return Ok(gone);
             }
             let mut stmt =
                 conn.prepare("SELECT uid FROM imap_vanished WHERE mailbox_id = ?1 AND modseq > ?2 ORDER BY uid")?;
-            let rows = stmt.query_map(params![mailbox_id, since as i64], |row| row.get::<_, i64>(0))?;
-            Ok(rows.map(|uid| uid.map(|uid| uid as u32)).collect::<Result<_, _>>()?)
+            let mut gone: Vec<(u32, u32)> = Vec::new();
+            for uid in stmt.query_map(params![mailbox_id, since as i64], |row| row.get::<_, i64>(0))? {
+                let uid = uid? as u32;
+                match gone.last_mut() {
+                    Some(last) if last.1.checked_add(1) == Some(uid) => last.1 = uid,
+                    _ => gone.push((uid, uid)),
+                }
+            }
+            Ok(gone)
         })
         .await
     }
@@ -617,12 +628,25 @@ mod tests {
             .await
             .unwrap();
         store.imap_expunge(account, inbox, None).await.unwrap();
-        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), uids.to_vec());
+        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), vec![(uids[0], uids[1])]);
         store.prune_changes(0).await.unwrap();
         // The log is gone, so every UID below UIDNEXT that is not there counts as vanished.
-        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), uids.to_vec());
+        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), vec![(uids[0], uids[1])]);
         let now = store.imap_messages(account, inbox).await.unwrap().highest_modseq;
         assert!(store.imap_vanished(account, inbox, now).await.unwrap().is_empty());
+
+        // Far past the messages still there, the answer stays a handful of ranges.
+        store
+            .write(move |tx| Ok(tx.execute("UPDATE mailboxes SET uid_next = 4000000 WHERE id = ?1", [inbox])?))
+            .await
+            .unwrap();
+        let last = deliver(&store, account, "vier").await;
+        assert_eq!(last, 4_000_000);
+        // UIDs: two expunged, "drei" still there, then a gap up to "vier".
+        assert_eq!(
+            store.imap_vanished(account, inbox, state).await.unwrap(),
+            vec![(uids[0], uids[1]), (uids[1] + 2, last - 1)]
+        );
     }
 
     #[tokio::test]
@@ -640,7 +664,7 @@ mod tests {
         assert_eq!(copied, vec![(second, 1)]);
         let again = store.imap_copy(account, inbox, vec![second], trash, false).await.unwrap();
         assert_eq!(again, vec![(second, 1)], "a message is in a mailbox once");
-        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), vec![first]);
+        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), vec![(first, first)]);
 
         // In two mailboxes: expunging from the Inbox keeps the copy in the Trash.
         store
@@ -649,7 +673,7 @@ mod tests {
             .unwrap();
         assert_eq!(store.imap_expunge(account, inbox, Some(vec![first])).await.unwrap(), Vec::<u32>::new());
         assert_eq!(store.imap_expunge(account, inbox, None).await.unwrap(), vec![second]);
-        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), vec![first, second]);
+        assert_eq!(store.imap_vanished(account, inbox, state).await.unwrap(), vec![(first, second)]);
         assert_eq!(store.imap_status(account, trash).await.unwrap().messages, 1);
 
         // In one mailbox: expunging destroys the email.

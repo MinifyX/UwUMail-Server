@@ -414,10 +414,17 @@ fi
 step "starting the new version"
 docker compose up -d || die "the new version did not start. What it says: cd $dir && docker compose logs"
 
-# Waits up to two minutes for the container to say it is healthy.
+# Whether the container is still on its way up: running, never restarted, and not "ready" yet.
+# Moving a large database on can take minutes, and the health check calls that unhealthy.
+starting() {
+  [ "$(docker inspect --format '{{.State.Running}} {{.RestartCount}}' "$service" 2>/dev/null)" = "true 0" ] &&
+    ! docker logs "$service" 2>&1 | grep -q 'ready ✉'
+}
+
+# Waits two minutes for the container to say it is healthy, and up to fifteen while it is starting.
 wait_healthy() {
   printf '  waiting for the server'
-  for _ in $(seq 1 60); do
+  for i in $(seq 1 450); do
     printf '.'
     sleep 2
     case "$(docker inspect --format '{{.State.Health.Status}}' "$service" 2>/dev/null)" in
@@ -425,15 +432,39 @@ wait_healthy() {
         printf '\n'
         return 0
         ;;
-      unhealthy) break ;;
+      unhealthy) starting || break ;;
     esac
+    if [ "$i" -eq 60 ]; then
+      starting || break
+      printf '\n  still starting, probably moving the database on; waiting up to 15 minutes'
+    elif [ "$i" -gt 60 ] && ! starting; then
+      break
+    fi
   done
   printf '\n'
   return 1
 }
 
+point_at_backup() {
+  if $backed_up; then
+    warn "Or put back the backup made just before this update: it is the newest snapshot on your backup server"
+    warn "(how: https://github.com/$repo/blob/main/docs/backups.md)."
+  else
+    warn "No backup was made before this update."
+  fi
+}
+
 # ── back to the old one, when the new one does not come up ────────────────────────────────────
 if ! wait_healthy; then
+  # Once the database has moved on, the version from before refuses to open it: going back would
+  # only swap one server that does not start for another.
+  if docker logs "$service" 2>&1 | grep -q 'applied database migration'; then
+    warn "the new version did not come up healthy, but it has already updated the database, so it stays"
+    warn "Look at its logs and restart it (cd $dir && docker compose up -d) once the cause is fixed."
+    point_at_backup
+    warn "What went wrong: cd $dir && docker compose logs $service"
+    exit 1
+  fi
   warn "the new version did not come up healthy; putting the one from before back"
   if looks_like_version "$running_version"; then
     set_env UWUMAIL_VERSION "$running_version"
@@ -446,12 +477,7 @@ if ! wait_healthy; then
     printf '\n'
     warn "the version from before does not come up either: the new one has probably already updated the database"
     warn "Start the new version again (UWUMAIL_VERSION=$image_tag in $dir/.env, then docker compose up -d) and look at its logs."
-    if $backed_up; then
-      warn "Or put back the backup made just before this update: it is the newest snapshot on your backup server"
-      warn "(how: https://github.com/$repo/blob/main/docs/backups.md)."
-    else
-      warn "No backup was made before this update."
-    fi
+    point_at_backup
     warn "What went wrong: cd $dir && docker compose logs $service"
     exit 1
   fi
