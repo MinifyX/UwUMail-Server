@@ -2306,7 +2306,8 @@
       "paused": "一時停止中",
       "waiting": "まだ取り込んでいません",
       "lastRun": "最終取り込み：{{date}}",
-      "takingExisting": "メールボックスにあった既存のメールを取り込み中…"
+      "takingExisting": "メールボックスにあった既存のメールを取り込み中…",
+      "senderUnverified": "差出人は確認待ちです。確認には取り込みを実行している必要があります。"
     },
     "actions": {
       "edit": "編集",

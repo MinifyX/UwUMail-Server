@@ -380,9 +380,12 @@ Two things follow from that:
   provider and to people here alike. Nobody types the code: the fetcher finds
   it in the `X-UwUMail-Sender-Proof` header or the text. Until then the row's
   `senderVerified` is `false` and sending as the address is refused as if the
-  switch were off; the code is mailed again at most once a day. Rows that could
-  send before this check existed start out unproven and get their code the same
-  way (security audit 2026-11 M-01).
+  switch were off. An address is mailed a code at most once a day, however many
+  rows or accounts name it, and a message that could not be queued does not
+  count, so the next run tries again. The code only comes back through a fetch,
+  so a paused mailbox never gets proven: the portal says so next to the row.
+  Rows that could send before this check existed start out unproven and get
+  their code the same way, once their fetch runs (security audit 2026-11 M-01).
 
 Mail from such an address then goes out through the provider whoever it is
 addressed to — before the server's own smarthost, if one is configured, because

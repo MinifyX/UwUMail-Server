@@ -2365,7 +2365,8 @@
       "paused": "Paused",
       "waiting": "Not fetched yet",
       "lastRun": "Last fetched: {{date}}",
-      "takingExisting": "What was already in the mailbox is coming over …"
+      "takingExisting": "What was already in the mailbox is coming over …",
+      "senderUnverified": "Sender awaits confirmation; the fetch has to run for that."
     },
     "actions": {
       "edit": "Edit",

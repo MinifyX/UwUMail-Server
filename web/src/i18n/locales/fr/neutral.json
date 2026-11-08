@@ -2415,7 +2415,8 @@
       "paused": "En pause",
       "waiting": "Pas encore relevée",
       "lastRun": "Dernier relevé : {{date}}",
-      "takingExisting": "Ce qui était déjà dans la boîte mail arrive …"
+      "takingExisting": "Ce qui était déjà dans la boîte mail arrive …",
+      "senderUnverified": "L’expéditeur attend sa confirmation ; pour cela, le relevé doit être actif."
     },
     "actions": {
       "edit": "Modifier",

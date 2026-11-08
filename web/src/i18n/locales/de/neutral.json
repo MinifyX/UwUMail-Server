@@ -2365,7 +2365,8 @@
       "paused": "Pausiert",
       "waiting": "Noch nicht abgerufen",
       "lastRun": "Zuletzt geholt: {{date}}",
-      "takingExisting": "Was schon im Postfach lag, kommt gerade mit herüber …"
+      "takingExisting": "Was schon im Postfach lag, kommt gerade mit herüber …",
+      "senderUnverified": "Absender wartet auf Bestätigung; dafür muss der Abruf laufen."
     },
     "actions": {
       "edit": "Bearbeiten",

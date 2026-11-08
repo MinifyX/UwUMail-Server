@@ -2365,7 +2365,8 @@
       "paused": "Gepauzeerd",
       "waiting": "Nog niet opgehaald",
       "lastRun": "Laatst opgehaald: {{date}}",
-      "takingExisting": "Wat al in de mailbox stond, komt over …"
+      "takingExisting": "Wat al in de mailbox stond, komt over …",
+      "senderUnverified": "Afzender wacht op bevestiging; daarvoor moet het ophalen lopen."
     },
     "actions": {
       "edit": "Bewerken",
