@@ -145,13 +145,3 @@ export function linksCsv(
   // A byte order mark, so spreadsheets read umlauts right.
   return `\uFEFF${lines.join("\r\n")}\r\n`;
 }
-
-/** Text for an HTML page; the printable overview builds one by hand. */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}

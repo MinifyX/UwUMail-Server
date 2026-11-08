@@ -16,7 +16,7 @@ use crate::access::Embedder;
 use crate::features::TYPICAL_LABEL_TOKENS_PER_LABEL;
 use crate::features::{LabelPick, authentication, delivered_headers, parse_labels};
 use crate::llm;
-use crate::mail::MailText;
+use crate::mail::{MAX_PARSE_BYTES, MailText};
 use crate::prompts::{self, MAX_PROMPT_SHOTS, PromptLabel, PromptShot};
 use crate::{Assist, AssistError, Result};
 
@@ -24,8 +24,6 @@ use crate::{Assist, AssistError, Result};
 const LABEL_MAIL_CHARS: usize = 4000;
 /// Characters of a mail an embedding is made of.
 const EMBED_TEXT_CHARS: usize = 2000;
-/// Bytes of a message parsed for the facts, at most (as at delivery).
-const MAX_PARSE_BYTES: usize = 4 * 1024 * 1024;
 /// Labeled mails without an embedding that get one along with each new mail.
 const BACKFILL_PER_MAIL: usize = 8;
 /// A cheap way's finding this sure is shown to the model as a hint.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AddressReport, ServerCheck } from "@/lib/api";
-import { blocklistLines, ptrLines, receivingLines, sendingLines, worstLevel } from "./lines";
+import { blocklistLines, ptrLines, receivingLines, sendingLines } from "./lines";
 
 const address = (ip: string, extra: Partial<AddressReport> = {}): AddressReport => ({
   ip,
@@ -34,7 +34,6 @@ describe("server check lines", () => {
     expect(codes(sendingLines(report))).toEqual(["directOk"]);
     expect(codes(receivingLines(report))).toEqual(["inboundOk"]);
     expect(codes(ptrLines(report))).toEqual(["ptrOk"]);
-    expect(worstLevel([...sendingLines(report), ...receivingLines(report)])).toBe("ok");
   });
 
   it("a blocked port 25 offers the relay", () => {

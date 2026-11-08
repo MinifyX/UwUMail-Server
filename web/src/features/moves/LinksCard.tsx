@@ -5,9 +5,9 @@ import { Card, CopyButton } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { api, type MoveLinks, type MoveMailboxInfo } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
-import { formatDateTime } from "@/lib/format";
+import { escapeHtml, formatDateTime } from "@/lib/format";
 import { toast } from "@/state/toasts";
-import { escapeHtml, linksCsv } from "./moves";
+import { linksCsv } from "./moves";
 
 /** The table of links, also for printing. */
 export function LinksTable({ links, origin }: { links: MoveLinks; origin: string }) {

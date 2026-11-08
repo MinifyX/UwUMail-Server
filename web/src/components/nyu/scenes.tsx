@@ -345,8 +345,6 @@ const SCENES = {
 
 export type SceneName = keyof typeof SCENES;
 
-export const SCENE_NAMES = Object.keys(SCENES) as SceneName[];
-
 /** A small illustration of Nyu for empty and error states. Decorative only. */
 export function NyuScene({ name, className }: { name: SceneName; className?: string }) {
   const mascot = useBrand((s) => s.mascot);

@@ -67,3 +67,13 @@ export function formatRelative(unixSeconds: number, language: string, now = Date
   }
   return format.format(Math.round(diff), "second");
 }
+
+/** Text for an HTML page; the printable overview builds one by hand. */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

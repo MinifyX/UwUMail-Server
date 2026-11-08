@@ -251,12 +251,6 @@ export interface SharedMailboxMember {
   maySend: boolean;
 }
 
-export interface SharedMailboxInfo {
-  login: string;
-  name: string;
-  members: SharedMailboxMember[];
-}
-
 /** Who may write to a group: everyone, only its members, or only addresses of its domain. */
 export type WhoMaySend = "anyone" | "members" | "domain";
 
@@ -1752,6 +1746,8 @@ export interface FetchAccountInfo {
   smtpPort: number;
   smtpSecurity: "starttls" | "tls";
   sendEnabled: boolean;
+  /** The address showed it is the account's (a proof code mailed to it was fetched); until then it cannot be sent from. */
+  senderVerified: boolean;
   createdAt: number;
   lastRunAt: number | null;
   lastOkAt: number | null;

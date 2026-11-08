@@ -6,6 +6,8 @@
  * Kept free of React so the rules are easy to test and to carry over to the webmail and the apps.
  */
 
+import { escapeHtml } from "@/lib/format";
+
 /** The key of the signature for every domain. */
 export const ALL_DOMAINS = "*";
 
@@ -64,13 +66,6 @@ export const SIGNATURE_MAX_BYTES = 262_144;
 
 export const EMPTY_SIGNATURE: SignatureText = { text: "", html: "" };
 
-export function escapeHtml(text: string): string {
-  return text.replace(
-    /[&<>"']/g,
-    (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!,
-  );
-}
-
 /**
  * `template` with `{name}`, `{adresse}` (`{address}`, `{email}`) and `{domain}` filled for one
  * address, as the server does. In HTML the values are escaped: a name is whatever its owner typed.
@@ -97,10 +92,6 @@ export function fillPlaceholders(template: string, name: string, email: string, 
     }
     return html ? escapeHtml(value) : value;
   });
-}
-
-export function isEmptySignature(signature: SignatureText | null | undefined): boolean {
-  return !signature || (!signature.text.trim() && !signature.html.trim());
 }
 
 export function sameSignature(a: SignatureText | null | undefined, b: SignatureText | null | undefined): boolean {
