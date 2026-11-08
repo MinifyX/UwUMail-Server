@@ -180,6 +180,24 @@ async fn second_factors_app_passwords_and_notices() {
     }
     assert_eq!(security["sessions"].as_array().unwrap().iter().filter(|s| s["current"] == true).count(), 1);
 
+    // Tries sent side by side count before they are checked (security audit 2026-11 M-03): a burst
+    // gets the five tries of one pending login, not one per request.
+    let burst = call(&app, "POST", "/api/auth/login", Some(credentials.clone()), None).await;
+    let burst_token = burst.body["secondFactor"]["token"].as_str().unwrap().to_owned();
+    let mut tries = tokio::task::JoinSet::new();
+    for _ in 0..12 {
+        let (app, body) = (app.clone(), json!({ "token": burst_token, "code": "abcdef" }));
+        tries.spawn(async move { call(&app, "POST", "/api/auth/second-factor", Some(body), None).await });
+    }
+    let mut answers = Vec::new();
+    while let Some(answer) = tries.join_next().await {
+        answers.push(answer.unwrap().body["code"].as_str().unwrap_or_default().to_owned());
+    }
+    answers.sort();
+    let invalid = answers.iter().filter(|code| *code == "codeInvalid").count();
+    let expired = answers.iter().filter(|code| *code == "loginExpired").count();
+    assert_eq!((invalid, expired), (5, 7), "{answers:?}");
+
     // Changing the password: the current one must be right, and other browsers are logged out.
     let other = call(&app, "POST", "/api/auth/login", Some(credentials.clone()), None).await;
     let other_token = other.body["secondFactor"]["token"].as_str().unwrap().to_owned();
