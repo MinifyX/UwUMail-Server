@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.29.1
+
+First published release of 0.29: the 0.29.0 tag never produced a release, because the image scan stopped it before anything was pushed. Everything listed under 0.29.0 ships here.
+
+### Security
+
+- The container image now uses a distroless base (Debian 13.7) with zlib 1.3.1-1+deb13u1, which fixes CVE-2026-76844 and CVE-2026-85091.
+
 ## 0.29.0
 
 ### Upgrade notes
