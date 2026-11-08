@@ -230,9 +230,14 @@ fn other_files(data_dir: &Path) -> Vec<(String, PathBuf)> {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let relative = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
-            // `cache`: remote pictures and the like, fetched again when needed.
+            // `cache`: remote pictures and the like, fetched again when needed. `restore`: a snapshot
+            // being fetched or waiting to be put in place.
             if prefix.is_empty()
-                && (name == "blobs" || name == "cache" || name == TEMP_DIR || name.starts_with("uwumail.db"))
+                && (name == "blobs"
+                    || name == "cache"
+                    || name == TEMP_DIR
+                    || name == STAGING_DIR
+                    || name.starts_with("uwumail.db"))
             {
                 continue;
             }
@@ -514,4 +519,19 @@ pub async fn check(repo: &Repository, snapshot: &str) -> Result<Vec<String>, Err
         .chain(manifest.blobs.iter().map(|hash| repo.codec.id_for_hash(hash)))
         .chain(manifest.files.iter().map(|file| file.id.clone()));
     Ok(wanted.filter(|id| !present.contains(id)).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn other_files_leave_out_a_staged_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(STAGING_DIR).join("blobs")).unwrap();
+        std::fs::write(dir.path().join(STAGING_DIR).join("uwumail.db"), b"x").unwrap();
+        std::fs::write(dir.path().join("dkim.key"), b"x").unwrap();
+        let names: Vec<_> = other_files(dir.path()).into_iter().map(|(name, _)| name).collect();
+        assert_eq!(names, ["dkim.key"]);
+    }
 }

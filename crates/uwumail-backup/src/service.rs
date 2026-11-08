@@ -312,6 +312,13 @@ impl Backups {
         if self.mailbox_busy() {
             return Err(Error::Busy("a mailbox is being restored right now".into()));
         }
+        // Held until the fetching ends, so the daily backup does not start (and prune) under it.
+        let running = self
+            .inner
+            .running
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| Error::Busy("a backup is running right now".into()))?;
         // Claimed here, under the lock and before anything is awaited. Checking first and setting
         // after would let two clicks a moment apart both get through, and the second one empties the
         // staging directory the first is still filling.
@@ -343,7 +350,10 @@ impl Backups {
 
         let this = self.clone();
         let (snapshot, by) = (snapshot.to_owned(), by.to_owned());
-        tokio::spawn(async move { this.fetch_restore(dir, snapshot, keep_gateway, by).await });
+        tokio::spawn(async move {
+            let _running = running;
+            this.fetch_restore(dir, snapshot, keep_gateway, by).await
+        });
         Ok(())
     }
 
@@ -495,8 +505,12 @@ impl Backups {
                 "a backup is running already".into()
             })
         })?;
-        let _flag = RunningFlag::raise(&self.inner.backing_up);
         let mut status = self.status().await;
+        // A backup the command line started is only in the status.
+        if running_at(&status, now()) {
+            return Err(Error::Busy("a backup is running already".into()));
+        }
+        let _flag = RunningFlag::raise(&self.inner.backing_up);
         let started = now();
         status.last_attempt_at = Some(started);
         status.started_at = Some(started);

@@ -32,6 +32,7 @@ called_with=("$@")
 dir=""
 version=""
 backup=true
+backed_up=false
 antivirus=true
 force=false
 keep_compose=false
@@ -380,7 +381,9 @@ if $backup; then
   if docker compose ps --status running --services 2>/dev/null | grep -qx "$service"; then
     step "backing up first"
     # exec does not go through the image entrypoint, so the binary is named here.
-    if ! docker compose exec -T "$service" uwumail-server backup run; then
+    if docker compose exec -T "$service" uwumail-server backup run; then
+      backed_up=true
+    else
       warn "no backup was made; that needs a backup server set up in the portal"
       yesno "Update anyway?" y || die "stopped, nothing was changed"
     fi
@@ -411,23 +414,26 @@ fi
 step "starting the new version"
 docker compose up -d || die "the new version did not start. What it says: cd $dir && docker compose logs"
 
-printf '  waiting for the server'
-healthy=false
-for _ in $(seq 1 60); do
-  printf '.'
-  sleep 2
-  case "$(docker inspect --format '{{.State.Health.Status}}' "$service" 2>/dev/null)" in
-    healthy)
-      healthy=true
-      break
-      ;;
-    unhealthy) break ;;
-  esac
-done
-printf '\n'
+# Waits up to two minutes for the container to say it is healthy.
+wait_healthy() {
+  printf '  waiting for the server'
+  for _ in $(seq 1 60); do
+    printf '.'
+    sleep 2
+    case "$(docker inspect --format '{{.State.Health.Status}}' "$service" 2>/dev/null)" in
+      healthy)
+        printf '\n'
+        return 0
+        ;;
+      unhealthy) break ;;
+    esac
+  done
+  printf '\n'
+  return 1
+}
 
 # ── back to the old one, when the new one does not come up ────────────────────────────────────
-if ! $healthy; then
+if ! wait_healthy; then
   warn "the new version did not come up healthy; putting the one from before back"
   if looks_like_version "$running_version"; then
     set_env UWUMAIL_VERSION "$running_version"
@@ -435,6 +441,20 @@ if ! $healthy; then
     docker tag "$running_image" "$image:rollback" >/dev/null 2>&1 && set_env UWUMAIL_VERSION rollback
   fi
   docker compose up -d >/dev/null 2>&1
+  if ! wait_healthy; then
+    # The new version may have moved the database on already, and the old one does not open that.
+    printf '\n'
+    warn "the version from before does not come up either: the new one has probably already updated the database"
+    warn "Start the new version again (UWUMAIL_VERSION=$image_tag in $dir/.env, then docker compose up -d) and look at its logs."
+    if $backed_up; then
+      warn "Or put back the backup made just before this update: it is the newest snapshot on your backup server"
+      warn "(how: https://github.com/$repo/blob/main/docs/backups.md)."
+    else
+      warn "No backup was made before this update."
+    fi
+    warn "What went wrong: cd $dir && docker compose logs $service"
+    exit 1
+  fi
   printf '\n'
   warn "UwUMail runs on the version from before, and .env now says which one that is."
   warn "What went wrong: cd $dir && docker compose logs $service"

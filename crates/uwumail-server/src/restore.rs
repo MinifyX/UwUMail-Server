@@ -102,23 +102,39 @@ async fn swap(data_dir: &Path, ready: &Staged) -> anyhow::Result<()> {
 
     // The database this server has been running on, out of the way but not gone.
     let current = data_dir.join("uwumail.db");
-    if tokio::fs::try_exists(&current).await.unwrap_or(false) {
-        let aside = data_dir.join(format!("{REPLACED}.{}", ready.asked_at));
+    let aside = data_dir.join(format!("{REPLACED}.{}", ready.asked_at));
+    let journal = |db: &Path, suffix: &str| PathBuf::from(format!("{}{suffix}", db.display()));
+    let moved_aside = tokio::fs::try_exists(&current).await.unwrap_or(false);
+    if moved_aside {
         tokio::fs::rename(&current, &aside)
             .await
             .with_context(|| format!("moving {} aside to {}", current.display(), aside.display()))?;
         // SQLite's journal belongs to the file it was written for; left behind it would be read
-        // against the restored database, which is a different one entirely.
-        for extra in ["uwumail.db-wal", "uwumail.db-shm"] {
-            let _ = tokio::fs::remove_file(data_dir.join(extra)).await;
+        // against the restored database, which is a different one entirely. It goes aside with it.
+        for suffix in ["-wal", "-shm"] {
+            let _ = tokio::fs::remove_file(journal(&aside, suffix)).await;
+            let _ = tokio::fs::rename(journal(&current, suffix), journal(&aside, suffix)).await;
         }
     }
 
     // Everything the snapshot brought, into place. Blobs are named after their content, so a name
     // that is already here holds the same bytes and is left alone.
-    move_into(&staging, data_dir).await.context("moving the restored files into place")?;
-    tokio::fs::rename(&fresh, &current).await.with_context(|| format!("putting {} in place", current.display()))?;
-    Ok(())
+    let result = async {
+        move_into(&staging, data_dir).await.context("moving the restored files into place")?;
+        tokio::fs::rename(&fresh, &current).await.with_context(|| format!("putting {} in place", current.display()))
+    }
+    .await;
+    if result.is_err() && moved_aside {
+        // The server starts on the database it had. Files the snapshot already brought stay; the
+        // database is what matters.
+        tokio::fs::rename(&aside, &current)
+            .await
+            .with_context(|| format!("putting {} back after the restore failed", aside.display()))?;
+        for suffix in ["-wal", "-shm"] {
+            let _ = tokio::fs::rename(journal(&aside, suffix), journal(&current, suffix)).await;
+        }
+    }
+    result
 }
 
 /// Moves everything in `from` into `to`, merging directories and leaving `uwumail.db` where it is:
@@ -262,5 +278,25 @@ mod tests {
         assert!(done.error.contains("never fully fetched"), "{}", done.error);
         assert_eq!(std::fs::read(data.join("uwumail.db")).unwrap(), b"old database", "nothing was touched");
         assert!(!ready_path(data).exists(), "and it is not tried again every start");
+    }
+
+    #[tokio::test]
+    async fn a_restore_that_fails_halfway_gives_the_old_database_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path();
+        std::fs::write(data.join("uwumail.db"), b"old database").unwrap();
+        std::fs::write(data.join("uwumail.db-wal"), b"old journal").unwrap();
+        // A file where the snapshot brings a directory: moving its files in fails.
+        std::fs::write(data.join("certs"), b"not a directory").unwrap();
+        std::fs::create_dir_all(staging_dir(data).join("certs")).unwrap();
+        std::fs::write(staging_dir(data).join("certs/cert.pem"), b"their certificate").unwrap();
+        std::fs::write(staging_dir(data).join("uwumail.db"), b"restored database").unwrap();
+        ready(data);
+
+        let done = take_over(data).await.expect("a restore was waiting");
+        assert!(done.error.contains("moving the restored files"), "{}", done.error);
+        assert_eq!(std::fs::read(data.join("uwumail.db")).unwrap(), b"old database");
+        assert_eq!(std::fs::read(data.join("uwumail.db-wal")).unwrap(), b"old journal", "with its journal");
+        assert!(!data.join("uwumail.db.replaced.42").exists());
     }
 }

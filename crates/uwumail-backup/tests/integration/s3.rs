@@ -285,3 +285,45 @@ async fn backups_into_a_mounted_folder() {
     let restored = Store::open(dir.path().join("restored")).await.unwrap();
     assert!(restored.account("mini@example.org").await.unwrap().is_some());
 }
+
+/// A whole-server restore keeps the daily backup away while it fetches.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_backup_runs_while_a_restore_is_fetched() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _mini) = server(&dir.path().join("data")).await;
+    let backups = uwumail_backup::Backups::new(store.clone(), "mail.example.org", "0.1.0");
+    std::fs::create_dir(dir.path().join("nas")).unwrap();
+    let settings = uwumail_backup::BackupSettings {
+        enabled: true,
+        target: Some(Target::Folder(uwumail_backup::FolderTarget {
+            path: dir.path().join("nas").display().to_string(),
+        })),
+        key: Some(RepoKey::generate().recovery_text()),
+        ..Default::default()
+    };
+    backups.save_settings(&settings).await.unwrap();
+    backups.run_now().await.unwrap();
+
+    backups.restores_into(&dir.path().join("data"), Box::new(|| {}));
+    backups.start_restore("latest", false, "test").await.unwrap();
+    assert!(matches!(backups.run_now().await, Err(Error::Busy(_))), "the restore holds the lock");
+    for _ in 0..200 {
+        if backups.fetching().state != "fetching" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(backups.fetching().state, "ready", "{}", backups.fetching().error);
+}
+
+/// A backup the command line runs is only in the status, and one by hand waits for it too.
+#[tokio::test]
+async fn a_backup_by_hand_waits_for_one_in_another_process() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _mini) = server(&dir.path().join("data")).await;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let status = uwumail_backup::BackupStatus { started_at: Some(now - 60), ..Default::default() };
+    store.set_setting("backup.status", &serde_json::to_string(&status).unwrap()).await.unwrap();
+    let backups = uwumail_backup::Backups::new(store, "mail.example.org", "0.1.0");
+    assert!(matches!(backups.run_now().await, Err(Error::Busy(_))));
+}
