@@ -79,6 +79,7 @@ pub async fn run_fetchers(
             let id = account.id;
             let owner = account.account_id;
             let backlog = account.backlog_at.is_some();
+            let unproven = account.send_enabled && !account.sender_verified;
             let run = tokio::time::timeout(
                 RUN_LIMIT,
                 run_once(&store, &smtp, account, None, Some(egress.dialer(uwumail_smtp::egress::Purpose::Fetch))),
@@ -97,6 +98,11 @@ pub async fn run_fetchers(
             let went_well = error.is_none();
             if let Err(err) = store.note_fetch_run(id, fetched, error).await {
                 tracing::warn!(%address, %err, "writing down how a fetch run went failed");
+            }
+            // An address that may send but has not shown it is the owner's gets its code by mail;
+            // a later run finds it in what it brings (docs/fetch.md, security audit 2026-11 M-01).
+            if went_well && unproven {
+                smtp.ask_for_sender_proof(id).await;
             }
             // While the mail that was already there is still coming, the next portion follows on
             // the next tick instead of waiting out the interval. Only after a run that went well: a
@@ -612,6 +618,9 @@ async fn take_message(
         tracing::debug!(address = %account.address, "this message was already here");
         return Ok(Taken::Kept);
     }
+    if account.send_enabled && !account.sender_verified {
+        smtp.take_sender_proof(account.id, &raw).await;
+    }
     let taken = uwumail_smtp::deliver_fetched(smtp, mailbox_of(account), from_junk, to.to_owned(), raw).await;
     // Only a message that was really taken is remembered as seen. One left for later (greylisting,
     // a transient store error) stays unseen, so the next run offers it again instead of skipping it.
@@ -839,6 +848,52 @@ mod tests {
         async fn here(&self) -> i64 {
             Rig::inbox(&self.ours, self.our_id).await
         }
+    }
+
+    /// A fetched address may be answered from only once the code mailed to it has come back
+    /// through the fetched mailbox: a fetch that works proves the login, not the address typed in
+    /// next to it (security audit 2026-11 M-01).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn answering_from_a_fetched_address_waits_for_its_code_to_come_back() {
+        let rig = Rig::new(AfterFetch::MarkRead).await;
+        let address = "mini@freemail.example";
+        assert_eq!(rig.run().await, 0, "the first run only writes down where the folders stand");
+        rig.ours.note_fetch_run(rig.fetch_id, 0, None).await.unwrap();
+        let on = uwumail_store::FetchAccountUpdate {
+            smtp_host: Some("smtp.freemail.example".into()),
+            send_enabled: Some(true),
+            ..Default::default()
+        };
+        rig.ours.update_fetch_account(rig.our_id, rig.fetch_id, on).await.unwrap();
+        assert!(!rig.ours.account_owns_address(rig.our_id, address).await.unwrap(), "switched on is not proven");
+
+        // The code goes to the address itself, from nobody, so it bounces to nobody either; and not
+        // twice on the same day.
+        rig.smtp.ask_for_sender_proof(rig.fetch_id).await;
+        rig.smtp.ask_for_sender_proof(rig.fetch_id).await;
+        let queued = rig.ours.queue_entries().await.unwrap();
+        assert_eq!(queued.len(), 1, "one proof a day");
+        assert_eq!(queued[0].message.return_path, "");
+        assert_eq!(queued[0].recipients.len(), 1);
+        assert_eq!(queued[0].recipients[0].address, address);
+        let proof = rig.ours.blob(&queued[0].message.blob).await.unwrap();
+
+        // A message with a code that is not the one out proves nothing.
+        let guessed = b"From: shop@shop.example\r\nTo: mini@freemail.example\r\nSubject: guessed\r\n\
+                        Message-ID: <guessed@shop.example>\r\n\r\nuwumail-proof-0123456789abcdef0123456789abcdef\r\n";
+        at_provider_raw(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), guessed.to_vec())
+            .await;
+        assert_eq!(rig.run().await, 1);
+        assert!(!rig.ours.account_owns_address(rig.our_id, address).await.unwrap(), "a guess proves nothing");
+
+        // The proof itself, as the provider would have delivered it.
+        at_provider_raw(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), proof).await;
+        assert_eq!(rig.run().await, 1, "it is delivered like any other message");
+        assert!(rig.ours.account_owns_address(rig.our_id, address).await.unwrap(), "now the address is proven");
+        let account = rig.ours.fetch_account(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
+        assert!(account.sender_verified);
+        rig.smtp.ask_for_sender_proof(rig.fetch_id).await;
+        assert_eq!(rig.ours.queue_entries().await.unwrap().len(), 1, "nothing more is mailed once it is proven");
     }
 
     /// What a refused message leaves behind at the provider. This server has judged it, so it is

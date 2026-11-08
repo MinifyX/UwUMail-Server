@@ -46,6 +46,7 @@ pub mod scheduling;
 mod scheduling_texts;
 mod send_limit;
 mod sender_lists;
+mod sender_proof;
 pub mod servercheck;
 pub mod sieve;
 mod spam;
