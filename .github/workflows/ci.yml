@@ -181,7 +181,9 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-latest
+            # Not ubuntu-latest: the 0.29.1 binary built on ubuntu-26.04 died with SIGILL on CPUs
+            # without AVX (aws-lc's CPU detection). The check below catches it on any runner.
+            runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - arch: arm64
             runner: ubuntu-24.04-arm
@@ -222,6 +224,11 @@ jobs:
           # The binary must carry the web app and the webmail.
           grep -q "uwumail-app-icon.svg" dist/${{ matrix.arch }}/uwumail-server
           grep -q "manifest.webmanifest" dist/${{ matrix.arch }}/uwumail-server
+      - name: The binary starts on a CPU without AVX
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get -qq update && sudo apt-get -qq install -y --no-install-recommends qemu-user >/dev/null
+          qemu-x86_64 -cpu Nehalem dist/amd64/uwumail-server --version
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: server-${{ matrix.arch }}

@@ -7,6 +7,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ### Upgrade notes
 
+- The amd64 image of 0.29.1 does not start on CPUs without AVX (it exits with code 132, SIGILL,
+  for example in a VM with the CPU type `qemu64` or `kvm64`). 0.30.0 is built the way 0.28.1 was
+  again, and CI now starts the binary on such a CPU before it publishes. On those machines, update
+  from 0.28.1 straight to 0.30.0.
 - After the update the server looks once, in the background, for codes in the mail of the last
   24 hours that has none yet (marked done as `verification-rescan:2` in the settings, the
   detector's version, so later releases that leave the detector alone do not read again). Only
