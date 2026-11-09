@@ -2,6 +2,7 @@
 
 use mail_builder::headers::date::Date;
 use mail_parser::MessageParser;
+use uwumail_store::verification;
 use uwumail_store::{
     Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError, StrikeKind,
 };
@@ -419,6 +420,29 @@ impl Smtp {
         }
         signed.extend_from_slice(&message);
 
+        // A code an app here sends to someone here (docs/verification-codes.md). The sender signed
+        // in and every From address was checked to be its own: that says what DMARC would, and
+        // more. Submission strips `Verification-Info`, so this is always the guess.
+        let verification = if signed.len() <= verification::MAX_MESSAGE {
+            let auth = verification::Authenticity {
+                dmarc_passed: true,
+                dkim_aligned: true,
+                from_domain: Some(from_domain.clone()),
+                ..Default::default()
+            };
+            let original = signed.clone();
+            let found = tokio::task::spawn_blocking(move || verification::detect(&original, &auth, crate::now()))
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::warn!(%id, %err, "looking for a verification code failed");
+                    None
+                });
+            found.zip(verification::registrable_domain(&from_domain))
+        } else {
+            None
+        };
+        let verification = verification.as_ref();
+
         let mut failed = Vec::new();
         let mut local_deliveries = 0;
         let mut remote = Vec::new();
@@ -471,6 +495,7 @@ impl Smtp {
                             false,
                             (&account, &mut may_leave),
                             internal_only,
+                            verification,
                         )
                         .await
                     {
@@ -526,6 +551,7 @@ impl Smtp {
                             to_trash,
                             (&account, &mut may_leave),
                             internal_only,
+                            verification,
                         )
                         .await
                     {
@@ -562,6 +588,7 @@ impl Smtp {
                                 account_id: Some(account.id),
                                 proof: forward::Proof::PROVEN,
                                 smtp_delivered: false,
+                                verification,
                             };
                             forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
                             local_deliveries += 1;
@@ -692,6 +719,7 @@ impl Smtp {
         to_trash: bool,
         (sender, may_leave): (&Account, &mut MayLeave),
         internal_only: bool,
+        verification: Option<&(verification::Detected, String)>,
     ) -> Result<(), String> {
         let ctx = &self.inner;
         if to_trash {
@@ -721,6 +749,7 @@ impl Smtp {
                 account_id: Some(target.id),
                 proof: forward::Proof::PROVEN,
                 smtp_delivered: false,
+                verification,
             };
             forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
         }
@@ -734,7 +763,12 @@ impl Smtp {
             keywords: vec![],
             received_at: None,
         };
-        ctx.store.ingest(request).await.map_err(stored_error)?;
+        let email = ctx.store.ingest(request).await.map_err(stored_error)?;
+        if let Some((found, author)) = verification
+            && let Err(err) = ctx.store.record_verification(account_id, vec![email.id], found, author).await
+        {
+            tracing::warn!(account = account_id, %err, "keeping a verification code failed");
+        }
         // The sender is an authenticated local account and every From address was checked to be its
         // own -- a fetched one only once it has proven it (security audit 2026-11 M-01) -- so it is
         // verified.

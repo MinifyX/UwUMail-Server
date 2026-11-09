@@ -168,3 +168,30 @@ async fn a_local_sender_cannot_send_a_verification_info_header() {
     assert!(!lines.lines().any(|line| line.starts_with("verification-info:")), "{delivered}");
     assert!(!delivered.contains("777111"), "{delivered}");
 }
+
+/// An app on this server mails a code to a local account through submission (0.30.0 regression:
+/// such mail never went through detection).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_code_from_an_app_on_this_server_is_found() {
+    use uwumail_smtp::{Submission, SubmissionRecipient};
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let raw = "From: Lock <mini@a.test>\r\nTo: ami@a.test\r\nSubject: Anmeldung\r\n\r\n\
+               Dein Anmeldecode: 133900\r\nEr gilt 10 Minuten.\r\n";
+    let submission = Submission {
+        account,
+        mail_from: "mini@a.test".into(),
+        recipients: vec![SubmissionRecipient::new("ami@a.test")],
+        raw: raw.as_bytes().to_vec(),
+        env_id: None,
+        trace: None,
+    };
+    a.smtp.submit(submission).await.unwrap();
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
+    let store = a.smtp.store();
+    let ami = store.account("ami@a.test").await.unwrap().unwrap().id;
+    let found = store.verifications(ami, vec![inbox[0].id]).await.unwrap().remove(&inbox[0].id).expect("a code");
+    assert_eq!(found.code.as_deref(), Some("133900"));
+    assert_eq!(found.origin, "a.test");
+    assert!(found.autofill);
+}

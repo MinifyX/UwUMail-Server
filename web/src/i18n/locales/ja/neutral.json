@@ -4977,7 +4977,7 @@
       "intro": "Webメールと UwUMail アプリに適用されます。"
     },
     "detect": {
-      "label": "コードを自動で検出 (DE/EN)",
+      "label": "コードを自動で検出 (DE/EN/FR/ES/IT/NL)",
       "description": "ドイツ語と英語のメールから「Your code is 482913」のようなコードを探します。見つかったコードはコピーできますが、自動で入力されることはありません。"
     },
     "cleanup": {

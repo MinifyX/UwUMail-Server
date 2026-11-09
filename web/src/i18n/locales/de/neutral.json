@@ -5086,7 +5086,7 @@
       "intro": "Gilt für Webmail und die UwUMail-Apps."
     },
     "detect": {
-      "label": "Codes automatisch erkennen (DE/EN)",
+      "label": "Codes automatisch erkennen (DE/EN/FR/ES/IT/NL)",
       "description": "Sucht in deutschen und englischen Mails nach Codes wie „Dein Code lautet 482913“. So erkannte Codes kannst du kopieren, sie werden aber nie automatisch eingefügt."
     },
     "cleanup": {

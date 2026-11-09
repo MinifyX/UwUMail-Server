@@ -28,6 +28,12 @@ pub struct Verdict {
     pub sender_verified: bool,
     /// SPF or DKIM passed aligned with the From domain.
     pub dmarc_passed: bool,
+    /// A DKIM signature holds whose `d=` has the registrable domain of From, whether or not that
+    /// domain publishes DMARC (relaxed alignment). Enough to trust a guessed code.
+    pub dkim_aligned: bool,
+    /// SPF passed for a MAIL FROM with the registrable domain of From, DMARC record or not. Only a
+    /// guessed code to show, not one to fill in (`docs/verification-codes.md`).
+    pub spf_aligned: bool,
     /// SPF says this server may not send for the envelope sender.
     pub spf_failed: bool,
     /// A DKIM signature was there and did not hold.
@@ -90,6 +96,8 @@ fn rejecting(hostname: &str, reason: &str) -> Verdict {
         action: Action::Reject(reason.to_string()),
         sender_verified: false,
         dmarc_passed: false,
+        dkim_aligned: false,
+        spf_aligned: false,
         spf_failed: false,
         dkim_failed: false,
         dmarc_failed: true,
@@ -115,6 +123,8 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             action: Action::Accept,
             sender_verified: false,
             dmarc_passed: false,
+            dkim_aligned: false,
+            spf_aligned: false,
             spf_failed: false,
             dkim_failed: false,
             dmarc_failed: false,
@@ -183,12 +193,17 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         || (spf.result() == SpfResult::Pass && related(mail_from_domain));
     let face_signed = face_signed(&message, &dkim, from_address.as_deref());
     let verification_signed = verification_signed(&message, &dkim, from_address.as_deref());
+    let dkim_aligned = dkim_aligned(&dkim, from_domain.as_deref());
+    let spf_aligned = spf.result() == SpfResult::Pass
+        && from_domain.as_deref().is_some_and(|from| crate::forward::aligned(mail_from_domain, from));
 
     Verdict {
         header,
         action,
         sender_verified,
         dmarc_passed,
+        dkim_aligned,
+        spf_aligned,
         spf_failed,
         dkim_failed,
         dmarc_failed,
@@ -198,6 +213,15 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         face_signed,
         verification_signed,
     }
+}
+
+/// Whether a DKIM signature holds for the registrable domain of `from_domain`.
+fn dkim_aligned(dkim: &[DkimOutput<'_>], from_domain: Option<&str>) -> bool {
+    let Some(from) = from_domain else { return false };
+    dkim.iter().any(|output| {
+        output.result() == &DkimResult::Pass
+            && output.signature().is_some_and(|signature| crate::forward::aligned(&signature.d, from))
+    })
 }
 
 /// Whether a signature that holds for the From domain covers the `Face` header, with one From
@@ -271,6 +295,8 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
         action: Action::Accept,
         sender_verified: false,
         dmarc_passed: false,
+        dkim_aligned: false,
+        spf_aligned: false,
         spf_failed: false,
         dkim_failed: false,
         dmarc_failed: false,
@@ -303,6 +329,7 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
                 .is_some_and(|signature| related_to_from(verdict.from_address.as_deref(), &signature.d))
     });
     verdict.dmarc_passed = signed_by_sender;
+    verdict.dkim_aligned = dkim_aligned(&dkim, verdict.from_domain.as_deref());
     verdict.from_verified = signed_by_sender;
     verdict.face_signed = face_signed(&message, &dkim, verdict.from_address.as_deref());
     verdict.verification_signed = verification_signed(&message, &dkim, verdict.from_address.as_deref());

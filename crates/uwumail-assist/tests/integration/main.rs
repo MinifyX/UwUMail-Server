@@ -8,4 +8,5 @@ mod labels;
 mod learning;
 mod prices;
 mod providers;
+mod rescan;
 mod spam_eval;

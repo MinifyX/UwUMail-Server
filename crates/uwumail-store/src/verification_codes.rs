@@ -14,8 +14,9 @@ use tokio::sync::broadcast;
 
 use crate::db::record_change;
 use crate::mutate::{Batch, EmailUpdate, KeywordsChange, MailboxesChange, update_one};
+use crate::objects::{EMAIL_COLUMNS, email_from_row};
 use crate::verification::{Detected, Kind, Purpose, Source};
-use crate::{Result, Store, now};
+use crate::{EmailRecord, Result, Store, now};
 
 /// At most this many codes per account from one sender (registrable domain) within an hour. A
 /// service that sends more is either broken or abused to flood someone's notifications; the mail
@@ -138,9 +139,10 @@ impl Store {
 
     /// Keeps the code found in a delivered mail for each of `email_ids` (the copies one delivery
     /// made in an account). Returns the ids it was kept for: none when the account switched guessing
-    /// off and this is a guess, when a guess comes without DMARC pass (VC-03; for a guess `autofill`
-    /// says exactly that), or when `author_domain` already sent the hour's share. A code that had
-    /// expired on arrival never gets here: [`crate::verification::detect`] drops it (VC-08).
+    /// off and this is a guess, or when `author_domain` already sent the hour's share. A guess from a
+    /// sender nothing vouches for (VC-03) or a code that had expired on arrival (VC-08) never gets
+    /// here: [`crate::verification::detect`] drops both. A guess on SPF alone is kept with
+    /// `autofill` off: shown, never filled in, never cleaned up on its own.
     pub async fn record_verification(
         &self,
         account_id: i64,
@@ -153,8 +155,7 @@ impl Store {
         let (kept, modseq) = self
             .write(move |tx| {
                 if found.source == Source::Heuristic
-                    && (!found.autofill
-                        || preference(tx, account_id, "mailVerificationHeuristics")?.as_deref() == Some("off"))
+                    && preference(tx, account_id, "mailVerificationHeuristics")?.as_deref() == Some("off")
                 {
                     return Ok((Vec::new(), None));
                 }
@@ -202,7 +203,9 @@ impl Store {
         if let Some(modseq) = modseq {
             self.notify_change(account_id, modseq);
         }
-        for email_id in &kept {
+        // A code that ran out before it was found (the re-scan after an update) is shown on the mail,
+        // but no notification goes out for it.
+        for email_id in kept.iter().filter(|_| detected.expires_at > now()) {
             // Nobody listening is fine.
             let _ = self.inner.verifications.send(VerificationFound {
                 account_id,
@@ -211,6 +214,31 @@ impl Store {
             });
         }
         Ok(kept)
+    }
+
+    /// Up to `limit` mails this server's SMTP delivery stored since `since`, with an id above
+    /// `after_id`, no code yet and in neither Junk nor Trash, oldest first, with their account: what
+    /// the one-time re-scan after an update reads again (docs/verification-codes.md).
+    pub async fn verification_rescan_candidates(
+        &self,
+        since: i64,
+        after_id: i64,
+        limit: i64,
+    ) -> Result<Vec<(i64, EmailRecord)>> {
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT {EMAIL_COLUMNS}, e.account_id FROM emails e
+                 WHERE e.id > ?1 AND e.received_at >= ?2 AND e.smtp_delivered = 1
+                   AND NOT EXISTS (SELECT 1 FROM email_verification v WHERE v.email_id = e.id)
+                   AND NOT EXISTS (SELECT 1 FROM email_mailboxes em JOIN mailboxes m ON m.id = em.mailbox_id
+                                   WHERE em.email_id = e.id AND m.role IN ('junk', 'trash'))
+                 ORDER BY e.id LIMIT ?3"
+            ))?;
+            let rows =
+                stmt.query_map(params![after_id, since, limit], |row| Ok((row.get(21)?, email_from_row(row)?)))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
     }
 
     /// The codes of those of `email_ids` that have one.
@@ -471,7 +499,12 @@ mod tests {
     }
 
     fn found(expires_at: i64) -> Detected {
-        let auth = Authenticity { header_signed: false, dmarc_passed: true, from_domain: Some("shop.example".into()) };
+        let auth = Authenticity {
+            dmarc_passed: true,
+            dkim_aligned: true,
+            from_domain: Some("shop.example".into()),
+            ..Default::default()
+        };
         Detected {
             expires_at,
             ..detect(b"From: a@shop.example\r\nSubject: Code\r\n\r\nCode: 482913\r\n", &auth, 0).unwrap()
@@ -516,12 +549,11 @@ mod tests {
         assert_eq!(store.verification_position(account, Some(true), all[4]).await.unwrap(), None);
         assert_eq!(store.verification_position(account, None, over).await.unwrap(), None);
 
-        // A guess without DMARC pass is not kept (VC-03).
+        // A guess on SPF alone is kept, but not for autofill.
         let email = deliver(&store, account).await;
-        let unauthenticated = Detected { autofill: false, ..detected.clone() };
-        assert!(
-            store.record_verification(account, vec![email], &unauthenticated, "bank.example").await.unwrap().is_empty()
-        );
+        let spf_only = Detected { autofill: false, ..detected.clone() };
+        assert_eq!(store.record_verification(account, vec![email], &spf_only, "bank.example").await.unwrap(), [email]);
+        assert!(!store.verifications(account, vec![email]).await.unwrap()[&email].autofill);
 
         // Guessing switched off: only signed headers count.
         prefer(&store, account, "mailVerificationHeuristics", "off").await;
@@ -628,7 +660,8 @@ mod tests {
 
         // After the retention the rows go; the mails stay.
         assert_eq!(store.query_verifications(account, None, 0, 10).await.unwrap().1, 3);
-        store.clean_up_verifications_at(at + VERIFICATION_RETENTION + 1).await.unwrap();
+        // A clear margin: `created` is taken after `at`, a second later on a slow machine.
+        store.clean_up_verifications_at(at + VERIFICATION_RETENTION + 3600).await.unwrap();
         assert_eq!(store.query_verifications(account, None, 0, 10).await.unwrap(), (vec![], 0));
         assert_eq!(in_mailbox(plain).await, [trash]);
     }

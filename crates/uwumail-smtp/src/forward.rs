@@ -48,6 +48,9 @@ pub(crate) struct Forwarder<'a> {
     /// The message came in over SMTP here and carries this server's own headers on top; mail
     /// submitted here does not (security review 0.22 R2-L2).
     pub smtp_delivered: bool,
+    /// The code or link found in the message and its author domain, kept for each local target
+    /// as for a direct delivery (docs/verification-codes.md). None for junk.
+    pub verification: Option<&'a (uwumail_store::verification::Detected, String)>,
 }
 
 /// What the checks at the door proved about who sent a message. Mail submitted here, and mail
@@ -129,7 +132,15 @@ pub(crate) async fn send(
                     received_at: None,
                 };
                 match ctx.store.ingest_marked(request, forwarder.smtp_delivered).await {
-                    Ok(_) => reached = true,
+                    Ok(email) => {
+                        reached = true;
+                        if let Some((found, author)) = forwarder.verification
+                            && let Err(err) =
+                                ctx.store.record_verification(target_account, vec![email.id], found, author).await
+                        {
+                            tracing::warn!(%err, to = %address, "keeping a verification code failed");
+                        }
+                    }
                     Err(err) => {
                         tracing::warn!(%err, forwarder = %forwarder.name, to = %address, "forwarding to a local mailbox failed");
                     }

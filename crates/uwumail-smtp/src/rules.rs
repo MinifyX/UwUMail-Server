@@ -275,6 +275,7 @@ pub(crate) async fn deliver(
     message: &[u8],
     labeled: &labels::Labeled,
     proof: forward::Proof<'_>,
+    verification: Option<&(uwumail_store::verification::Detected, String)>,
 ) -> Result<Filed, StoreError> {
     let mut folders = folders(&ctx.store.imap_mailboxes(account_id).await?);
     let envelope = Envelope { from: envelope_from, to: recipient };
@@ -289,7 +290,13 @@ pub(crate) async fn deliver(
             Some(target) => {
                 let login = ctx.store.account_by_id(account_id).await.ok().flatten().map(|account| account.login);
                 let name = login.as_deref().unwrap_or(recipient);
-                let forwarder = forward::Forwarder { name, account_id: Some(account_id), proof, smtp_delivered: true };
+                let forwarder = forward::Forwarder {
+                    name,
+                    account_id: Some(account_id),
+                    proof,
+                    smtp_delivered: true,
+                    verification,
+                };
                 // A redirect that reached nobody (a loop, a target that takes no mail, a queue that
                 // failed) must not take the message with it.
                 if forward::send(ctx, forwarder, recipient, envelope_from, message, &[target]).await {
