@@ -167,7 +167,7 @@ pub async fn run(
     tasks.spawn(assist.clone().run_label_worker(shutdown_rx.clone()));
     // Once after an update: codes in the mail of the last day that this version finds and the last
     // one missed (docs/verification-codes.md).
-    tasks.spawn(assist.clone().run_verification_rescan(env!("CARGO_PKG_VERSION"), shutdown_rx.clone()));
+    tasks.spawn(assist.clone().run_verification_rescan(shutdown_rx.clone()));
     // What models cost: LiteLLM's and OpenRouter's price lists and the ECB's exchange rates, once a
     // day through the egress (docs/llm.md, "Costs").
     tasks.spawn(assist.clone().run_price_updater(shutdown_rx.clone()));

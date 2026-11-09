@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use tokio::sync::watch;
 use uwumail_store::EmailRecord;
-use uwumail_store::verification::{self, Authenticity, MAX_MESSAGE, registrable_domain};
+use uwumail_store::verification::{self, Authenticity, DETECTOR_VERSION, MAX_MESSAGE, registrable_domain};
 
 use crate::features::{authentication, delivered_headers};
 use crate::mail::MailText;
@@ -36,20 +36,24 @@ pub(crate) fn authenticity(record: &EmailRecord, raw: &[u8], hostname: &str) -> 
             .and_then(registrable_domain)
             .is_some_and(|from| registrable_domain(domain) == Some(from))
     };
+    // Alignment only speaks for a domain without a DMARC record (`dmarc=none`), as at delivery (R30-02).
+    let no_dmarc_record = matches!(auth.dmarc.as_deref(), None | Some("none"));
     Authenticity {
         // The header's own signature is not in the results; a Verification-Info header is read as a guess.
         header_signed: false,
         dmarc_passed: auth.dmarc.as_deref() == Some("pass"),
-        dkim_aligned: auth.dkim_pass_domains.iter().any(|domain| aligned(domain)),
-        spf_aligned: auth.spf_pass_domain.as_deref().is_some_and(aligned),
+        dkim_aligned: no_dmarc_record && auth.dkim_pass_domains.iter().any(|domain| aligned(domain)),
+        spf_aligned: no_dmarc_record && auth.spf_pass_domain.as_deref().is_some_and(aligned),
         from_domain: auth.from_domain.clone(),
     }
 }
 
 impl Assist {
-    /// Runs the re-scan once per version, marked done in the settings as `verification-rescan:<version>`.
-    pub async fn run_verification_rescan(self, version: &'static str, mut shutdown: watch::Receiver<bool>) {
-        let key = format!("verification-rescan:{version}");
+    /// Runs the re-scan once per [`DETECTOR_VERSION`], marked done in the settings as
+    /// `verification-rescan:<detector version>`: a release that leaves the detector alone reads nothing
+    /// again (security-audit-0.30.0 R30-05).
+    pub async fn run_verification_rescan(self, mut shutdown: watch::Receiver<bool>) {
+        let key = format!("verification-rescan:{DETECTOR_VERSION}");
         match self.store().setting(&key).await {
             Ok(None) => {}
             Ok(Some(_)) => return,
@@ -99,7 +103,8 @@ impl Assist {
         .ok()
         .flatten();
         let Some((found, author)) = found else { return false };
-        match self.store().record_verification(account_id, vec![id], &found, &author).await {
+        // Only a code still good now is kept, outside the sender's hourly share (R30-04).
+        match self.store().record_rescanned_verification(account_id, id, &found, &author).await {
             Ok(kept) => !kept.is_empty(),
             Err(err) => {
                 tracing::warn!(account = account_id, email = id, %err, "keeping a code found again failed");

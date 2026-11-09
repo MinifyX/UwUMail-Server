@@ -119,8 +119,9 @@ uses up the real sender's limit:
 | --- | --- | --- |
 | DMARC passed | yes | yes |
 | a DKIM signature passed whose domain is the From domain or shares its registrable domain, without a DMARC record | yes | yes |
-| logged in here and sent through submission (see below) | yes | yes |
-| only SPF passed, for an envelope sender in the From domain's registrable domain | yes | no |
+| logged in here and sent through submission, as the only account on its registrable domain (see below) | yes | yes |
+| logged in here and sent through submission, on a domain other accounts share | yes | no |
+| only SPF passed, for an envelope sender in the From domain's registrable domain, without a DMARC record | yes | no |
 | anything else | no | – |
 
 Why: an aligned DKIM signature proves what DMARC would prove with `p=none`, that
@@ -129,8 +130,10 @@ when it fails, and a code is only taken when it passed. Many small services sign
 but publish no DMARC record. SPF alone says less: it vouches for the envelope,
 the From header is not covered, and on a shared sending service with a loose SPF
 record another customer may get the same pass. Such a code is shown, but never
-offered for autofill and never cleaned up on its own, so a wrong one stays in
-sight. Someone who would rather have no guesses at all switches them off in the
+offered for autofill, never pushed and never cleaned up on its own, so a wrong
+one stays in sight. When the From domain publishes a DMARC record, alignment
+alone counts for nothing: the DMARC result decides, so a domain that asks for
+strict alignment is not talked round by a subdomain's pass. Someone who would rather have no guesses at all switches them off in the
 portal (see below); signed headers are still read.
 
 ## Mail from this server
@@ -138,7 +141,15 @@ portal (see below); signed headers are still read.
 Mail that apps on this server send through authenticated submission (port 587 or
 465) to an account here is looked at as well, when it is delivered: the account
 logged in and may send as the From address, which the server already checked, so
-it counts like a DMARC pass with the From domain as `origin`. The same goes for
+it counts like a DMARC pass with the registrable From domain as `origin`. It is
+filled in only when the sending account is the only one with addresses on that
+registrable domain, counting accounts, aliases, masked addresses, send-as grants,
+shared mailboxes and groups their members may send as. On a domain several
+people share, or a masked-only domain, a submitted code is only shown, like one
+on SPF alone: anyone there could otherwise plant a code for a neighbour's login
+on the same domain. There is no flag yet to mark an app account as the
+domain's service. The code is only looked for when the mail reaches someone
+here. The same goes for
 mail forwarded inside the server (forwarding addresses, account forwarding) and
 for Sieve `redirect` to a local account: the code found once for the incoming
 mail is kept for every local account it reaches. Fetched mail goes through the
@@ -152,7 +163,8 @@ mail again would cost more than it finds.
 ## Limits and greylisting
 
 At most 10 codes per account and sender (registrable From domain) within an
-hour. A service that sends more is either broken or abused to flood someone's
+hour, and 10 more guesses that are only shown: those count on their own, so a
+forger with an SPF pass cannot use up the share of the real codes. A service that sends more is either broken or abused to flood someone's
 notifications; mail past the limit arrives as normal mail without a code.
 
 A code from a signed header skips greylisting ([spam-filter.md](spam-filter.md)):
@@ -184,22 +196,24 @@ mail came in; the mail itself stays.
 
 ## After an update
 
-Once after an update to a version that finds more, the server looks in the
+Once after an update to a version whose detector finds more, the server looks in the
 background for codes in the mail of the last 24 hours that has none yet, in
 batches of 50 with a short pause between them, and notes in the settings that it
-is done (`verification-rescan:0.30.0`), so a restart does not start over. Junk
+is done (`verification-rescan:2`, the detector's version, not the release's),
+so neither a restart nor a release that leaves the detector alone starts over. Junk
 and Trash are left out. The sender is judged only by the `Authentication-Results`
 this server wrote itself, and only for mail its SMTP delivery stored: mail
 appended over IMAP, imported or restored may carry a copy of that header that
-anybody could have written. A code that had run out when its mail arrived stays
-dropped; one that has run out since is kept on the mail but not pushed, and the
-clean-up may move its mail to the Trash like any other.
+anybody could have written. Only codes that are still good when the re-scan
+runs are kept; one that has run out since is of no use and not stored, so the
+clean-up does not move old mail on its account either.
 
 What the re-scan can not see: mail from apps on this server that arrived before
 the update was stored without the server's verdicts, so it is skipped; its
 codes were good for minutes. A `Verification-Info` header is read as a guess,
-since whether its signature covered it is not in the stored results. The limit
-of 10 codes per sender and hour counts as well.
+since whether its signature covered it is not in the stored results. Codes the
+re-scan finds do not count toward the limit of 10 per sender and hour, so a
+backlog does not crowd out a live code that comes right after.
 
 ## Settings
 

@@ -34,6 +34,9 @@ const MAX_TEXT: usize = 16 * 1024;
 /// The largest message looked at at all (security-audit-0.26.0 VC-09). A code mail is a few
 /// kilobytes; parsing a big one in full again only for this is not worth it.
 pub const MAX_MESSAGE: usize = 1024 * 1024;
+/// Raise it whenever [`detect`] finds something it did not before: the one-time re-scan after an
+/// update runs once per value, not once per release (security-audit-0.30.0 R30-05).
+pub const DETECTOR_VERSION: u32 = 2;
 /// A code is never valid for longer, whatever the sender writes.
 pub const MAX_VALIDITY: i64 = 24 * 3600;
 /// How long a guessed code counts as valid when the text says nothing about it.
@@ -923,52 +926,49 @@ fn guess(text: &str) -> Option<(String, Purpose, i64)> {
     Some((code, purpose_of(&lower), validity_of(&lower)))
 }
 
-/// The lines of the text, with a code spread over boxes of one digit or capital each put back
-/// together: a cell per digit gives "4", "8", "2", … on lines of their own, spaced out it is
-/// "4 8 2 9 1 3". Only a run of 4 to 8 is joined; others stay as they are.
+/// The lines of the text, with a code spread over boxes of one digit each put back together: a cell
+/// per digit gives "4", "8", "2", … on lines of their own, spaced out it is "4 8 2 9 1 3" at the end
+/// of a line. Only a run of 4 to 8 that is no count (1 2 3 4) is joined; others stay as they are.
+/// Letters never join and a run inside a sentence neither, so a one-letter cell or a word next to
+/// the code cannot become part of it (security-audit-0.30.0 R30-07).
 fn lines_of(text: &str) -> Vec<String> {
-    // One digit or capital, maybe ending the sentence.
-    let single = |piece: &str| {
-        let piece = piece.trim_end_matches(['.', ',', ';', '!']);
-        piece.len() == 1 && piece.bytes().all(|b| b.is_ascii_digit() || b.is_ascii_uppercase())
+    const PUNCTUATION: [char; 6] = ['.', ',', ';', '!', ':', ')'];
+    // One digit, maybe ending the sentence.
+    let single = |piece: &str| match piece.trim_end_matches(PUNCTUATION).as_bytes() {
+        [digit] if digit.is_ascii_digit() => Some(*digit),
+        _ => None,
     };
-    // Joins the run when it has the length of a code, otherwise gives its pieces back.
-    let flush = |run: &mut Vec<&str>, out: &mut Vec<String>, on_lines: bool| {
-        if (4..=8).contains(&run.len()) {
-            out.push(run.concat());
-        } else if on_lines {
-            out.extend(run.iter().map(|piece| (*piece).to_owned()));
-        } else if !run.is_empty() {
-            out.push(run.join(" "));
+    let code_like =
+        |run: &[u8]| (4..=8).contains(&run.len()) && !run.windows(2).all(|pair| pair[1] == pair[0].wrapping_add(1));
+    let mut lines = Vec::new();
+    let mut run: Vec<u8> = Vec::new();
+    let flush = |run: &mut Vec<u8>, lines: &mut Vec<String>| {
+        if code_like(run) {
+            lines.push(String::from_utf8_lossy(run).into_owned());
+        } else {
+            lines.extend(run.iter().map(|digit| char::from(*digit).to_string()));
         }
         run.clear();
     };
-    let mut lines = Vec::new();
-    let mut run: Vec<&str> = Vec::new();
     for line in text.lines() {
-        let trimmed = line.trim();
-        if single(trimmed) {
-            run.push(trimmed);
+        if let Some(digit) = single(line.trim()) {
+            run.push(digit);
             continue;
         }
-        flush(&mut run, &mut lines, true);
-        if line.split_whitespace().filter(|piece| single(piece)).nth(3).is_none() {
+        flush(&mut run, &mut lines);
+        let pieces: Vec<&str> = line.split_whitespace().collect();
+        let mut tail: Vec<u8> = pieces.iter().rev().map_while(|piece| single(piece)).collect();
+        tail.reverse();
+        if code_like(&tail) {
+            let mut joined = pieces[..pieces.len() - tail.len()].join(" ");
+            joined.push(' ');
+            joined.extend(tail.iter().map(|digit| char::from(*digit)));
+            lines.push(joined);
+        } else {
             lines.push(line.to_owned());
-            continue;
         }
-        let mut pieces = Vec::new();
-        for piece in line.split_whitespace() {
-            if single(piece) {
-                run.push(piece.trim_end_matches(['.', ',', ';', '!']));
-            } else {
-                flush(&mut run, &mut pieces, false);
-                pieces.push(piece.to_owned());
-            }
-        }
-        flush(&mut run, &mut pieces, false);
-        lines.push(pieces.join(" "));
     }
-    flush(&mut run, &mut lines, true);
+    flush(&mut run, &mut lines);
     lines
 }
 
@@ -1553,6 +1553,7 @@ mod tests {
             ("Code", "Hier dein Code für die App:\n\nX7Q-K2P-9MZ\n\nGilt eine Stunde.", "X7Q-K2P-9MZ"),
             ("Sicherheit", "Dein Sicherheitscode ist 4 8 2 9 1 3.", "482913"),
             ("Login", "Use this code to log in:\n4\n8\n2\n9\n1\n3", "482913"),
+            ("Login", "Use this code to log in:\n4\n8\n2\n9\n1\n3.", "482913"),
         ];
         for (subject, body, expected) in cases {
             assert_eq!(code(subject, body).as_deref(), Some(*expected), "{subject}: {body}");
@@ -1562,6 +1563,12 @@ mod tests {
             (
                 "Your code",
                 "<tr><td>Your verification code</td></tr><tr><td>4</td><td>8</td><td>2</td><td>9</td><td>1</td><td>3</td></tr>",
+                "482913",
+            ),
+            (
+                // A one-letter cell next to the code cells is not part of it (R30-07).
+                "Your code",
+                "<tr><td>Your verification code</td></tr><tr><td>4</td><td>8</td><td>2</td><td>9</td><td>1</td><td>3</td><td>A</td></tr>",
                 "482913",
             ),
             (
@@ -1628,6 +1635,12 @@ mod tests {
             ("A gift for you", "Your gift code: K7P-2QX"),
             ("Black Friday", "Use code SALE-2026 today"),
             ("Newsletter", "Ton code du mois : -30% sur tout avec MOIS30"),
+            // A numbered list or a count below or after a code keyword, and a run in the middle of a
+            // sentence (R30-07).
+            ("Hilfe", "So findest du deinen Code:\n1\n2\n3\n4\n5"),
+            ("Hilfe", "Dein Code hat 6 Stellen: 1 2 3 4 5 6"),
+            ("Hilfe", "Dein Code:\n1. Öffne die App\n2. Tippe auf Konto"),
+            ("Hilfe", "Der Code 4 8 2 9 kommt in einer zweiten Mail"),
         ];
         for (subject, body) in cases {
             assert_eq!(code(subject, body), None, "{subject}: {body}");

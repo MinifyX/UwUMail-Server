@@ -8,17 +8,19 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 ### Upgrade notes
 
 - After the update the server looks once, in the background, for codes in the mail of the last
-  24 hours that has none yet (marked done as `verification-rescan:0.30.0` in the settings). Only
+  24 hours that has none yet (marked done as `verification-rescan:2` in the settings, the
+  detector's version, so later releases that leave the detector alone do not read again). Only
   mail this server's SMTP delivery stored is read, judged by the `Authentication-Results` it wrote
-  itself; codes that had run out when the mail arrived stay dropped, and no notification goes out
-  for codes that have run out since.
+  itself. Only codes that are still valid then are kept, and they do not count toward the hourly
+  limit per sender.
 
 ### Fixed
 
 - Codes in mail that apps on this server send through authenticated submission to a local
   account (for example "Dein Anmeldecode: 133900") are found now. Detection also runs for mail
-  forwarded inside the server and for Sieve redirects to local accounts. The sender logged in and
-  may send as the From address, which counts like a DMARC pass.
+  forwarded inside the server and for Sieve redirects to local accounts. Such a code is filled in
+  only when the sending account is the only account with addresses on its registrable domain; on
+  a domain several people share it is shown, but not filled in or pushed.
 
 ### Added
 
@@ -33,7 +35,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 - A DKIM signature that passes for the From domain (same registrable domain) is enough for a code
   without a DMARC record, also for autofill. An aligned SPF pass alone gives a code that is shown
-  but never filled in. Anything else still gives none. See `docs/verification-codes.md`.
+  but never filled in and not pushed; such guesses have their own hourly limit and cannot use up
+  the one of real codes. When the domain publishes DMARC, its result decides. Anything else still
+  gives none. See `docs/verification-codes.md`.
+- Codes spread over one cell or line per digit are joined only when they stand alone: a
+  neighbouring letter cell, a numbered list or a count (`1 2 3 4 5`) is no longer read as a code.
 
 ## 0.29.1
 

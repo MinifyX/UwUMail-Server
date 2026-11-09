@@ -48,7 +48,7 @@ entirely, as any server that does not know it would, and
 | `purpose` | `"login"`, `"signup"`, `"confirm-email"`, `"reset-password"`, `"confirm-action"` or `"other"` |
 | `expiresAt` | UTCDate; never more than 24 hours after the mail |
 | `source` | `"header"`: the sender said so in a signed `Verification-Info`; `"heuristic"`: a guess from the text |
-| `autofill` | whether the client may offer the code for autofill on `origin`: when DMARC passed, a DKIM signature of the From domain passed, or the sender logged in here; not for a guess on SPF alone |
+| `autofill` | whether the client may offer the code for autofill on `origin`: when DMARC passed, a DKIM signature of the From domain passed without a DMARC record, or the sender logged in here as the only account on the registrable From domain; not for a guess on SPF alone or a code submitted on a shared domain, which are also not pushed |
 
 The property is read-only and can't be set or filtered on. A client shows a
 `heuristic` code as a suggestion and offers autofill only where `autofill` is

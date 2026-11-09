@@ -28,10 +28,10 @@ pub struct Verdict {
     pub sender_verified: bool,
     /// SPF or DKIM passed aligned with the From domain.
     pub dmarc_passed: bool,
-    /// A DKIM signature holds whose `d=` has the registrable domain of From, whether or not that
-    /// domain publishes DMARC (relaxed alignment). Enough to trust a guessed code.
+    /// A DKIM signature holds whose `d=` has the registrable domain of From (relaxed alignment) and
+    /// the domain publishes no DMARC record. Enough to trust a guessed code.
     pub dkim_aligned: bool,
-    /// SPF passed for a MAIL FROM with the registrable domain of From, DMARC record or not. Only a
+    /// SPF passed for a MAIL FROM with the registrable domain of From, without a DMARC record. Only a
     /// guessed code to show, not one to fill in (`docs/verification-codes.md`).
     pub spf_aligned: bool,
     /// SPF says this server may not send for the envelope sender.
@@ -193,8 +193,12 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         || (spf.result() == SpfResult::Pass && related(mail_from_domain));
     let face_signed = face_signed(&message, &dkim, from_address.as_deref());
     let verification_signed = verification_signed(&message, &dkim, from_address.as_deref());
-    let dkim_aligned = dkim_aligned(&dkim, from_domain.as_deref());
-    let spf_aligned = spf.result() == SpfResult::Pass
+    // With a DMARC record its verdict decides; alignment alone only speaks for domains without one
+    // (security-audit-0.30.0 R30-02: a record that asks for strict alignment is not bypassed).
+    let no_dmarc_record = dmarc.dmarc_record().is_none();
+    let dkim_aligned = no_dmarc_record && dkim_aligned(&dkim, from_domain.as_deref());
+    let spf_aligned = no_dmarc_record
+        && spf.result() == SpfResult::Pass
         && from_domain.as_deref().is_some_and(|from| crate::forward::aligned(mail_from_domain, from));
 
     Verdict {

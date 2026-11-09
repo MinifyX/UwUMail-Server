@@ -420,28 +420,10 @@ impl Smtp {
         }
         signed.extend_from_slice(&message);
 
-        // A code an app here sends to someone here (docs/verification-codes.md). The sender signed
-        // in and every From address was checked to be its own: that says what DMARC would, and
-        // more. Submission strips `Verification-Info`, so this is always the guess.
-        let verification = if signed.len() <= verification::MAX_MESSAGE {
-            let auth = verification::Authenticity {
-                dmarc_passed: true,
-                dkim_aligned: true,
-                from_domain: Some(from_domain.clone()),
-                ..Default::default()
-            };
-            let original = signed.clone();
-            let found = tokio::task::spawn_blocking(move || verification::detect(&original, &auth, crate::now()))
-                .await
-                .unwrap_or_else(|err| {
-                    tracing::warn!(%id, %err, "looking for a verification code failed");
-                    None
-                });
-            found.zip(verification::registrable_domain(&from_domain))
-        } else {
-            None
-        };
-        let verification = verification.as_ref();
+        // A code an app here sends to someone here (docs/verification-codes.md), looked for once at
+        // the first delivery here: mail that only leaves is not parsed for it (R30-08).
+        let verification = tokio::sync::OnceCell::new();
+        let find_verification = || self.find_verification(&id, &account, &from_domain, &signed);
 
         let mut failed = Vec::new();
         let mut local_deliveries = 0;
@@ -495,7 +477,7 @@ impl Smtp {
                             false,
                             (&account, &mut may_leave),
                             internal_only,
-                            verification,
+                            verification.get_or_init(find_verification).await.as_ref(),
                         )
                         .await
                     {
@@ -551,7 +533,7 @@ impl Smtp {
                             to_trash,
                             (&account, &mut may_leave),
                             internal_only,
-                            verification,
+                            verification.get_or_init(find_verification).await.as_ref(),
                         )
                         .await
                     {
@@ -588,7 +570,7 @@ impl Smtp {
                                 account_id: Some(account.id),
                                 proof: forward::Proof::PROVEN,
                                 smtp_delivered: false,
-                                verification,
+                                verification: verification.get_or_init(find_verification).await.as_ref(),
                             };
                             forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
                             local_deliveries += 1;
@@ -702,6 +684,43 @@ impl Smtp {
                 raw
             }
         }
+    }
+
+    /// The code in a mail `account` submits from `from_domain`. The sender signed in and every From
+    /// address was checked to be its own, which says what DMARC would; submission strips
+    /// `Verification-Info`, so this is always the guess. It is filled in only when `account` is the
+    /// only one that may send under the registrable domain; otherwise it could plant a code for a
+    /// neighbour's login there, so it is only shown, like a guess on SPF alone (R30-01).
+    async fn find_verification(
+        &self,
+        id: &str,
+        account: &Account,
+        from_domain: &str,
+        signed: &[u8],
+    ) -> Option<(verification::Detected, String)> {
+        if signed.len() > verification::MAX_MESSAGE {
+            return None;
+        }
+        let author = verification::registrable_domain(from_domain)?;
+        let own = self.inner.store.sole_sender_on(account.id, &author).await.unwrap_or_else(|err| {
+            tracing::warn!(%id, %err, "checking who sends under the domain failed");
+            false
+        });
+        let auth = verification::Authenticity {
+            dmarc_passed: own,
+            dkim_aligned: own,
+            spf_aligned: !own,
+            from_domain: Some(from_domain.to_owned()),
+            ..Default::default()
+        };
+        let original = signed.to_vec();
+        let found = tokio::task::spawn_blocking(move || verification::detect(&original, &auth, crate::now()))
+            .await
+            .unwrap_or_else(|err| {
+                tracing::warn!(%id, %err, "looking for a verification code failed");
+                None
+            });
+        found.map(|found| (found, author))
     }
 
     /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the

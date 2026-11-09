@@ -122,6 +122,36 @@ async fn a_header_without_a_signature_over_it_is_only_a_guess() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn alignment_without_dmarc_only_counts_when_there_is_no_record() {
+    let a = greylisting_server().await;
+    // Both send from a subdomain SPF passes for. plain.test has no DMARC record, so the relaxed
+    // alignment shows the guess; strict.test asks for strict alignment, so its failed DMARC decides
+    // (R30-02).
+    for domain in ["plain.test", "strict.test"] {
+        a.smtp.dns_cache().pin_txt(&format!("bounce.{domain}"), "v=spf1 ip4:203.0.113.7 -all").unwrap();
+        a.smtp.dns_cache().pin_no_txt(&format!("mail.{domain}"));
+    }
+    a.smtp.dns_cache().pin_no_txt("_dmarc.plain.test");
+    a.smtp.dns_cache().pin_no_txt("_dmarc.bounce.plain.test");
+    a.smtp.dns_cache().pin_txt("_dmarc.strict.test", "v=DMARC1; p=none; aspf=s").unwrap();
+    a.smtp.dns_cache().pin_no_txt("_dmarc.bounce.strict.test");
+
+    for (number, domain) in ["plain.test", "strict.test"].into_iter().enumerate() {
+        let message = code_mail(domain, number, &[]);
+        let from = format!("no-reply@bounce.{domain}");
+        let reply = relay(&a, &from, &format!("mail.{domain}"), &message).await;
+        assert!(reply.starts_with("451 4.7.1"), "{reply}");
+        let reply = relay(&a, &from, &format!("mail.{domain}"), &message).await;
+        assert!(reply.starts_with("250"), "{reply}");
+    }
+    let found = codes(&a).await;
+    assert_eq!(found.len(), 2);
+    let found: Vec<_> = found.into_iter().flatten().collect();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!((found[0].origin.as_str(), found[0].autofill), ("plain.test", false));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_fast_lane_lifts_greylisting_only_for_its_own_recipients() {
     let a = greylisting_server().await;
     let (keys, _dir) = sender_keys(&a).await;
@@ -174,24 +204,50 @@ async fn a_local_sender_cannot_send_a_verification_info_header() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_code_from_an_app_on_this_server_is_found() {
     use uwumail_smtp::{Submission, SubmissionRecipient};
+    use uwumail_store::{NewAccount, Role};
     let a = start("a.test", &["mini", "ami"], &[]).await;
-    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
-    let raw = "From: Lock <mini@a.test>\r\nTo: ami@a.test\r\nSubject: Anmeldung\r\n\r\n\
-               Dein Anmeldecode: 133900\r\nEr gilt 10 Minuten.\r\n";
-    let submission = Submission {
-        account,
-        mail_from: "mini@a.test".into(),
-        recipients: vec![SubmissionRecipient::new("ami@a.test")],
-        raw: raw.as_bytes().to_vec(),
-        env_id: None,
-        trace: None,
-    };
-    a.smtp.submit(submission).await.unwrap();
-    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
     let store = a.smtp.store();
+    // An app with a domain of its own, next to two people who share a.test.
+    store.create_domain("app.test").await.unwrap();
+    store
+        .create_account(NewAccount {
+            address: "noreply@app.test".into(),
+            display_name: "App".into(),
+            password: None,
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    let send = async |from: &str| {
+        let account = store.account(from).await.unwrap().unwrap();
+        let raw = format!(
+            "From: Lock <{from}>\r\nTo: ami@a.test\r\nSubject: Anmeldung\r\n\r\n\
+             Dein Anmeldecode: 133900\r\nEr gilt 10 Minuten.\r\n"
+        );
+        let submission = Submission {
+            account,
+            mail_from: from.into(),
+            recipients: vec![SubmissionRecipient::new("ami@a.test")],
+            raw: raw.into_bytes(),
+            env_id: None,
+            trace: None,
+        };
+        a.smtp.submit(submission).await.unwrap();
+    };
     let ami = store.account("ami@a.test").await.unwrap().unwrap().id;
+
+    // The only account on app.test: its code is filled in.
+    send("noreply@app.test").await;
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
     let found = store.verifications(ami, vec![inbox[0].id]).await.unwrap().remove(&inbox[0].id).expect("a code");
-    assert_eq!(found.code.as_deref(), Some("133900"));
-    assert_eq!(found.origin, "a.test");
-    assert!(found.autofill);
+    assert_eq!((found.code.as_deref(), found.origin.as_str(), found.autofill), (Some("133900"), "app.test", true));
+
+    // mini shares a.test with ami: a code for a.test from mini is only shown (R30-01).
+    send("mini@a.test").await;
+    let inbox = a.wait_for_inbox("ami@a.test", 2).await;
+    let codes = store.verifications(ami, inbox.iter().map(|email| email.id).collect()).await.unwrap();
+    let from_mini = codes.values().find(|found| found.origin == "a.test").expect("a code from mini");
+    assert_eq!((from_mini.code.as_deref(), from_mini.autofill), (Some("133900"), false));
 }
