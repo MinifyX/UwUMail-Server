@@ -214,7 +214,9 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: release-${{ matrix.arch }}
+          # The runner image is in the key: the cache built on ubuntu-26.04 still held the aws-lc
+          # objects that crash without AVX, and a cache restored as a full match never rebuilds them.
+          key: release-${{ matrix.arch }}-${{ matrix.runner }}
       - name: Build
         run: cargo build --release --locked -p uwumail-server --target ${{ matrix.target }}
       - name: Collect the binary
