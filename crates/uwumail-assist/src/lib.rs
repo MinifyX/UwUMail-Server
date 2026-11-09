@@ -17,6 +17,7 @@ pub mod llm;
 pub mod mail;
 pub mod prices;
 pub mod prompts;
+mod rescan;
 pub mod spam;
 mod worker;
 

@@ -1788,6 +1788,8 @@ pub(crate) async fn receive(
             let auth = verification::Authenticity {
                 header_signed: verdict.verification_signed,
                 dmarc_passed: verdict.dmarc_passed,
+                dkim_aligned: verdict.dkim_aligned,
+                spf_aligned: verdict.spf_aligned,
                 from_domain: verdict.from_domain.clone(),
             };
             let author = verdict.from_domain.as_deref().and_then(verification::registrable_domain);
@@ -2033,8 +2035,13 @@ pub(crate) async fn receive(
             if junk {
                 tracing::info!(%id, to = %recipient.address, "not passing spam on from a forwarding address");
             } else {
-                let forwarder =
-                    forward::Forwarder { name: &recipient.address, account_id: None, proof, smtp_delivered: true };
+                let forwarder = forward::Forwarder {
+                    name: &recipient.address,
+                    account_id: None,
+                    proof,
+                    smtp_delivered: true,
+                    verification: verification.as_ref(),
+                };
                 forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
             }
             note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
@@ -2171,8 +2178,13 @@ pub(crate) async fn receive(
         if !plan.targets.is_empty()
             && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder =
-                forward::Forwarder { name: &account.login, account_id: Some(account.id), proof, smtp_delivered: true };
+            let forwarder = forward::Forwarder {
+                name: &account.login,
+                account_id: Some(account.id),
+                proof,
+                smtp_delivered: true,
+                verification: verification.as_ref(),
+            };
             forwarded =
                 forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
         }
@@ -2212,6 +2224,7 @@ pub(crate) async fn receive(
                 &message,
                 &labeled,
                 proof,
+                verification.as_ref(),
             )
             .await
             .map(|filed| (filed.mailbox, filed.stored, filed.email_ids)),

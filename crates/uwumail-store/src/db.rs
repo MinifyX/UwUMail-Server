@@ -94,6 +94,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0085_fetch_sender_proof.sql"),
     include_str!("migrations/0086_emails_blob_index.sql"),
     include_str!("migrations/0087_change_marks.sql"),
+    include_str!("migrations/0088_verification_rescanned.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

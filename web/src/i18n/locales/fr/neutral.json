@@ -5181,7 +5181,7 @@
       "intro": "S’applique au webmail et aux apps UwUMail."
     },
     "detect": {
-      "label": "Détecter les codes automatiquement (DE/EN)",
+      "label": "Détecter les codes automatiquement (DE/EN/FR/ES/IT/NL)",
       "description": "Cherche des codes comme « Your code is 482913 » dans les mails allemands et anglais. Tu peux copier les codes ainsi trouvés, mais ils ne sont jamais insérés automatiquement."
     },
     "cleanup": {

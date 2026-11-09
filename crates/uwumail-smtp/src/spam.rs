@@ -769,6 +769,8 @@ mod tests {
             action: crate::checks::Action::Accept,
             sender_verified: dmarc_passed,
             dmarc_passed,
+            dkim_aligned: false,
+            spf_aligned: false,
             spf_failed: false,
             dkim_failed: false,
             dmarc_failed: false,

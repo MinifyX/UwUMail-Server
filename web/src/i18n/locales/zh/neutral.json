@@ -4977,7 +4977,7 @@
       "intro": "适用于网页邮箱和 UwUMail 应用。"
     },
     "detect": {
-      "label": "自动识别验证码 (DE/EN)",
+      "label": "自动识别验证码 (DE/EN/FR/ES/IT/NL)",
       "description": "在德语和英语邮件中查找类似“Your code is 482913”的验证码。识别出的验证码可以复制，但绝不会被自动填入。"
     },
     "cleanup": {

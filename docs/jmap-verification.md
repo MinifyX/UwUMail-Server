@@ -43,12 +43,12 @@ entirely, as any server that does not know it would, and
 | --- | --- |
 | `kind` | `"otp"`: a code to type; `"link"`: a link to open |
 | `origin` | the host the code belongs to. For a guess, the registrable From domain |
-| `code` | the code (`null` for a link without one), without spaces or hyphens a guess found in it |
+| `code` | the code (`null` for a link without one): digits without the spaces or hyphens a guess found between them, a code with letters with its hyphens (`K7P-2QX`) |
 | `url` | only for a link: an `https` URL on `origin` or a host below it |
 | `purpose` | `"login"`, `"signup"`, `"confirm-email"`, `"reset-password"`, `"confirm-action"` or `"other"` |
 | `expiresAt` | UTCDate; never more than 24 hours after the mail |
 | `source` | `"header"`: the sender said so in a signed `Verification-Info`; `"heuristic"`: a guess from the text |
-| `autofill` | whether the client may offer the code for autofill on `origin`: only when DMARC passed |
+| `autofill` | whether the client may offer the code for autofill on `origin`: when DMARC passed, a DKIM signature of the From domain passed without a DMARC record, or the sender logged in here as the only account on the registrable From domain; not for a guess on SPF alone or a code submitted on a shared domain, which are also not pushed |
 
 The property is read-only and can't be set or filtered on. A client shows a
 `heuristic` code as a suggestion and offers autofill only where `autofill` is
