@@ -3,6 +3,12 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.30.1
+
+First published release of 0.30: the tag build of 0.30.0 stopped before it published anything,
+because its amd64 binary still did not start on CPUs without AVX (a build cache from the
+ubuntu-26.04 runner). 0.30.1 is 0.30.0 built afresh; the notes for 0.30.0 below apply.
+
 ## 0.30.0
 
 ### Upgrade notes
