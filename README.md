@@ -5,7 +5,7 @@
 <h1 align="center">UwUMail Server</h1>
 
 <p align="center">
-  The mail server I build for myself, because every self-hosted one annoyed me. (=^･ω･^=)<br/>
+  The self-hosted mail server I started because every other one annoyed me. Now in production and actively developed. (=^･ω･^=)<br/>
   JMAP · SMTP · IMAP · CalDAV/CardDAV · webmail · one Docker container
 </p>
 
@@ -17,21 +17,23 @@
 
 ## Why this exists
 
-I'm building UwUMail Server for myself. Every self-hosted mail server I tried
-annoyed me in one way or another, and so did the mail clients, so I started
-building my own, the way I want it. The app half lives in
+Every self-hosted mail server I tried annoyed me in one way or another, and so
+did the mail clients, so I started building my own, the way I want it. What
+began as my own project now runs my mail in production, and
+it keeps growing. The app half lives in
 [UwUMail](https://github.com/MinifyX/UwUMail-Client).
 
-- **Just for fun.** No company, no team, no schedule, no promises. I work on it
-  when I have time and feel like it, so don't expect steady development, and
-  don't be surprised by long breaks.
-- **Written with AI.** Almost all of the code is written with Claude, because
-  I'm honestly not a great programmer. Not your thing? No hard feelings, just
-  pick something else.
+- **Actively developed.** Bug fixes and new features ship regularly; every
+  release is listed in the [changelog](CHANGELOG.md).
+- **Bugs get fixed.** Found one? [Open an issue](https://github.com/MinifyX/UwUMail-Server/issues/new/choose)
+  and I'll fix it. It's one person and best effort, so there are no guaranteed
+  response times, but reports are read and fixed, security reports first
+  ([SECURITY.md](SECURITY.md)). Fixes go into the newest release.
+- **Written with AI.** Almost all of the code is written with Claude. Every
+  change comes with automated tests, and the security reviews are written down
+  in full.
 - **Use it, fork it, do what you want with it.** The license only asks one
   thing: changed versions stay open, even when you only run them as a service.
-- **No support.** Issues and pull requests are okay, but I might answer late or
-  not at all, and I mostly build what I need myself.
 
 ## What it is
 
@@ -79,9 +81,10 @@ The long version of every point is in [docs/features.md](docs/features.md):
   [OAuth](docs/oauth.md) for mail apps.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
 
-> **Status:** early, but I run my own mail on it. Set up backups, and remember
-> there's no support. The [roadmap](docs/roadmap.md) shows what's done and what
-> I'd like to do next.
+> **Status:** in production; my own mail runs on it. `update.sh`
+> rolls back an update that doesn't come up healthy, but set up
+> [backups](docs/backups.md) anyway. The [roadmap](docs/roadmap.md) shows what's
+> done and what comes next.
 
 | | |
 | --- | --- |

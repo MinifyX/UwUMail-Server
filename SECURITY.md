@@ -6,13 +6,17 @@ Please do **not** open a public issue for vulnerabilities. Report them
 privately through GitHub's "Report a vulnerability" (Security tab) or to me
 ([@MinifyX](https://github.com/MinifyX)) directly.
 
-This is a hobby project that I build in my spare time, almost entirely with AI
-(Claude), so I can't promise response times. Security reports still come first
-when I get to them; please give me the chance to ship a fix before publishing
-details.
+The server runs real mail in production and is actively developed, almost
+entirely with AI (Claude). It's one person, so there are no guaranteed response
+times, but security reports come before everything else: they get fixed and
+released as soon as I can. Please give me the chance to ship a fix before
+publishing details.
 
-Until the first release the project is in early development and not meant for
-production mail.
+## Supported versions
+
+Only the newest release gets fixes, security fixes included. `update.sh` brings
+an installation up to date and rolls back when an update doesn't come up
+healthy.
 
 ## Audit
 

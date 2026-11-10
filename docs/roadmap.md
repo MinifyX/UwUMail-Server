@@ -1,8 +1,7 @@
 # Roadmap
 
-This is my to-do and wish list, not a promise. There are no dates: things get
-built when I need them or feel like it, the order changes, and some of it may
-never happen. See [Why this exists](../README.md#why-this-exists).
+What's done and what comes next. There are no dates and the order can change;
+bug fixes always come first. See [Why this exists](../README.md#why-this-exists).
 
 Each step ships as its own commits, container image and test deployment.
 
@@ -117,6 +116,15 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Gateway in the health overview and under Server → Overview → Mail flow, notes on providers that block port 25
 - [x] Cloudflare button for the host name's A/AAAA records with the gateway's addresses
 - [x] Tried on a real VPS with a test instance behind it
+
+## Open mail protocol between servers 🚧 in progress
+
+A new protocol for mail between servers, open to every mail server, not only
+UwUMail Server. The public specification follows once it is finished and tested.
+
+- [ ] The protocol itself, designed so any mail server can implement it
+- [ ] UwUMail Server as the first implementation, talking to other servers that speak it
+- [ ] Public documentation, so anyone can build it into their own server
 
 ## Later
 

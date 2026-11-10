@@ -11,13 +11,14 @@ hardware, without becoming mail administrators.
 
 ## What to expect
 
-- **A hobby project.** No company, no team, no schedule, no support. I build
-  what I need and what I find fun, when I have time and feel like it. That can
-  mean a lot of changes in a week and then nothing for months.
+- **In production, actively developed.** It started as my own project and now
+  runs my mail in production. It gets bug fixes and new features; reported
+  bugs get fixed. No company behind it, so no guaranteed response times, but
+  best effort and security first.
 - **Written with AI.** I decide what the server should do and how it should
-  work; almost all of the code is written with Claude, because I'm honestly not
-  a great programmer. Automated tests catch what they can. If that's a
-  dealbreaker, that's completely fine, there are other mail servers.
+  work; almost all of the code is written with Claude. Automated tests and
+  written-down security reviews back every release. If that's a dealbreaker,
+  that's completely fine, there are other mail servers.
 - **Free to take.** Anyone may run it, fork it and turn it into something else
   under the AGPL-3.0.
 
