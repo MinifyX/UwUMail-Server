@@ -126,6 +126,19 @@ UwUMail Server. The public specification follows once it is finished and tested.
 - [ ] UwUMail Server as the first implementation, talking to other servers that speak it
 - [ ] Public documentation, so anyone can build it into their own server
 
+## AI assistants over MCP 🚧 draft
+
+People let an AI assistant of their choice (Claude, ChatGPT, a local model)
+work with their mail, calendars and contacts, with every send and every
+permanent delete waiting for their yes. The plan: [mcp.md](mcp.md).
+
+- [ ] `/mcp` endpoint with OAuth (resource indicators) and tokens, off until admin and person switch it on
+- [ ] Visibility: folders per connection, Junk/Trash hidden, *Not for AI* label, shared mailboxes
+- [ ] Mail text as fenced data with trust facts, write lock after mail from strangers
+- [ ] Tools for mail, calendar, contacts, labels and rules; resources and prompts
+- [ ] Approvals in the client, the app, the webmail and by push
+- [ ] *AI access* page: connections, activity, undo
+
 ## Later
 
 - [x] Sieve filters and ManageSieve: mail rules per account, run at delivery, managed over JMAP (RFC 9661) and ManageSieve (RFC 5804) (docs/sieve.md)
