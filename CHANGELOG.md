@@ -3,6 +3,11 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.30.2 (unreleased)
+
+- `/healthz` follows the suite format: besides `status`, `version` and `uptimeSeconds` it lists
+  `checks` (`database`) and answers 503 when the database does not respond.
+
 ## 0.30.1
 
 First published release of 0.30: the tag build of 0.30.0 stopped before it published anything,

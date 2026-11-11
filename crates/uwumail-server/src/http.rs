@@ -35,6 +35,8 @@ pub struct HttpState {
     pub hostname: String,
     pub challenges: Arc<Challenges>,
     pub started: Instant,
+    /// For the suite `/healthz` database check; `None` leaves the check out.
+    pub store: Option<uwumail_store::Store>,
 }
 
 /// The main site (HTTPS, or plain HTTP behind a reverse proxy), with JMAP and the web portal merged in.
@@ -175,12 +177,27 @@ pub fn redirect_app(state: HttpState) -> Router {
         .with_state(state)
 }
 
-async fn health(State(state): State<HttpState>) -> Json<serde_json::Value> {
-    Json(json!({
-        "status": "ok",
+/// Suite `/healthz` (UwUStatus docs/healthz.md): 200 for ok, 503 when the database does not answer.
+async fn health(State(state): State<HttpState>) -> Response {
+    let mut checks = serde_json::Map::new();
+    let mut status = "ok";
+    if let Some(store) = &state.store {
+        if let Err(err) = store.setting("health_ping").await {
+            tracing::warn!("health check: database: {err}");
+            status = "down";
+            checks.insert("database".into(), json!({"status": "down", "message": "database does not answer"}));
+        } else {
+            checks.insert("database".into(), json!({"status": "ok"}));
+        }
+    }
+    let code = if status == "down" { StatusCode::SERVICE_UNAVAILABLE } else { StatusCode::OK };
+    let body = json!({
+        "status": status,
         "version": env!("CARGO_PKG_VERSION"),
         "uptimeSeconds": state.started.elapsed().as_secs(),
-    }))
+        "checks": checks,
+    });
+    (code, Json(body)).into_response()
 }
 
 async fn acme_challenge(State(state): State<HttpState>, Path(token): Path<String>) -> Response {
@@ -544,7 +561,12 @@ mod tests {
     use axum::http::Request;
 
     fn state() -> HttpState {
-        HttpState { hostname: "mail.example.org".into(), challenges: Arc::default(), started: Instant::now() }
+        HttpState {
+            hostname: "mail.example.org".into(),
+            challenges: Arc::default(),
+            started: Instant::now(),
+            store: None,
+        }
     }
 
     fn app(state: HttpState) -> Router {
@@ -590,6 +612,11 @@ mod tests {
     async fn health_and_redirects() {
         let response = app(state()).oneshot(Request::get("/healthz").body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+        assert!(body["checks"].is_object());
 
         let response =
             redirect_app(state()).oneshot(Request::get("/login?x=1").body(Body::empty()).unwrap()).await.unwrap();
