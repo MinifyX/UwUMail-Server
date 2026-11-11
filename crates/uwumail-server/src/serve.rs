@@ -289,8 +289,12 @@ pub async fn run(
             .map_err(|err| anyhow::anyhow!("http.trusted_proxies: {err}"))?,
     );
     let challenges = Arc::new(Challenges::default());
-    let state =
-        HttpState { hostname: config.hostname.clone(), challenges: challenges.clone(), started: Instant::now() };
+    let state = HttpState {
+        hostname: config.hostname.clone(),
+        challenges: challenges.clone(),
+        started: Instant::now(),
+        store: Some(store.clone()),
+    };
     let redirect = http::redirect_app(state.clone());
     let https_tls = tls::https_server_config(certs.clone())?;
     let https = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone())

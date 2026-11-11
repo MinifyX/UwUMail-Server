@@ -602,6 +602,7 @@ mod tests {
             hostname: "mail.example.com".into(),
             challenges: Arc::default(),
             started: std::time::Instant::now(),
+            store: None,
         };
         let who = Router::new().route(
             "/who",
