@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type SpamLogAction, type SpamLogEntry, type SpamLogView } from "@/lib/api";
+import { useErrorText } from "@/lib/errors";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { usePhone } from "@/lib/media";
 import { toast } from "@/state/toasts";
@@ -142,6 +143,7 @@ function EntryDialog({ entry, onClose }: { entry: SpamLogEntry | null; onClose: 
 /** What the filter decided, message by message. The one place that says who writes to whom. */
 export function SpamLogCard() {
   const { t, i18n } = useT();
+  const errorText = useErrorText();
   const queryClient = useQueryClient();
   const [action, setAction] = useState<SpamLogAction | "all">("all");
   const [search, setSearch] = useState("");
@@ -166,6 +168,7 @@ export function SpamLogCard() {
       toast(t("spam.log.cleared", { count: result.removed }), "success");
       void queryClient.invalidateQueries({ queryKey: ["admin", "spam", "log"] });
     },
+    onError: (error) => toast(errorText(error), "error"),
   });
 
   const body = () => {
