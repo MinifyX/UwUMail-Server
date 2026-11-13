@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useT } from "@/i18n";
 import { IconButton } from "./Button";
 
@@ -27,6 +27,7 @@ export function Dialog({
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const { t } = useT();
+  const titleId = useId();
 
   useEffect(() => {
     const dialog = ref.current;
@@ -38,6 +39,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
+      aria-labelledby={title !== undefined ? titleId : undefined}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -66,7 +68,9 @@ export function Dialog({
         <div className="flex min-h-0 flex-auto flex-col">
           {title !== undefined && (
             <header className="flex items-center justify-between gap-4 px-6 pt-5 pb-2">
-              <h2 className="text-lg font-bold">{title}</h2>
+              <h2 id={titleId} className="text-lg font-bold">
+                {title}
+              </h2>
               <IconButton icon={X} label={t("common.close")} onClick={onClose} />
             </header>
           )}
