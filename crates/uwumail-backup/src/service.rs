@@ -756,6 +756,15 @@ impl Backups {
     ) -> Result<MailboxRestoreReport, Error> {
         let mut settings = self.settings().await?;
         let repo = self.open(&mut settings).await?;
+        // Nothing pins the snapshot between opening and restoring: a prune or new settings may
+        // have taken it away, and its objects with it.
+        if let Err(err) = repo.manifest(&self.mailbox_restore().snapshot).await {
+            repo.storage.close().await;
+            return Err(match err {
+                Error::Config(_) => Error::Config("the snapshot is no longer in the backup, open it again".into()),
+                other => other,
+            });
+        }
         let this = self.clone();
         let mut progress = move |state: MailboxProgress| {
             this.set_mailbox(|job| {

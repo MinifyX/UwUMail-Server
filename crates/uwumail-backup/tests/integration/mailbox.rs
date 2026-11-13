@@ -158,4 +158,13 @@ async fn one_mailbox_comes_back_next_to_what_is_there() {
             .await
             .is_err()
     );
+
+    // The snapshot goes (a prune) while it is open: a clear word instead of a damaged backup.
+    backups.open_snapshot("latest").await.unwrap();
+    assert_eq!(settled(&backups).await.state, "open");
+    std::fs::remove_dir_all(dir.path().join("nas/snapshots")).unwrap();
+    backups.start_mailbox_restore("mini@example.org", None, None, "test").await.unwrap();
+    let gone = settled(&backups).await.last.unwrap();
+    assert!(gone.error.contains("open it again"), "{}", gone.error);
+    assert_eq!(gone.restored, 0);
 }
