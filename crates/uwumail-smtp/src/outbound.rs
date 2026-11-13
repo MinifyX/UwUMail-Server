@@ -185,8 +185,10 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
         };
         if let Err(err) = result {
             tracing::error!(%err, recipient = recipient.id, "updating the queue failed");
-            // A deferral that was not written is just tried again; a delivery must not be.
-            if matches!(outcome, Outcome::Delivered(_) | Outcome::Failed(_)) {
+            // A deferral that was not written is just tried again; a delivery must not be. A row
+            // that is gone (its account was deleted meanwhile) has nothing left to try.
+            let gone = matches!(err, uwumail_store::StoreError::NotFound(_));
+            if !gone && matches!(outcome, Outcome::Delivered(_) | Outcome::Failed(_)) {
                 unrecorded.insert(recipient.id);
             }
         }
@@ -243,7 +245,7 @@ async fn held_inside(ctx: &Context, message: &QueuedMessage, recipients: &[Queue
         Some(outcomes.collect())
     };
     match state.await {
-        // An account that is gone entirely counts as not held, as before.
+        // Deleting an account drops its queued mail; this is only mail already on its way then.
         Ok((None, _)) => None,
         Ok((Some(account), _)) if account.disabled || account.deleted_at.is_some() || !account.protocols.smtp => {
             refuse("This account may not send to other servers")

@@ -814,6 +814,8 @@ impl Store {
             if used {
                 return Ok(false);
             }
+            // Before the account: its foreign key would only blank the sender and let the mail go.
+            crate::queue::drop_queued_mail(tx, id)?;
             tx.execute("DELETE FROM accounts WHERE id = ?1", [id])?;
             // What the spam filter learned has no foreign key to cascade (as in `delete_account`).
             for table in ["bayes_tokens", "bayes_totals", "bayes_learned", "bayes_queue"] {
