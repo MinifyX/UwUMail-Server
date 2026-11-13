@@ -40,10 +40,12 @@ pub async fn prepare(
     emails: &[ImapEmail],
 ) -> uwumail_store::Result<Prepared> {
     let mut terms = Vec::new();
-    let mut wants_headers = false;
+    let mut names = HashSet::new();
     walk(key, &mut |key| match key {
         SearchKey::Body(term) | SearchKey::Text(term) => terms.push(term.clone()),
-        SearchKey::Header(..) => wants_headers = true,
+        SearchKey::Header(name, _) => {
+            names.insert(name.to_ascii_lowercase());
+        }
         _ => {}
     });
     let mut prepared = Prepared::default();
@@ -54,13 +56,16 @@ pub async fn prepare(
         let ids = store.search_emails(account_id, &term).await?.into_iter().collect();
         prepared.text.insert(term, ids);
     }
-    if wants_headers {
+    if !names.is_empty() {
         for email in emails {
             let raw = store.blob(&email.blob).await?;
-            let root = mime::parse(&raw);
-            let fields = mime::fields(&raw, &root.header)
+            // Only the top header and only the asked fields: the bodies and the other fields of a
+            // whole mailbox would be held in memory at once.
+            let header = 0..mime::header_end(&raw, &(0..raw.len()));
+            let fields = mime::fields(&raw, &header)
                 .into_iter()
                 .map(|field| (field.name.to_ascii_lowercase(), field.value.to_lowercase()))
+                .filter(|(name, _)| names.contains(name))
                 .collect();
             prepared.headers.insert(email.email_id, fields);
         }
@@ -101,10 +106,9 @@ pub fn matches(key: &SearchKey, target: &Target<'_>, scope: &Scope, prepared: &P
         SearchKey::And(keys) => keys.iter().all(|key| matches(key, target, scope, prepared)),
         SearchKey::Or(left, right) => matches(left, target, scope, prepared) || matches(right, target, scope, prepared),
         SearchKey::Not(inner) => !matches(inner, target, scope, prepared),
-        // shortcut: walks the set for every message; sort it once (`SequenceSet::sorted`) in
-        // `prepare` if searches with long sets get slow.
         SearchKey::SequenceSet(set) => set.contains(target.msn, scope.largest_msn),
         SearchKey::Uid(set) => set.contains(email.uid, scope.largest_uid),
+        SearchKey::Sorted { uid, set } => set.contains(if *uid { email.uid } else { target.msn }),
         SearchKey::Keyword(keyword) => has(keyword),
         SearchKey::Unkeyword(keyword) => !has(keyword),
         // No message is recent: this server does not keep \Recent.
@@ -133,6 +137,21 @@ pub fn matches(key: &SearchKey, target: &Target<'_>, scope: &Scope, prepared: &P
         SearchKey::ModSeq(modseq) => email.modseq >= *modseq,
         SearchKey::Younger(seconds) => scope.now.saturating_sub(email.received_at) <= *seconds as i64,
         SearchKey::Older(seconds) => scope.now.saturating_sub(email.received_at) > *seconds as i64,
+    }
+}
+
+/// The criteria with every set sorted once, so matching looks a number up instead of walking the
+/// whole set per message (a saved `$` result is one range per message).
+pub fn sort_sets(key: SearchKey, scope: &Scope) -> SearchKey {
+    match key {
+        SearchKey::SequenceSet(set) => SearchKey::Sorted { uid: false, set: set.sorted(scope.largest_msn) },
+        SearchKey::Uid(set) => SearchKey::Sorted { uid: true, set: set.sorted(scope.largest_uid) },
+        SearchKey::And(keys) => SearchKey::And(keys.into_iter().map(|key| sort_sets(key, scope)).collect()),
+        SearchKey::Or(left, right) => {
+            SearchKey::Or(Box::new(sort_sets(*left, scope)), Box::new(sort_sets(*right, scope)))
+        }
+        SearchKey::Not(inner) => SearchKey::Not(Box::new(sort_sets(*inner, scope))),
+        other => other,
     }
 }
 
@@ -207,5 +226,33 @@ mod tests {
             vec![1, 2]
         );
         assert!(uses_modseq(&SearchKey::And(vec![SearchKey::All, SearchKey::ModSeq(2)])));
+        let sorted = sort_sets(
+            SearchKey::Not(Box::new(SearchKey::Uid(SequenceSet(vec![(SeqNum::Largest, SeqNum::Largest)])))),
+            &scope,
+        );
+        assert!(matches!(&sorted, SearchKey::Not(inner) if matches!(**inner, SearchKey::Sorted { uid: true, .. })));
+        assert_eq!(found(sorted), vec![1, 2]);
+        let sorted = sort_sets(SearchKey::SequenceSet(SequenceSet(vec![(SeqNum::Value(2), SeqNum::Largest)])), &scope);
+        assert_eq!(found(sorted), vec![2, 3]);
+    }
+
+    /// A saved `$` result is one range per message; walking it for every message of a big mailbox
+    /// took minutes.
+    #[test]
+    fn a_long_set_is_looked_up_not_walked() {
+        let count = 50_000;
+        let emails: Vec<ImapEmail> = (1..=count).map(|uid| email(uid, "", "nyu@example.net", &[], 0)).collect();
+        let scope = Scope { largest_msn: count, largest_uid: count, now: 0 };
+        let every_other = SequenceSet((1..=count).step_by(2).map(|uid| (SeqNum::Value(uid), SeqNum::Value(uid))).collect());
+        let key = sort_sets(SearchKey::Uid(every_other), &scope);
+        let prepared = Prepared::default();
+        let started = std::time::Instant::now();
+        let found = emails
+            .iter()
+            .enumerate()
+            .filter(|(i, email)| matches(&key, &Target { msn: *i as u32 + 1, email }, &scope, &prepared))
+            .count();
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "took {:?}", started.elapsed());
+        assert_eq!(found, count as usize / 2);
     }
 }

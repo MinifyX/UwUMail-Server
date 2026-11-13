@@ -353,6 +353,9 @@ pub enum SearchKey {
     /// Received within the last so many seconds (WITHIN).
     Younger(u64),
     Older(u64),
+    /// A message-number (`uid: false`) or UID set with `*` resolved, built by SEARCH before the
+    /// matching so a long set is not walked once per message. The parser never makes it.
+    Sorted { uid: bool, set: SortedSet },
 }
 
 #[cfg(test)]

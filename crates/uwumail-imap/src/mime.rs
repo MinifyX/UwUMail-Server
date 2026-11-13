@@ -65,7 +65,7 @@ pub struct Field<'a> {
 }
 
 /// Where the header ends: after the first empty line, or at the end when there is none.
-fn header_end(raw: &[u8], range: &Range<usize>) -> usize {
+pub(crate) fn header_end(raw: &[u8], range: &Range<usize>) -> usize {
     let bytes = &raw[range.clone()];
     if bytes.starts_with(b"\r\n") {
         return range.start + 2;

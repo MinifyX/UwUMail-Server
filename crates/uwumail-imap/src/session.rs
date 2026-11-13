@@ -1529,7 +1529,7 @@ where
         let prepared = search::prepare(&self.store, account, &criteria, &emails).await?;
         // Every key against every message of the mailbox: work for a blocking thread, not for the
         // thread every other session shares (security-audit-0.16.0 PANIC-4).
-        let checked = criteria.clone();
+        let checked = search::sort_sets(criteria.clone(), &scope);
         let (mut found, mut found_uids, highest) = tokio::task::spawn_blocking(move || {
             let mut found = Vec::new();
             let mut found_uids = Vec::new();
