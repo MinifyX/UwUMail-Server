@@ -332,7 +332,10 @@ async fn a_failed_copy_into_a_shared_folder_leaves_it_as_it_was() {
     let (_, done) = leni.command(&format!("MOVE 1:3 {SHARED_INBOX}")).await;
     assert!(done.contains("NO"), "{done}");
     assert_eq!(server.store.imap_status(server.mini, mini_inbox).await.unwrap().messages, 0);
-    assert_eq!(server.store.imap_status(server.leni, inbox(&server.store, server.leni).await).await.unwrap().messages, 3);
+    assert_eq!(
+        server.store.imap_status(server.leni, inbox(&server.store, server.leni).await).await.unwrap().messages,
+        3
+    );
 }
 
 #[tokio::test]

@@ -243,7 +243,8 @@ mod tests {
         let count = 50_000;
         let emails: Vec<ImapEmail> = (1..=count).map(|uid| email(uid, "", "nyu@example.net", &[], 0)).collect();
         let scope = Scope { largest_msn: count, largest_uid: count, now: 0 };
-        let every_other = SequenceSet((1..=count).step_by(2).map(|uid| (SeqNum::Value(uid), SeqNum::Value(uid))).collect());
+        let every_other =
+            SequenceSet((1..=count).step_by(2).map(|uid| (SeqNum::Value(uid), SeqNum::Value(uid))).collect());
         let key = sort_sets(SearchKey::Uid(every_other), &scope);
         let prepared = Prepared::default();
         let started = std::time::Instant::now();

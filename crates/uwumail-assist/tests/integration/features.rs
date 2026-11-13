@@ -69,7 +69,10 @@ async fn the_readers_own_aliases_are_never_participants() {
     rig.store.add_alias("kasse@example.org", "mia@example.org").await.unwrap();
     let assist = Assist::for_tests(rig.store.clone(), "mx.example.org", chatgpt::Endpoints::default());
     rig.server_provider("openaiCompatible", json!({})).await;
-    let raw = INVOICE.replace("Cc: Leni Beispiel <leni@example.org>", "Cc: Leni Beispiel <leni@example.org>, Kasse <kasse@example.org>");
+    let raw = INVOICE.replace(
+        "Cc: Leni Beispiel <leni@example.org>",
+        "Cc: Leni Beispiel <leni@example.org>, Kasse <kasse@example.org>",
+    );
     let email = rig.deliver(&rig.mia, &raw).await;
     let answer = json!({ "events": [
         event("Abholung", "2026-10-06T09:30:00", "am Dienstag, 6. Oktober um 9:30 Uhr", json!(["kasse@example.org", "Leni"]))

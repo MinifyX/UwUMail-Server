@@ -355,7 +355,10 @@ pub enum SearchKey {
     Older(u64),
     /// A message-number (`uid: false`) or UID set with `*` resolved, built by SEARCH before the
     /// matching so a long set is not walked once per message. The parser never makes it.
-    Sorted { uid: bool, set: SortedSet },
+    Sorted {
+        uid: bool,
+        set: SortedSet,
+    },
 }
 
 #[cfg(test)]
