@@ -33,6 +33,7 @@ const PREFERENCES: &[(&str, &[&str])] = &[
     ("tone", &["playful", "neutral"]),
     ("mode", &["simple", "pro"]),
     ("theme", &["system", "light", "dark"]),
+    ("contrast", &["system", "normal", "high"]),
     ("motion", &["system", "on", "off"]),
     ("mailConversations", &["on", "off"]),
     ("mailDensity", &["relaxed", "compact"]),

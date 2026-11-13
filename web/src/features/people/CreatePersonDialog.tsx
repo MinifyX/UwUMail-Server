@@ -73,7 +73,7 @@ export function CreatePersonDialog({ open, onClose }: { open: boolean; onClose: 
   // The dialog only renders its content while open, so every opening starts with an empty form.
   return (
     <>
-      <Dialog open={open} onClose={requestClose} width="sm">
+      <Dialog open={open} onClose={requestClose} width="sm" labelledBy="create-person-title">
         <CreatePerson onClose={onClose} onCancel={requestClose} onDirtyChange={setDirty} />
       </Dialog>
       <ConfirmDiscardDialog
@@ -160,7 +160,7 @@ function CreatePerson({
       {created?.access ? (
         <div className="flex flex-col items-center gap-3 px-6 pt-6 pb-6 text-center">
           <NyuScene name="done" className="h-auto w-[180px]" />
-          <h2 className="text-lg font-bold">{t("people.created.title", { name: personName })}</h2>
+          <h2 id="create-person-title" className="text-lg font-bold">{t("people.created.title", { name: personName })}</h2>
           <p className="text-[13px] text-muted">{t("people.created.body")}</p>
           <div className="w-full text-left">
             <SecretBox login={created.person.login} secret={created.access.secret} />
@@ -175,7 +175,7 @@ function CreatePerson({
       ) : created?.link ? (
         <div className="flex flex-col items-center gap-3 px-6 pt-6 pb-6 text-center">
           <NyuScene name="done" className="h-auto w-[180px]" />
-          <h2 className="text-lg font-bold">{t("people.invite.title", { name: personName })}</h2>
+          <h2 id="create-person-title" className="text-lg font-bold">{t("people.invite.title", { name: personName })}</h2>
           <p className="text-[13px] text-muted">{t("people.invite.body", { name: personName })}</p>
           <div className="w-full text-left">
             <LinkBox link={created.link} />
@@ -190,7 +190,7 @@ function CreatePerson({
       ) : (
         <form className="flex flex-col gap-4 px-6 pt-5 pb-6" onSubmit={submit}>
           <header className="flex items-center justify-between gap-4">
-            <h2 className="text-lg font-bold">{t("people.create.title")}</h2>
+            <h2 id="create-person-title" className="text-lg font-bold">{t("people.create.title")}</h2>
             <IconButton icon={ICONS.close} label={t("common.close")} onClick={onCancel} />
           </header>
           {domains.data?.length === 0 && (

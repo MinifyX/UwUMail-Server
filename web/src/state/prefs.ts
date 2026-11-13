@@ -9,7 +9,6 @@ export interface Prefs {
   language: LanguageSetting;
   tone: Tone;
   theme: ThemeSetting;
-  /** Kept in this browser only: the server's preference list has no contrast entry yet. */
   contrast: ContrastSetting;
   motion: MotionSetting;
 }

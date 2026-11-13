@@ -68,13 +68,12 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
             />
           )}
         </SettingRow>
-        {/* Only this browser remembers it: the server keeps no contrast preference. */}
         <SettingRow label={t("appearance.contrast.label")}>
           {() => (
             <Segmented<ContrastSetting>
               label={t("appearance.contrast.label")}
               value={prefs.contrast}
-              onChange={(contrast) => prefs.apply({ contrast })}
+              onChange={(contrast) => save.mutate({ contrast })}
               options={(["system", "normal", "high"] as const).map((value) => ({
                 value,
                 label: t(`appearance.contrast.${value}`),
