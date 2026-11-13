@@ -1,11 +1,9 @@
-import { Globe, Plus, X } from "lucide-react";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainKind } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -57,7 +55,7 @@ function CreateDomain({
     <form className="flex flex-col gap-4 px-6 pt-5 pb-6" onSubmit={submit}>
       <header className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-bold">{t("domains.create.title")}</h2>
-        <IconButton icon={X} label={t("common.close")} onClick={onCancel} />
+        <IconButton icon={ICONS.close} label={t("common.close")} onClick={onCancel} />
       </header>
       <Field
         label={t("domains.create.name")}
@@ -118,7 +116,7 @@ export function DomainsPage() {
   if (domains.isError) return <LoadError error={domains.error} onRetry={() => void domains.refetch()} />;
 
   const addButton = (
-    <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+    <Button variant="primary" icon={ICONS.add} onClick={() => setCreating(true)}>
       {t("domains.add")}
     </Button>
   );
@@ -129,7 +127,7 @@ export function DomainsPage() {
 
       {domains.data.length === 0 ? (
         <EmptyState
-          scene="noAccount"
+          art={<NyuScene name="noAccount" />}
           title={t("domains.empty.title")}
           body={t("domains.empty.body")}
           action={addButton}
@@ -148,7 +146,7 @@ export function DomainsPage() {
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-pink-tint text-pink-ink">
-                    <Globe className="size-[18px]" aria-hidden />
+                    <Icon icon={ICONS.website} className="size-[18px]" aria-hidden />
                   </span>
                   <span className="truncate font-semibold">{domain.name}</span>
                   {domain.kind === "masked" && <MaskedOnlyPill />}
@@ -163,7 +161,7 @@ export function DomainsPage() {
           ))}
         </ul>
       )}
-      <Dialog open={creating} onClose={requestClose} closeOnOutsideClick={!dirty} width="sm">
+      <Dialog open={creating} onClose={requestClose} width="sm">
         <CreateDomain onClose={() => setCreating(false)} onCancel={requestClose} onDirtyChange={setDirty} />
       </Dialog>
       <ConfirmDiscardDialog

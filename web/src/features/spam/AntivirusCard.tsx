@@ -1,10 +1,8 @@
+import { Button, Card, ICONS, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { CircleCheck, CircleHelp, CircleX, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CircleX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { api, type AntivirusTest, type AntivirusView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -16,18 +14,16 @@ const key = ["admin", "spam", "antivirus"] as const;
 type Tone = "ok" | "warning" | "problem" | "off";
 
 const TONES: Record<Tone, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
-  problem: { icon: CircleX, className: "bg-danger-tint text-danger" },
-  off: { icon: CircleHelp, className: "bg-elevated text-muted" },
+  ok: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  warning: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
+  problem: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
+  off: { icon: ICONS.help, className: "bg-elevated text-muted" },
 };
 
 function Pill({ tone, children }: { tone: Tone; children: string }) {
   const { icon: Icon, className } = TONES[tone];
   return (
-    <span
-      className={clsx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}
-    >
+    <span className={cx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}>
       <Icon className="size-3.5" aria-hidden />
       {children}
     </span>
@@ -67,7 +63,7 @@ export function AntivirusCard() {
         </div>
         {!view.enabled && <p className="text-[13px] text-muted">{t("spam.antivirus.off")}</p>}
         {view.error && (
-          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {t("spam.antivirus.away", { error: view.error })}
           </p>
         )}
@@ -78,7 +74,7 @@ export function AntivirusCard() {
             {view.status.signatures != null && (
               <>
                 <dt className="font-semibold text-muted">{t("spam.antivirus.signatures")}</dt>
-                <dd className={clsx(old && "text-warning")}>
+                <dd className={cx(old && "text-warning-ink")}>
                   {view.status.signatures}
                   {view.status.signaturesAt != null && ` · ${formatDateTime(view.status.signaturesAt, i18n.language)}`}
                 </dd>
@@ -89,12 +85,17 @@ export function AntivirusCard() {
         <p className="text-[13px]">{t("spam.antivirus.found", { count: view.found, days: view.days })}</p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-prose text-[13px] text-muted">{t("spam.antivirus.testHint")}</p>
-          <Button icon={ShieldCheck} busy={test.isPending} disabled={!view.enabled} onClick={() => test.mutate()}>
+          <Button
+            icon={ICONS.securityCheck}
+            busy={test.isPending}
+            disabled={!view.enabled}
+            onClick={() => test.mutate()}
+          >
             {t("spam.antivirus.test")}
           </Button>
         </div>
         {test.data?.error && (
-          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">{test.data.error}</p>
+          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">{test.data.error}</p>
         )}
       </div>
     </Card>

@@ -1,10 +1,8 @@
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Lock } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Field, Segmented, Select, SettingRow, TextInput, Toggle } from "@/components/ui/Field";
+import { SettingRow } from "@/components/ui/SettingRow";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -18,7 +16,7 @@ export function LockedHint() {
   const { t } = useT();
   return (
     <span className="flex items-center gap-1 text-[12px] text-muted">
-      <Lock className="size-3" aria-hidden />
+      <Icon icon={ICONS.locked} className="size-3" aria-hidden />
       {t("settings.locked")}
     </span>
   );
@@ -135,13 +133,7 @@ export function ChoiceField<T extends string>({
     <SettingRow label={label} description={locked ? <LockedHint /> : hint}>
       {({ id, describedBy }) =>
         segmented && !locked ? (
-          <Segmented<T>
-            label={label}
-            describedBy={describedBy}
-            value={value}
-            onChange={(next) => form.set(settingKey, next)}
-            options={options}
-          />
+          <Segmented<T> label={label} value={value} onChange={(next) => form.set(settingKey, next)} options={options} />
         ) : (
           <Select
             id={id}

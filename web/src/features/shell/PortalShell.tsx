@@ -1,36 +1,20 @@
-import clsx from "clsx";
+import { IconButton, Menu, Tag, ICONS, Icon, cx } from "@uwusuite/design";
 import {
   AtSign,
-  EyeOff,
-  CalendarDays,
   ChevronsUpDown,
   CircleFadingArrowUp,
-  Download,
-  Ellipsis,
-  Forward,
   Inbox,
-  KeyRound,
   ScrollText,
-  Send,
-  Settings,
-  LayoutDashboard,
-  LogOut,
   MailWarning,
   Palette,
   ShieldBan,
-  Sparkles,
-  ShieldCheck,
   Truck,
-  Users,
-  X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { IconButton } from "@/components/ui/Button";
 import { Wordmark } from "@/components/ui/Logo";
-import { Menu } from "@/components/ui/Menu";
-import { Tag } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
+import { toast } from "@/state/toasts";
 import type { Session } from "@/lib/api";
 import { Link, usePath } from "@/lib/router";
 import { adminViewOf, inCalmNav } from "@/features/admin/adminPrefs";
@@ -88,7 +72,7 @@ function NavRow({ item, path, onNavigate }: { item: NavItem; path: string; onNav
         onNavigate();
       }}
       aria-current={active ? "page" : undefined}
-      className={clsx(
+      className={cx(
         "flex h-9 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors",
         active ? "bg-pink-tint text-pink-ink" : "text-muted hover:bg-pink-tint/50 hover:text-ink",
       )}
@@ -111,7 +95,7 @@ function NavGroups({ groups, path, onNavigate }: { groups: NavGroup[]; path: str
         <div key={group.title ?? index} className="flex flex-col gap-0.5">
           {group.title && (
             <p
-              className={clsx(
+              className={cx(
                 "px-3 pb-1.5 text-[12px] font-bold tracking-wide text-muted uppercase",
                 index === 0 ? "pt-1" : "pt-4",
               )}
@@ -143,7 +127,7 @@ function ModeSwitch({ mode, onNavigate }: { mode: Mode; onNavigate: () => void }
           to={option.to}
           onClick={onNavigate}
           aria-current={mode === option.value ? "true" : undefined}
-          className={clsx(
+          className={cx(
             "flex h-8 flex-1 items-center justify-center rounded-full px-3 text-[13px] font-semibold whitespace-nowrap transition-colors",
             mode === option.value ? "bg-surface text-pink-ink shadow-sm" : "text-muted hover:text-ink",
           )}
@@ -173,27 +157,27 @@ function useNavigation(session: Session) {
     {
       title: t("nav.groups.account"),
       items: [
-        { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+        { to: "/account", label: t("nav.overview"), icon: ICONS.overview },
         { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
-        { to: "/account/masked", label: t("nav.masked"), icon: EyeOff },
-        { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
+        { to: "/account/masked", label: t("nav.masked"), icon: ICONS.hide },
+        { to: "/account/security", label: t("nav.security"), icon: ICONS.securityCheck },
       ],
     },
     {
       title: t("nav.groups.mail"),
       items: [
-        { to: "/account/mail", label: t("nav.mail"), icon: Forward },
+        { to: "/account/mail", label: t("nav.mail"), icon: ICONS.forward },
         { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
-        { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
+        { to: "/account/fetch", label: t("nav.fetch"), icon: ICONS.download },
         { to: "/account/moving", label: t("nav.moving"), icon: Truck },
-        { to: "/account/codes", label: t("nav.codes"), icon: KeyRound, newSince: "0.26.0" },
+        { to: "/account/codes", label: t("nav.codes"), icon: ICONS.secret, newSince: "0.26.0" },
       ],
     },
     {
       title: t("nav.groups.extras"),
       items: [
-        { to: "/account/calendars", label: t("nav.calendars"), icon: CalendarDays },
-        { to: "/account/assist", label: t("nav.assist"), icon: Sparkles },
+        { to: "/account/calendars", label: t("nav.calendars"), icon: ICONS.calendar },
+        { to: "/account/assist", label: t("nav.assist"), icon: ICONS.ai },
       ],
     },
   ].map((group) => ({ ...group, items: group.items.map(withTag) }));
@@ -202,18 +186,18 @@ function useNavigation(session: Session) {
     {
       to: "/admin",
       label: t("nav.overview"),
-      icon: LayoutDashboard,
+      icon: ICONS.overview,
       also: ["/admin/stats", "/admin/mail-flow", "/admin/microsoft", "/admin/backups"],
     },
     {
       to: "/admin/people",
       label: t("nav.directory"),
-      icon: Users,
+      icon: ICONS.people,
       also: ["/admin/domains", "/admin/moves", "/admin/reports"],
     },
-    { to: "/admin/queue", label: t("nav.queue"), icon: Send },
+    { to: "/admin/queue", label: t("nav.queue"), icon: ICONS.send },
     { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
-    { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
+    { to: "/admin/settings", label: t("nav.settings"), icon: ICONS.settings },
     { to: "/admin/updates", label: t("nav.updates"), icon: CircleFadingArrowUp },
     { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
   ].map(withTag);
@@ -240,29 +224,29 @@ function UserMenu({
   const { t } = useT();
   const logout = useLogout();
   const name = session.account.name || session.account.login;
-  const icon = (Icon: LucideIcon, text: string) => (
-    <span className="flex items-center gap-2">
-      <Icon className="size-4" aria-hidden />
-      {text}
-    </span>
-  );
   return (
     <Menu
       align="start"
-      className="w-full [&>[role=menu]]:top-auto [&>[role=menu]]:bottom-[calc(100%+6px)]"
+      side="above"
+      className="w-full"
       items={[
         // A real address, not a route: the webmail is its own app under /mail.
         ...(session.webmail
-          ? [{ label: icon(Inbox, t("nav.openMailbox")), onSelect: () => window.location.assign("/mail") }]
+          ? [{ icon: Inbox, label: t("nav.openMailbox"), onSelect: () => window.location.assign("/mail") }]
           : []),
         {
-          label: icon(Palette, t("userMenu.appearance")),
+          icon: Palette,
+          label: t("userMenu.appearance"),
           onSelect: () => {
             onNavigate();
             onAppearance();
           },
         },
-        { label: icon(LogOut, t("userMenu.logout")), onSelect: () => logout.mutate() },
+        {
+          icon: ICONS.signOut,
+          label: t("userMenu.logout"),
+          onSelect: () => logout.mutate(undefined, { onError: () => toast(t("userMenu.logoutFailed"), "error") }),
+        },
       ]}
       trigger={(props) => (
         <button
@@ -283,7 +267,7 @@ function UserMenu({
               {session.account.role === "admin" ? t(`userMenu.role.admin`) : session.account.login}
             </span>
           </span>
-          <ChevronsUpDown className="size-4 text-faint" aria-hidden />
+          <Icon icon={ChevronsUpDown} className="size-4 text-faint" aria-hidden />
         </button>
       )}
     />
@@ -310,7 +294,7 @@ function TabBar({ items, onMore, moreOpen }: { items: TabItem[]; onMore: () => v
           const content = (
             <>
               <span
-                className={clsx(
+                className={cx(
                   "flex h-7 w-14 items-center justify-center rounded-full transition-colors",
                   item.current && "bg-pink-tint",
                 )}
@@ -320,7 +304,7 @@ function TabBar({ items, onMore, moreOpen }: { items: TabItem[]; onMore: () => v
               <span className="truncate">{item.label}</span>
             </>
           );
-          const className = clsx(
+          const className = cx(
             "flex min-h-14 w-full flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-[11px] font-semibold",
             item.current ? "text-pink-ink" : "text-muted",
           );
@@ -369,18 +353,18 @@ export function PortalShell({ session, children }: { session: Session; children:
   const tabTargets: { to: string; label: string; icon: LucideIcon; also?: string[] }[] =
     mode === "server"
       ? [
-          { to: "/admin", label: t("nav.tabs.server"), icon: LayoutDashboard, also: server[0]?.items[0]?.also },
-          { to: "/admin/people", label: t("nav.tabs.people"), icon: Users, also: server[0]?.items[1]?.also },
-          { to: "/admin/queue", label: t("nav.tabs.queue"), icon: Send },
+          { to: "/admin", label: t("nav.tabs.server"), icon: ICONS.overview, also: server[0]?.items[0]?.also },
+          { to: "/admin/people", label: t("nav.tabs.people"), icon: ICONS.people, also: server[0]?.items[1]?.also },
+          { to: "/admin/queue", label: t("nav.tabs.queue"), icon: ICONS.send },
         ]
       : [
-          { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+          { to: "/account", label: t("nav.overview"), icon: ICONS.overview },
           { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
-          { to: "/account/codes", label: t("nav.tabs.codes"), icon: KeyRound },
+          { to: "/account/codes", label: t("nav.tabs.codes"), icon: ICONS.secret },
         ];
   const tabs: TabItem[] = tabTargets.map((target) => ({ ...target, current: !more && isCurrent(target, path) }));
   const inTabs = tabs.some((tab) => tab.current);
-  tabs.push({ label: t("nav.more"), icon: Ellipsis, current: more || !inTabs });
+  tabs.push({ label: t("nav.more"), icon: ICONS.more, current: more || !inTabs });
 
   const menu = (inSheet: boolean) => (
     <div className="flex h-full flex-col">
@@ -389,7 +373,7 @@ export function PortalShell({ session, children }: { session: Session; children:
           <ModeSwitch mode={mode} onNavigate={close} />
         </div>
       )}
-      <nav aria-label={t("nav.label")} className={clsx("flex flex-col", !inSheet && "flex-1 overflow-y-auto")}>
+      <nav aria-label={t("nav.label")} className={cx("flex flex-col", !inSheet && "flex-1 overflow-y-auto")}>
         <NavGroups groups={groups} path={path} onNavigate={close} />
       </nav>
       <div className="mt-auto pt-3">
@@ -412,7 +396,7 @@ export function PortalShell({ session, children }: { session: Session; children:
       </aside>
 
       <main
-        className={clsx(
+        className={cx(
           "mx-auto w-full max-w-[1080px] px-4 min-[700px]:py-8 sm:px-6 lg:px-10",
           // On the phone: below the status bar and above the tab bar.
           "max-[699px]:pt-[max(16px,env(safe-area-inset-top))] max-[699px]:pb-[calc(88px+env(safe-area-inset-bottom))]",
@@ -426,12 +410,8 @@ export function PortalShell({ session, children }: { session: Session; children:
 
       {more && (
         <div className="fixed inset-0 z-40 min-[700px]:hidden">
-          <button
-            type="button"
-            aria-label={t("nav.closeMenu")}
-            className="absolute inset-0 animate-fade bg-scrim"
-            onClick={close}
-          />
+          {/* A tap beside the sheet leaves it open; the X, Escape or a choice closes it. */}
+          <div aria-hidden className="absolute inset-0 animate-fade bg-scrim" />
           <div
             role="dialog"
             aria-modal="true"
@@ -440,7 +420,7 @@ export function PortalShell({ session, children }: { session: Session; children:
           >
             <div className="flex items-center justify-between px-2.5 pb-3">
               <Wordmark className="text-base" />
-              <IconButton icon={X} label={t("nav.closeMenu")} onClick={close} />
+              <IconButton icon={ICONS.close} label={t("nav.closeMenu")} onClick={close} />
             </div>
             <div className="min-h-0 overflow-y-auto">{menu(true)}</div>
           </div>

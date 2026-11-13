@@ -1,8 +1,5 @@
-import { ArrowLeft, Globe, Info, KeyRound, RefreshCw, Trash2, X } from "lucide-react";
+import { Button, IconButton, Field, Select, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { ApiError, type DomainDetail } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -39,8 +36,8 @@ function DnsCard({ domain }: { domain: DomainDetail }) {
     <Card
       id={DNS_CARD_ID}
       title={t("domains.detail.dns")}
-      action={
-        <Button size="sm" icon={RefreshCw} busy={check.isPending} onClick={() => check.mutate()}>
+      aside={
+        <Button size="sm" icon={ICONS.refresh} busy={check.isPending} onClick={() => check.mutate()}>
           {check.isPending ? t("domains.detail.checking") : t("domains.detail.check")}
         </Button>
       }
@@ -48,13 +45,13 @@ function DnsCard({ domain }: { domain: DomainDetail }) {
       <div className="flex flex-col gap-3">
         {domain.setup.upstreamMx && (
           <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
             {t("domains.detail.upstream")}
           </p>
         )}
         {domain.setup.relayHost && (
           <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
             {t("domains.detail.relay", { relay: domain.setup.relayHost })}
           </p>
         )}
@@ -148,7 +145,7 @@ function KeysCard({ domain }: { domain: DomainDetail }) {
               {key.state === "retired" && (
                 <IconButton
                   size="sm"
-                  icon={X}
+                  icon={ICONS.close}
                   label={t("domains.detail.removeKey", { selector: key.selector })}
                   onClick={() => removeKey.mutate(key.selector)}
                 />
@@ -162,7 +159,7 @@ function KeysCard({ domain }: { domain: DomainDetail }) {
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="primary"
-                icon={KeyRound}
+                icon={ICONS.secret}
                 busy={activate.isPending}
                 onClick={() => activate.mutate(false)}
               >
@@ -178,7 +175,7 @@ function KeysCard({ domain }: { domain: DomainDetail }) {
         ) : (
           <Button
             className="self-start"
-            icon={KeyRound}
+            icon={ICONS.secret}
             busy={rotate.isPending}
             onClick={() => rotate.mutate(undefined)}
           >
@@ -214,12 +211,12 @@ export function DomainPage({ name }: { name: string }) {
         to="/admin/domains"
         className="inline-flex items-center gap-1.5 self-start rounded-full text-[13px] font-semibold text-muted hover:text-ink"
       >
-        <ArrowLeft className="size-4" aria-hidden />
+        <Icon icon={ICONS.back} className="size-4" aria-hidden />
         {t("domains.detail.back")}
       </Link>
       <header className="flex flex-wrap items-center gap-4">
         <span className="flex size-14 items-center justify-center rounded-full bg-pink-tint text-pink-ink">
-          <Globe className="size-7" aria-hidden />
+          <Icon icon={ICONS.website} className="size-7" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -269,7 +266,7 @@ export function DomainPage({ name }: { name: string }) {
               <p className="text-[13px] text-muted">{t("domains.detail.removeHint")}</p>
               <Button
                 variant="danger"
-                icon={Trash2}
+                icon={ICONS.delete}
                 disabled={!unused}
                 busy={remove.isPending}
                 onClick={() => {

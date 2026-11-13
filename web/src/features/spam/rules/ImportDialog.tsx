@@ -1,9 +1,8 @@
+import { Button, Field, Segmented, TextInput } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
 import { FileUp } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type RulesImport } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -113,7 +112,7 @@ export function ImportDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("spam.rules.import.title")} width="lg" closeOnOutsideClick={!text}>
+    <Dialog open={open} onClose={onClose} title={t("spam.rules.import.title")} width="lg">
       <form className="flex flex-col gap-4 px-6 pt-2 pb-6" onSubmit={submit}>
         <p className="-mt-1 text-[13px] text-muted">{t("spam.rules.import.intro")}</p>
         <div className="flex flex-wrap items-center gap-3">
@@ -192,7 +191,7 @@ export function ImportDialog({
         </div>
         {report && <ImportReportView report={report} />}
         {send.isError && (
-          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {errorText(send.error)}
           </p>
         )}

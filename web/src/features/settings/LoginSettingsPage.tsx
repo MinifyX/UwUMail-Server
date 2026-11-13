@@ -1,10 +1,9 @@
+import { Button, Field, Icon } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { BookOpen, PlugZap } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { CopyButton } from "@/components/ui/Card";
-import { Field } from "@/components/ui/Field";
+import { CopyButton } from "@/components/ui/Page";
 import { SecretField } from "@/features/logs/LokiCard";
 import { useInfo } from "@/features/session/session";
 import { useT } from "@/i18n";
@@ -108,12 +107,12 @@ function TestButton({ path, form, onResult }: { path: string; form: Form; onResu
         </Button>
       </div>
       {test.isSuccess && (
-        <p role="status" className="rounded-control bg-success-tint px-3 py-2 text-[13px] break-words text-success">
+        <p role="status" className="rounded-control bg-success-tint px-3 py-2 text-[13px] break-words text-success-ink">
           {t("externalLogin.testOk", { detail: test.data.detail })}
         </p>
       )}
       {test.isError && (
-        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger">
+        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger-ink">
           {errorText(test.error)}
         </p>
       )}
@@ -383,7 +382,7 @@ function DocsLink({ href, label }: { href: string; label: string }) {
       rel="noreferrer"
       className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-pink-ink hover:underline"
     >
-      <BookOpen className="size-4" aria-hidden />
+      <Icon icon={BookOpen} className="size-4" aria-hidden />
       {label}
     </a>
   );

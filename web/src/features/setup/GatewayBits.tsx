@@ -1,24 +1,8 @@
-import clsx from "clsx";
-import {
-  BookOpen,
-  CircleCheck,
-  CircleHelp,
-  CirclePlus,
-  Cloud,
-  Download,
-  Globe,
-  Link2,
-  RefreshCw,
-  RotateCcw,
-  Server,
-  TriangleAlert,
-  Unplug,
-} from "lucide-react";
+import { Button, Field, TextInput, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
+import { BookOpen, CirclePlus, Cloud, Link2, Server } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { CloudflareResult, GatewayHostChange, GatewayView, Reachability } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -38,9 +22,9 @@ import {
 export const GATEWAY_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/gateway.md";
 
 const RECOMMENDATION_TONE = {
-  gateway: "bg-warning-tint text-warning",
-  direct: "bg-success-tint text-success",
-  paired: "bg-success-tint text-success",
+  gateway: "bg-warning-tint text-warning-ink",
+  direct: "bg-success-tint text-success-ink",
+  paired: "bg-success-tint text-success-ink",
   unknown: "bg-canvas text-muted",
 } as const;
 
@@ -79,7 +63,7 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
         <div className="rounded-control bg-canvas px-3 py-2">
           <p className="text-[13px] font-semibold">
             {t("setup.gateway.machine.states." + machine.job.state, { defaultValue: machine.job.state })}
-            {machine.job.error && <span className="ml-2 font-normal text-danger">{machine.job.error}</span>}
+            {machine.job.error && <span className="ml-2 font-normal text-danger-ink">{machine.job.error}</span>}
           </p>
           {machine.job.log && (
             <pre className="mt-2 max-h-56 overflow-auto font-mono text-[12px] whitespace-pre-wrap">
@@ -89,15 +73,21 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" icon={RefreshCw} disabled={running || updates === 0} onClick={() => ask("os-update")}>
+        <Button size="sm" icon={ICONS.refresh} disabled={running || updates === 0} onClick={() => ask("os-update")}>
           {t("setup.gateway.machine.installUpdates")}
         </Button>
         {view.softwareVersion && (
-          <Button size="sm" variant="primary" icon={Download} disabled={running} onClick={() => ask("gateway-update")}>
+          <Button
+            size="sm"
+            variant="primary"
+            icon={ICONS.download}
+            disabled={running}
+            onClick={() => ask("gateway-update")}
+          >
             {t("setup.gateway.machine.updateGateway", { version: view.softwareVersion })}
           </Button>
         )}
-        <Button size="sm" variant="danger" icon={RotateCcw} disabled={running} onClick={() => ask("reboot")}>
+        <Button size="sm" variant="danger" icon={ICONS.reset} disabled={running} onClick={() => ask("reboot")}>
           {t("setup.gateway.machine.restart")}
         </Button>
       </div>
@@ -112,11 +102,11 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
 }
 
 const CHANGE_ICONS = {
-  none: { icon: CircleCheck, className: "text-success" },
+  none: { icon: ICONS.success, className: "text-success-ink" },
   create: { icon: CirclePlus, className: "text-pink-ink" },
   update: { icon: CirclePlus, className: "text-pink-ink" },
-  replace: { icon: TriangleAlert, className: "text-warning" },
-  skip: { icon: CircleHelp, className: "text-muted" },
+  replace: { icon: ICONS.warning, className: "text-warning-ink" },
+  skip: { icon: ICONS.help, className: "text-muted" },
 } as const;
 
 /**
@@ -210,7 +200,7 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
             const current = change.current.length > 0 ? change.current.join(", ") : t("setup.gateway.cloudflare.none");
             return (
               <li key={`${change.recordType}-${change.name}`} className="flex gap-2 text-[13px]">
-                <Icon className={clsx("mt-0.5 size-4 shrink-0", className)} aria-hidden />
+                <Icon className={cx("mt-0.5 size-4 shrink-0", className)} aria-hidden />
                 <span className="min-w-0 break-words">
                   {change.action !== "skip" && <span className="font-semibold">{change.recordType} </span>}
                   {change.name}: {t(`setup.gateway.cloudflare.actions.${change.action}`)}
@@ -241,7 +231,7 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
             />
             <span className="font-semibold">{t("setup.gateway.cloudflare.replace")}</span>
           </label>
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning-ink">
             {t("setup.gateway.cloudflare.replaceHint")}
           </p>
         </fieldset>
@@ -289,11 +279,11 @@ export function ReachabilityChecks({ reach, explain }: { reach: Reachability; ex
   const sources = reach.addresses.flatMap((address) => (address.provider ? [address.provider] : []));
   return (
     <div className="flex flex-col gap-4">
-      <p className={clsx("rounded-control px-3 py-2.5 text-[13px] font-semibold", RECOMMENDATION_TONE[advice])}>
+      <p className={cx("rounded-control px-3 py-2.5 text-[13px] font-semibold", RECOMMENDATION_TONE[advice])}>
         {t(`setup.reach.recommend.${advice}`)}
       </p>
       <div className="flex flex-col gap-3">
-        <SubHeading icon={Globe}>{t("setup.reach.addressTitle")}</SubHeading>
+        <SubHeading icon={ICONS.website}>{t("setup.reach.addressTitle")}</SubHeading>
         <CheckLines lines={reachabilityLines(reach)} explain={explain} />
       </div>
       {sources.length > 0 && (
@@ -393,7 +383,7 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
               rel="noreferrer"
               className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-pink-ink hover:underline"
             >
-              <BookOpen className="size-4" aria-hidden />
+              <SuiteIcon icon={BookOpen} className="size-4" aria-hidden />
               {t("setup.reach.docs")}
             </a>
             <div className="flex gap-2">
@@ -409,7 +399,13 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
           <Button size="sm" icon={Link2} onClick={() => setAnother(true)}>
             {t("setup.gateway.pairOther")}
           </Button>
-          <Button size="sm" variant="danger" icon={Unplug} busy={forget.isPending} onClick={() => setForgetOpen(true)}>
+          <Button
+            size="sm"
+            variant="danger"
+            icon={ICONS.disconnect}
+            busy={forget.isPending}
+            onClick={() => setForgetOpen(true)}
+          >
             {t("setup.gateway.forget")}
           </Button>
         </div>
@@ -421,7 +417,7 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
           <p className="text-sm text-muted">{t("setup.gateway.forgetBody")}</p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setForgetOpen(false)}>{t("common.cancel")}</Button>
-            <Button variant="danger" icon={Unplug} onClick={() => void confirmForget()}>
+            <Button variant="danger" icon={ICONS.disconnect} onClick={() => void confirmForget()}>
               {t("setup.gateway.forgetConfirm")}
             </Button>
           </div>

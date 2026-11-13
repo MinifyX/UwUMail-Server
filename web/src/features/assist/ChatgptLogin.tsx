@@ -1,7 +1,6 @@
-import { CheckCircle2, ExternalLink, LogIn } from "lucide-react";
+import { Button, ICONS, Icon } from "@uwusuite/design";
 import { useEffect, useEffectEvent, useReducer } from "react";
-import { Button } from "@/components/ui/Button";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -94,7 +93,7 @@ export function ChatgptLogin({
             rel="noopener noreferrer"
             className="inline-flex h-10 items-center gap-2 rounded-full bg-pink-solid px-4 text-sm font-semibold text-on-pink hover:bg-pink-solid-hover"
           >
-            <ExternalLink className="size-4" aria-hidden />
+            <Icon icon={ICONS.openExternal} className="size-4" aria-hidden />
             {t("assist.chatgpt.open")}
           </a>
         </div>
@@ -128,14 +127,14 @@ export function ChatgptLogin({
   return (
     <div className="flex flex-col gap-2">
       {done && (
-        <p role="status" className="flex items-center gap-2 text-[13px] font-semibold text-success">
-          <CheckCircle2 className="size-4" aria-hidden />
+        <p role="status" className="flex items-center gap-2 text-[13px] font-semibold text-success-ink">
+          <Icon icon={ICONS.success} className="size-4" aria-hidden />
           {t("assist.chatgpt.connected")}
         </p>
       )}
-      {state.phase === "expired" && <p className="text-[13px] text-danger">{t("assist.chatgpt.expired")}</p>}
+      {state.phase === "expired" && <p className="text-[13px] text-danger-ink">{t("assist.chatgpt.expired")}</p>}
       {state.phase === "failed" && (
-        <p role="alert" className="text-[13px] break-words text-danger">
+        <p role="alert" className="text-[13px] break-words text-danger-ink">
           {state.description
             ? t("assist.chatgpt.failed", { detail: state.description })
             : t("assist.chatgpt.failedPlain")}
@@ -143,7 +142,7 @@ export function ChatgptLogin({
       )}
       <div>
         <Button
-          icon={LogIn}
+          icon={ICONS.signIn}
           variant={done ? "secondary" : "primary"}
           busy={state.phase === "starting"}
           onClick={() => void start()}

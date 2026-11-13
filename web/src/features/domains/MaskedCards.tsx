@@ -1,8 +1,6 @@
-import { ArrowLeftRight, EyeOff } from "lucide-react";
+import { Button, Field, Select, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { ArrowLeftRight } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainDetail, DomainMaskedPolicy, KindBlockers, MaskedMode } from "@/lib/api";
 import { useSetDomainKind, useSetMaskedPolicy } from "./queries";
@@ -25,7 +23,7 @@ export function MaskedOnlyPill() {
   const { t } = useT();
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-pink-tint px-2 py-0.5 text-[12px] font-semibold whitespace-nowrap text-pink-ink">
-      <EyeOff className="size-3.5" aria-hidden />
+      <Icon icon={ICONS.hide} className="size-3.5" aria-hidden />
       {t("maskedDomains.pill")}
     </span>
   );

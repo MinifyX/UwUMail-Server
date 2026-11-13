@@ -1,7 +1,5 @@
-import clsx from "clsx";
-import { AlertTriangle, FlaskConical, X } from "lucide-react";
+import { Select, TextInput, ICONS, Icon, cx } from "@uwusuite/design";
 import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { formatNumber } from "@/lib/format";
 import {
@@ -21,8 +19,8 @@ import {
 export function ExperimentalBadge() {
   const { t } = useT();
   return (
-    <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning-tint px-2 text-[11px] font-bold tracking-wide text-warning uppercase">
-      <FlaskConical className="size-3" aria-hidden />
+    <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning-tint px-2 text-[11px] font-bold tracking-wide text-warning-ink uppercase">
+      <Icon icon={ICONS.experimental} className="size-3" aria-hidden />
       {t("assist.experimental")}
     </span>
   );
@@ -32,7 +30,7 @@ export function ExperimentalBadge() {
 export function Tag({ children, tone = "plain" }: { children: ReactNode; tone?: "plain" | "pink" | "muted" }) {
   return (
     <span
-      className={clsx(
+      className={cx(
         "inline-flex h-5 shrink-0 items-center rounded-full px-2 text-[11px] font-semibold",
         tone === "pink" && "bg-pink-tint text-pink-ink",
         tone === "plain" && "border border-line text-muted",
@@ -57,14 +55,14 @@ export function Notice({
   return (
     <div
       role={tone === "info" ? "note" : "alert"}
-      className={clsx(
+      className={cx(
         "flex items-start gap-2 rounded-control px-3 py-2.5 text-[13px]",
-        tone === "warning" && "bg-warning-tint text-warning",
-        tone === "danger" && "bg-danger-tint text-danger",
+        tone === "warning" && "bg-warning-tint text-warning-ink",
+        tone === "danger" && "bg-danger-tint text-danger-ink",
         tone === "info" && "bg-canvas text-muted",
       )}
     >
-      {tone !== "info" && <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />}
+      {tone !== "info" && <Icon icon={ICONS.warning} className="mt-0.5 size-4 shrink-0" aria-hidden />}
       <div className="flex min-w-0 flex-col gap-1">
         {title && <p className="font-bold">{title}</p>}
         <div className="flex flex-col gap-1">{children}</div>
@@ -205,7 +203,7 @@ export function ChipInput({
                 title={t("assist.chips.remove", { value })}
                 onClick={() => onChange(values.filter((other) => other !== value))}
               >
-                <X className="size-3.5" aria-hidden />
+                <Icon icon={ICONS.close} className="size-3.5" aria-hidden />
               </button>
             </li>
           ))}
@@ -311,7 +309,7 @@ export function UsageMeter({ used, limit, label }: { used: number; limit: number
       {part !== null && (
         <div className="h-2 overflow-hidden rounded-full bg-canvas" aria-hidden>
           <div
-            className={clsx("h-full rounded-full", part >= 1 ? "bg-danger" : part > 0.8 ? "bg-warning" : "bg-pink")}
+            className={cx("h-full rounded-full", part >= 1 ? "bg-danger" : part > 0.8 ? "bg-warning" : "bg-pink")}
             style={{ width: `${Math.max(part * 100, used > 0 ? 2 : 0)}%` }}
           />
         </div>
@@ -413,7 +411,7 @@ export function UsageTotals({ sum, currency }: { sum: UsageSum; currency?: strin
         ? "grid-cols-2 sm:grid-cols-4"
         : "grid-cols-2 sm:grid-cols-5";
   return (
-    <dl className={clsx("grid gap-2 sm:gap-3", columns)}>
+    <dl className={cx("grid gap-2 sm:gap-3", columns)}>
       {tiles.map(([key, value]) => (
         <div key={key} className="min-w-0 rounded-control bg-canvas px-3 py-2">
           <dt className="truncate text-[12px] text-muted">{t(`assist.usage.${key}`)}</dt>

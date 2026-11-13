@@ -1,11 +1,10 @@
+import { Button, Field, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, ExternalLink, Link2, Unlink } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput, Toggle } from "@/components/ui/Field";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { api, type UwuauthView } from "@/lib/api";
@@ -149,15 +148,15 @@ function Paired({ view }: { view: UwuauthView }) {
   return (
     <Card
       title={t("uwuauth.pairedTitle")}
-      action={
-        <Button variant="danger" size="sm" icon={Unlink} onClick={() => setAsking(true)}>
+      aside={
+        <Button variant="danger" size="sm" icon={ICONS.unlink} onClick={() => setAsking(true)}>
           {t("uwuauth.unpair")}
         </Button>
       }
     >
       <div className="flex flex-col gap-3 text-sm">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-success">
-          <CircleCheck className="size-4" aria-hidden />
+        <span className="inline-flex items-center gap-1.5 font-semibold text-success-ink">
+          <Icon icon={ICONS.success} className="size-4" aria-hidden />
           {t("uwuauth.pairedWith", { name: pairing.name || pairing.issuer, version: pairing.version })}
         </span>
         <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-[max-content_1fr]">
@@ -170,7 +169,7 @@ function Paired({ view }: { view: UwuauthView }) {
           <dt className="text-muted">{t("uwuauth.login")}</dt>
           <dd>{view.loginActive ? t("uwuauth.loginActive") : t("uwuauth.loginInactive")}</dd>
         </dl>
-        {view.locked.length > 0 && <p className="text-[13px] text-warning">{t("uwuauth.locked")}</p>}
+        {view.locked.length > 0 && <p className="text-[13px] text-warning-ink">{t("uwuauth.locked")}</p>}
         {pairing.manageUrl && (
           <a
             href={pairing.manageUrl}
@@ -178,7 +177,7 @@ function Paired({ view }: { view: UwuauthView }) {
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-[13px] font-semibold text-pink-ink"
           >
-            <ExternalLink className="size-3.5" aria-hidden />
+            <Icon icon={ICONS.openExternal} className="size-3.5" aria-hidden />
             {t("uwuauth.manage")}
           </a>
         )}
@@ -188,7 +187,7 @@ function Paired({ view }: { view: UwuauthView }) {
           <p className="text-sm">{t("uwuauth.unpairBody")}</p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setAsking(false)}>{t("common.cancel")}</Button>
-            <Button variant="danger" icon={Unlink} busy={unpair.isPending} onClick={() => unpair.mutate()}>
+            <Button variant="danger" icon={ICONS.unlink} busy={unpair.isPending} onClick={() => unpair.mutate()}>
               {t("uwuauth.unpair")}
             </Button>
           </div>

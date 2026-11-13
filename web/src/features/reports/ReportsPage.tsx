@@ -1,9 +1,7 @@
-import clsx from "clsx";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Segmented, EmptyState, Card, cx } from "@uwusuite/design";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainReports } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
@@ -24,10 +22,10 @@ function Number_({ label, value, tone }: { label: string; value: string; tone?: 
     <div className="rounded-control bg-canvas px-3 py-2">
       <p className="text-[12px] text-muted">{label}</p>
       <p
-        className={clsx(
+        className={cx(
           "text-[17px] font-bold tabular-nums",
-          tone === "good" && "text-success",
-          tone === "bad" && "text-danger",
+          tone === "good" && "text-success-ink",
+          tone === "bad" && "text-danger-ink",
         )}
       >
         {value}
@@ -55,7 +53,7 @@ function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
     >
       <div className="flex flex-col gap-3">
         {notRead.length > 0 && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("reports.addressTaken", { addresses: notRead.map((local) => `${local}@${domain.name}`).join(", ") })}
           </p>
         )}
@@ -83,7 +81,7 @@ function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
               </p>
             )}
             {domain.ownFailing > 0 && (
-              <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+              <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
                 {t("reports.ownFailing", { count: domain.ownFailing })}
               </p>
             )}
@@ -142,7 +140,11 @@ export function ReportsPage() {
       ) : query.isError ? (
         <LoadError error={query.error} onRetry={() => void query.refetch()} />
       ) : query.data.domains.length === 0 ? (
-        <EmptyState scene="search" title={t("reports.noDomains.title")} body={t("reports.noDomains.body")} />
+        <EmptyState
+          art={<NyuScene name="search" />}
+          title={t("reports.noDomains.title")}
+          body={t("reports.noDomains.body")}
+        />
       ) : (
         query.data.domains.map((domain) => <DomainCard key={domain.name} domain={domain} days={days} />)
       )}

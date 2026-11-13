@@ -1,16 +1,16 @@
-import clsx from "clsx";
-import { CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX, TriangleAlert } from "lucide-react";
+import { ICONS, cx } from "@uwusuite/design";
+import { CircleDashed, CircleX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import type { CheckStatus, RecordCheck } from "@/lib/api";
 
 export const CHECK_STYLES: Record<CheckStatus, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
-  missing: { icon: CircleAlert, className: "bg-danger-tint text-danger" },
-  wrong: { icon: CircleX, className: "bg-danger-tint text-danger" },
-  error: { icon: CircleHelp, className: "bg-warning-tint text-warning" },
+  ok: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  warning: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
+  missing: { icon: ICONS.error, className: "bg-danger-tint text-danger-ink" },
+  wrong: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
+  error: { icon: ICONS.help, className: "bg-warning-tint text-warning-ink" },
 };
 
 /** A recommended record that is not there yet is a suggestion, not an alarm. */
@@ -28,9 +28,7 @@ export function DnsStatusPill({ status }: { status: CheckStatus | null }) {
   }
   const { icon: Icon, className } = CHECK_STYLES[status];
   return (
-    <span
-      className={clsx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}
-    >
+    <span className={cx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}>
       <Icon className="size-3.5" aria-hidden />
       {t(`domains.dnsStatus.${status}`)}
     </span>
@@ -94,10 +92,7 @@ export function RecordRow({ record, domain, explain }: { record: RecordCheck; do
     <li className="flex flex-col gap-2 border-b border-hairline py-4 first:pt-0 last:border-b-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className={clsx(
-            "inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold",
-            className,
-          )}
+          className={cx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}
         >
           <Icon className="size-3.5" aria-hidden />
           {recommended ? t("domains.detail.status.recommended") : t(`domains.detail.status.${record.status}`)}
@@ -114,12 +109,12 @@ export function RecordRow({ record, domain, explain }: { record: RecordCheck; do
       </div>
       {explain && <p className="text-[13px] text-muted">{t(`domains.detail.purpose.${record.kind}`)}</p>}
       {note && (
-        <p className={clsx("text-[13px]", record.status === "ok" ? "text-muted" : "font-medium text-ink")}>{note}</p>
+        <p className={cx("text-[13px]", record.status === "ok" ? "text-muted" : "font-medium text-ink")}>{note}</p>
       )}
       {record.differs && <p className="text-[13px] text-muted">{t("domains.detail.differs")}</p>}
       {record.kind === "tlsa" && record.found.length > 0 && record.status !== "warning" && (
         // Servers that check DANE stop delivering the moment the key no longer matches.
-        <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] font-medium text-danger">
+        <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] font-medium text-danger-ink">
           {t("domains.detail.tlsaKeyChange")}
         </p>
       )}

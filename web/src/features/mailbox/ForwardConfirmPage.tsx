@@ -1,10 +1,8 @@
+import { Button, EmptyState, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, type ForwardLinkInfo } from "@/lib/api";
@@ -44,7 +42,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
   if (answer.data) {
     return wrapper(
       <EmptyState
-        scene={answer.data.confirm ? "done" : "emptyFolder"}
+        art={<NyuScene name={answer.data.confirm ? "done" : "emptyFolder"} />}
         title={answer.data.confirm ? t("forwardConfirm.confirmedTitle") : t("forwardConfirm.declinedTitle")}
         body={
           answer.data.confirm
@@ -57,7 +55,11 @@ export function ForwardConfirmPage({ token }: { token: string }) {
   if (link.isPending) return <Loading fullPage />;
   if (link.error instanceof ApiError && ["linkInvalid", "notFound"].includes(link.error.code)) {
     return wrapper(
-      <EmptyState scene="loadError" title={t("forwardConfirm.invalidTitle")} body={t("forwardConfirm.invalidBody")} />,
+      <EmptyState
+        art={<NyuScene name="loadError" />}
+        title={t("forwardConfirm.invalidTitle")}
+        body={t("forwardConfirm.invalidBody")}
+      />,
     );
   }
   if (link.isError) return <LoadError error={link.error} onRetry={() => void link.refetch()} />;
@@ -72,7 +74,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
       </p>
       <p className="mt-2 text-center text-[13px] text-faint">{t("forwardConfirm.hint")}</p>
       {answer.isError && (
-        <p role="alert" className="mt-3 text-center text-[13px] text-danger">
+        <p role="alert" className="mt-3 text-center text-[13px] text-danger-ink">
           {errorText(answer.error)}
         </p>
       )}
@@ -80,7 +82,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
         <Button
           variant="primary"
           size="lg"
-          icon={Check}
+          icon={ICONS.done}
           busy={answer.isPending && answer.variables === true}
           onClick={() => answer.mutate(true)}
         >
@@ -88,7 +90,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
         </Button>
         <Button
           size="lg"
-          icon={X}
+          icon={ICONS.close}
           busy={answer.isPending && answer.variables === false}
           onClick={() => answer.mutate(false)}
         >

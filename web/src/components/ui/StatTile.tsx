@@ -1,4 +1,4 @@
-import clsx from "clsx";
+import { cx } from "@uwusuite/design";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -33,8 +33,8 @@ export function StatTile({
   className?: string;
 }) {
   return (
-    <div className={clsx("flex min-w-0 flex-col rounded-card border border-hairline bg-surface p-4", className)}>
-      {Icon && <Icon className={clsx("mb-2 size-5", ICON_TONES[tone])} aria-hidden />}
+    <div className={cx("flex min-w-0 flex-col rounded-card border border-hairline bg-surface p-4", className)}>
+      {Icon && <Icon className={cx("mb-2 size-5", ICON_TONES[tone])} aria-hidden />}
       <p className="truncate text-[20px] leading-tight font-bold tracking-[-0.01em] tabular-nums">{value}</p>
       <p className="mt-0.5 truncate text-[13px] text-muted">{label}</p>
       {children && <div className="mt-2">{children}</div>}
@@ -47,9 +47,9 @@ export function StatTile({
 export function MeterBar({ share, className }: { share: number; className?: string }) {
   const clamped = Math.max(0, Math.min(1, share));
   return (
-    <div className={clsx("h-1.5 overflow-hidden rounded-full bg-canvas", className)} aria-hidden>
+    <div className={cx("h-1.5 overflow-hidden rounded-full bg-canvas", className)} aria-hidden>
       <div
-        className={clsx("h-full rounded-full", clamped > 0.9 ? "bg-danger" : clamped > 0.75 ? "bg-warning" : "bg-pink")}
+        className={cx("h-full rounded-full", clamped > 0.9 ? "bg-danger" : clamped > 0.75 ? "bg-warning" : "bg-pink")}
         style={{ width: `${Math.max(clamped * 100, clamped > 0 ? 2 : 0)}%` }}
       />
     </div>

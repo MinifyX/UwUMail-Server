@@ -1,9 +1,6 @@
+import { Button, Segmented, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { BellRing, Check, ChevronRight, Info } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Segmented } from "@/components/ui/Field";
+import { LoadError } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type AdminAlert, type AlertLevel, type AlertsView, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -64,9 +61,9 @@ function AlertRow({ alert }: { alert: AdminAlert }) {
   const dot = resolved ? LEVELS.ok.dot : alert.level === "info" ? "bg-pink" : LEVELS[LEVEL_OF[alert.level]].dot;
   return (
     <li className="flex flex-wrap items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-      <span className={clsx("mt-1.5 size-2.5 shrink-0 rounded-full", dot)} aria-hidden />
+      <span className={cx("mt-1.5 size-2.5 shrink-0 rounded-full", dot)} aria-hidden />
       <div className="min-w-0 flex-1 basis-60">
-        <p className={clsx("text-sm", resolved ? "text-muted" : "font-semibold")}>
+        <p className={cx("text-sm", resolved ? "text-muted" : "font-semibold")}>
           <span className="sr-only">{t(resolved ? "alerts.level.resolved" : `alerts.level.${alert.level}`)}: </span>
           {sentence}
         </p>
@@ -83,14 +80,14 @@ function AlertRow({ alert }: { alert: AdminAlert }) {
             className="mt-1 inline-flex items-center gap-0.5 text-[13px] font-semibold text-pink-ink hover:underline"
           >
             {t("health.open")}
-            <ChevronRight className="size-3.5" aria-hidden />
+            <Icon icon={ICONS.next} className="size-3.5" aria-hidden />
           </Link>
         )}
       </div>
       {!resolved && alert.level !== "info" && !alert.acknowledgedAt && (
         <Button
           size="sm"
-          icon={Check}
+          icon={ICONS.done}
           busy={acknowledge.isPending}
           title={t("alerts.acknowledgeHint")}
           onClick={() => acknowledge.mutate()}
@@ -130,7 +127,7 @@ export function AlertsCard() {
     <Card
       title={
         <span className="flex items-center gap-2">
-          <BellRing className="size-4 text-pink-ink" aria-hidden />
+          <Icon icon={ICONS.reminder} className="size-4 text-pink-ink" aria-hidden />
           {t("alerts.title")}
         </span>
       }
@@ -138,10 +135,14 @@ export function AlertsCard() {
       <div className="flex flex-col gap-3">
         <p className="-mt-1 text-[13px] text-muted">{t("alerts.intro")}</p>
         {!data ? (
-          <p className="text-sm text-muted">{alerts.isError ? t("errors.loadFailed") : t("alerts.loading")}</p>
+          alerts.isError ? (
+            <LoadError error={alerts.error} onRetry={() => void alerts.refetch()} />
+          ) : (
+            <p className="text-sm text-muted">{t("alerts.loading")}</p>
+          )
         ) : data.open.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted">
-            <Info className="size-4" aria-hidden />
+            <Icon icon={ICONS.info} className="size-4" aria-hidden />
             {t("alerts.none")}
           </p>
         ) : (

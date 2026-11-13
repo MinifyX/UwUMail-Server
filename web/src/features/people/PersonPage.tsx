@@ -1,26 +1,11 @@
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
-import {
-  ArrowLeft,
-  Bot,
-  KeyRound,
-  Lock,
-  LockOpen,
-  Plus,
-  RotateCcw,
-  ShieldCheck,
-  ShieldOff,
-  Trash2,
-  UserRound,
-  X,
-} from "lucide-react";
+import { Bot, ShieldOff, UserRound } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Card, KeyValue } from "@/components/ui/Card";
+import { KeyValue } from "@/components/ui/Page";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { AppPasswordRow } from "@/features/security/AppPasswordsCard";
 import { OAuthGrantRow, SignOutAppDialog } from "@/features/security/OAuthAppsCard";
@@ -78,11 +63,11 @@ function Banner({
 }) {
   return (
     <div
-      className={clsx(
+      className={cx(
         "flex flex-wrap items-center justify-between gap-3 rounded-card px-4 py-3 text-sm font-medium",
         tone === "pink" && "bg-pink-tint text-pink-ink",
-        tone === "warning" && "bg-warning-tint text-warning",
-        tone === "danger" && "bg-danger-tint text-danger",
+        tone === "warning" && "bg-warning-tint text-warning-ink",
+        tone === "danger" && "bg-danger-tint text-danger-ink",
       )}
     >
       <span>{children}</span>
@@ -212,7 +197,7 @@ function Addresses({ person, editable }: { person: Person; editable: boolean }) 
             {editable && address.kind === "alias" && (
               <IconButton
                 size="sm"
-                icon={X}
+                icon={ICONS.close}
                 label={t("people.detail.removeAlias", { address: address.address })}
                 onClick={() => remove.mutate(address.address)}
               />
@@ -252,7 +237,7 @@ function Addresses({ person, editable }: { person: Person; editable: boolean }) 
               <span className="text-sm font-semibold">{chosenDomain}</span>
             )}
           </span>
-          <Button type="submit" icon={Plus} busy={add.isPending}>
+          <Button type="submit" icon={ICONS.add} busy={add.isPending}>
             {t("people.detail.addAlias")}
           </Button>
         </form>
@@ -310,7 +295,7 @@ function ProtocolCard({ person }: { person: Person }) {
       )}
       {!person.hasMailbox && (
         <div className="mt-4 flex flex-col gap-3 border-t border-hairline pt-4">
-          <p className="text-[13px] text-warning">{t("people.protocols.noMailbox")}</p>
+          <p className="text-[13px] text-warning-ink">{t("people.protocols.noMailbox")}</p>
           <RedirectField key={person.redirectTo} person={person} />
         </div>
       )}
@@ -378,7 +363,7 @@ function Convert({ person }: { person: Person }) {
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t(`people.detail.convert${which}Body`)}</p>
           {update.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(update.error)}
             </p>
           )}
@@ -426,8 +411,8 @@ function ServiceAccess({ person }: { person: Person }) {
   return (
     <Card
       title={t("people.serviceAccess.title")}
-      action={
-        <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+      aside={
+        <Button size="sm" icon={ICONS.add} onClick={() => setCreating(true)}>
           {t("people.serviceAccess.create")}
         </Button>
       }
@@ -446,7 +431,6 @@ function ServiceAccess({ person }: { person: Person }) {
       <Dialog
         open={creating || created !== null}
         onClose={requestCloseCreate}
-        closeOnOutsideClick={created === null && !name.trim()}
         title={t(created ? "people.serviceAccess.createdTitle" : "people.serviceAccess.create")}
         width="sm"
       >
@@ -482,7 +466,7 @@ function ServiceAccess({ person }: { person: Person }) {
               )}
             </Field>
             {create.isError && (
-              <p role="alert" className="text-[13px] text-danger">
+              <p role="alert" className="text-[13px] text-danger-ink">
                 {errorText(create.error)}
               </p>
             )}
@@ -517,7 +501,7 @@ function ServiceAccess({ person }: { person: Person }) {
             <Button onClick={() => setRevoking(null)}>{t("common.cancel")}</Button>
             <Button
               variant="danger"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={revoke.isPending}
               onClick={() => revoking && revoke.mutate(revoking, { onSuccess: () => setRevoking(null) })}
             >
@@ -583,7 +567,7 @@ function PasswordSource({ person }: { person: Person }) {
             {t(asking === "ldap" ? "people.authSource.toLdapBody" : "people.authSource.toLocalBody")}
           </p>
           {setSource.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(setSource.error)}
             </p>
           )}
@@ -659,7 +643,7 @@ function Access({ person }: { person: Person }) {
         <LinkBox link={link} />
       ) : (
         <Button
-          icon={KeyRound}
+          icon={ICONS.secret}
           busy={createLink.isPending}
           onClick={() => createLink.mutate(undefined, { onSuccess: setLink })}
         >
@@ -729,9 +713,9 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
         {!service && (
           <p className="flex items-start gap-2 text-sm">
             {security.secondFactor ? (
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+              <Icon icon={ICONS.securityCheck} className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
             ) : (
-              <ShieldOff className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+              <Icon icon={ShieldOff} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
             )}
             <span>
               {security.secondFactor
@@ -785,7 +769,7 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t("people.security.resetBody")}</p>
           {reset.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(reset.error)}
             </p>
           )}
@@ -826,13 +810,7 @@ function PurgeDialog({ person, open, onClose }: { person: Person; open: boolean;
   };
   return (
     <>
-      <Dialog
-        open={open}
-        onClose={requestClose}
-        closeOnOutsideClick={!dirty}
-        title={t("people.purge.title", { login: person.login })}
-        width="sm"
-      >
+      <Dialog open={open} onClose={requestClose} title={t("people.purge.title", { login: person.login })} width="sm">
         <form
           className="flex flex-col gap-4 px-6 pt-1 pb-6"
           onSubmit={(event) => {
@@ -865,7 +843,7 @@ function PurgeDialog({ person, open, onClose }: { person: Person; open: boolean;
             <Button
               type="submit"
               variant="danger"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={purge.isPending}
               disabled={typed.trim().toLowerCase() !== person.login}
             >
@@ -911,7 +889,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
         to="/admin/people"
         className="inline-flex items-center gap-1.5 self-start rounded-full text-[13px] font-semibold text-muted hover:text-ink"
       >
-        <ArrowLeft className="size-4" aria-hidden />
+        <Icon icon={ICONS.back} className="size-4" aria-hidden />
         {t("people.detail.back")}
       </Link>
 
@@ -937,7 +915,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
           action={
             <Button
               size="sm"
-              icon={LockOpen}
+              icon={ICONS.unlocked}
               busy={update.isPending}
               onClick={() => update.mutate({ disabled: false })}
             >
@@ -952,7 +930,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
         <Banner
           tone="danger"
           action={
-            <Button size="sm" icon={RotateCcw} busy={restore.isPending} onClick={() => restore.mutate(undefined)}>
+            <Button size="sm" icon={ICONS.reset} busy={restore.isPending} onClick={() => restore.mutate(undefined)}>
               {t("people.detail.restore")}
             </Button>
           }
@@ -1035,11 +1013,11 @@ export function PersonPage({ login, session }: { login: string; session: Session
                   <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <p className="min-w-0 flex-1 text-[13px] text-muted">{t("people.detail.disableHint")}</p>
                     {person.status === "disabled" ? (
-                      <Button icon={LockOpen} onClick={() => update.mutate({ disabled: false })}>
+                      <Button icon={ICONS.unlocked} onClick={() => update.mutate({ disabled: false })}>
                         {t("people.detail.enable")}
                       </Button>
                     ) : (
-                      <Button icon={Lock} onClick={() => update.mutate({ disabled: true })}>
+                      <Button icon={ICONS.locked} onClick={() => update.mutate({ disabled: true })}>
                         {t("people.detail.disable")}
                       </Button>
                     )}
@@ -1048,7 +1026,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
                     <p className="min-w-0 flex-1 text-[13px] text-muted">{t("people.detail.trashHint")}</p>
                     <Button
                       variant="danger"
-                      icon={Trash2}
+                      icon={ICONS.delete}
                       busy={trash.isPending}
                       onClick={() => trash.mutate(undefined)}
                     >
@@ -1060,7 +1038,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
               <div className="flex justify-end">
                 <button
                   type="button"
-                  className="rounded-full px-2 py-1 text-[13px] font-semibold text-danger hover:underline"
+                  className="rounded-full px-2 py-1 text-[13px] font-semibold text-danger-ink hover:underline"
                   onClick={() => setPurging(true)}
                 >
                   {t("people.detail.purge")}

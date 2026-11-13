@@ -1,9 +1,7 @@
-import { Pencil, Plus, Trash2, UsersRound } from "lucide-react";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainDetail, GroupInfo, WhoMaySend } from "@/lib/api";
 import { MemberPicker, memberChoices, type PickedMember } from "@/features/people/MemberPicker";
@@ -52,12 +50,7 @@ function GroupDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title={group ? group.address : t("groups.create")}
-      closeOnOutsideClick={false}
-    >
+    <Dialog open={open} onClose={onClose} title={group ? group.address : t("groups.create")}>
       <form className="flex flex-col gap-4 px-6 pt-1 pb-6" onSubmit={submit}>
         {!group && (
           <Field label={t("groups.address")}>
@@ -135,8 +128,8 @@ export function GroupsCard({ domain }: { domain: DomainDetail }) {
   return (
     <Card
       title={t("groups.title")}
-      action={
-        <Button size="sm" icon={Plus} onClick={() => setEditing("new")}>
+      aside={
+        <Button size="sm" icon={ICONS.add} onClick={() => setEditing("new")}>
           {t("groups.create")}
         </Button>
       }
@@ -147,7 +140,7 @@ export function GroupsCard({ domain }: { domain: DomainDetail }) {
           <ul className="flex flex-col divide-y divide-hairline">
             {groups.map((group) => (
               <li key={group.address} className="flex items-start gap-3 py-2.5">
-                <UsersRound className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+                <Icon icon={UsersRound} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">
                     {group.name ? `${group.name} · ${group.address}` : group.address}
@@ -163,12 +156,12 @@ export function GroupsCard({ domain }: { domain: DomainDetail }) {
                   </span>
                 </span>
                 <IconButton
-                  icon={Pencil}
+                  icon={ICONS.edit}
                   label={t("groups.edit", { address: group.address })}
                   onClick={() => setEditing(group)}
                 />
                 <IconButton
-                  icon={Trash2}
+                  icon={ICONS.delete}
                   label={t("groups.remove", { address: group.address })}
                   disabled={remove.isPending}
                   onClick={() => {

@@ -1,22 +1,9 @@
+import { Button, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import {
-  BookOpen,
-  Check,
-  ChevronRight,
-  CircleCheck,
-  CircleHelp,
-  CircleX,
-  ExternalLink,
-  ListChecks,
-  RotateCw,
-  TriangleAlert,
-} from "lucide-react";
+import { BookOpen, CircleX, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import {
   api,
@@ -55,10 +42,10 @@ function useChecklist() {
 }
 
 const STATUS: Record<MsStatus, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
-  problem: { icon: CircleX, className: "bg-danger-tint text-danger" },
-  unknown: { icon: CircleHelp, className: "bg-elevated text-muted" },
+  ok: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  warning: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
+  problem: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
+  unknown: { icon: ICONS.help, className: "bg-elevated text-muted" },
 };
 
 /** A small coloured label: what is checked, and how it stands (`quiet` leaves the status to the colour). */
@@ -67,7 +54,7 @@ function StatusChip({ status, label, quiet = false }: { status: MsStatus; label?
   const { icon: Icon, className } = STATUS[status];
   return (
     <span
-      className={clsx(
+      className={cx(
         "inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold",
         className,
       )}
@@ -89,7 +76,7 @@ export function ExternalAnchor({ href, children }: { href: string; children: Rea
       className="inline-flex items-center gap-1 font-semibold text-pink-ink hover:underline"
     >
       {children}
-      <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+      <SuiteIcon icon={ICONS.openExternal} className="size-3.5 shrink-0" aria-hidden />
     </a>
   );
 }
@@ -138,7 +125,7 @@ function WhatToDo({ issue, delistUrl }: { issue: MicrosoftIssue; delistUrl: stri
               className="inline-flex items-center gap-0.5 self-start font-semibold text-pink-ink hover:underline"
             >
               {t("microsoft.authenticate.open", { domain })}
-              <ChevronRight className="size-3.5" aria-hidden />
+              <SuiteIcon icon={ICONS.next} className="size-3.5" aria-hidden />
             </Link>
           )}
         </div>
@@ -215,7 +202,7 @@ function IssueCard({ issue, delistUrl }: { issue: MicrosoftIssue; delistUrl: str
         </details>
       )}
       <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-3">
-        <Button icon={Check} size="sm" busy={resolve.isPending} onClick={() => resolve.mutate()}>
+        <Button icon={ICONS.done} size="sm" busy={resolve.isPending} onClick={() => resolve.mutate()}>
           {t("microsoft.issues.resolve")}
         </Button>
         <span className="min-w-0 flex-1 basis-52 text-[12px] text-muted">{t("microsoft.issues.resolveHint")}</span>
@@ -291,8 +278,8 @@ function Issues() {
       </h2>
       {open.length === 0 ? (
         <div className="flex items-start gap-3 rounded-card border border-hairline bg-surface p-5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-tint text-success">
-            <CircleCheck className="size-[18px]" aria-hidden />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-tint text-success-ink">
+            <SuiteIcon icon={ICONS.success} className="size-[18px]" aria-hidden />
           </span>
           <div>
             <p className="text-sm font-semibold">{t("microsoft.issues.none")}</p>
@@ -336,7 +323,7 @@ function Rule({ status, title, children }: { status: MsStatus; title: ReactNode;
   const { icon: Icon, className } = STATUS[status];
   return (
     <li className="flex items-start gap-3 border-b border-hairline py-4 first:pt-0 last:border-b-0 last:pb-0">
-      <span className={clsx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", className)}>
+      <span className={cx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", className)}>
         <Icon className="size-3.5" aria-hidden />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -362,7 +349,7 @@ function DomainRow({ domain }: { domain: MicrosoftDomainCheck }) {
           className="inline-flex items-center gap-0.5 text-sm font-semibold hover:text-pink-ink hover:underline"
         >
           {domain.domain}
-          <ChevronRight className="size-3.5" aria-hidden />
+          <SuiteIcon icon={ICONS.next} className="size-3.5" aria-hidden />
         </Link>
       </div>
       {checked ? (
@@ -498,11 +485,11 @@ function Checklist() {
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <ListChecks className="size-4 text-pink-ink" aria-hidden />
+          <SuiteIcon icon={ICONS.review} className="size-4 text-pink-ink" aria-hidden />
           {t("microsoft.checklist.title")}
         </span>
       }
-      action={
+      aside={
         <Button size="sm" icon={RotateCw} busy={check.isPending} onClick={() => check.mutate()}>
           {check.isPending ? t("microsoft.checklist.checking") : t("microsoft.checklist.check")}
         </Button>
@@ -521,7 +508,7 @@ function Guides() {
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <BookOpen className="size-4 text-pink-ink" aria-hidden />
+          <SuiteIcon icon={BookOpen} className="size-4 text-pink-ink" aria-hidden />
           {t("microsoft.guides.title")}
         </span>
       }

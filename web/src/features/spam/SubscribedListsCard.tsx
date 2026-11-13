@@ -1,10 +1,8 @@
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link2, RefreshCw, Trash2 } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type WordSource, type WordsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -142,7 +140,7 @@ export function SubscribedListsCard({ admin }: { admin: boolean }) {
                   {/* A fetch error is the one line here worth reading in full, so on a phone it
                         gets a second line instead of ending in an ellipsis. */}
                   <span
-                    className={`block truncate text-[12px] max-sm:line-clamp-2 max-sm:whitespace-normal ${source.error ? "text-danger" : "text-muted"}`}
+                    className={`block truncate text-[12px] max-sm:line-clamp-2 max-sm:whitespace-normal ${source.error ? "text-danger-ink" : "text-muted"}`}
                   >
                     {[
                       admin ? scopeName(source) : null,
@@ -161,13 +159,13 @@ export function SubscribedListsCard({ admin }: { admin: boolean }) {
                   </span>
                 </span>
                 <IconButton
-                  icon={RefreshCw}
+                  icon={ICONS.refresh}
                   size="sm"
                   label={t("spam.words.refresh")}
                   onClick={() => refresh.mutate(source)}
                 />
                 <IconButton
-                  icon={Trash2}
+                  icon={ICONS.delete}
                   size="sm"
                   label={t("spam.words.unsubscribe")}
                   onClick={() => unsubscribe.mutate(source)}

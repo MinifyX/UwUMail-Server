@@ -77,7 +77,7 @@ export function JobBox({ view }: { view: HostView }) {
     <div className="rounded-control bg-canvas px-3 py-2">
       <p className="text-[13px] font-semibold">
         {t(`host.states.${job.state}`, { defaultValue: job.state })}
-        {job.error && <span className="ml-2 font-normal text-danger">{job.error}</span>}
+        {job.error && <span className="ml-2 font-normal text-danger-ink">{job.error}</span>}
       </p>
       {log && <pre className="mt-2 max-h-64 overflow-auto font-mono text-[12px] whitespace-pre-wrap">{log}</pre>}
     </div>

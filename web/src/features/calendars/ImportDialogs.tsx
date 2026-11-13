@@ -1,10 +1,8 @@
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, CloudDownload, FileUp, Rss } from "lucide-react";
+import { CloudDownload, FileUp, Rss } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import {
   api,
@@ -180,7 +178,7 @@ function FileImportDialog({ view, onClose }: { view: CalendarsView; onClose: () 
           description={t("calendars.import.onlyNewHint")}
         />
       )}
-      {run.isError && <p className="text-[13px] text-danger">{errorText(run.error)}</p>}
+      {run.isError && <p className="text-[13px] text-danger-ink">{errorText(run.error)}</p>}
       {run.data && <ReportView report={run.data.report} />}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
@@ -279,7 +277,7 @@ function SubscribeDialog({ onClose }: { onClose: () => void }) {
           />
         </>
       )}
-      {subscribe.isError && <p className="text-[13px] text-danger">{errorText(subscribe.error)}</p>}
+      {subscribe.isError && <p className="text-[13px] text-danger-ink">{errorText(subscribe.error)}</p>}
       {result &&
         ("total" in result.report ? <ReportView report={result.report} /> : <MirrorView report={result.report} />)}
       <div className="flex justify-end gap-2">
@@ -411,7 +409,7 @@ function RemoteDialog({ view, onClose }: { view: CalendarsView; onClose: () => v
         </>
       )}
       {move.isPending && <p className="text-[13px] text-muted">{t("calendars.remote.working")}</p>}
-      {move.isError && <p className="text-[13px] text-danger">{errorText(move.error)}</p>}
+      {move.isError && <p className="text-[13px] text-danger-ink">{errorText(move.error)}</p>}
       {move.data && (
         <div className="flex flex-col gap-2">
           {move.data.provider && (
@@ -424,7 +422,7 @@ function RemoteDialog({ view, onClose }: { view: CalendarsView; onClose: () => v
               {item.report ? (
                 <ReportView report={item.report} />
               ) : (
-                <p className="text-[13px] text-danger">
+                <p className="text-[13px] text-danger-ink">
                   {t(`errors.codes.${item.error ?? "internal"}`, t("errors.codes.internal"))}
                 </p>
               )}
@@ -468,7 +466,7 @@ export function ImportCard({ view }: { view: CalendarsView }) {
             {t("calendars.import.fileButton")}
           </Button>
           {view.calendars && (
-            <Button icon={CalendarPlus} onClick={() => setOpen("subscribe")}>
+            <Button icon={ICONS.addEvent} onClick={() => setOpen("subscribe")}>
               {t("calendars.subscribe.button")}
             </Button>
           )}
@@ -483,7 +481,7 @@ export function ImportCard({ view }: { view: CalendarsView }) {
       <Dialog open={open === "subscribe"} onClose={close} title={t("calendars.subscribe.title")}>
         {open === "subscribe" && <SubscribeDialog onClose={close} />}
       </Dialog>
-      <Dialog open={open === "remote"} onClose={close} title={t("calendars.remote.title")} closeOnOutsideClick={false}>
+      <Dialog open={open === "remote"} onClose={close} title={t("calendars.remote.title")}>
         {open === "remote" && <RemoteDialog view={view} onClose={close} />}
       </Dialog>
     </Card>

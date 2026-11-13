@@ -1,9 +1,7 @@
-import { Bot, Inbox, Plus, Save } from "lucide-react";
+import { Button, Field, Select, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
+import { Bot, Inbox } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { Person } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -60,7 +58,7 @@ function CreateSharedMailboxDialog({ open, onClose }: { open: boolean; onClose: 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("sharedMailboxes.create")} closeOnOutsideClick={false}>
+    <Dialog open={open} onClose={onClose} title={t("sharedMailboxes.create")}>
       <form className="flex flex-col gap-4 px-6 pt-1 pb-6" onSubmit={submit}>
         <p className="text-[13px] text-muted">{t("sharedMailboxes.createIntro")}</p>
         <Field label={t("sharedMailboxes.name")}>
@@ -121,7 +119,7 @@ function CreateSharedMailboxDialog({ open, onClose }: { open: boolean; onClose: 
         </Field>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button type="submit" variant="primary" icon={Plus} busy={create.isPending} disabled={!local.trim()}>
+          <Button type="submit" variant="primary" icon={ICONS.add} busy={create.isPending} disabled={!local.trim()}>
             {t("sharedMailboxes.create")}
           </Button>
         </div>
@@ -139,8 +137,8 @@ export function SharedMailboxesSection({ people }: { people: Person[] }) {
   return (
     <Card
       title={t("sharedMailboxes.title")}
-      action={
-        <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+      aside={
+        <Button size="sm" icon={ICONS.add} onClick={() => setCreating(true)}>
           {t("sharedMailboxes.create")}
         </Button>
       }
@@ -187,7 +185,7 @@ export function SharedMembersCard({ person }: { person: Person }) {
     <Card title={t("sharedMailboxes.members")}>
       <div className="flex flex-col gap-3">
         <p className="-mt-1 flex gap-2 text-[13px] text-muted">
-          <Inbox className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={Inbox} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("sharedMailboxes.membersIntro")}
         </p>
         <MemberPicker
@@ -197,7 +195,7 @@ export function SharedMembersCard({ person }: { person: Person }) {
           sendLabel={t("sharedMailboxes.maySend")}
         />
         <div className="flex justify-end">
-          <Button variant="primary" icon={Save} busy={save.isPending} onClick={() => save.mutate(members)}>
+          <Button variant="primary" icon={ICONS.save} busy={save.isPending} onClick={() => save.mutate(members)}>
             {t("sharedMailboxes.save")}
           </Button>
         </div>
@@ -226,12 +224,7 @@ export function ConvertToShared({ person }: { person: Person }) {
       <Button icon={Inbox} onClick={() => setAsking(true)}>
         {t("sharedMailboxes.convert")}
       </Button>
-      <Dialog
-        open={asking}
-        onClose={close}
-        title={t("sharedMailboxes.convertTitle", { login: person.login })}
-        closeOnOutsideClick={false}
-      >
+      <Dialog open={asking} onClose={close} title={t("sharedMailboxes.convertTitle", { login: person.login })}>
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t(`sharedMailboxes.convertBody${from}`)}</p>
           <Field label={t("sharedMailboxes.members")} hint={t("sharedMailboxes.membersHint")}>
@@ -246,7 +239,7 @@ export function ConvertToShared({ person }: { person: Person }) {
             )}
           </Field>
           {convert.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(convert.error)}
             </p>
           )}
@@ -288,7 +281,7 @@ export function EndShared({ person }: { person: Person }) {
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t("sharedMailboxes.endBody")}</p>
           {end.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(end.error)}
             </p>
           )}

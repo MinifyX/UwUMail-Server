@@ -1,8 +1,7 @@
-import { Globe, Inbox, Plus, Truck } from "lucide-react";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
+import { Inbox, Truck } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import type { MoveInfo } from "@/lib/api";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -14,7 +13,7 @@ import { useMoves } from "./queries";
 function MoveRowCard({ move }: { move: MoveInfo }) {
   const { t, i18n } = useT();
   const { summary } = move;
-  const Icon = move.kind === "domain" ? Globe : Inbox;
+  const Icon = move.kind === "domain" ? ICONS.website : Inbox;
   return (
     <Link
       to={moveUrl(move.id)}
@@ -58,14 +57,14 @@ export function MovesPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
-        <Button variant="primary" icon={Plus} onClick={() => navigate(newMovePath)}>
+        <Button variant="primary" icon={ICONS.add} onClick={() => navigate(newMovePath)}>
           {t("moves.list.new")}
         </Button>
       </div>
       {list.length === 0 ? (
         <Card>
           <EmptyState
-            scene="inbox"
+            art={<NyuScene name="inbox" />}
             title={t("moves.list.emptyTitle")}
             body={t("moves.list.emptyBody")}
             action={

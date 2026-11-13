@@ -1,8 +1,7 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, LABELS_DE, LABELS_EN, Toaster, useAppearance, UwuLabels, EmptyState } from "@uwusuite/design";
 import { useEffect, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
 import { AccountAssistPage } from "@/features/assist/AccountAssistPage";
 import { CalendarsPage } from "@/features/calendars/CalendarsPage";
@@ -35,13 +34,14 @@ import { useApplyLanguage, useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { matchPath, navigate, usePath } from "@/lib/router";
 import { useApplyBrand } from "@/lib/brand";
-import { useApplyTheme } from "@/lib/theme";
+import { usePrefs } from "@/state/prefs";
+import { toasts } from "@/state/toasts";
 
 function NotFound() {
   const { t } = useT();
   return (
     <EmptyState
-      scene="search"
+      art={<NyuScene name="search" />}
       title={t("errors.notFound.title")}
       body={t("errors.notFound.body")}
       action={
@@ -156,13 +156,19 @@ function Routes() {
 }
 
 export function App() {
-  useApplyTheme();
+  const theme = usePrefs((s) => s.theme);
+  const contrast = usePrefs((s) => s.contrast);
+  const motion = usePrefs((s) => s.motion);
+  useAppearance({ theme, contrast, motion });
   useApplyLanguage();
   useApplyBrand();
+  const { t, i18n } = useT();
+  // The package's own words (the toast's close button and the like) in the portal's language.
+  const labels = { ...(i18n.language.startsWith("de") ? LABELS_DE : LABELS_EN), close: t("common.close") };
   return (
-    <>
+    <UwuLabels labels={labels}>
       <Routes />
-      <Toaster />
-    </>
+      <Toaster store={toasts} />
+    </UwuLabels>
   );
 }

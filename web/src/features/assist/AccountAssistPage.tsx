@@ -1,11 +1,10 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, IconButton, Field, Select, Toggle, EmptyState, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CircleSlash, ExternalLink, LogIn, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { CircleSlash } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Card, PageHeader } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Select, Toggle } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -67,9 +66,9 @@ function FeaturesCard({ view }: { view: AccountAssistView }) {
           return (
             <li key={feature} className="flex items-start gap-3 border-b border-hairline py-2.5 last:border-b-0">
               {on ? (
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+                <Icon icon={ICONS.success} className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
               ) : (
-                <CircleSlash className="mt-0.5 size-4 shrink-0 text-faint" aria-hidden />
+                <Icon icon={CircleSlash} className="mt-0.5 size-4 shrink-0 text-faint" aria-hidden />
               )}
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold">
@@ -147,7 +146,7 @@ function ProviderRow({
             </span>
           )}
           {!provider.connected && (
-            <span className="block text-[12px] font-semibold text-warning">
+            <span className="block text-[12px] font-semibold text-warning-ink">
               {provider.kind === "chatgpt" ? t("assist.provider.notSignedIn") : t("assist.provider.noKey")}
             </span>
           )}
@@ -155,14 +154,14 @@ function ProviderRow({
         {own && (
           <div className="flex items-center gap-1.5">
             {provider.kind === "chatgpt" && !provider.connected && (
-              <Button size="sm" icon={LogIn} onClick={onEdit}>
+              <Button size="sm" icon={ICONS.signIn} onClick={onEdit}>
                 {t("assist.chatgpt.signIn")}
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={onEdit}>
               {t("assist.provider.edit")}
             </Button>
-            <IconButton icon={Trash2} label={t("assist.provider.remove")} onClick={onRemove} />
+            <IconButton icon={ICONS.delete} label={t("assist.provider.remove")} onClick={onRemove} />
           </div>
         )}
       </div>
@@ -206,7 +205,7 @@ function ProvidersCard({ view }: { view: AccountAssistView }) {
         {view.providers.length === 0 ? (
           <EmptyState
             compact
-            scene="addons"
+            art={<NyuScene name="addons" />}
             title={t("assist.account.providersEmptyTitle")}
             body={view.mayAddProviders ? t("assist.account.providersEmptyOwn") : t("assist.account.providersEmpty")}
           />
@@ -232,7 +231,7 @@ function ProvidersCard({ view }: { view: AccountAssistView }) {
             <p className="min-w-0 flex-1 basis-60 text-[12px] text-muted">
               {full ? t("assist.account.providersFull", { max: view.maxProviders }) : t("assist.account.providersHint")}
             </p>
-            <Button variant="primary" icon={Plus} disabled={full} onClick={() => setAdding(true)}>
+            <Button variant="primary" icon={ICONS.add} disabled={full} onClick={() => setAdding(true)}>
               {t("assist.account.addProvider")}
             </Button>
           </div>
@@ -479,7 +478,7 @@ function BackgroundCard({ view, webmail }: { view: AccountAssistView; webmail: b
               href="/mail"
               className="inline-flex items-center gap-1 self-start font-semibold text-pink hover:underline"
             >
-              <ExternalLink className="size-3.5" aria-hidden />
+              <Icon icon={ICONS.openExternal} className="size-3.5" aria-hidden />
               {t("assist.background.openWebmail")}
             </a>
           )}
@@ -619,7 +618,7 @@ function PrivacyCard() {
       <ul className="flex flex-col gap-2 text-[13px] text-muted">
         {(["server", "sent", "never", "limits"] as const).map((key) => (
           <li key={key} className="flex items-start gap-2">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-pink" aria-hidden />
+            <Icon icon={ICONS.securityCheck} className="mt-0.5 size-4 shrink-0 text-pink" aria-hidden />
             {t(`assist.privacy.${key}`)}
           </li>
         ))}

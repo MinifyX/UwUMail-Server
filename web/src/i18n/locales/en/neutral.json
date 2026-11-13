@@ -102,6 +102,7 @@
     "open": "Open account menu",
     "appearance": "Appearance and language",
     "logout": "Log out",
+    "logoutFailed": "Logging out did not work. Please try again.",
     "role": {
       "admin": "Admin",
       "user": "Member"
@@ -124,6 +125,12 @@
       "system": "Same as the system",
       "light": "Light",
       "dark": "Dark"
+    },
+    "contrast": {
+      "label": "High contrast",
+      "system": "Same as the system",
+      "normal": "Normal",
+      "high": "High"
     },
     "motion": {
       "label": "Animations",

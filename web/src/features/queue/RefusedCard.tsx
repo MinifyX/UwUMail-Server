@@ -1,10 +1,8 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type RefusedMail, type RefusedResend } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -35,14 +33,14 @@ export function RefusedList({
               {formatDateTime(mail.at, i18n.language)}
             </time>
             {mail.gaveUp && (
-              <span className="inline-flex h-6 items-center rounded-full bg-warning-tint px-2.5 text-[12px] font-semibold text-warning">
+              <span className="inline-flex h-6 items-center rounded-full bg-warning-tint px-2.5 text-[12px] font-semibold text-warning-ink">
                 {t("queue.refused.gaveUp")}
               </span>
             )}
             {onResend && (
               <Button
                 size="sm"
-                icon={CircleCheck}
+                icon={ICONS.success}
                 className="ml-auto"
                 aria-label={t("queue.refused.resendLabel")}
                 title={t("queue.refused.resendLabel")}
@@ -111,12 +109,12 @@ export function RefusedCard() {
       id={REFUSED_ID}
       className="scroll-mt-4"
       title={t("queue.refused.title")}
-      action={
+      aside={
         list.length > 0 && (
           <Button
             size="sm"
             variant="danger"
-            icon={Trash2}
+            icon={ICONS.delete}
             busy={clear.isPending}
             onClick={() => {
               if (window.confirm(t("queue.refused.clearConfirm"))) clear.mutate();
@@ -133,7 +131,12 @@ export function RefusedCard() {
       ) : refused.isError ? (
         <LoadError error={refused.error} onRetry={() => void refused.refetch()} />
       ) : list.length === 0 ? (
-        <EmptyState compact scene="inbox" title={t("queue.refused.empty.title")} body={t("queue.refused.empty.body")} />
+        <EmptyState
+          compact
+          art={<NyuScene name="inbox" />}
+          title={t("queue.refused.empty.title")}
+          body={t("queue.refused.empty.body")}
+        />
       ) : (
         <RefusedList
           refused={list}

@@ -1,9 +1,8 @@
+import { Button, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { ChevronRight, CircleCheck, CircleHelp, CircleX, RotateCw, TriangleAlert } from "lucide-react";
+import { CircleX, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { NyuMood } from "@/components/nyu/Nyu";
-import { Button } from "@/components/ui/Button";
+import type { NyuMood } from "@uwusuite/design";
 import { useT } from "@/i18n";
 import { api, type Health, type HealthArea, type HealthFinding, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -12,10 +11,10 @@ import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
 
 export const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: string; mood: NyuMood }> = {
-  ok: { icon: CircleCheck, tint: "bg-success-tint text-success", dot: "bg-success", mood: "happy" },
-  unknown: { icon: CircleHelp, tint: "bg-elevated text-muted", dot: "bg-faint", mood: "puzzled" },
-  warning: { icon: TriangleAlert, tint: "bg-warning-tint text-warning", dot: "bg-warning", mood: "puzzled" },
-  problem: { icon: CircleX, tint: "bg-danger-tint text-danger", dot: "bg-danger", mood: "sad" },
+  ok: { icon: ICONS.success, tint: "bg-success-tint text-success-ink", dot: "bg-success", mood: "happy" },
+  unknown: { icon: ICONS.help, tint: "bg-elevated text-muted", dot: "bg-faint", mood: "puzzled" },
+  warning: { icon: ICONS.warning, tint: "bg-warning-tint text-warning-ink", dot: "bg-warning", mood: "puzzled" },
+  problem: { icon: CircleX, tint: "bg-danger-tint text-danger-ink", dot: "bg-danger", mood: "sad" },
 };
 
 export function useFindingText() {
@@ -79,7 +78,7 @@ function Finding({ finding }: { finding: HealthFinding }) {
   const error = finding.level !== "ok" && typeof params.error === "string" ? params.error : null;
   return (
     <li className="text-sm">
-      <p className={clsx(finding.level === "ok" ? "text-muted" : "text-ink")}>
+      <p className={cx(finding.level === "ok" ? "text-muted" : "text-ink")}>
         {text(finding)}
         {detail && <span className="text-muted"> {detail}</span>}
       </p>
@@ -90,7 +89,7 @@ function Finding({ finding }: { finding: HealthFinding }) {
           className="mt-1 inline-flex items-center gap-0.5 text-[13px] font-semibold text-pink-ink hover:underline"
         >
           {t("health.open")}
-          <ChevronRight className="size-3.5" aria-hidden />
+          <SuiteIcon icon={ICONS.next} className="size-3.5" aria-hidden />
         </Link>
       )}
     </li>
@@ -103,7 +102,7 @@ function AreaTile({ area }: { area: HealthArea }) {
   return (
     <div className="rounded-control border border-hairline bg-canvas/60 p-3">
       <h3 className="flex items-center gap-2 text-[13px] font-bold">
-        <span className={clsx("size-2.5 shrink-0 rounded-full", level.dot)} aria-hidden />
+        <span className={cx("size-2.5 shrink-0 rounded-full", level.dot)} aria-hidden />
         <span className="min-w-0 flex-1">{t(`health.areas.${area.area}`)}</span>
         <span className="sr-only">: </span>
         <span className="shrink-0 text-[12px] font-semibold text-muted">{t(`health.level.${area.level}`)}</span>
@@ -153,7 +152,7 @@ export function HealthCard() {
   return (
     <section className="rounded-card border border-hairline bg-surface p-5" aria-labelledby="health-title">
       <header className="flex flex-wrap items-center gap-4">
-        <span className={clsx("flex size-9 shrink-0 items-center justify-center rounded-full", level.tint)}>
+        <span className={cx("flex size-9 shrink-0 items-center justify-center rounded-full", level.tint)}>
           <Icon className="size-[18px]" aria-hidden />
         </span>
         <div className="min-w-0 flex-1 basis-52">

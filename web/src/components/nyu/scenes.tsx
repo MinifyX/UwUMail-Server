@@ -1,7 +1,7 @@
-import clsx from "clsx";
 import { useBrand } from "@/state/brand";
 import type { ReactNode } from "react";
-import { Nyu, NYU, Paw, Sticker } from "./Nyu";
+import { NYU, Sticker, cx } from "@uwusuite/design";
+import { Nyu, Paw } from "./Nyu";
 
 // Every scene is drawn on a 320 × 220 canvas. Nyu sits at about 0.4 scale,
 // so props use a 6 px outline and an 18 px edge to match it.
@@ -354,7 +354,7 @@ export function NyuScene({ name, className }: { name: SceneName; className?: str
   return (
     <svg
       viewBox="-10 -10 340 230"
-      className={clsx("nyu-host nyu-blink overflow-visible", className)}
+      className={cx("nyu-host nyu-blink overflow-visible", className)}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden

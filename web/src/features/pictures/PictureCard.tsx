@@ -1,12 +1,9 @@
+import { Button, Field, Select, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { Image, ImageUp, Trash2, UserRound } from "lucide-react";
+import { Image, ImageUp, UserRound } from "lucide-react";
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type DomainLogoState, type PictureFile, type PictureState, type PictureVisibility } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -95,16 +92,16 @@ function CropDialog({
   };
 
   return (
-    <Dialog open onClose={onClose} title={t("pictures.crop.title")} closeOnOutsideClick={false}>
+    <Dialog open onClose={onClose} title={t("pictures.crop.title")}>
       <div className="flex flex-col items-center gap-4 px-6 pt-1 pb-6">
         <p className="self-start text-[13px] text-muted">{t("pictures.crop.intro")}</p>
         {broken ? (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {t("errors.codes.pictureType")}
           </p>
         ) : (
           <div
-            className={clsx(
+            className={cx(
               "relative shrink-0 cursor-grab touch-none overflow-hidden bg-canvas select-none active:cursor-grabbing",
               round ? "rounded-full" : "rounded-card",
             )}
@@ -175,7 +172,7 @@ function CropDialog({
 function Current({ picture, round, label }: { picture: PictureFile | null; round: boolean; label: string }) {
   return (
     <span
-      className={clsx(
+      className={cx(
         "flex size-20 shrink-0 items-center justify-center overflow-hidden border border-hairline bg-canvas text-faint",
         round ? "rounded-full" : "rounded-card",
       )}
@@ -183,9 +180,9 @@ function Current({ picture, round, label }: { picture: PictureFile | null; round
       {picture ? (
         <img src={picture.url} alt={label} className="size-full object-cover" />
       ) : round ? (
-        <UserRound className="size-9" aria-hidden />
+        <Icon icon={UserRound} className="size-9" aria-hidden />
       ) : (
-        <Image className="size-9" aria-hidden />
+        <Icon icon={Image} className="size-9" aria-hidden />
       )}
     </span>
   );
@@ -247,7 +244,7 @@ function PictureButtons({
         {t(picture ? "pictures.replace" : "pictures.upload")}
       </Button>
       {picture && (
-        <Button variant="ghost" icon={Trash2} busy={remove.isPending} onClick={() => remove.mutate()}>
+        <Button variant="ghost" icon={ICONS.delete} busy={remove.isPending} onClick={() => remove.mutate()}>
           {t("pictures.remove")}
         </Button>
       )}
@@ -357,7 +354,7 @@ export function PictureCard({
 
   if (bare) {
     return (
-      <section className={clsx("flex flex-col gap-2", className)}>
+      <section className={cx("flex flex-col gap-2", className)}>
         <h3 className="text-sm font-bold">{title}</h3>
         {content()}
       </section>
@@ -437,7 +434,7 @@ export function PublicPicturesCard() {
       api<{ publicAllowed: boolean }>("/api/admin/pictures", { method: "PUT", body: { allowed } }),
     onSuccess: (state) => {
       queryClient.setQueryData(["admin", "pictures"], state);
-      toast(t("pictures.server.saved"), "success");
+      toast(t("common.saved"), "success");
     },
     onError: (error) => toast(errorText(error), "error"),
   });

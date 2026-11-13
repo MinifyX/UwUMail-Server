@@ -1,11 +1,8 @@
-import clsx from "clsx";
-import { Search, UserPlus } from "lucide-react";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, Select, TextInput, EmptyState, Pill, ICONS, Icon, cx } from "@uwusuite/design";
+import { UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Select, TextInput } from "@/components/ui/Field";
-import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus, Session } from "@/lib/api";
 import { formatDate } from "@/lib/format";
@@ -83,7 +80,7 @@ export function PeoplePage({ session }: { session: Session }) {
 
       {onlyMe ? (
         <EmptyState
-          scene="noAccount"
+          art={<NyuScene name="noAccount" />}
           title={t("people.empty.title")}
           body={t("people.empty.body")}
           action={
@@ -129,7 +126,8 @@ export function PeoplePage({ session }: { session: Session }) {
             )}
             <label className="relative ml-auto w-full sm:w-64">
               <span className="sr-only">{t("people.search")}</span>
-              <Search
+              <Icon
+                icon={ICONS.search}
                 className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint"
                 aria-hidden
               />
@@ -144,7 +142,12 @@ export function PeoplePage({ session }: { session: Session }) {
           </div>
 
           {visible.length === 0 ? (
-            <EmptyState compact scene="search" title={t("people.noResults.title")} body={t("people.noResults.body")} />
+            <EmptyState
+              compact
+              art={<NyuScene name="search" />}
+              title={t("people.noResults.title")}
+              body={t("people.noResults.body")}
+            />
           ) : table ? (
             <div className="overflow-x-auto rounded-card border border-hairline bg-surface">
               <table className="w-full min-w-[720px] text-left text-sm">
@@ -194,7 +197,7 @@ export function PeoplePage({ session }: { session: Session }) {
                 <li key={person.login}>
                   <Link
                     to={personUrl(person.login)}
-                    className={clsx(
+                    className={cx(
                       "flex h-full flex-col gap-3 rounded-card border border-hairline bg-surface p-4 transition-colors hover:border-pink-tint-strong hover:bg-pink-tint/30",
                     )}
                   >

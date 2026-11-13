@@ -38,7 +38,7 @@ function LeftOutTable({ path, total }: { path: string; total: number }) {
     queryFn: () => api<LeftOutView>(path),
   });
   if (list.isPending) return <p className="mt-1">{t("leftOut.loading")}</p>;
-  if (list.isError) return <p className="mt-1 text-danger">{t("leftOut.failed")}</p>;
+  if (list.isError) return <p className="mt-1 text-danger-ink">{t("leftOut.failed")}</p>;
   const { messages, max, maxSize } = list.data;
   if (messages.length === 0) return <p className="mt-1">{t("leftOut.empty")}</p>;
   return (

@@ -1,10 +1,8 @@
-import clsx from "clsx";
-import { Lightbulb, ShieldCheck } from "lucide-react";
+import { Button, Segmented, Card, ICONS, Icon, cx } from "@uwusuite/design";
+import { Lightbulb } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, CopyButton } from "@/components/ui/Card";
-import { Segmented } from "@/components/ui/Field";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import type { DomainDetail, MtaStsMode } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -16,7 +14,7 @@ type ModeChoice = MtaStsMode | "off";
 function Suggestion({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex gap-2.5 rounded-control bg-pink-tint/60 p-3 text-[13px] text-pink-ink">
-      <Lightbulb className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <Icon icon={Lightbulb} className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
         <div className="min-w-0 self-stretch">{children}</div>
         {action}
@@ -104,10 +102,10 @@ function Stat({ label, value, tone, text }: { label: string; value: string; tone
     <div className="rounded-control bg-canvas px-3 py-2">
       <p className="text-[12px] text-muted">{label}</p>
       <p
-        className={clsx(
+        className={cx(
           text ? "text-[13px] font-semibold break-words" : "text-[17px] font-bold tabular-nums",
-          tone === "good" && "text-success",
-          tone === "bad" && "text-danger",
+          tone === "good" && "text-success-ink",
+          tone === "bad" && "text-danger-ink",
         )}
       >
         {value}
@@ -171,7 +169,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                 />
               </div>
               {ownFailed.length > 0 && (
-                <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+                <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
                   {t("domains.reports.ownFailing", { count: ownFailed.length })}
                 </p>
               )}
@@ -199,7 +197,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                             <span className="font-mono text-[12px]">{source.ip || "?"}</span>
                             {source.ours && (
                               <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-pink-tint px-2 text-[11px] font-semibold text-pink-ink">
-                                <ShieldCheck className="size-3" aria-hidden />
+                                <Icon icon={ICONS.securityCheck} className="size-3" aria-hidden />
                                 {t("domains.reports.ours")}
                               </span>
                             )}
@@ -211,9 +209,9 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                             {formatNumber(source.messages, language)}
                           </td>
                           <td
-                            className={clsx(
+                            className={cx(
                               "py-1.5 text-right tabular-nums",
-                              failed === 0 ? "text-success" : source.ours ? "text-danger" : "text-muted",
+                              failed === 0 ? "text-success-ink" : source.ours ? "text-danger-ink" : "text-muted",
                             )}
                           >
                             {percent(source.passed, source.messages, language)}
@@ -292,7 +290,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
   return (
     <Card
       title={t("domains.reports.title")}
-      action={
+      aside={
         <Segmented<string>
           label={t("domains.reports.period")}
           value={String(days)}

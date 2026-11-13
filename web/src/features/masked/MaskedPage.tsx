@@ -1,11 +1,9 @@
+import { Button, Field, Select, TextInput, Card, Pill, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EyeOff, Plus, Power, PowerOff, Trash2 } from "lucide-react";
+import { Power, PowerOff } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
-import { Field, Select, TextInput } from "@/components/ui/Field";
-import { Pill } from "@/components/ui/Pill";
+import { CopyButton, PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, type MaskedAddress, type MaskedAddressesView, type MaskedState } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -111,12 +109,12 @@ function CreateCard({ domains, defaultDomain }: { domains: string[]; defaultDoma
           )}
         </div>
         {create.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(create.error)}
           </p>
         )}
         <div>
-          <Button type="submit" variant="primary" icon={Plus} busy={create.isPending}>
+          <Button type="submit" variant="primary" icon={ICONS.add} busy={create.isPending}>
             {t("masked.create")}
           </Button>
         </div>
@@ -220,7 +218,7 @@ function AddressList({ addresses }: { addresses: MaskedAddress[] }) {
                     <Button
                       size="sm"
                       variant="danger"
-                      icon={Trash2}
+                      icon={ICONS.delete}
                       disabled={busy}
                       onClick={() => {
                         if (window.confirm(t("masked.deleteConfirm", { address: address.email }))) {
@@ -252,7 +250,7 @@ export function MaskedPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <EyeOff className="size-5 text-muted" aria-hidden />
+            <Icon icon={ICONS.hide} className="size-5 text-muted" aria-hidden />
             {t("masked.pageTitle")}
           </span>
         }

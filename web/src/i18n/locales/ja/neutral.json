@@ -102,6 +102,7 @@
     "open": "アカウントメニューを開く",
     "appearance": "表示と言語",
     "logout": "ログアウト",
+    "logoutFailed": "ログアウトできませんでした。もう一度お試しください。",
     "role": {
       "admin": "管理者",
       "user": "メンバー"
@@ -124,6 +125,12 @@
       "system": "システムと同じ",
       "light": "ライト",
       "dark": "ダーク"
+    },
+    "contrast": {
+      "label": "ハイコントラスト",
+      "system": "システムと同じ",
+      "normal": "標準",
+      "high": "高"
     },
     "motion": {
       "label": "アニメーション",

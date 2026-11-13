@@ -1,9 +1,8 @@
-import clsx from "clsx";
-import { ChevronRight, DatabaseBackup, Globe, RotateCw, Send, Users } from "lucide-react";
+import { Button, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
+import { DatabaseBackup, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Nyu } from "@/components/nyu/Nyu";
-import { Button } from "@/components/ui/Button";
 import { useT } from "@/i18n";
 import { api, type Health, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -32,7 +31,7 @@ function TrafficLight({ level }: { level: HealthLevel }) {
       {lamps.map((lamp, index) => (
         <span
           key={index}
-          className={clsx(
+          className={cx(
             "size-12 rounded-full transition-opacity sm:size-14",
             lamp.color,
             lamp.lit ? (level === "unknown" ? "opacity-50" : "opacity-100 ring-4 ring-white/25") : "opacity-15",
@@ -62,7 +61,7 @@ function QuickAction({
         <Icon className="size-4" aria-hidden />
       </span>
       <span className="flex-1 text-left">{label}</span>
-      <ChevronRight className="size-4 text-faint" aria-hidden />
+      <SuiteIcon icon={ICONS.next} className="size-4 text-faint" aria-hidden />
     </>
   );
   if (to) {
@@ -148,7 +147,7 @@ export function SimpleHome() {
                   : alertText(item.alert);
               return (
                 <li key={item.key} className="flex items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-                  <span className={clsx("mt-1.5 size-2.5 shrink-0 rounded-full", LEVELS[item.level].dot)} aria-hidden />
+                  <span className={cx("mt-1.5 size-2.5 shrink-0 rounded-full", LEVELS[item.level].dot)} aria-hidden />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">
                       <span className="sr-only">{t(`health.level.${item.level}`)}: </span>
@@ -161,7 +160,7 @@ export function SimpleHome() {
                         className="mt-1 inline-flex items-center gap-0.5 text-[13px] font-semibold text-pink-ink hover:underline"
                       >
                         {t("health.open")}
-                        <ChevronRight className="size-3.5" aria-hidden />
+                        <SuiteIcon icon={ICONS.next} className="size-3.5" aria-hidden />
                       </Link>
                     )}
                   </div>
@@ -177,9 +176,9 @@ export function SimpleHome() {
           {t("adminView.quick.title")}
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <QuickAction icon={Users} label={t("adminView.quick.people")} to="/admin/people" />
-          <QuickAction icon={Send} label={t("nav.queue")} to="/admin/queue" />
-          <QuickAction icon={Globe} label={t("adminView.quick.domains")} to="/admin/domains" />
+          <QuickAction icon={ICONS.people} label={t("adminView.quick.people")} to="/admin/people" />
+          <QuickAction icon={ICONS.send} label={t("nav.queue")} to="/admin/queue" />
+          <QuickAction icon={ICONS.website} label={t("adminView.quick.domains")} to="/admin/domains" />
           <QuickAction icon={DatabaseBackup} label={t("adminView.quick.backups")} to="/admin/backups" />
         </div>
       </section>

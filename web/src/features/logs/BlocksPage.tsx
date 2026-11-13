@@ -1,11 +1,8 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, IconButton, Field, TextInput, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LockOpen, Plus, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type Block, type BlocksView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -43,7 +40,7 @@ function BlockRow({ block, now }: { block: Block; now: number }) {
         <p className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-semibold break-all">{block.ip}</span>
           {block.times >= 2 && (
-            <span className="inline-flex h-6 items-center rounded-full bg-danger-tint px-2.5 text-[12px] font-semibold text-danger">
+            <span className="inline-flex h-6 items-center rounded-full bg-danger-tint px-2.5 text-[12px] font-semibold text-danger-ink">
               {t("logs.blocks.repeat", { times: block.times })}
             </span>
           )}
@@ -53,7 +50,7 @@ function BlockRow({ block, now }: { block: Block; now: number }) {
       </div>
       <Button
         size="sm"
-        icon={LockOpen}
+        icon={ICONS.unlocked}
         busy={unblock.isPending}
         onClick={() => {
           if (window.confirm(t("logs.blocks.unblockConfirm", { ip: block.ip }))) unblock.mutate();
@@ -113,7 +110,7 @@ function ExemptCard({ exempt, hosts }: { exempt: string[]; hosts: BlocksView["ex
                 {network}
                 <IconButton
                   size="sm"
-                  icon={X}
+                  icon={ICONS.close}
                   label={t("logs.blocks.exempt.remove", { network })}
                   disabled={save.isPending}
                   onClick={() => {
@@ -155,7 +152,7 @@ function ExemptCard({ exempt, hosts }: { exempt: string[]; hosts: BlocksView["ex
                     setProblem(null);
                   }}
                 />
-                <Button type="submit" icon={Plus} busy={save.isPending} disabled={!draft.trim()}>
+                <Button type="submit" icon={ICONS.add} busy={save.isPending} disabled={!draft.trim()}>
                   {t("logs.blocks.exempt.add")}
                 </Button>
               </div>
@@ -186,7 +183,7 @@ export function BlocksPage() {
       {blocks.data.blocks.length === 0 ? (
         <EmptyState
           compact
-          scene="emptyFolder"
+          art={<NyuScene name="emptyFolder" />}
           title={t("logs.blocks.empty.title")}
           body={t("logs.blocks.empty.body")}
         />
