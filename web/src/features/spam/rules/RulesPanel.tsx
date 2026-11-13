@@ -1,6 +1,5 @@
-import { Button, IconButton, Field, Select, Card, Pill, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, Card, Pill, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { ArrowDownUp, Clock, FolderInput, Hash } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LoadError } from "@/components/StatusViews";
@@ -106,7 +105,7 @@ function ListBadge({ list }: { list: RuleListName }) {
   const Icon = list === "block" ? ICONS.block : list === "allow" ? ICONS.done : Hash;
   return (
     <span
-      className={clsx(
+      className={cx(
         "inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-[12px] font-semibold",
         styles[list],
       )}
@@ -492,7 +491,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
           </div>
         ) : (
           <>
-            <div className={clsx("overflow-x-auto transition-opacity max-sm:hidden", query.isFetching && "opacity-70")}>
+            <div className={cx("overflow-x-auto transition-opacity max-sm:hidden", query.isFetching && "opacity-70")}>
               <table className="w-full min-w-[720px] table-fixed border-separate border-spacing-0 text-left text-sm">
                 <thead className="max-sm:hidden">
                   <tr className="text-[12px] text-muted">
@@ -530,7 +529,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                     return (
                       <tr
                         key={itemKey(rule)}
-                        className={clsx(
+                        className={cx(
                           "group align-middle max-sm:flex max-sm:flex-wrap max-sm:items-center max-sm:gap-x-2 max-sm:border-b max-sm:border-hairline max-sm:py-2",
                           checked && "bg-pink-tint/40",
                         )}
@@ -595,7 +594,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                             <span className="text-faint">{t("spam.rules.expiry.foreverShort")}</span>
                           ) : (
                             <span
-                              className={clsx(
+                              className={cx(
                                 "inline-flex items-center gap-1",
                                 expiresSoon ? "text-warning-ink" : "text-muted",
                               )}
@@ -629,11 +628,11 @@ export function RulesPanel({ admin }: { admin: boolean }) {
               </table>
             </div>
             {/* On a phone every rule is a small card: the value gets the whole width. */}
-            <ul className={clsx("flex flex-col sm:hidden", query.isFetching && "opacity-70")}>
+            <ul className={cx("flex flex-col sm:hidden", query.isFetching && "opacity-70")}>
               {rules.map((rule) => (
                 <li
                   key={itemKey(rule)}
-                  className={clsx(
+                  className={cx(
                     "flex gap-3 border-b border-hairline py-3 last:border-b-0",
                     selected.has(itemKey(rule)) && "bg-pink-tint/40",
                   )}

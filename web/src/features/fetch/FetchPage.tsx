@@ -1,8 +1,19 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton, Field, Select, TextInput, Toggle, EmptyState, Card, ICONS, Icon } from "@uwusuite/design";
+import {
+  Button,
+  IconButton,
+  Field,
+  Select,
+  TextInput,
+  Toggle,
+  EmptyState,
+  Card,
+  ICONS,
+  Icon,
+  cx,
+} from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause } from "lucide-react";
-import clsx from "clsx";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -203,7 +214,7 @@ function SignInBox({
           : [t("fetch.signIn.detected", { provider: name }), false];
   return (
     <div className="flex flex-col gap-3 rounded-control border border-line bg-surface p-4">
-      <p className={clsx("flex items-start gap-2 text-[13px]", danger ? "text-danger-ink" : "text-ink")}>
+      <p className={cx("flex items-start gap-2 text-[13px]", danger ? "text-danger-ink" : "text-ink")}>
         {danger ? (
           <Icon icon={ICONS.warning} className="mt-0.5 size-4 shrink-0" aria-hidden />
         ) : (

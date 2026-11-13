@@ -1,6 +1,5 @@
-import { Button, Field, Segmented, Select, TextInput, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { FileUp, Power, ScrollText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -52,10 +51,8 @@ const TONES: Record<Tone, { icon: LucideIcon; className: string }> = {
 function State({ tone, children }: { tone: Tone; children: ReactNode }) {
   const { icon: Icon, className } = TONES[tone];
   return (
-    <span
-      className={clsx("inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold", className)}
-    >
-      <Icon className={clsx("size-4", tone === "busy" && "animate-spin")} aria-hidden />
+    <span className={cx("inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold", className)}>
+      <Icon className={cx("size-4", tone === "busy" && "animate-spin")} aria-hidden />
       {children}
     </span>
   );
@@ -142,7 +139,7 @@ function StatusCard({ vpn }: { vpn: VpnView }) {
         </dl>
         {failure && (
           <p
-            className={clsx(
+            className={cx(
               "rounded-control px-3 py-2 text-[13px]",
               recent ? "bg-warning-tint text-warning-ink" : "bg-canvas text-muted",
             )}

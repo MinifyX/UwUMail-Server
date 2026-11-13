@@ -1,6 +1,5 @@
-import { Button, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { Button, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { CircleX, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NyuMood } from "@uwusuite/design";
@@ -79,7 +78,7 @@ function Finding({ finding }: { finding: HealthFinding }) {
   const error = finding.level !== "ok" && typeof params.error === "string" ? params.error : null;
   return (
     <li className="text-sm">
-      <p className={clsx(finding.level === "ok" ? "text-muted" : "text-ink")}>
+      <p className={cx(finding.level === "ok" ? "text-muted" : "text-ink")}>
         {text(finding)}
         {detail && <span className="text-muted"> {detail}</span>}
       </p>
@@ -103,7 +102,7 @@ function AreaTile({ area }: { area: HealthArea }) {
   return (
     <div className="rounded-control border border-hairline bg-canvas/60 p-3">
       <h3 className="flex items-center gap-2 text-[13px] font-bold">
-        <span className={clsx("size-2.5 shrink-0 rounded-full", level.dot)} aria-hidden />
+        <span className={cx("size-2.5 shrink-0 rounded-full", level.dot)} aria-hidden />
         <span className="min-w-0 flex-1">{t(`health.areas.${area.area}`)}</span>
         <span className="sr-only">: </span>
         <span className="shrink-0 text-[12px] font-semibold text-muted">{t(`health.level.${area.level}`)}</span>
@@ -153,7 +152,7 @@ export function HealthCard() {
   return (
     <section className="rounded-card border border-hairline bg-surface p-5" aria-labelledby="health-title">
       <header className="flex flex-wrap items-center gap-4">
-        <span className={clsx("flex size-9 shrink-0 items-center justify-center rounded-full", level.tint)}>
+        <span className={cx("flex size-9 shrink-0 items-center justify-center rounded-full", level.tint)}>
           <Icon className="size-[18px]" aria-hidden />
         </span>
         <div className="min-w-0 flex-1 basis-52">

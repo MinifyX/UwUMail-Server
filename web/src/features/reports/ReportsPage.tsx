@@ -1,6 +1,5 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Segmented, EmptyState, Card } from "@uwusuite/design";
-import clsx from "clsx";
+import { Segmented, EmptyState, Card, cx } from "@uwusuite/design";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -23,7 +22,7 @@ function Number_({ label, value, tone }: { label: string; value: string; tone?: 
     <div className="rounded-control bg-canvas px-3 py-2">
       <p className="text-[12px] text-muted">{label}</p>
       <p
-        className={clsx(
+        className={cx(
           "text-[17px] font-bold tabular-nums",
           tone === "good" && "text-success-ink",
           tone === "bad" && "text-danger-ink",

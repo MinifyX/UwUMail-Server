@@ -1,6 +1,5 @@
-import { Button, Field, TextInput, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { Button, Field, TextInput, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { BookOpen, Clock, GraduationCap, Hash, Rss, Settings2, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -151,7 +150,7 @@ function Tile({
       to={to}
       className="group flex items-center gap-3 rounded-[14px] border border-hairline bg-surface p-3.5 transition-colors hover:border-pink/40"
     >
-      <span className={clsx("flex size-9 shrink-0 items-center justify-center rounded-full", tones[tone])}>
+      <span className={cx("flex size-9 shrink-0 items-center justify-center rounded-full", tones[tone])}>
         <Icon className="size-4" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
@@ -259,7 +258,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
   const busiest = (top.data?.rules ?? []).filter((rule) => rule.hits > 0).slice(0, 5);
   const state = (on: boolean, label: string, detail?: string) => (
     <li className="flex items-center gap-2 text-[13px]">
-      <span className={clsx("size-2 shrink-0 rounded-full", on ? "bg-success" : "bg-faint")} aria-hidden />
+      <span className={cx("size-2 shrink-0 rounded-full", on ? "bg-success" : "bg-faint")} aria-hidden />
       <span className="font-semibold">{label}</span>
       <span className="text-muted">{detail ?? (on ? t("spam.overview.on") : t("spam.overview.off"))}</span>
     </li>

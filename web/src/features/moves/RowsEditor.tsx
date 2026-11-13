@@ -1,6 +1,5 @@
-import { Button, IconButton, ICONS, Icon } from "@uwusuite/design";
+import { Button, IconButton, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import clsx from "clsx";
 import { FileUp, Server } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { useT } from "@/i18n";
@@ -166,7 +165,7 @@ export function RowsEditor({
                     <td key={column}>
                       <input
                         aria-label={`${t(`moves.fields.${column}`)} ${index + 1}`}
-                        className={clsx(cellClass, bad.has(column === "quotaMb" ? "quota" : column) && "border-danger")}
+                        className={cx(cellClass, bad.has(column === "quotaMb" ? "quota" : column) && "border-danger")}
                         type={column === "password" ? "password" : column === "quotaMb" ? "number" : "text"}
                         min={column === "quotaMb" ? 0 : undefined}
                         autoComplete="off"
@@ -209,7 +208,7 @@ export function RowsEditor({
                       <div className="grid gap-2 pb-1 sm:grid-cols-2">
                         <input
                           aria-label={`${t("moves.fields.imapHost")} ${index + 1}`}
-                          className={clsx(cellClass, bad.has("imapHost") && "border-danger")}
+                          className={cx(cellClass, bad.has("imapHost") && "border-danger")}
                           placeholder={t("moves.placeholders.imapHost")}
                           spellCheck={false}
                           autoCapitalize="none"
@@ -218,7 +217,7 @@ export function RowsEditor({
                         />
                         <input
                           aria-label={`${t("moves.fields.davUrl")} ${index + 1}`}
-                          className={clsx(cellClass, bad.has("davUrl") && "border-danger")}
+                          className={cx(cellClass, bad.has("davUrl") && "border-danger")}
                           placeholder={t("moves.placeholders.davUrl")}
                           spellCheck={false}
                           autoCapitalize="none"

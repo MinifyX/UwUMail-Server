@@ -1,6 +1,5 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Select, TextInput, EmptyState, Pill, ICONS, Icon } from "@uwusuite/design";
-import clsx from "clsx";
+import { Button, Select, TextInput, EmptyState, Pill, ICONS, Icon, cx } from "@uwusuite/design";
 import { UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -198,7 +197,7 @@ export function PeoplePage({ session }: { session: Session }) {
                 <li key={person.login}>
                   <Link
                     to={personUrl(person.login)}
-                    className={clsx(
+                    className={cx(
                       "flex h-full flex-col gap-3 rounded-card border border-hairline bg-surface p-4 transition-colors hover:border-pink-tint-strong hover:bg-pink-tint/30",
                     )}
                   >

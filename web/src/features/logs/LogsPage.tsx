@@ -1,6 +1,5 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Segmented, TextInput, EmptyState, Pill, ICONS, Icon } from "@uwusuite/design";
-import clsx from "clsx";
+import { Button, Segmented, TextInput, EmptyState, Pill, ICONS, Icon, cx } from "@uwusuite/design";
 import { Pause } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n";
@@ -118,7 +117,7 @@ export function LogsPage() {
             lines.map((line) => (
               <div key={line.seq} className="flex gap-3 rounded px-1 hover:bg-elevated">
                 <span className="shrink-0 text-faint">{time.format(new Date(line.at))}</span>
-                <span className={clsx("w-12 shrink-0 font-semibold uppercase", LEVEL_STYLES[line.level])}>
+                <span className={cx("w-12 shrink-0 font-semibold uppercase", LEVEL_STYLES[line.level])}>
                   {line.level}
                 </span>
                 <span className="min-w-0 break-words">

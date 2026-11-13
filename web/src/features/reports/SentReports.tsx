@@ -1,6 +1,5 @@
-import { Card } from "@uwusuite/design";
+import { Card, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Section, ToggleField } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
@@ -23,7 +22,7 @@ function SentRow({ report }: { report: SentTlsReport }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-bold break-all">{report.domain}</span>
         <span
-          className={clsx(
+          className={cx(
             "inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-semibold",
             STATUS_CLASS[report.status],
           )}

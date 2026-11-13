@@ -1,6 +1,5 @@
-import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon } from "@uwusuite/design";
+import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene, type SceneName } from "@/components/nyu/scenes";
@@ -119,13 +118,13 @@ function Frame({
             {STEPS.map((entry, position) => (
               <li key={entry} className="min-w-0 flex-1">
                 <span
-                  className={clsx(
+                  className={cx(
                     "block h-1.5 rounded-full transition-colors duration-300",
                     position <= index ? "bg-pink" : "bg-line",
                   )}
                 />
                 <span
-                  className={clsx(
+                  className={cx(
                     "mt-1.5 hidden truncate text-[11px] font-semibold md:block",
                     position === index ? "text-pink-ink" : "text-faint",
                   )}

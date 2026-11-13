@@ -1,7 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, ICONS } from "@uwusuite/design";
+import { Button, EmptyState, ICONS, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { RotateCw } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -82,7 +81,7 @@ function Message({ message }: { message: QueuedMessage }) {
           <li key={recipient.address} className="flex flex-col gap-1 border-t border-hairline py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={clsx(
+                className={cx(
                   "inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-semibold",
                   STATUS_STYLES[recipient.status],
                 )}

@@ -1,5 +1,4 @@
-import { Button, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
-import clsx from "clsx";
+import { Button, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { DatabaseBackup, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -32,7 +31,7 @@ function TrafficLight({ level }: { level: HealthLevel }) {
       {lamps.map((lamp, index) => (
         <span
           key={index}
-          className={clsx(
+          className={cx(
             "size-12 rounded-full transition-opacity sm:size-14",
             lamp.color,
             lamp.lit ? (level === "unknown" ? "opacity-50" : "opacity-100 ring-4 ring-white/25") : "opacity-15",
@@ -148,7 +147,7 @@ export function SimpleHome() {
                   : alertText(item.alert);
               return (
                 <li key={item.key} className="flex items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-                  <span className={clsx("mt-1.5 size-2.5 shrink-0 rounded-full", LEVELS[item.level].dot)} aria-hidden />
+                  <span className={cx("mt-1.5 size-2.5 shrink-0 rounded-full", LEVELS[item.level].dot)} aria-hidden />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">
                       <span className="sr-only">{t(`health.level.${item.level}`)}: </span>

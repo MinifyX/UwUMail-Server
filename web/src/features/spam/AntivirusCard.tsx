@@ -1,6 +1,5 @@
-import { Button, Card, ICONS } from "@uwusuite/design";
+import { Button, Card, ICONS, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { CircleX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -24,9 +23,7 @@ const TONES: Record<Tone, { icon: LucideIcon; className: string }> = {
 function Pill({ tone, children }: { tone: Tone; children: string }) {
   const { icon: Icon, className } = TONES[tone];
   return (
-    <span
-      className={clsx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}
-    >
+    <span className={cx("inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold", className)}>
       <Icon className="size-3.5" aria-hidden />
       {children}
     </span>
@@ -77,7 +74,7 @@ export function AntivirusCard() {
             {view.status.signatures != null && (
               <>
                 <dt className="font-semibold text-muted">{t("spam.antivirus.signatures")}</dt>
-                <dd className={clsx(old && "text-warning-ink")}>
+                <dd className={cx(old && "text-warning-ink")}>
                   {view.status.signatures}
                   {view.status.signaturesAt != null && ` · ${formatDateTime(view.status.signaturesAt, i18n.language)}`}
                 </dd>

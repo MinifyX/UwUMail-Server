@@ -1,6 +1,5 @@
-import { Button, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { Button, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { BookOpen, CircleX, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -55,7 +54,7 @@ function StatusChip({ status, label, quiet = false }: { status: MsStatus; label?
   const { icon: Icon, className } = STATUS[status];
   return (
     <span
-      className={clsx(
+      className={cx(
         "inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold",
         className,
       )}
@@ -324,7 +323,7 @@ function Rule({ status, title, children }: { status: MsStatus; title: ReactNode;
   const { icon: Icon, className } = STATUS[status];
   return (
     <li className="flex items-start gap-3 border-b border-hairline py-4 first:pt-0 last:border-b-0 last:pb-0">
-      <span className={clsx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", className)}>
+      <span className={cx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", className)}>
         <Icon className="size-3.5" aria-hidden />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">

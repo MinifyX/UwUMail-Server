@@ -1,6 +1,5 @@
-import { Button, Field, TextInput, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { Button, Field, TextInput, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
 import { CircleX, Cloud } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
@@ -48,7 +47,7 @@ export function CheckLines({
         const hint = entry.level !== "ok" && i18n.exists(hintKey) ? t(hintKey, entry.params) : null;
         return (
           <li key={`${entry.code}-${index}`} className="flex gap-2.5">
-            <Icon className={clsx("mt-0.5 size-[18px] shrink-0", className)} aria-hidden />
+            <Icon className={cx("mt-0.5 size-[18px] shrink-0", className)} aria-hidden />
             <div className="flex min-w-0 flex-col gap-1">
               <p className="text-sm break-words">{t(`setup.lines.${entry.code}`, entry.params)}</p>
               {hint && (explain || entry.level === "problem") && <p className="text-[13px] text-muted">{hint}</p>}
@@ -202,7 +201,7 @@ function Result({ ok, children }: { ok: boolean; children: ReactNode }) {
   const { icon: Icon, className } = LEVELS[ok ? "ok" : "warning"];
   return (
     <p className="flex gap-2.5 text-sm">
-      <Icon className={clsx("mt-0.5 size-[18px] shrink-0", className)} aria-hidden />
+      <Icon className={cx("mt-0.5 size-[18px] shrink-0", className)} aria-hidden />
       {children}
     </p>
   );
@@ -468,7 +467,7 @@ export function CloudflarePanel({
             const { icon: Icon, className } = LEVELS[level];
             return (
               <li key={`${result.recordType}-${result.name}`} className="flex gap-2 text-[13px]">
-                <Icon className={clsx("mt-0.5 size-4 shrink-0", className)} aria-hidden />
+                <Icon className={cx("mt-0.5 size-4 shrink-0", className)} aria-hidden />
                 <span className="min-w-0 break-words">
                   <span className="font-semibold">{result.recordType}</span> {result.name}:{" "}
                   {t(`setup.cloudflare.outcome.${result.outcome}`)}

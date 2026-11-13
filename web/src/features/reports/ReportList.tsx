@@ -1,5 +1,4 @@
-import { Segmented } from "@uwusuite/design";
-import clsx from "clsx";
+import { Segmented, cx } from "@uwusuite/design";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
@@ -35,7 +34,7 @@ function DmarcRowCard({ row }: { row: DmarcReportRow }) {
             {t("reports.ours")}
           </span>
         )}
-        <span className={clsx("text-[12px] font-semibold", aligned ? "text-success-ink" : "text-danger-ink")}>
+        <span className={cx("text-[12px] font-semibold", aligned ? "text-success-ink" : "text-danger-ink")}>
           {aligned ? t("reports.genuine") : t("reports.notGenuine")}
         </span>
         <span className="ml-auto text-[13px] font-bold tabular-nums">{formatNumber(row.messages, i18n.language)}</span>

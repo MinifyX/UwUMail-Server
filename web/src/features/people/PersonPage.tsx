@@ -1,6 +1,5 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
 import { Bot, ShieldOff, UserRound } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -64,7 +63,7 @@ function Banner({
 }) {
   return (
     <div
-      className={clsx(
+      className={cx(
         "flex flex-wrap items-center justify-between gap-3 rounded-card px-4 py-3 text-sm font-medium",
         tone === "pink" && "bg-pink-tint text-pink-ink",
         tone === "warning" && "bg-warning-tint text-warning-ink",

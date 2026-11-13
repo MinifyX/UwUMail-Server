@@ -1,5 +1,4 @@
-import { Button, Segmented, Card, ICONS, Icon } from "@uwusuite/design";
-import clsx from "clsx";
+import { Button, Segmented, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { Lightbulb } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -103,7 +102,7 @@ function Stat({ label, value, tone, text }: { label: string; value: string; tone
     <div className="rounded-control bg-canvas px-3 py-2">
       <p className="text-[12px] text-muted">{label}</p>
       <p
-        className={clsx(
+        className={cx(
           text ? "text-[13px] font-semibold break-words" : "text-[17px] font-bold tabular-nums",
           tone === "good" && "text-success-ink",
           tone === "bad" && "text-danger-ink",
@@ -210,7 +209,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                             {formatNumber(source.messages, language)}
                           </td>
                           <td
-                            className={clsx(
+                            className={cx(
                               "py-1.5 text-right tabular-nums",
                               failed === 0 ? "text-success-ink" : source.ours ? "text-danger-ink" : "text-muted",
                             )}

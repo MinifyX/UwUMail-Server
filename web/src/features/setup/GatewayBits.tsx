@@ -1,5 +1,4 @@
-import { Button, Field, TextInput, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
-import clsx from "clsx";
+import { Button, Field, TextInput, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { BookOpen, CirclePlus, Cloud, Link2, Server } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -201,7 +200,7 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
             const current = change.current.length > 0 ? change.current.join(", ") : t("setup.gateway.cloudflare.none");
             return (
               <li key={`${change.recordType}-${change.name}`} className="flex gap-2 text-[13px]">
-                <Icon className={clsx("mt-0.5 size-4 shrink-0", className)} aria-hidden />
+                <Icon className={cx("mt-0.5 size-4 shrink-0", className)} aria-hidden />
                 <span className="min-w-0 break-words">
                   {change.action !== "skip" && <span className="font-semibold">{change.recordType} </span>}
                   {change.name}: {t(`setup.gateway.cloudflare.actions.${change.action}`)}
@@ -280,7 +279,7 @@ export function ReachabilityChecks({ reach, explain }: { reach: Reachability; ex
   const sources = reach.addresses.flatMap((address) => (address.provider ? [address.provider] : []));
   return (
     <div className="flex flex-col gap-4">
-      <p className={clsx("rounded-control px-3 py-2.5 text-[13px] font-semibold", RECOMMENDATION_TONE[advice])}>
+      <p className={cx("rounded-control px-3 py-2.5 text-[13px] font-semibold", RECOMMENDATION_TONE[advice])}>
         {t(`setup.reach.recommend.${advice}`)}
       </p>
       <div className="flex flex-col gap-3">

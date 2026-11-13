@@ -1,6 +1,5 @@
-import { Button, Field, Select, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Select, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { Image, ImageUp, UserRound } from "lucide-react";
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -102,7 +101,7 @@ function CropDialog({
           </p>
         ) : (
           <div
-            className={clsx(
+            className={cx(
               "relative shrink-0 cursor-grab touch-none overflow-hidden bg-canvas select-none active:cursor-grabbing",
               round ? "rounded-full" : "rounded-card",
             )}
@@ -173,7 +172,7 @@ function CropDialog({
 function Current({ picture, round, label }: { picture: PictureFile | null; round: boolean; label: string }) {
   return (
     <span
-      className={clsx(
+      className={cx(
         "flex size-20 shrink-0 items-center justify-center overflow-hidden border border-hairline bg-canvas text-faint",
         round ? "rounded-full" : "rounded-card",
       )}
@@ -355,7 +354,7 @@ export function PictureCard({
 
   if (bare) {
     return (
-      <section className={clsx("flex flex-col gap-2", className)}>
+      <section className={cx("flex flex-col gap-2", className)}>
         <h3 className="text-sm font-bold">{title}</h3>
         {content()}
       </section>

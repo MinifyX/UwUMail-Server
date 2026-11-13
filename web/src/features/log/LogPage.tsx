@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, ICONS, Icon } from "@uwusuite/design";
+import { Button, EmptyState, ICONS, Icon, cx } from "@uwusuite/design";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { TFunction } from "i18next";
-import clsx from "clsx";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type AuditRecord, type MaskedMode } from "@/lib/api";
@@ -233,7 +232,7 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
   return (
     <>
       <dt className="text-muted">{label}</dt>
-      <dd className={clsx("min-w-0 break-words", mono && "font-mono text-[12px]")}>{value}</dd>
+      <dd className={cx("min-w-0 break-words", mono && "font-mono text-[12px]")}>{value}</dd>
     </>
   );
 }
@@ -262,7 +261,7 @@ function LogEntry({ record }: { record: AuditRecord }) {
         </time>
         <Icon
           icon={ICONS.expand}
-          className={clsx("mt-0.5 size-4 shrink-0 text-faint transition-transform", open && "rotate-180")}
+          className={cx("mt-0.5 size-4 shrink-0 text-faint transition-transform", open && "rotate-180")}
           aria-hidden
         />
       </button>

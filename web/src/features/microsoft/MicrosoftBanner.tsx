@@ -1,5 +1,4 @@
-import { ICONS, Icon } from "@uwusuite/design";
-import clsx from "clsx";
+import { ICONS, Icon, cx } from "@uwusuite/design";
 import { MailWarning } from "lucide-react";
 import { useT } from "@/i18n";
 import { Link } from "@/lib/router";
@@ -18,13 +17,13 @@ export function MicrosoftBanner() {
   return (
     <section
       role="alert"
-      className={clsx(
+      className={cx(
         "flex items-start gap-3 rounded-card border p-4",
         throttled ? "border-warning/30 bg-warning-tint" : "border-danger/30 bg-danger-tint",
       )}
     >
       <span
-        className={clsx(
+        className={cx(
           "flex size-9 shrink-0 items-center justify-center rounded-full bg-surface",
           throttled ? "text-warning-ink" : "text-danger-ink",
         )}

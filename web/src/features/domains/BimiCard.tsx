@@ -1,6 +1,5 @@
-import { Button, Field, Segmented, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Segmented, TextInput, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { ArrowUp, FileUp, Image } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -69,7 +68,7 @@ function Previews({ domain, view }: { domain: string; view: BimiView }) {
       {shapes.map((shape) => (
         <figure key={shape.label} className="flex flex-col items-center gap-1.5">
           <span
-            className={clsx(
+            className={cx(
               "flex size-20 items-center justify-center overflow-hidden border border-hairline bg-canvas text-faint",
               shape.round ? "rounded-full" : "rounded-card",
             )}
@@ -268,7 +267,7 @@ function RecordSection({ domain, view }: { domain: string; view: BimiView }) {
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={clsx(
+              className={cx(
                 "inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold",
                 style.className,
               )}

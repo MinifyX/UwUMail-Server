@@ -1,7 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Field, Segmented, Select, TextInput, EmptyState, Card, ICONS } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, EmptyState, Card, ICONS, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
@@ -108,7 +107,7 @@ function EntryDialog({ entry, onClose }: { entry: SpamLogEntry | null; onClose: 
                       <span className="font-mono text-[12px]">{hit.rule}</span>
                       {hit.detail && <span className="min-w-0 flex-1 text-[12px] text-muted">{hit.detail}</span>}
                       <span
-                        className={clsx(
+                        className={cx(
                           "ml-auto text-[13px] font-semibold tabular-nums",
                           hit.points > 0 ? "text-danger-ink" : "text-success-ink",
                         )}
@@ -230,7 +229,7 @@ export function SpamLogCard() {
                   className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-control border-b border-hairline px-2 py-2 text-left hover:bg-pink-tint/40"
                 >
                   <span className="text-[12px] text-muted tabular-nums">{formatDate(entry.at, i18n.language)}</span>
-                  <span className={clsx("text-[12px] font-semibold", TONE[entry.action])}>
+                  <span className={cx("text-[12px] font-semibold", TONE[entry.action])}>
                     {t(`spam.log.actions.${entry.action}`)}
                   </span>
                   <span className="min-w-0 flex-1 basis-40 text-[13px] break-words">

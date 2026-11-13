@@ -1,7 +1,6 @@
-import clsx from "clsx";
 import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "@/i18n";
-import { IconButton, ICONS } from "@uwusuite/design";
+import { IconButton, ICONS, cx } from "@uwusuite/design";
 
 export function PageHeader({
   title,
@@ -26,7 +25,7 @@ export function PageHeader({
       <div className="min-w-[min(200px,100%)] flex-1">
         {eyebrow && <p className="text-[13px] text-muted">{eyebrow}</p>}
         <h1
-          className={clsx(
+          className={cx(
             "leading-tight tracking-[-0.01em] max-[699px]:text-[28px] max-[699px]:font-extrabold",
             large ? "mt-0.5 text-[28px] font-extrabold" : "text-[22px] font-bold",
           )}

@@ -1,4 +1,4 @@
-import clsx from "clsx";
+import { cx } from "@uwusuite/design";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "@/lib/router";
@@ -28,7 +28,7 @@ export function Tabs<T extends string>({ tabs, value, label }: { tabs: Tab<T>[];
               <Link
                 to={tab.to}
                 aria-current={active ? "page" : undefined}
-                className={clsx(
+                className={cx(
                   "inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold whitespace-nowrap transition-colors",
                   active ? "bg-surface text-pink-ink shadow-sm" : "text-muted hover:text-ink",
                 )}

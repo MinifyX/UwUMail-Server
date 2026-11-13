@@ -1,6 +1,5 @@
-import { Button, Segmented, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Segmented, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { LoadError } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type AdminAlert, type AlertLevel, type AlertsView, type HealthLevel } from "@/lib/api";
@@ -62,9 +61,9 @@ function AlertRow({ alert }: { alert: AdminAlert }) {
   const dot = resolved ? LEVELS.ok.dot : alert.level === "info" ? "bg-pink" : LEVELS[LEVEL_OF[alert.level]].dot;
   return (
     <li className="flex flex-wrap items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-      <span className={clsx("mt-1.5 size-2.5 shrink-0 rounded-full", dot)} aria-hidden />
+      <span className={cx("mt-1.5 size-2.5 shrink-0 rounded-full", dot)} aria-hidden />
       <div className="min-w-0 flex-1 basis-60">
-        <p className={clsx("text-sm", resolved ? "text-muted" : "font-semibold")}>
+        <p className={cx("text-sm", resolved ? "text-muted" : "font-semibold")}>
           <span className="sr-only">{t(resolved ? "alerts.level.resolved" : `alerts.level.${alert.level}`)}: </span>
           {sentence}
         </p>

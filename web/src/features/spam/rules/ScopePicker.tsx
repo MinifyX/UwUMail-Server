@@ -1,6 +1,5 @@
-import { ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
 import { Server, User, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "@/i18n";
@@ -73,7 +72,7 @@ export function ScopePicker({
           role="option"
           aria-selected={active}
           onClick={() => choose(key)}
-          className={clsx(
+          className={cx(
             "flex w-full items-center gap-2 rounded-control px-2.5 py-2 text-left text-[13px] hover:bg-pink-tint/60",
             active && "font-semibold text-pink-ink",
           )}
@@ -90,7 +89,7 @@ export function ScopePicker({
   };
 
   return (
-    <div ref={root} className={clsx("relative", className)}>
+    <div ref={root} className={cx("relative", className)}>
       <button
         type="button"
         aria-haspopup="listbox"

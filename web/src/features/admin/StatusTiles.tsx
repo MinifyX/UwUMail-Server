@@ -1,6 +1,5 @@
-import { ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
 import { ArrowLeftRight, DatabaseBackup } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { describe } from "@/features/log/LogPage";
@@ -58,7 +57,7 @@ function Tile({
         />
       </span>
       <span className="flex items-start gap-2 text-sm font-semibold">
-        <span className={clsx("mt-1.5 size-2.5 shrink-0 rounded-full", DOTS[tone])} aria-hidden />
+        <span className={cx("mt-1.5 size-2.5 shrink-0 rounded-full", DOTS[tone])} aria-hidden />
         <span>
           {text}
           <span className="sr-only"> ({tone === "news" ? t("admin.tiles.news") : t(`health.level.${tone}`)})</span>

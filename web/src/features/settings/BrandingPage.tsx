@@ -1,6 +1,5 @@
-import { Button, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, TextInput, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import { ImageUp, Inbox } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -76,7 +75,7 @@ function ColorField({ form }: { form: Form }) {
   return (
     <Field label={t("branding.color.label")} hint={locked ? <LockedHint /> : t("branding.color.hint")}>
       {(id) => (
-        <div className={clsx("flex flex-col gap-3", locked && "pointer-events-none opacity-60")}>
+        <div className={cx("flex flex-col gap-3", locked && "pointer-events-none opacity-60")}>
           <div role="radiogroup" aria-label={t("branding.color.presets")} className="flex flex-wrap gap-2">
             {PRESETS.map((preset) => {
               const selected = shown === preset.color;
@@ -89,7 +88,7 @@ function ColorField({ form }: { form: Form }) {
                   aria-label={t(`branding.color.preset.${preset.key}`)}
                   title={t(`branding.color.preset.${preset.key}`)}
                   onClick={() => choose(preset.color)}
-                  className={clsx(
+                  className={cx(
                     "flex size-9 items-center justify-center rounded-full ring-offset-2 ring-offset-surface transition-shadow",
                     selected ? "ring-2 ring-ink" : "hover:ring-2 hover:ring-line",
                   )}
