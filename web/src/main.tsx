@@ -1,4 +1,3 @@
-import "@fontsource-variable/jetbrains-mono";
 import "./styles/app.css";
 import "./i18n";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
