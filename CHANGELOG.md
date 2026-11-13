@@ -121,8 +121,8 @@ First published release of 0.29: the 0.29.0 tag never produced a release, becaus
 - A queued message whose content cannot be read for the moment is tried again later instead of
   failing at once.
 - Backups: the daily backup no longer starts while a whole-server restore is being fetched, the
-  fetched restore is not backed up itself, and *Back up now* waits for a backup the command line
-  is running. Backups, restores and the restore swap at start share a file lock
+  fetched restore is not backed up itself, and *Back up now* refuses while the command
+  line is running a backup. Backups, restores and the restore swap at start share a file lock
   (`backup.lock`), so the command line and the server no longer run one at the same time, and a
   crashed backup no longer blocks the next. A restore that fails halfway puts every file it
   replaced back, not only the database and its journal.
