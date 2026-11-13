@@ -40,4 +40,10 @@
   :where(*) {
     min-width: 0;
   }
+
+  /* shortcut: the package Toggle wraps its switch in a span without shrink-0, so under the rule
+     above a long description squeezes it; drop once @uwusuite/design marks that span shrink-0. */
+  :where(span:has(> [role="switch"]), [role="switch"]) {
+    flex-shrink: 0;
+  }
 }
