@@ -14,7 +14,7 @@ use uwumail_assist::{
 use uwumail_labels::{Base, Detector, OverlapLabel, Rules, overlaps};
 use uwumail_store::{Account, AssistLabel, AssistLabelWrite, LabelCounts, StoreError};
 
-use super::{Ctx, SetResponse, get_ids, if_in_state};
+use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::{dates, ids};
 
@@ -329,6 +329,7 @@ fn provider_input(patch: &Value, create: bool) -> Result<ProviderInput, SetError
 }
 
 pub async fn provider_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    check_set_size(args)?;
     let assist = assist(ctx)?;
     let old_state = state(ctx).await?;
     if_in_state(args, &old_state)?;
@@ -1000,6 +1001,7 @@ fn label_store_error(err: StoreError) -> SetError {
 }
 
 pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    check_set_size(args)?;
     let assist = assist(ctx)?;
     let old_state = label_state(ctx).await?;
     if_in_state(args, &old_state)?;

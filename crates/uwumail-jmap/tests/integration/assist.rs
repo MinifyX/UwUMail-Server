@@ -639,3 +639,24 @@ async fn labels_work_without_a_provider_and_carry_their_counts() {
     assert_eq!(responses[2][1]["type"], "invalidArguments");
     assert!(responses[2][1]["description"].as_str().unwrap().contains("foreignMails[0].subject"));
 }
+
+/// A label or provider /set names at most as many objects as every other /set.
+#[tokio::test]
+async fn assist_sets_are_limited_like_every_set() {
+    let (server, _) = assisted().await;
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    let destroy = vec!["nope"; uwumail_jmap::MAX_OBJECTS_IN_SET + 1];
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["AssistLabel/set", { "accountId": account, "destroy": destroy }, "l"],
+                ["AssistProvider/set", { "accountId": account, "destroy": destroy }, "p"],
+            ]),
+        )
+        .await;
+    assert_eq!(responses[0][1]["type"], "requestTooLarge", "{}", responses[0]);
+    assert_eq!(responses[1][1]["type"], "requestTooLarge", "{}", responses[1]);
+}
