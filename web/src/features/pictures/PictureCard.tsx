@@ -437,7 +437,7 @@ export function PublicPicturesCard() {
       api<{ publicAllowed: boolean }>("/api/admin/pictures", { method: "PUT", body: { allowed } }),
     onSuccess: (state) => {
       queryClient.setQueryData(["admin", "pictures"], state);
-      toast(t("pictures.server.saved"), "success");
+      toast(t("common.saved"), "success");
     },
     onError: (error) => toast(errorText(error), "error"),
   });

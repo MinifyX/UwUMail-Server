@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LANGUAGES, resources, type Language } from "./index";
 
@@ -75,5 +77,21 @@ describe("en", () => {
   it("every playful key overrides an existing neutral key", () => {
     const known = new Set(entries(neutral("en")).map(([key]) => key));
     expect(entries(playful("en")).filter(([key]) => !known.has(key))).toEqual([]);
+  });
+});
+
+describe("code", () => {
+  it("only asks for texts that exist", () => {
+    const known = new Set(entries(neutral("en")).flatMap(([key]) => [key, key.replace(PLURAL, "")]));
+    const src = join(process.cwd(), "src");
+    const files = readdirSync(src, { recursive: true, encoding: "utf8" }).filter((file) => /\.tsx?$/.test(file));
+    const missing = files.flatMap((file) =>
+      // Literal keys only; a key ending in "." is a prefix the code completes.
+      [...readFileSync(join(src, file), "utf8").matchAll(/\bt\(\s*"([\w.]+)"/g)]
+        .map((match) => match[1]!)
+        .filter((key) => !key.endsWith(".") && !known.has(key))
+        .map((key) => `${file}: ${key}`),
+    );
+    expect(missing).toEqual([]);
   });
 });
