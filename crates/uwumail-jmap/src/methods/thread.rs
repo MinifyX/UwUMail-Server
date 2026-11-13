@@ -13,10 +13,12 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let mut threads = ctx.jmap.store.thread_emails(ctx.account.id, numbers).await?;
     if ctx.shared.is_some() {
         // In someone else's account a thread holds the emails the caller may read.
+        // One lookup for the emails of all threads, not one per thread.
+        let emails: Vec<i64> = threads.values().flatten().copied().collect();
+        let records = ctx.jmap.store.emails_by_ids(ctx.account.id, emails).await?;
+        let readable: std::collections::HashSet<i64> =
+            super::email::visible_records(ctx, records).iter().map(|r| r.id).collect();
         for emails in threads.values_mut() {
-            let records = ctx.jmap.store.emails_by_ids(ctx.account.id, emails.clone()).await?;
-            let readable: std::collections::HashSet<i64> =
-                super::email::visible_records(ctx, records).iter().map(|r| r.id).collect();
             emails.retain(|email| readable.contains(email));
         }
         threads.retain(|_, emails| !emails.is_empty());
