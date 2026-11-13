@@ -1377,11 +1377,8 @@ where
                     out.raw(&format!("* VANISHED {}\r\n", response::sequence_set(&gone)));
                     selected.messages.retain(|known| !known.expunged);
                 } else {
-                    for index in (0..selected.messages.len()).rev() {
-                        if selected.messages[index].expunged {
-                            out.raw(&format!("* {} EXPUNGE\r\n", index + 1));
-                            selected.messages.remove(index);
-                        }
+                    for at in selected.forget(&gone) {
+                        out.raw(&format!("* {} EXPUNGE\r\n", at + 1));
                     }
                 }
             }
