@@ -598,7 +598,7 @@ mod tests {
         let id = store
             .enqueue(
                 "mini@example.org",
-                vec![recipient("a@gmx.de"), recipient("B@Web.de")],
+                vec![recipient("a@example.net"), recipient("B@Example.ORG")],
                 b"Subject: hi\r\n\r\nhi\r\n",
                 None,
                 None,
@@ -611,7 +611,7 @@ mod tests {
         assert_eq!(claimed.len(), 1);
         assert_eq!(claimed[0].message.id, id);
         let domains: Vec<_> = claimed[0].recipients.iter().map(|r| r.domain.as_str()).collect();
-        assert_eq!(domains, ["gmx.de", "web.de"]);
+        assert_eq!(domains, ["example.net", "example.org"]);
         // Leased: a second pass gets nothing.
         assert!(store.claim_due_deliveries(10, 600).await.unwrap().is_empty());
 
