@@ -147,6 +147,10 @@ pub async fn discover(
             format!("at most {} fetched mailboxes", uwumail_store::MAX_FETCH_ACCOUNTS),
         ));
     }
+    // Each try logs in at the provider, maybe several times: enough for the dialog, not a password tester.
+    if !web.allow_call(session.account.id, "fetch-discover", SIGN_INS_PER_HOUR) {
+        return Err(ApiError::TooManyAttempts);
+    }
     let found =
         uwumail_smtp::autoconfig::discover(web.smtp(), web.dns(), &unknown.address, &unknown.password, true).await;
     match found {
