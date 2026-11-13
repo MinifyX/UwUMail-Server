@@ -2042,7 +2042,15 @@ pub(crate) async fn receive(
                     smtp_delivered: true,
                     verification: verification.as_ref(),
                 };
-                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
+                // Nothing else keeps this message: a forward that reached nobody is retried, not lost.
+                if !forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await {
+                    temporary = true;
+                    failed.push(FailedRecipient {
+                        address: recipient.address.clone(),
+                        error: "451 4.3.0 Could not pass the message on".into(),
+                    });
+                    continue;
+                }
             }
             note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
             delivered += 1;

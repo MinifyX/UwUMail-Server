@@ -572,8 +572,15 @@ impl Smtp {
                                 smtp_delivered: false,
                                 verification: verification.get_or_init(find_verification).await.as_ref(),
                             };
-                            forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
-                            local_deliveries += 1;
+                            // Reached nobody: the sender hears about it instead of the mail vanishing.
+                            if forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await {
+                                local_deliveries += 1;
+                            } else {
+                                failed.push(FailedRecipient {
+                                    address: address.clone(),
+                                    error: format!("451 4.3.0 <{address}>: Could not pass the message on"),
+                                });
+                            }
                         }
                         None => failed.push(FailedRecipient {
                             address: address.clone(),
@@ -770,7 +777,10 @@ impl Smtp {
                 smtp_delivered: false,
                 verification,
             };
-            forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
+            // A forward that reached nobody keeps the copy here instead of losing the mail.
+            if !forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await {
+                plan.keep_copy = true;
+            }
         }
         if !plan.keep_copy {
             return Ok(());
