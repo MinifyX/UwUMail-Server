@@ -1,6 +1,6 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle, Card } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link2, RefreshCw, Trash2 } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -159,13 +159,13 @@ export function SubscribedListsCard({ admin }: { admin: boolean }) {
                   </span>
                 </span>
                 <IconButton
-                  icon={RefreshCw}
+                  icon={ICONS.refresh}
                   size="sm"
                   label={t("spam.words.refresh")}
                   onClick={() => refresh.mutate(source)}
                 />
                 <IconButton
-                  icon={Trash2}
+                  icon={ICONS.delete}
                   size="sm"
                   label={t("spam.words.unsubscribe")}
                   onClick={() => unsubscribe.mutate(source)}

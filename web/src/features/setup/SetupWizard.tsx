@@ -1,7 +1,7 @@
-import { Button, IconButton, Field, Segmented, TextInput, EmptyState } from "@uwusuite/design";
+import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, RefreshCw, Route } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene, type SceneName } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -169,7 +169,7 @@ function Nav({ onBack, onNext, nextLabel }: { onBack?: () => void; onNext: () =>
   return (
     <>
       {onBack ? (
-        <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+        <Button variant="ghost" icon={ICONS.back} onClick={onBack}>
           {t("setup.back")}
         </Button>
       ) : (
@@ -177,7 +177,7 @@ function Nav({ onBack, onNext, nextLabel }: { onBack?: () => void; onNext: () =>
       )}
       <Button variant="primary" size="lg" onClick={onNext}>
         {nextLabel ?? t("setup.next")}
-        <ArrowRight className="size-4" aria-hidden />
+        <Icon icon={ArrowRight} className="size-4" aria-hidden />
       </Button>
     </>
   );
@@ -228,7 +228,7 @@ function WelcomeStep({ hostname, onCode }: { hostname: string; onCode: (code: st
           <span className="text-[12px] text-faint">{t("setup.welcome.hostname", { hostname })}</span>
           <Button type="submit" variant="primary" size="lg" busy={verify.isPending} disabled={!code.trim()}>
             {t("setup.welcome.submit")}
-            <ArrowRight className="size-4" aria-hidden />
+            <Icon icon={ArrowRight} className="size-4" aria-hidden />
           </Button>
         </div>
       </form>
@@ -532,7 +532,7 @@ function AdminStep({
                 />
                 <IconButton
                   size="sm"
-                  icon={visible ? EyeOff : Eye}
+                  icon={visible ? ICONS.hide : ICONS.show}
                   label={visible ? t("common.hidePassword") : t("common.showPassword")}
                   className="absolute top-1/2 right-1.5 -translate-y-1/2"
                   onClick={() => setVisible((value) => !value)}
@@ -563,12 +563,12 @@ function AdminStep({
           </p>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+          <Button variant="ghost" icon={ICONS.back} onClick={onBack}>
             {codeGone ? t("setup.admin.newCode") : t("setup.back")}
           </Button>
           <Button type="submit" variant="primary" size="lg" busy={complete.isPending} disabled={missing > 0}>
             {t("setup.admin.submit")}
-            <ArrowRight className="size-4" aria-hidden />
+            <Icon icon={ArrowRight} className="size-4" aria-hidden />
           </Button>
         </div>
         {/* The other thing you can do here: this machine may be standing in for one that died. */}
@@ -610,7 +610,7 @@ function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void 
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <CheckedAt check={reach} />
-              <Button size="sm" icon={RefreshCw} onClick={() => run.mutate()}>
+              <Button size="sm" icon={ICONS.refresh} onClick={() => run.mutate()}>
                 {t("setup.reach.run")}
               </Button>
             </div>
@@ -618,7 +618,7 @@ function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void 
           </>
         )}
         <div className="flex flex-col gap-3">
-          <SubHeading icon={Route}>{t("setup.reach.wayTitle")}</SubHeading>
+          <SubHeading icon={ICONS.redirect}>{t("setup.reach.wayTitle")}</SubHeading>
           <Segmented<"direct" | "gateway">
             label={t("setup.reach.wayTitle")}
             value={way}
@@ -684,7 +684,7 @@ function DnsStep({
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[13px] text-muted">{t("setup.dns.hostnameNote", { hostname })}</p>
-            <Button size="sm" icon={RefreshCw} busy={check.isPending} onClick={() => check.mutate()}>
+            <Button size="sm" icon={ICONS.refresh} busy={check.isPending} onClick={() => check.mutate()}>
               {check.isPending ? t("setup.dns.checking") : t("setup.dns.check")}
             </Button>
           </div>
@@ -748,7 +748,7 @@ function SendingStep({ onBack, onNext }: { onBack: () => void; onNext: () => voi
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <CheckedAt check={check} />
-              <Button size="sm" icon={RefreshCw} onClick={() => run.mutate(false)}>
+              <Button size="sm" icon={ICONS.refresh} onClick={() => run.mutate(false)}>
                 {t("setup.sending.run")}
               </Button>
             </div>

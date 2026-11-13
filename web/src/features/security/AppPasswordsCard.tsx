@@ -1,5 +1,5 @@
-import { Button, Field, Select, TextInput, Toggle, Card } from "@uwusuite/design";
-import { KeySquare, Plus, Trash2 } from "lucide-react";
+import { Button, Field, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { KeySquare } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
@@ -158,7 +158,7 @@ export function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPass
     : t("security.appPasswords.neverUsed");
   return (
     <li className="flex items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-      <KeySquare className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+      <Icon icon={KeySquare} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-semibold">{appPassword.name}</span>
@@ -184,7 +184,7 @@ export function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPass
             ` · ${t("security.appPasswords.expires", { date: formatDate(appPassword.expiresAt, language) })}`}
         </span>
       </span>
-      <Button size="sm" variant="danger" icon={Trash2} onClick={onRevoke}>
+      <Button size="sm" variant="danger" icon={ICONS.delete} onClick={onRevoke}>
         {t("security.appPasswords.revoke")}
       </Button>
     </li>
@@ -234,7 +234,7 @@ export function AppPasswordsCard({
     <Card
       title={t("security.appPasswords.title")}
       aside={
-        <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+        <Button size="sm" icon={ICONS.add} onClick={() => setCreating(true)}>
           {t("security.appPasswords.new")}
         </Button>
       }
@@ -319,7 +319,7 @@ export function AppPasswordsCard({
             <Button onClick={() => setRevoking(null)}>{t("common.cancel")}</Button>
             <Button
               variant="danger"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={revoke.isPending}
               onClick={() =>
                 revoking &&

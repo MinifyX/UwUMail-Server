@@ -1,7 +1,7 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Segmented, TextInput, EmptyState, Pill } from "@uwusuite/design";
+import { Button, Segmented, TextInput, EmptyState, Pill, ICONS, Icon } from "@uwusuite/design";
 import clsx from "clsx";
-import { Pause, Play, Search } from "lucide-react";
+import { Pause } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogCategory, type LogLine } from "@/lib/api";
@@ -79,7 +79,8 @@ export function LogsPage() {
         />
         <label className="relative w-full sm:w-64">
           <span className="sr-only">{t("logs.search")}</span>
-          <Search
+          <Icon
+            icon={ICONS.search}
             className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint"
             aria-hidden
           />
@@ -91,7 +92,7 @@ export function LogsPage() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <Button className="sm:ml-auto" icon={live ? Pause : Play} onClick={() => setLive((value) => !value)}>
+        <Button className="sm:ml-auto" icon={live ? Pause : ICONS.start} onClick={() => setLive((value) => !value)}>
           {live ? t("logs.pause") : t("logs.resume")}
         </Button>
       </div>

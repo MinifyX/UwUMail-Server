@@ -1,5 +1,5 @@
-import { Button, Field, TextInput, Card } from "@uwusuite/design";
-import { History, LogOut, MonitorSmartphone } from "lucide-react";
+import { Button, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
+import { MonitorSmartphone } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -128,7 +128,7 @@ function SessionsCard({ security }: { security: SecurityView }) {
         others > 0 && (
           <Button
             size="sm"
-            icon={LogOut}
+            icon={ICONS.signOut}
             busy={endOthers.isPending}
             onClick={() =>
               endOthers.mutate(undefined, {
@@ -145,7 +145,7 @@ function SessionsCard({ security }: { security: SecurityView }) {
       <ul className="flex flex-col">
         {security.sessions.map((session) => (
           <li key={session.id} className="flex items-center gap-3 border-b border-hairline py-2.5 last:border-b-0">
-            <MonitorSmartphone className="size-4 shrink-0 text-muted" aria-hidden />
+            <Icon icon={MonitorSmartphone} className="size-4 shrink-0 text-muted" aria-hidden />
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
                 {describeDevice(session.userAgent, t)}
@@ -197,7 +197,7 @@ function ActivityCard({ security }: { security: SecurityView }) {
           <ul className="flex flex-col">
             {events.map((event) => (
               <li key={event.id} className="flex items-start gap-3 border-b border-hairline py-2.5 last:border-b-0">
-                <History className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+                <Icon icon={ICONS.history} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm">{text(event)}</span>
                   <span className="block text-[12px] text-muted">

@@ -1,4 +1,5 @@
-import { Ban, History, MailX, ScrollText, Send } from "lucide-react";
+import { ICONS } from "@uwusuite/design";
+import { MailX, ScrollText } from "lucide-react";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { LogPage } from "@/features/log/LogPage";
 import { useT } from "@/i18n";
@@ -16,7 +17,13 @@ export const PROTOCOLS_PATHS: Record<ProtocolsTab, string> = {
   sending: "/admin/logs/sending",
   shipping: "/admin/logs/shipping",
 };
-const ICONS = { live: ScrollText, changes: History, blocks: Ban, sending: MailX, shipping: Send };
+const KIND_ICONS = {
+  live: ScrollText,
+  changes: ICONS.history,
+  blocks: ICONS.block,
+  sending: MailX,
+  shipping: ICONS.send,
+};
 const INTROS: Record<ProtocolsTab, string> = {
   live: "logs.intro",
   changes: "log.intro",
@@ -36,7 +43,7 @@ export function ProtocolsPage({ tab = "live" }: { tab?: ProtocolsTab }) {
       tabs={(Object.keys(PROTOCOLS_PATHS) as ProtocolsTab[]).map((value) => ({
         value,
         to: PROTOCOLS_PATHS[value],
-        icon: ICONS[value],
+        icon: KIND_ICONS[value],
         label: t(`logs.tabs.${value}`),
       }))}
     >

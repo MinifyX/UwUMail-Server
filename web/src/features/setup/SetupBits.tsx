@@ -1,7 +1,7 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { CircleCheck, CircleHelp, CircleX, Cloud, Info, Mail, Send, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CircleX, Cloud } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -14,9 +14,9 @@ import { blocklistLines, ptrLines, receivingLines, sendingLines, type CheckLineD
 import { useCloudflare, useSendTestMail, useTestMailStatus } from "./queries";
 
 const LEVELS: Record<LineLevel, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "text-success-ink" },
-  unknown: { icon: CircleHelp, className: "text-muted" },
-  warning: { icon: TriangleAlert, className: "text-warning-ink" },
+  ok: { icon: ICONS.success, className: "text-success-ink" },
+  unknown: { icon: ICONS.help, className: "text-muted" },
+  warning: { icon: ICONS.warning, className: "text-warning-ink" },
   problem: { icon: CircleX, className: "text-danger-ink" },
 };
 
@@ -53,7 +53,7 @@ export function CheckLines({
               <p className="text-sm break-words">{t(`setup.lines.${entry.code}`, entry.params)}</p>
               {hint && (explain || entry.level === "problem") && <p className="text-[13px] text-muted">{hint}</p>}
               {entry.relay && onRelay && (
-                <Button size="sm" icon={Send} className="mt-1 self-start" onClick={onRelay}>
+                <Button size="sm" icon={ICONS.send} className="mt-1 self-start" onClick={onRelay}>
                   {t("setup.sending.relayButton")}
                 </Button>
               )}
@@ -104,7 +104,7 @@ export function DeliveryChecks({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
-        <SubHeading icon={Send}>{t("setup.sending.outTitle")}</SubHeading>
+        <SubHeading icon={ICONS.send}>{t("setup.sending.outTitle")}</SubHeading>
         <CheckLines lines={sending} explain={explain} onRelay={relayOpen ? undefined : () => setRelayOpen(true)} />
       </div>
       {relayOpen && (
@@ -117,11 +117,11 @@ export function DeliveryChecks({
         />
       )}
       <div className="flex flex-col gap-3">
-        <SubHeading icon={Mail}>{t("setup.sending.inTitle")}</SubHeading>
+        <SubHeading icon={ICONS.mail}>{t("setup.sending.inTitle")}</SubHeading>
         <CheckLines lines={receivingLines(check)} explain={explain} />
         {!check.upstream && (
           <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <SuiteIcon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
             {t("setup.sending.honest")}
           </p>
         )}
@@ -171,11 +171,11 @@ export function AddressChecks({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
-        <SubHeading icon={Info}>{t("setup.checks.ptrTitle")}</SubHeading>
+        <SubHeading icon={ICONS.info}>{t("setup.checks.ptrTitle")}</SubHeading>
         <CheckLines lines={ptrLines(check)} explain={explain} />
       </div>
       <div className="flex flex-col gap-3">
-        <SubHeading icon={ShieldCheck}>{t("setup.checks.blocklistsTitle")}</SubHeading>
+        <SubHeading icon={ICONS.securityCheck}>{t("setup.checks.blocklistsTitle")}</SubHeading>
         {explain && <p className="text-[13px] text-muted">{t("setup.checks.blocklistsBody")}</p>}
         <CheckLines lines={blocklistLines(check)} explain={explain} />
         <Button size="sm" busy={busy} className="self-start" onClick={onBlocklists}>
@@ -238,7 +238,7 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
-        <SubHeading icon={Mail}>{t("setup.testMail.ownTo", { login })}</SubHeading>
+        <SubHeading icon={ICONS.mail}>{t("setup.testMail.ownTo", { login })}</SubHeading>
         {sendOwn.data &&
           (ownArrived ? (
             <Result ok>{t("setup.testMail.arrived")}</Result>
@@ -254,7 +254,7 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
           ))}
         <Button
           variant={sendOwn.data ? "secondary" : "primary"}
-          icon={Send}
+          icon={ICONS.send}
           busy={sendOwn.isPending}
           className="self-start"
           onClick={() => sendOwn.mutate(null)}
@@ -264,7 +264,7 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
       </div>
 
       <form className="flex flex-col gap-3" onSubmit={submitExternal}>
-        <SubHeading icon={Send}>{t("setup.testMail.externalTitle")}</SubHeading>
+        <SubHeading icon={ICONS.send}>{t("setup.testMail.externalTitle")}</SubHeading>
         {explain && <p className="text-[13px] text-muted">{t("setup.testMail.externalBody")}</p>}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <Field label={t("setup.testMail.external")} className="flex-1">
@@ -279,7 +279,7 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
               />
             )}
           </Field>
-          <Button type="submit" icon={Send} busy={sendExternal.isPending} disabled={!address.trim()}>
+          <Button type="submit" icon={ICONS.send} busy={sendExternal.isPending} disabled={!address.trim()}>
             {t("setup.testMail.externalSend")}
           </Button>
         </div>

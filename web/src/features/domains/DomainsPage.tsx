@@ -1,6 +1,5 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton, Field, Segmented, TextInput, EmptyState } from "@uwusuite/design";
-import { Globe, Plus, X } from "lucide-react";
+import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
@@ -56,7 +55,7 @@ function CreateDomain({
     <form className="flex flex-col gap-4 px-6 pt-5 pb-6" onSubmit={submit}>
       <header className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-bold">{t("domains.create.title")}</h2>
-        <IconButton icon={X} label={t("common.close")} onClick={onCancel} />
+        <IconButton icon={ICONS.close} label={t("common.close")} onClick={onCancel} />
       </header>
       <Field
         label={t("domains.create.name")}
@@ -117,7 +116,7 @@ export function DomainsPage() {
   if (domains.isError) return <LoadError error={domains.error} onRetry={() => void domains.refetch()} />;
 
   const addButton = (
-    <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+    <Button variant="primary" icon={ICONS.add} onClick={() => setCreating(true)}>
       {t("domains.add")}
     </Button>
   );
@@ -147,7 +146,7 @@ export function DomainsPage() {
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-pink-tint text-pink-ink">
-                    <Globe className="size-[18px]" aria-hidden />
+                    <Icon icon={ICONS.website} className="size-[18px]" aria-hidden />
                   </span>
                   <span className="truncate font-semibold">{domain.name}</span>
                   {domain.kind === "masked" && <MaskedOnlyPill />}

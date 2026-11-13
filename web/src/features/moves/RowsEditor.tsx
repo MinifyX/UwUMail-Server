@@ -1,7 +1,7 @@
-import { Button, IconButton } from "@uwusuite/design";
+import { Button, IconButton, ICONS, Icon } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
 import clsx from "clsx";
-import { FileUp, Plus, Server, Trash2 } from "lucide-react";
+import { FileUp, Server } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { useT } from "@/i18n";
 import { api, type MoveCsvRead, type MoveRowProblem } from "@/lib/api";
@@ -72,7 +72,7 @@ function CsvImport({
             {t("moves.csv.read")}
           </Button>
           <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-line px-3 text-[13px] font-semibold hover:bg-elevated">
-            <FileUp className="size-4" aria-hidden />
+            <Icon icon={FileUp} className="size-4" aria-hidden />
             {t("moves.csv.file")}
             <input type="file" accept=".csv,.txt,text/csv,text/plain" className="sr-only" onChange={readFile} />
           </label>
@@ -193,7 +193,7 @@ export function RowsEditor({
                     />
                     {!single && (
                       <IconButton
-                        icon={Trash2}
+                        icon={ICONS.delete}
                         label={t("moves.rows.remove")}
                         onClick={() => {
                           const next = rows.filter((_, at) => at !== index);
@@ -243,7 +243,7 @@ export function RowsEditor({
       </div>
       {!single && (
         <>
-          <Button size="sm" icon={Plus} className="self-start" onClick={() => onChange([...rows, emptyRow()])}>
+          <Button size="sm" icon={ICONS.add} className="self-start" onClick={() => onChange([...rows, emptyRow()])}>
             {t("moves.rows.add")}
           </Button>
           <CsvImport domain={domain} rows={rows} onChange={onChange} />

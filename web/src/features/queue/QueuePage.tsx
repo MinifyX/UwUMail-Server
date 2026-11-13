@@ -1,8 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState } from "@uwusuite/design";
+import { Button, EmptyState, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { RotateCw, Trash2 } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
@@ -67,7 +67,7 @@ function Message({ message }: { message: QueuedMessage }) {
           <Button
             size="sm"
             variant="danger"
-            icon={Trash2}
+            icon={ICONS.delete}
             busy={drop.isPending}
             onClick={() => {
               if (window.confirm(t("queue.dropConfirm", { id: message.id }))) drop.mutate(message.id);

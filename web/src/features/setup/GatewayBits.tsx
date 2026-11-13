@@ -1,20 +1,6 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import clsx from "clsx";
-import {
-  BookOpen,
-  CircleCheck,
-  CircleHelp,
-  CirclePlus,
-  Cloud,
-  Download,
-  Globe,
-  Link2,
-  RefreshCw,
-  RotateCcw,
-  Server,
-  TriangleAlert,
-  Unplug,
-} from "lucide-react";
+import { BookOpen, CirclePlus, Cloud, Link2, Server } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
@@ -88,15 +74,21 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" icon={RefreshCw} disabled={running || updates === 0} onClick={() => ask("os-update")}>
+        <Button size="sm" icon={ICONS.refresh} disabled={running || updates === 0} onClick={() => ask("os-update")}>
           {t("setup.gateway.machine.installUpdates")}
         </Button>
         {view.softwareVersion && (
-          <Button size="sm" variant="primary" icon={Download} disabled={running} onClick={() => ask("gateway-update")}>
+          <Button
+            size="sm"
+            variant="primary"
+            icon={ICONS.download}
+            disabled={running}
+            onClick={() => ask("gateway-update")}
+          >
             {t("setup.gateway.machine.updateGateway", { version: view.softwareVersion })}
           </Button>
         )}
-        <Button size="sm" variant="danger" icon={RotateCcw} disabled={running} onClick={() => ask("reboot")}>
+        <Button size="sm" variant="danger" icon={ICONS.reset} disabled={running} onClick={() => ask("reboot")}>
           {t("setup.gateway.machine.restart")}
         </Button>
       </div>
@@ -111,11 +103,11 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
 }
 
 const CHANGE_ICONS = {
-  none: { icon: CircleCheck, className: "text-success-ink" },
+  none: { icon: ICONS.success, className: "text-success-ink" },
   create: { icon: CirclePlus, className: "text-pink-ink" },
   update: { icon: CirclePlus, className: "text-pink-ink" },
-  replace: { icon: TriangleAlert, className: "text-warning-ink" },
-  skip: { icon: CircleHelp, className: "text-muted" },
+  replace: { icon: ICONS.warning, className: "text-warning-ink" },
+  skip: { icon: ICONS.help, className: "text-muted" },
 } as const;
 
 /**
@@ -292,7 +284,7 @@ export function ReachabilityChecks({ reach, explain }: { reach: Reachability; ex
         {t(`setup.reach.recommend.${advice}`)}
       </p>
       <div className="flex flex-col gap-3">
-        <SubHeading icon={Globe}>{t("setup.reach.addressTitle")}</SubHeading>
+        <SubHeading icon={ICONS.website}>{t("setup.reach.addressTitle")}</SubHeading>
         <CheckLines lines={reachabilityLines(reach)} explain={explain} />
       </div>
       {sources.length > 0 && (
@@ -392,7 +384,7 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
               rel="noreferrer"
               className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-pink-ink hover:underline"
             >
-              <BookOpen className="size-4" aria-hidden />
+              <SuiteIcon icon={BookOpen} className="size-4" aria-hidden />
               {t("setup.reach.docs")}
             </a>
             <div className="flex gap-2">
@@ -408,7 +400,13 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
           <Button size="sm" icon={Link2} onClick={() => setAnother(true)}>
             {t("setup.gateway.pairOther")}
           </Button>
-          <Button size="sm" variant="danger" icon={Unplug} busy={forget.isPending} onClick={() => setForgetOpen(true)}>
+          <Button
+            size="sm"
+            variant="danger"
+            icon={ICONS.disconnect}
+            busy={forget.isPending}
+            onClick={() => setForgetOpen(true)}
+          >
             {t("setup.gateway.forget")}
           </Button>
         </div>
@@ -420,7 +418,7 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
           <p className="text-sm text-muted">{t("setup.gateway.forgetBody")}</p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setForgetOpen(false)}>{t("common.cancel")}</Button>
-            <Button variant="danger" icon={Unplug} onClick={() => void confirmForget()}>
+            <Button variant="danger" icon={ICONS.disconnect} onClick={() => void confirmForget()}>
               {t("setup.gateway.forgetConfirm")}
             </Button>
           </div>

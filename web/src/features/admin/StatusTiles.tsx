@@ -1,6 +1,7 @@
+import { ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowLeftRight, ChevronRight, DatabaseBackup, Download, History } from "lucide-react";
+import { ArrowLeftRight, DatabaseBackup } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { describe } from "@/features/log/LogPage";
 import { useUpdates } from "@/features/updates/queries";
@@ -50,7 +51,11 @@ function Tile({
           <Icon className="size-3.5" aria-hidden />
         </span>
         <span className="flex-1">{title}</span>
-        <ChevronRight className="size-4 text-faint transition-transform group-hover:translate-x-0.5" aria-hidden />
+        <SuiteIcon
+          icon={ICONS.next}
+          className="size-4 text-faint transition-transform group-hover:translate-x-0.5"
+          aria-hidden
+        />
       </span>
       <span className="flex items-start gap-2 text-sm font-semibold">
         <span className={clsx("mt-1.5 size-2.5 shrink-0 rounded-full", DOTS[tone])} aria-hidden />
@@ -136,7 +141,7 @@ function UpdatesTile() {
   if (!query.data) {
     // GitHub being away is no reason for a red tile; the tab says what went wrong.
     const text = query.isError ? t("admin.tiles.updates.unknown") : t("admin.tiles.loading");
-    return <Tile to="/admin/updates" icon={Download} title={title} tone="unknown" text={text} />;
+    return <Tile to="/admin/updates" icon={ICONS.download} title={title} tone="unknown" text={text} />;
   }
   const { build, info } = query.data;
   const edge = !build.release;
@@ -153,7 +158,7 @@ function UpdatesTile() {
   return (
     <Tile
       to="/admin/updates"
-      icon={Download}
+      icon={ICONS.download}
       title={title}
       tone={available ? "news" : machine?.rebootRequired ? "warning" : "ok"}
       text={
@@ -178,7 +183,7 @@ function ChangesTile() {
   return (
     <Tile
       to="/admin/logs/changes"
-      icon={History}
+      icon={ICONS.history}
       title={t("admin.tiles.changes.title")}
       tone={latest ? "ok" : "unknown"}
       text={latest ? describe(latest, t) : query.data ? t("admin.tiles.changes.none") : t("admin.tiles.loading")}

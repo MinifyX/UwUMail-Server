@@ -1,8 +1,7 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Field, Segmented, Select, TextInput, EmptyState, Card } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
@@ -256,7 +255,7 @@ export function SpamLogCard() {
               since: oldest ? formatDate(oldest, i18n.language) : "–",
             })}
           </p>
-          <Button size="sm" variant="danger" icon={Trash2} onClick={() => setClearing(true)}>
+          <Button size="sm" variant="danger" icon={ICONS.delete} onClick={() => setClearing(true)}>
             {t("spam.log.clear")}
           </Button>
         </div>

@@ -1,5 +1,4 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
-import { ArrowLeft, Fingerprint } from "lucide-react";
+import { Button, Field, TextInput, ICONS, Icon } from "@uwusuite/design";
 import { useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { useT } from "@/i18n";
@@ -64,7 +63,7 @@ export function SecondFactorStep({
             <Button
               variant={challenge.totp ? "secondary" : "primary"}
               size="lg"
-              icon={Fingerprint}
+              icon={ICONS.fingerprint}
               className="mt-5"
               busy={passkeyLogin.isPending}
               onClick={() => {
@@ -121,7 +120,7 @@ export function SecondFactorStep({
               className="inline-flex items-center gap-1 rounded-full font-semibold text-muted hover:text-ink"
               onClick={onRestart}
             >
-              <ArrowLeft className="size-3.5" aria-hidden />
+              <Icon icon={ICONS.back} className="size-3.5" aria-hidden />
               {t("secondFactor.back")}
             </button>
             {challenge.recoveryCodes && (challenge.totp || challenge.passkey) && (

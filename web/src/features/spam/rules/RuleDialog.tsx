@@ -1,6 +1,6 @@
-import { Button, Field, Segmented, Select, TextInput } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, ICONS, Icon } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import { Ban, Check, Hash, UserRound } from "lucide-react";
+import { Hash, UserRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
@@ -131,9 +131,9 @@ export function RuleDialog({
                 }`}
               >
                 {option === "block" ? (
-                  <Ban className="mt-0.5 size-4 shrink-0 text-danger-ink" aria-hidden />
+                  <Icon icon={ICONS.block} className="mt-0.5 size-4 shrink-0 text-danger-ink" aria-hidden />
                 ) : (
-                  <Check className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
+                  <Icon icon={ICONS.done} className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
                 )}
                 <span className="flex flex-col gap-0.5">
                   <span className="text-sm font-semibold">{t(`spam.rules.lists.${option}`)}</span>
@@ -238,12 +238,12 @@ export function RuleDialog({
         {rule && (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[12px] text-muted">
             <span className="inline-flex items-center gap-1">
-              <Hash className="size-3" aria-hidden />
+              <Icon icon={Hash} className="size-3" aria-hidden />
               {t("spam.rules.hits", { count: rule.hits })}
             </span>
             {rule.createdBy && (
               <span className="inline-flex items-center gap-1">
-                <UserRound className="size-3" aria-hidden />
+                <Icon icon={UserRound} className="size-3" aria-hidden />
                 {t("spam.rules.createdBy", { name: rule.createdBy })}
               </span>
             )}

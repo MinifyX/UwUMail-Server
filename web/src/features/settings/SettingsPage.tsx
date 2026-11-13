@@ -1,6 +1,5 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, Card } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Lock } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { SettingRow } from "@/components/ui/SettingRow";
@@ -17,7 +16,7 @@ export function LockedHint() {
   const { t } = useT();
   return (
     <span className="flex items-center gap-1 text-[12px] text-muted">
-      <Lock className="size-3" aria-hidden />
+      <Icon icon={ICONS.locked} className="size-3" aria-hidden />
       {t("settings.locked")}
     </span>
   );

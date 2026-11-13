@@ -1,5 +1,4 @@
-import { Button, Card } from "@uwusuite/design";
-import { Download, RefreshCw, RotateCcw } from "lucide-react";
+import { Button, Card, ICONS } from "@uwusuite/design";
 import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { formatDateTime } from "@/lib/format";
@@ -85,7 +84,7 @@ export function HostCard() {
 
         <div className="flex flex-wrap gap-2">
           <Button
-            icon={RefreshCw}
+            icon={ICONS.refresh}
             busy={ask.isPending}
             disabled={running || unknownSystem || machine.updates === 0}
             onClick={() => ask.mutate("os-update")}
@@ -93,11 +92,11 @@ export function HostCard() {
             {t("host.installUpdates")}
           </Button>
           {outdated && selfUpdate && (
-            <Button icon={Download} disabled={running} onClick={() => ask.mutate("helper-update")}>
+            <Button icon={ICONS.download} disabled={running} onClick={() => ask.mutate("helper-update")}>
               {t("host.updateHelper")}
             </Button>
           )}
-          <Button icon={RotateCcw} variant="danger" disabled={running} onClick={() => ask.mutate("reboot")}>
+          <Button icon={ICONS.reset} variant="danger" disabled={running} onClick={() => ask.mutate("reboot")}>
             {t("host.restart")}
           </Button>
         </div>

@@ -1,5 +1,5 @@
+import { ICONS, Icon } from "@uwusuite/design";
 import clsx from "clsx";
-import { Mail } from "lucide-react";
 import type { NyuMood } from "@uwusuite/design";
 import { Nyu } from "@/components/nyu/Nyu";
 import { DEFAULT_BRAND, useBrand } from "@/state/brand";
@@ -34,7 +34,8 @@ export function LogoSymbol({ className, title, mood, hop = 0, mascot: override }
   }
   if (!mascot) {
     return (
-      <Mail
+      <Icon
+        icon={ICONS.mail}
         key={hop}
         className={clsx("text-pink", hop > 0 && "nyu-logo-hop origin-bottom", className)}
         strokeWidth={2.2}

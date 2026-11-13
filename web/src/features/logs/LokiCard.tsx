@@ -1,6 +1,5 @@
-import { Button, Field, Segmented, TextInput } from "@uwusuite/design";
+import { Button, Field, Segmented, TextInput, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { ChoiceField, LockedHint, Section, TextField, ToggleField, type Form } from "@/features/settings/SettingsPage";
@@ -109,7 +108,7 @@ function LokiFields({ form }: { form: Form }) {
       {enabled && (
         <div className="flex flex-col gap-3 rounded-control bg-warning-tint px-4 py-3">
           <p className="flex items-center gap-2 text-sm font-semibold">
-            <ShieldAlert className="size-4 text-warning-ink" aria-hidden />
+            <Icon icon={ICONS.spam} className="size-4 text-warning-ink" aria-hidden />
             {t("logs.loki.privacyTitle")}
           </p>
           <p className="text-[13px] text-muted">{t("logs.loki.privacyText")}</p>

@@ -1,6 +1,5 @@
-import { Button, IconButton, Field, TextInput, EmptyState } from "@uwusuite/design";
+import { Button, IconButton, Field, TextInput, EmptyState, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -121,7 +120,7 @@ export function PasswordPage({ token }: { token: string }) {
               />
               <IconButton
                 size="sm"
-                icon={visible ? EyeOff : Eye}
+                icon={visible ? ICONS.hide : ICONS.show}
                 label={visible ? t("common.hidePassword") : t("common.showPassword")}
                 className="absolute top-1/2 right-1.5 -translate-y-1/2"
                 onClick={() => setVisible((value) => !value)}

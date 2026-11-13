@@ -1,7 +1,7 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Field, TextInput, EmptyState, Card } from "@uwusuite/design";
+import { Button, Field, TextInput, EmptyState, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarDays, CheckCircle2, Pause, Play, RefreshCw, Truck } from "lucide-react";
+import { Pause, Truck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -181,7 +181,7 @@ function StateLine({ job }: { job: MoveJob }) {
   if (job.state === "paused") {
     return (
       <p className="flex items-start gap-1.5 text-[13px] text-warning-ink">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <Icon icon={ICONS.warning} className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
           {t(`moving.errors.${job.error || "failed"}`, { defaultValue: t("moving.errors.failed") })}
           {job.errorDetail && job.error !== "stopped" && (
@@ -194,7 +194,7 @@ function StateLine({ job }: { job: MoveJob }) {
   if (job.state === "done") {
     return (
       <p className="flex items-center gap-1.5 text-[13px] text-success-ink">
-        <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
+        <Icon icon={ICONS.success} className="size-3.5 shrink-0" aria-hidden />
         {job.finishedAt
           ? t("moving.job.doneAt", { date: formatDateTime(job.finishedAt, i18n.language) })
           : t("moving.job.done")}
@@ -296,7 +296,7 @@ function JobCard({ job }: { job: MoveJob }) {
           )}
           {job.state === "paused" && (
             <Button
-              icon={Play}
+              icon={ICONS.start}
               busy={sync.isPending}
               disabled={passwordRefused && !password}
               onClick={() => sync.mutate()}
@@ -305,13 +305,13 @@ function JobCard({ job }: { job: MoveJob }) {
             </Button>
           )}
           {job.state === "done" && (
-            <Button icon={RefreshCw} busy={sync.isPending} onClick={() => sync.mutate()}>
+            <Button icon={ICONS.refresh} busy={sync.isPending} onClick={() => sync.mutate()}>
               {t("moving.actions.syncAgain")}
             </Button>
           )}
           <Button
             variant={job.state === "done" ? "primary" : "ghost"}
-            icon={CheckCircle2}
+            icon={ICONS.success}
             busy={finish.isPending}
             onClick={() => {
               if (window.confirm(t("moving.actions.finishConfirm", { address: job.address }))) finish.mutate();
@@ -365,7 +365,7 @@ export function MovingPage() {
           <p>{t("moving.about.switch")}</p>
           <p>{t("moving.about.password")}</p>
           <p className="flex items-start gap-2">
-            <CalendarDays className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Icon icon={ICONS.calendar} className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
               {t("moving.about.calendars")}{" "}
               <Link to="/account/calendars" className="font-semibold text-pink-ink hover:underline">

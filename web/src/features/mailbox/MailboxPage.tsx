@@ -1,6 +1,6 @@
-import { Button, Field, TextInput, Toggle, Card } from "@uwusuite/design";
+import { Button, Field, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock, Plus, TreePalm, Trash2 } from "lucide-react";
+import { Clock, TreePalm } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -70,9 +70,9 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
             {forwarding.targets.map((target) => (
               <li key={target.id} className="flex items-center gap-3 border-b border-hairline py-2.5 last:border-b-0">
                 {target.confirmedAt ? (
-                  <CheckCircle2 className="size-4 shrink-0 text-success-ink" aria-hidden />
+                  <Icon icon={ICONS.success} className="size-4 shrink-0 text-success-ink" aria-hidden />
                 ) : (
-                  <Clock className="size-4 shrink-0 text-warning-ink" aria-hidden />
+                  <Icon icon={Clock} className="size-4 shrink-0 text-warning-ink" aria-hidden />
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{target.address}</span>
@@ -87,7 +87,7 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
                 <Button
                   size="sm"
                   variant="danger"
-                  icon={Trash2}
+                  icon={ICONS.delete}
                   busy={remove.isPending && remove.variables === target.id}
                   onClick={() => remove.mutate(target.id)}
                 >
@@ -118,7 +118,7 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
                 />
               )}
             </Field>
-            <Button type="submit" icon={Plus} busy={add.isPending} className="sm:mt-[26px]">
+            <Button type="submit" icon={ICONS.add} busy={add.isPending} className="sm:mt-[26px]">
               {t("mailbox.forwarding.add")}
             </Button>
           </form>
@@ -252,7 +252,7 @@ export function MailboxPage() {
         <Card
           title={
             <span className="flex items-center gap-2">
-              <TreePalm className="size-4 text-muted" aria-hidden />
+              <Icon icon={TreePalm} className="size-4 text-muted" aria-hidden />
               {t("mailbox.vacation.title")}
             </span>
           }

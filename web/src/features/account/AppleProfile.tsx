@@ -1,6 +1,5 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, ICONS } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Smartphone } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { securityKey } from "@/features/security/queries";
@@ -65,7 +64,7 @@ export function AppleProfile() {
               />
             )}
           </Field>
-          <Button type="submit" icon={Smartphone} busy={create.isPending} disabled={!device.trim()}>
+          <Button type="submit" icon={ICONS.device} busy={create.isPending} disabled={!device.trim()}>
             {t("account.apps.appleButton")}
           </Button>
         </div>

@@ -1,7 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, Card } from "@uwusuite/design";
+import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LockOpen } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type AbuseReport, type SendingSuspension, type SendingSuspensions } from "@/lib/api";
@@ -35,7 +34,7 @@ function SuspensionRow({ suspension, now }: { suspension: SendingSuspension; now
           {t("logs.sending.remaining", { duration: formatDuration(Math.max(0, suspension.until - now), t) })}
         </p>
       </div>
-      <Button size="sm" icon={LockOpen} busy={lift.isPending} onClick={() => lift.mutate()}>
+      <Button size="sm" icon={ICONS.unlocked} busy={lift.isPending} onClick={() => lift.mutate()}>
         {t("logs.sending.lift")}
       </Button>
     </li>

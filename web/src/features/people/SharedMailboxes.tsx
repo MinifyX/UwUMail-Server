@@ -1,5 +1,5 @@
-import { Button, Field, Select, TextInput, Card } from "@uwusuite/design";
-import { Bot, Inbox, Plus, Save } from "lucide-react";
+import { Button, Field, Select, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
+import { Bot, Inbox } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
@@ -119,7 +119,7 @@ function CreateSharedMailboxDialog({ open, onClose }: { open: boolean; onClose: 
         </Field>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button type="submit" variant="primary" icon={Plus} busy={create.isPending} disabled={!local.trim()}>
+          <Button type="submit" variant="primary" icon={ICONS.add} busy={create.isPending} disabled={!local.trim()}>
             {t("sharedMailboxes.create")}
           </Button>
         </div>
@@ -138,7 +138,7 @@ export function SharedMailboxesSection({ people }: { people: Person[] }) {
     <Card
       title={t("sharedMailboxes.title")}
       aside={
-        <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+        <Button size="sm" icon={ICONS.add} onClick={() => setCreating(true)}>
           {t("sharedMailboxes.create")}
         </Button>
       }
@@ -185,7 +185,7 @@ export function SharedMembersCard({ person }: { person: Person }) {
     <Card title={t("sharedMailboxes.members")}>
       <div className="flex flex-col gap-3">
         <p className="-mt-1 flex gap-2 text-[13px] text-muted">
-          <Inbox className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={Inbox} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("sharedMailboxes.membersIntro")}
         </p>
         <MemberPicker
@@ -195,7 +195,7 @@ export function SharedMembersCard({ person }: { person: Person }) {
           sendLabel={t("sharedMailboxes.maySend")}
         />
         <div className="flex justify-end">
-          <Button variant="primary" icon={Save} busy={save.isPending} onClick={() => save.mutate(members)}>
+          <Button variant="primary" icon={ICONS.save} busy={save.isPending} onClick={() => save.mutate(members)}>
             {t("sharedMailboxes.save")}
           </Button>
         </div>

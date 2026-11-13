@@ -1,7 +1,7 @@
-import { Button, Field, Select, Toggle, Card } from "@uwusuite/design";
+import { Button, Field, Select, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Image, ImageUp, Trash2, UserRound } from "lucide-react";
+import { Image, ImageUp, UserRound } from "lucide-react";
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
@@ -181,9 +181,9 @@ function Current({ picture, round, label }: { picture: PictureFile | null; round
       {picture ? (
         <img src={picture.url} alt={label} className="size-full object-cover" />
       ) : round ? (
-        <UserRound className="size-9" aria-hidden />
+        <Icon icon={UserRound} className="size-9" aria-hidden />
       ) : (
-        <Image className="size-9" aria-hidden />
+        <Icon icon={Image} className="size-9" aria-hidden />
       )}
     </span>
   );
@@ -245,7 +245,7 @@ function PictureButtons({
         {t(picture ? "pictures.replace" : "pictures.upload")}
       </Button>
       {picture && (
-        <Button variant="ghost" icon={Trash2} busy={remove.isPending} onClick={() => remove.mutate()}>
+        <Button variant="ghost" icon={ICONS.delete} busy={remove.isPending} onClick={() => remove.mutate()}>
           {t("pictures.remove")}
         </Button>
       )}

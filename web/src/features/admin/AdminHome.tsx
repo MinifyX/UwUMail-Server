@@ -1,6 +1,6 @@
-import { Segmented, Card } from "@uwusuite/design";
+import { Segmented, Card, ICONS } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { AtSign, Globe, HardDrive, Send, ShieldCheck, Users } from "lucide-react";
+import { AtSign } from "lucide-react";
 import { KeyValue } from "@/components/ui/Page";
 import { StatTile } from "@/components/ui/StatTile";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -76,23 +76,23 @@ function FullHome() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatTile
-          icon={Users}
+          icon={ICONS.people}
           label={t("admin.cards.accounts")}
           value={counts.accounts}
           note={
             counts.disabledAccounts > 0 ? t("admin.accountsDisabled", { count: counts.disabledAccounts }) : undefined
           }
         />
-        <StatTile icon={Globe} label={t("admin.cards.domains")} value={counts.domains} />
+        <StatTile icon={ICONS.website} label={t("admin.cards.domains")} value={counts.domains} />
         <StatTile icon={AtSign} label={t("admin.cards.aliases")} value={counts.aliases} />
         <StatTile
-          icon={Send}
+          icon={ICONS.send}
           label={t("admin.cards.queue")}
           value={counts.queuedMessages}
           tone={counts.deferredRecipients > 0 ? "warning" : "normal"}
         />
-        <StatTile icon={HardDrive} label={t("admin.cards.storage")} value={formatBytes(counts.usedBytes, language)} />
-        <StatTile icon={ShieldCheck} label={t("admin.cards.admins")} value={counts.admins} />
+        <StatTile icon={ICONS.drive} label={t("admin.cards.storage")} value={formatBytes(counts.usedBytes, language)} />
+        <StatTile icon={ICONS.securityCheck} label={t("admin.cards.admins")} value={counts.admins} />
       </div>
 
       <Card title={t("admin.server.title")}>

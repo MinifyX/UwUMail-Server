@@ -1,7 +1,6 @@
-import { Button, Segmented, Card } from "@uwusuite/design";
+import { Button, Segmented, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { BellRing, Check, ChevronRight, Info } from "lucide-react";
 import { LoadError } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type AdminAlert, type AlertLevel, type AlertsView, type HealthLevel } from "@/lib/api";
@@ -82,14 +81,14 @@ function AlertRow({ alert }: { alert: AdminAlert }) {
             className="mt-1 inline-flex items-center gap-0.5 text-[13px] font-semibold text-pink-ink hover:underline"
           >
             {t("health.open")}
-            <ChevronRight className="size-3.5" aria-hidden />
+            <Icon icon={ICONS.next} className="size-3.5" aria-hidden />
           </Link>
         )}
       </div>
       {!resolved && alert.level !== "info" && !alert.acknowledgedAt && (
         <Button
           size="sm"
-          icon={Check}
+          icon={ICONS.done}
           busy={acknowledge.isPending}
           title={t("alerts.acknowledgeHint")}
           onClick={() => acknowledge.mutate()}
@@ -129,7 +128,7 @@ export function AlertsCard() {
     <Card
       title={
         <span className="flex items-center gap-2">
-          <BellRing className="size-4 text-pink-ink" aria-hidden />
+          <Icon icon={ICONS.reminder} className="size-4 text-pink-ink" aria-hidden />
           {t("alerts.title")}
         </span>
       }
@@ -144,7 +143,7 @@ export function AlertsCard() {
           )
         ) : data.open.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted">
-            <Info className="size-4" aria-hidden />
+            <Icon icon={ICONS.info} className="size-4" aria-hidden />
             {t("alerts.none")}
           </p>
         ) : (

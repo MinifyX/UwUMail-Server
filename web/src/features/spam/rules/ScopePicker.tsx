@@ -1,6 +1,7 @@
+import { ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Check, ChevronDown, Globe, Search, Server, User, Users } from "lucide-react";
+import { Server, User, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "@/i18n";
 import { api, type RuleScopeCount } from "@/lib/api";
@@ -62,7 +63,7 @@ export function ScopePicker({
     setOpen(false);
     setSearch("");
   };
-  const option = (key: string, text: string, icon: typeof Globe, count?: number) => {
+  const option = (key: string, text: string, icon: LucideIcon, count?: number) => {
     const Icon = icon;
     const active = key === value || (key === "all" && value === "");
     return (
@@ -82,7 +83,7 @@ export function ScopePicker({
           {count !== undefined && (
             <span className="text-[12px] text-muted tabular-nums">{formatNumber(count, i18n.language)}</span>
           )}
-          {active && <Check className="size-3.5 text-pink-ink" aria-hidden />}
+          {active && <SuiteIcon icon={ICONS.done} className="size-3.5 text-pink-ink" aria-hidden />}
         </button>
       </li>
     );
@@ -100,12 +101,12 @@ export function ScopePicker({
         className="flex h-10 w-full items-center gap-2 rounded-control border border-line bg-surface px-3 text-left text-sm hover:border-faint/60 focus:border-pink focus:shadow-focus focus:outline-none"
       >
         <span className="min-w-0 flex-1 truncate">{scopeText(value, t)}</span>
-        <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden />
+        <SuiteIcon icon={ICONS.expand} className="size-4 shrink-0 text-muted" aria-hidden />
       </button>
       {open && (
         <div className="absolute z-30 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-menu border border-line bg-surface p-2 shadow-float">
           <label className="mb-1 flex items-center gap-2 rounded-control border border-line px-2.5">
-            <Search className="size-3.5 text-muted" aria-hidden />
+            <SuiteIcon icon={ICONS.search} className="size-3.5 text-muted" aria-hidden />
             <input
               autoFocus
               value={search}
@@ -116,17 +117,17 @@ export function ScopePicker({
             />
           </label>
           <ul id={listId} role="listbox" aria-label={label} className="max-h-80 overflow-y-auto">
-            {filter && !search && option("all", t("spam.rules.scope.all"), Search)}
+            {filter && !search && option("all", t("spam.rules.scope.all"), ICONS.search)}
             {!search && option("server", t("spam.rules.scope.server"), Server, server?.count)}
-            {filter && !search && option("domains", t("spam.rules.scope.domains"), Globe)}
-            {filter && !search && option("accounts", t("spam.rules.scope.accounts"), Users)}
+            {filter && !search && option("domains", t("spam.rules.scope.domains"), ICONS.website)}
+            {filter && !search && option("accounts", t("spam.rules.scope.accounts"), ICONS.people)}
             {domains.length > 0 && (
               <li className="px-2.5 pt-2 pb-1 text-[11px] font-bold tracking-wide text-muted uppercase">
                 {t("spam.rules.scope.domainsTitle")}
               </li>
             )}
             {domains.map((scope) =>
-              option(scope.key, scope.scope.type === "domain" ? scope.scope.name : "", Globe, scope.count),
+              option(scope.key, scope.scope.type === "domain" ? scope.scope.name : "", ICONS.website, scope.count),
             )}
             {people.length > 0 && (
               <li className="px-2.5 pt-2 pb-1 text-[11px] font-bold tracking-wide text-muted uppercase">

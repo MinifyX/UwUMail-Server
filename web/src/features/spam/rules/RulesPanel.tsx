@@ -1,24 +1,7 @@
-import { Button, IconButton, Field, Select, Card, Pill } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, Card, Pill, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import {
-  ArrowDownUp,
-  Ban,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Download,
-  FolderInput,
-  Hash,
-  Pencil,
-  Plus,
-  Search,
-  SlidersHorizontal,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import { ArrowDownUp, Clock, FolderInput, Hash } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LoadError } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
@@ -120,7 +103,7 @@ function ListBadge({ list }: { list: RuleListName }) {
     allow: "bg-success-tint text-success-ink",
     points: "bg-warning-tint text-warning-ink",
   };
-  const Icon = list === "block" ? Ban : list === "allow" ? Check : Hash;
+  const Icon = list === "block" ? ICONS.block : list === "allow" ? ICONS.done : Hash;
   return (
     <span
       className={clsx(
@@ -276,7 +259,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" icon={Upload} onClick={() => setImporting(true)}>
+            <Button size="sm" icon={ICONS.upload} onClick={() => setImporting(true)}>
               {t("spam.rules.import.button")}
             </Button>
             <a
@@ -284,13 +267,13 @@ export function RulesPanel({ admin }: { admin: boolean }) {
               download
               className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-[13px] font-semibold hover:bg-elevated"
             >
-              <Download className="size-4" aria-hidden />
+              <SuiteIcon icon={ICONS.download} className="size-4" aria-hidden />
               {t("spam.rules.export")}
             </a>
             <Button
               size="sm"
               variant="primary"
-              icon={Plus}
+              icon={ICONS.add}
               onClick={() =>
                 setCreating({
                   scope: defaultScope,
@@ -308,7 +291,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
         <div className="flex flex-col gap-3 rounded-[14px] bg-canvas p-3">
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex h-10 min-w-0 flex-1 basis-60 items-center gap-2 rounded-control border border-line bg-surface px-3 focus-within:border-pink focus-within:shadow-focus">
-              <Search className="size-4 text-muted" aria-hidden />
+              <SuiteIcon icon={ICONS.search} className="size-4 text-muted" aria-hidden />
               <input
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
@@ -318,7 +301,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
               />
               {searchText && (
                 <button type="button" aria-label={t("spam.rules.clearSearch")} onClick={() => setSearchText("")}>
-                  <X className="size-4 text-muted" aria-hidden />
+                  <SuiteIcon icon={ICONS.close} className="size-4 text-muted" aria-hidden />
                 </button>
               )}
             </label>
@@ -334,7 +317,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
             <Button
               size="sm"
               variant={moreFilters ? "secondary" : "ghost"}
-              icon={SlidersHorizontal}
+              icon={ICONS.adjust}
               aria-expanded={moreFilters}
               onClick={() => setMoreFilters((current) => !current)}
             >
@@ -450,7 +433,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
               <>
                 <Button
                   size="sm"
-                  icon={Check}
+                  icon={ICONS.done}
                   onClick={() => bulkChange.mutate({ action: "allow" })}
                   busy={bulkChange.isPending}
                 >
@@ -458,7 +441,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                 </Button>
                 <Button
                   size="sm"
-                  icon={Ban}
+                  icon={ICONS.block}
                   onClick={() => bulkChange.mutate({ action: "block" })}
                   busy={bulkChange.isPending}
                 >
@@ -474,10 +457,15 @@ export function RulesPanel({ admin }: { admin: boolean }) {
             <Button size="sm" icon={Clock} onClick={() => setBulk("expiry")}>
               {t("spam.rules.bulk.expiry")}
             </Button>
-            <Button size="sm" variant="danger" icon={Trash2} onClick={() => setBulk("delete")}>
+            <Button size="sm" variant="danger" icon={ICONS.delete} onClick={() => setBulk("delete")}>
               {t("spam.rules.bulk.delete")}
             </Button>
-            <IconButton icon={X} size="sm" label={t("spam.rules.bulk.clear")} onClick={() => setSelected(new Map())} />
+            <IconButton
+              icon={ICONS.close}
+              size="sm"
+              label={t("spam.rules.bulk.clear")}
+              onClick={() => setSelected(new Map())}
+            />
           </div>
         )}
 
@@ -497,7 +485,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
               {filtered ? t("spam.rules.emptyFilteredHint") : t("spam.rules.emptyHint")}
             </p>
             {!filtered && (
-              <Button variant="primary" icon={Plus} onClick={() => setCreating({ scope: defaultScope })}>
+              <Button variant="primary" icon={ICONS.add} onClick={() => setCreating({ scope: defaultScope })}>
                 {t("spam.rules.add")}
               </Button>
             )}
@@ -613,7 +601,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                               )}
                               title={formatDate(rule.expiresAt, language)}
                             >
-                              <Clock className="size-3" aria-hidden />
+                              <SuiteIcon icon={Clock} className="size-3" aria-hidden />
                               {formatRelative(rule.expiresAt, language)}
                             </span>
                           )}
@@ -621,13 +609,13 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                         <td className="border-b border-hairline py-2 max-sm:ml-auto max-sm:border-0 max-sm:py-0">
                           <span className="flex justify-end gap-0.5">
                             <IconButton
-                              icon={Pencil}
+                              icon={ICONS.edit}
                               size="sm"
                               label={t("spam.rules.edit", { value: rule.value })}
                               onClick={() => setEditing(rule)}
                             />
                             <IconButton
-                              icon={Trash2}
+                              icon={ICONS.delete}
                               size="sm"
                               label={t("spam.rules.remove", { value: rule.value })}
                               onClick={() => remove.mutate(rule)}
@@ -679,14 +667,14 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                       </span>
                       {rule.expiresAt !== null && (
                         <span className="inline-flex items-center gap-1">
-                          <Clock className="size-3" aria-hidden />
+                          <SuiteIcon icon={Clock} className="size-3" aria-hidden />
                           {formatRelative(rule.expiresAt, language)}
                         </span>
                       )}
                     </div>
                   </div>
                   <IconButton
-                    icon={Trash2}
+                    icon={ICONS.delete}
                     size="sm"
                     label={t("spam.rules.remove", { value: rule.value })}
                     onClick={() => remove.mutate(rule)}
@@ -723,14 +711,14 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                 </Select>
               </label>
               <IconButton
-                icon={ChevronLeft}
+                icon={ICONS.previous}
                 label={t("spam.rules.previous")}
                 disabled={filters.page === 0}
                 onClick={() => update({ page: filters.page - 1 }, true)}
               />
               <span className="tabular-nums">{t("spam.rules.pageOf", { page: filters.page + 1, pages })}</span>
               <IconButton
-                icon={ChevronRight}
+                icon={ICONS.next}
                 label={t("spam.rules.next")}
                 disabled={filters.page + 1 >= pages}
                 onClick={() => update({ page: filters.page + 1 }, true)}
@@ -827,7 +815,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
             <Button onClick={() => setBulk(null)}>{t("common.cancel")}</Button>
             <Button
               variant="danger"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={bulkChange.isPending}
               onClick={() => bulkChange.mutate({ action: "delete" })}
             >

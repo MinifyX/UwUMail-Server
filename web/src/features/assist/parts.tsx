@@ -1,6 +1,5 @@
-import { Select, TextInput } from "@uwusuite/design";
+import { Select, TextInput, ICONS, Icon } from "@uwusuite/design";
 import clsx from "clsx";
-import { AlertTriangle, FlaskConical, X } from "lucide-react";
 import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useT } from "@/i18n";
 import { formatNumber } from "@/lib/format";
@@ -22,7 +21,7 @@ export function ExperimentalBadge() {
   const { t } = useT();
   return (
     <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning-tint px-2 text-[11px] font-bold tracking-wide text-warning-ink uppercase">
-      <FlaskConical className="size-3" aria-hidden />
+      <Icon icon={ICONS.experimental} className="size-3" aria-hidden />
       {t("assist.experimental")}
     </span>
   );
@@ -64,7 +63,7 @@ export function Notice({
         tone === "info" && "bg-canvas text-muted",
       )}
     >
-      {tone !== "info" && <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />}
+      {tone !== "info" && <Icon icon={ICONS.warning} className="mt-0.5 size-4 shrink-0" aria-hidden />}
       <div className="flex min-w-0 flex-col gap-1">
         {title && <p className="font-bold">{title}</p>}
         <div className="flex flex-col gap-1">{children}</div>
@@ -205,7 +204,7 @@ export function ChipInput({
                 title={t("assist.chips.remove", { value })}
                 onClick={() => onChange(values.filter((other) => other !== value))}
               >
-                <X className="size-3.5" aria-hidden />
+                <Icon icon={ICONS.close} className="size-3.5" aria-hidden />
               </button>
             </li>
           ))}

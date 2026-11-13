@@ -1,6 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, Card } from "@uwusuite/design";
-import { Globe, Inbox, Plus, Truck } from "lucide-react";
+import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
+import { Inbox, Truck } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import type { MoveInfo } from "@/lib/api";
@@ -13,7 +13,7 @@ import { useMoves } from "./queries";
 function MoveRowCard({ move }: { move: MoveInfo }) {
   const { t, i18n } = useT();
   const { summary } = move;
-  const Icon = move.kind === "domain" ? Globe : Inbox;
+  const Icon = move.kind === "domain" ? ICONS.website : Inbox;
   return (
     <Link
       to={moveUrl(move.id)}
@@ -57,7 +57,7 @@ export function MovesPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
-        <Button variant="primary" icon={Plus} onClick={() => navigate(newMovePath)}>
+        <Button variant="primary" icon={ICONS.add} onClick={() => navigate(newMovePath)}>
           {t("moves.list.new")}
         </Button>
       </div>

@@ -1,5 +1,4 @@
-import { Button } from "@uwusuite/design";
-import { CheckCircle2, ExternalLink, LogIn } from "lucide-react";
+import { Button, ICONS, Icon } from "@uwusuite/design";
 import { useEffect, useEffectEvent, useReducer } from "react";
 import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
@@ -94,7 +93,7 @@ export function ChatgptLogin({
             rel="noopener noreferrer"
             className="inline-flex h-10 items-center gap-2 rounded-full bg-pink-solid px-4 text-sm font-semibold text-on-pink hover:bg-pink-solid-hover"
           >
-            <ExternalLink className="size-4" aria-hidden />
+            <Icon icon={ICONS.openExternal} className="size-4" aria-hidden />
             {t("assist.chatgpt.open")}
           </a>
         </div>
@@ -129,7 +128,7 @@ export function ChatgptLogin({
     <div className="flex flex-col gap-2">
       {done && (
         <p role="status" className="flex items-center gap-2 text-[13px] font-semibold text-success-ink">
-          <CheckCircle2 className="size-4" aria-hidden />
+          <Icon icon={ICONS.success} className="size-4" aria-hidden />
           {t("assist.chatgpt.connected")}
         </p>
       )}
@@ -143,7 +142,7 @@ export function ChatgptLogin({
       )}
       <div>
         <Button
-          icon={LogIn}
+          icon={ICONS.signIn}
           variant={done ? "secondary" : "primary"}
           busy={state.phase === "starting"}
           onClick={() => void start()}

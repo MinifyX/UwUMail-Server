@@ -1,29 +1,15 @@
-import { IconButton, Menu, Tag } from "@uwusuite/design";
+import { IconButton, Menu, Tag, ICONS, Icon } from "@uwusuite/design";
 import clsx from "clsx";
 import {
   AtSign,
-  EyeOff,
-  CalendarDays,
   ChevronsUpDown,
   CircleFadingArrowUp,
-  Download,
-  Ellipsis,
-  Forward,
   Inbox,
-  KeyRound,
   ScrollText,
-  Send,
-  Settings,
-  LayoutDashboard,
-  LogOut,
   MailWarning,
   Palette,
   ShieldBan,
-  Sparkles,
-  ShieldCheck,
   Truck,
-  Users,
-  X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -172,27 +158,27 @@ function useNavigation(session: Session) {
     {
       title: t("nav.groups.account"),
       items: [
-        { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+        { to: "/account", label: t("nav.overview"), icon: ICONS.overview },
         { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
-        { to: "/account/masked", label: t("nav.masked"), icon: EyeOff },
-        { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
+        { to: "/account/masked", label: t("nav.masked"), icon: ICONS.hide },
+        { to: "/account/security", label: t("nav.security"), icon: ICONS.securityCheck },
       ],
     },
     {
       title: t("nav.groups.mail"),
       items: [
-        { to: "/account/mail", label: t("nav.mail"), icon: Forward },
+        { to: "/account/mail", label: t("nav.mail"), icon: ICONS.forward },
         { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
-        { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
+        { to: "/account/fetch", label: t("nav.fetch"), icon: ICONS.download },
         { to: "/account/moving", label: t("nav.moving"), icon: Truck },
-        { to: "/account/codes", label: t("nav.codes"), icon: KeyRound, newSince: "0.26.0" },
+        { to: "/account/codes", label: t("nav.codes"), icon: ICONS.secret, newSince: "0.26.0" },
       ],
     },
     {
       title: t("nav.groups.extras"),
       items: [
-        { to: "/account/calendars", label: t("nav.calendars"), icon: CalendarDays },
-        { to: "/account/assist", label: t("nav.assist"), icon: Sparkles },
+        { to: "/account/calendars", label: t("nav.calendars"), icon: ICONS.calendar },
+        { to: "/account/assist", label: t("nav.assist"), icon: ICONS.ai },
       ],
     },
   ].map((group) => ({ ...group, items: group.items.map(withTag) }));
@@ -201,18 +187,18 @@ function useNavigation(session: Session) {
     {
       to: "/admin",
       label: t("nav.overview"),
-      icon: LayoutDashboard,
+      icon: ICONS.overview,
       also: ["/admin/stats", "/admin/mail-flow", "/admin/microsoft", "/admin/backups"],
     },
     {
       to: "/admin/people",
       label: t("nav.directory"),
-      icon: Users,
+      icon: ICONS.people,
       also: ["/admin/domains", "/admin/moves", "/admin/reports"],
     },
-    { to: "/admin/queue", label: t("nav.queue"), icon: Send },
+    { to: "/admin/queue", label: t("nav.queue"), icon: ICONS.send },
     { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
-    { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
+    { to: "/admin/settings", label: t("nav.settings"), icon: ICONS.settings },
     { to: "/admin/updates", label: t("nav.updates"), icon: CircleFadingArrowUp },
     { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
   ].map(withTag);
@@ -258,7 +244,7 @@ function UserMenu({
           },
         },
         {
-          icon: LogOut,
+          icon: ICONS.signOut,
           label: t("userMenu.logout"),
           onSelect: () => logout.mutate(undefined, { onError: () => toast(t("userMenu.logoutFailed"), "error") }),
         },
@@ -282,7 +268,7 @@ function UserMenu({
               {session.account.role === "admin" ? t(`userMenu.role.admin`) : session.account.login}
             </span>
           </span>
-          <ChevronsUpDown className="size-4 text-faint" aria-hidden />
+          <Icon icon={ChevronsUpDown} className="size-4 text-faint" aria-hidden />
         </button>
       )}
     />
@@ -368,18 +354,18 @@ export function PortalShell({ session, children }: { session: Session; children:
   const tabTargets: { to: string; label: string; icon: LucideIcon; also?: string[] }[] =
     mode === "server"
       ? [
-          { to: "/admin", label: t("nav.tabs.server"), icon: LayoutDashboard, also: server[0]?.items[0]?.also },
-          { to: "/admin/people", label: t("nav.tabs.people"), icon: Users, also: server[0]?.items[1]?.also },
-          { to: "/admin/queue", label: t("nav.tabs.queue"), icon: Send },
+          { to: "/admin", label: t("nav.tabs.server"), icon: ICONS.overview, also: server[0]?.items[0]?.also },
+          { to: "/admin/people", label: t("nav.tabs.people"), icon: ICONS.people, also: server[0]?.items[1]?.also },
+          { to: "/admin/queue", label: t("nav.tabs.queue"), icon: ICONS.send },
         ]
       : [
-          { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+          { to: "/account", label: t("nav.overview"), icon: ICONS.overview },
           { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
-          { to: "/account/codes", label: t("nav.tabs.codes"), icon: KeyRound },
+          { to: "/account/codes", label: t("nav.tabs.codes"), icon: ICONS.secret },
         ];
   const tabs: TabItem[] = tabTargets.map((target) => ({ ...target, current: !more && isCurrent(target, path) }));
   const inTabs = tabs.some((tab) => tab.current);
-  tabs.push({ label: t("nav.more"), icon: Ellipsis, current: more || !inTabs });
+  tabs.push({ label: t("nav.more"), icon: ICONS.more, current: more || !inTabs });
 
   const menu = (inSheet: boolean) => (
     <div className="flex h-full flex-col">
@@ -435,7 +421,7 @@ export function PortalShell({ session, children }: { session: Session; children:
           >
             <div className="flex items-center justify-between px-2.5 pb-3">
               <Wordmark className="text-base" />
-              <IconButton icon={X} label={t("nav.closeMenu")} onClick={close} />
+              <IconButton icon={ICONS.close} label={t("nav.closeMenu")} onClick={close} />
             </div>
             <div className="min-h-0 overflow-y-auto">{menu(true)}</div>
           </div>

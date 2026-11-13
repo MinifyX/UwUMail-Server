@@ -1,18 +1,7 @@
-import { Button, Card } from "@uwusuite/design";
+import { Button, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import {
-  BookOpen,
-  Check,
-  ChevronRight,
-  CircleCheck,
-  CircleHelp,
-  CircleX,
-  ExternalLink,
-  ListChecks,
-  RotateCw,
-  TriangleAlert,
-} from "lucide-react";
+import { BookOpen, CircleX, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -54,10 +43,10 @@ function useChecklist() {
 }
 
 const STATUS: Record<MsStatus, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success-ink" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning-ink" },
+  ok: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  warning: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
   problem: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
-  unknown: { icon: CircleHelp, className: "bg-elevated text-muted" },
+  unknown: { icon: ICONS.help, className: "bg-elevated text-muted" },
 };
 
 /** A small coloured label: what is checked, and how it stands (`quiet` leaves the status to the colour). */
@@ -88,7 +77,7 @@ export function ExternalAnchor({ href, children }: { href: string; children: Rea
       className="inline-flex items-center gap-1 font-semibold text-pink-ink hover:underline"
     >
       {children}
-      <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+      <SuiteIcon icon={ICONS.openExternal} className="size-3.5 shrink-0" aria-hidden />
     </a>
   );
 }
@@ -137,7 +126,7 @@ function WhatToDo({ issue, delistUrl }: { issue: MicrosoftIssue; delistUrl: stri
               className="inline-flex items-center gap-0.5 self-start font-semibold text-pink-ink hover:underline"
             >
               {t("microsoft.authenticate.open", { domain })}
-              <ChevronRight className="size-3.5" aria-hidden />
+              <SuiteIcon icon={ICONS.next} className="size-3.5" aria-hidden />
             </Link>
           )}
         </div>
@@ -214,7 +203,7 @@ function IssueCard({ issue, delistUrl }: { issue: MicrosoftIssue; delistUrl: str
         </details>
       )}
       <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-3">
-        <Button icon={Check} size="sm" busy={resolve.isPending} onClick={() => resolve.mutate()}>
+        <Button icon={ICONS.done} size="sm" busy={resolve.isPending} onClick={() => resolve.mutate()}>
           {t("microsoft.issues.resolve")}
         </Button>
         <span className="min-w-0 flex-1 basis-52 text-[12px] text-muted">{t("microsoft.issues.resolveHint")}</span>
@@ -291,7 +280,7 @@ function Issues() {
       {open.length === 0 ? (
         <div className="flex items-start gap-3 rounded-card border border-hairline bg-surface p-5">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-tint text-success-ink">
-            <CircleCheck className="size-[18px]" aria-hidden />
+            <SuiteIcon icon={ICONS.success} className="size-[18px]" aria-hidden />
           </span>
           <div>
             <p className="text-sm font-semibold">{t("microsoft.issues.none")}</p>
@@ -361,7 +350,7 @@ function DomainRow({ domain }: { domain: MicrosoftDomainCheck }) {
           className="inline-flex items-center gap-0.5 text-sm font-semibold hover:text-pink-ink hover:underline"
         >
           {domain.domain}
-          <ChevronRight className="size-3.5" aria-hidden />
+          <SuiteIcon icon={ICONS.next} className="size-3.5" aria-hidden />
         </Link>
       </div>
       {checked ? (
@@ -497,7 +486,7 @@ function Checklist() {
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <ListChecks className="size-4 text-pink-ink" aria-hidden />
+          <SuiteIcon icon={ICONS.review} className="size-4 text-pink-ink" aria-hidden />
           {t("microsoft.checklist.title")}
         </span>
       }
@@ -520,7 +509,7 @@ function Guides() {
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <BookOpen className="size-4 text-pink-ink" aria-hidden />
+          <SuiteIcon icon={BookOpen} className="size-4 text-pink-ink" aria-hidden />
           {t("microsoft.guides.title")}
         </span>
       }

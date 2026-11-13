@@ -1,18 +1,6 @@
-import { Button, EmptyState } from "@uwusuite/design";
+import { Button, EmptyState, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  AtSign,
-  CalendarDays,
-  Check,
-  EyeOff,
-  IdCard,
-  Inbox,
-  KeyRound,
-  RefreshCw,
-  Send,
-  UserRound,
-  X,
-} from "lucide-react";
+import { AtSign, Inbox, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
@@ -27,14 +15,14 @@ import { appPasswordOnly, decisionBody, knownScopes, masksOnly, type KnownScope 
 
 const SCOPE_ICONS: Record<KnownScope, LucideIcon> = {
   mail: Inbox,
-  smtp: Send,
-  dav: CalendarDays,
-  maskedemail: EyeOff,
-  "app-password": KeyRound,
+  smtp: ICONS.send,
+  dav: ICONS.calendar,
+  maskedemail: ICONS.hide,
+  "app-password": ICONS.secret,
   openid: UserRound,
-  profile: IdCard,
+  profile: ICONS.identity,
   email: AtSign,
-  offline_access: RefreshCw,
+  offline_access: ICONS.refresh,
 };
 
 /** The app's request itself is wrong: no use asking the person anything. */
@@ -219,7 +207,7 @@ export function OAuthConsentPage({ session }: { session: Session }) {
           <Button
             variant="primary"
             size="lg"
-            icon={Check}
+            icon={ICONS.done}
             busy={decide.isPending && decide.variables === true}
             disabled={decide.isPending}
             onClick={() => decide.mutate(true)}
@@ -228,7 +216,7 @@ export function OAuthConsentPage({ session }: { session: Session }) {
           </Button>
           <Button
             size="lg"
-            icon={X}
+            icon={ICONS.close}
             busy={decide.isPending && decide.variables === false}
             disabled={decide.isPending}
             onClick={() => decide.mutate(false)}

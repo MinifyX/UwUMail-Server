@@ -1,18 +1,6 @@
-import { Button, IconButton, Field, TextInput, Card } from "@uwusuite/design";
+import { Button, IconButton, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  FileUp,
-  Pause,
-  Play,
-  RefreshCw,
-  Save,
-  Trash2,
-  UserPlus,
-  X,
-} from "lucide-react";
+import { FileUp, Pause, UserPlus } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -66,7 +54,7 @@ function Overview({ detail }: { detail: MoveDetail }) {
             {t("moves.actions.pauseAll")}
           </Button>
         ) : move.state === "paused" ? (
-          <Button size="sm" icon={Play} busy={resume.isPending} onClick={() => resume.mutate(undefined)}>
+          <Button size="sm" icon={ICONS.start} busy={resume.isPending} onClick={() => resume.mutate(undefined)}>
             {t("moves.actions.resumeAll")}
           </Button>
         ) : null
@@ -148,7 +136,7 @@ function SettingsCard({ detail }: { detail: MoveDetail }) {
           )}
         </Field>
         <Button
-          icon={Save}
+          icon={ICONS.save}
           className="sm:mb-[22px]"
           disabled={!changed}
           busy={save.isPending}
@@ -180,7 +168,7 @@ function FinishCard({ detail }: { detail: MoveDetail }) {
     return (
       <Card title={t("moves.finish.title")}>
         <p className="flex items-center gap-1.5 text-[13px] text-success-ink">
-          <CheckCircle2 className="size-4" aria-hidden />
+          <Icon icon={ICONS.success} className="size-4" aria-hidden />
           {move.finishedAt
             ? t("moves.finish.doneAt", { date: formatDateTime(move.finishedAt, i18n.language) })
             : t("moves.finish.done")}
@@ -197,7 +185,7 @@ function FinishCard({ detail }: { detail: MoveDetail }) {
           {t("moves.finish.explain", { hostname: detail.hostname, domain: move.domain })}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" icon={RefreshCw} busy={mx.isPending} onClick={() => mx.mutate()}>
+          <Button size="sm" icon={ICONS.refresh} busy={mx.isPending} onClick={() => mx.mutate()}>
             {t("moves.finish.checkMx")}
           </Button>
           {style && status && (
@@ -225,7 +213,7 @@ function FinishCard({ detail }: { detail: MoveDetail }) {
             </Button>
           </div>
         ) : (
-          <Button variant="primary" icon={CheckCircle2} className="self-start" onClick={() => setConfirm("last")}>
+          <Button variant="primary" icon={ICONS.success} className="self-start" onClick={() => setConfirm("last")}>
             {t("moves.finish.button")}
           </Button>
         )}
@@ -242,7 +230,7 @@ function FinishCard({ detail }: { detail: MoveDetail }) {
           </p>
           {status !== "ok" && confirm === "last" && (
             <p className="flex items-start gap-1.5 text-[13px] text-warning-ink">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <Icon icon={ICONS.warning} className="mt-0.5 size-4 shrink-0" aria-hidden />
               {t("moves.finish.confirmMx")}
             </p>
           )}
@@ -350,7 +338,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
       )}
       {quotaTooSmall(mailbox) && mailbox.sourceBytes !== null && (
         <p className="flex items-start gap-1.5 text-[12px] text-warning-ink">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <Icon icon={ICONS.warning} className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           {t("moves.mailbox.quotaWarning", {
             source: formatBytes(mailbox.sourceBytes, i18n.language),
             quota: formatBytes(mailbox.quotaBytes, i18n.language),
@@ -359,7 +347,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
       )}
       {mailbox.state === "paused" && (
         <p className="flex items-start gap-1.5 text-[12px] text-warning-ink">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <Icon icon={ICONS.warning} className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
             {t(`moves.errors.${mailbox.error || "failed"}`, { defaultValue: t("moves.errors.failed") })}
             {mailbox.errorDetail && mailbox.error !== "stopped" && (
@@ -424,7 +412,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
               )}
               <Button
                 size="sm"
-                icon={mailbox.state === "paused" ? Play : RefreshCw}
+                icon={mailbox.state === "paused" ? ICONS.start : ICONS.refresh}
                 busy={retry.isPending}
                 onClick={() => retry.mutate(undefined, { onSuccess: () => setRetrying(false) })}
               >
@@ -437,7 +425,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
               key={kind}
               className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold hover:bg-pink-tint/60"
             >
-              <FileUp className="size-4" aria-hidden />
+              <Icon icon={FileUp} className="size-4" aria-hidden />
               {t(`moves.actions.upload.${kind}`)}
               <input
                 type="file"
@@ -448,7 +436,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
             </label>
           ))}
           <IconButton
-            icon={Trash2}
+            icon={ICONS.delete}
             label={t("moves.actions.removeMailbox", { address: mailbox.address })}
             onClick={() => {
               if (window.confirm(t("moves.actions.removeConfirm", { address: mailbox.address })))
@@ -486,7 +474,7 @@ function AddPeople({ detail }: { detail: MoveDetail }) {
   return (
     <Card
       title={t("moves.add.title")}
-      aside={<IconButton icon={X} label={t("common.close")} onClick={() => setOpen(false)} />}
+      aside={<IconButton icon={ICONS.close} label={t("common.close")} onClick={() => setOpen(false)} />}
     >
       <div className="flex flex-col gap-3">
         <RowsEditor rows={rows} onChange={setRows} problems={problems} domain={detail.move.domain} />
@@ -532,7 +520,7 @@ export function MovePage({ id }: { id: number }) {
         to={movesPath}
         className="inline-flex items-center gap-1.5 self-start text-[13px] font-semibold text-pink-ink"
       >
-        <ArrowLeft className="size-4" aria-hidden />
+        <Icon icon={ICONS.back} className="size-4" aria-hidden />
         {t("moves.wizard.back")}
       </Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -563,7 +551,7 @@ export function MovePage({ id }: { id: number }) {
       <div className="flex justify-end">
         <Button
           variant="danger"
-          icon={Trash2}
+          icon={ICONS.delete}
           busy={remove.isPending}
           onClick={() => {
             if (window.confirm(t("moves.actions.deleteConfirm", { domain: detail.move.domain }))) remove.mutate();

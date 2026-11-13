@@ -1,8 +1,7 @@
 import clsx from "clsx";
-import { Check, Copy } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "@/i18n";
-import { IconButton } from "@uwusuite/design";
+import { IconButton, ICONS } from "@uwusuite/design";
 
 export function PageHeader({
   title,
@@ -53,7 +52,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
   return (
     <IconButton
       size="sm"
-      icon={copied ? Check : Copy}
+      icon={copied ? ICONS.done : ICONS.copy}
       label={copied ? t("common.copied") : (label ?? t("common.copy"))}
       active={copied}
       onClick={() => {

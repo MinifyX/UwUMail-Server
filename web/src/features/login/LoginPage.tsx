@@ -1,5 +1,4 @@
-import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
-import { Eye, EyeOff, KeyRound } from "lucide-react";
+import { Button, IconButton, Field, TextInput, ICONS } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { Wordmark } from "@/components/ui/Logo";
@@ -119,7 +118,7 @@ export function LoginPage() {
                       />
                       <IconButton
                         size="sm"
-                        icon={showPassword ? EyeOff : Eye}
+                        icon={showPassword ? ICONS.hide : ICONS.show}
                         label={showPassword ? t("login.hidePassword") : t("login.showPassword")}
                         className="absolute top-1/2 right-1.5 -translate-y-1/2"
                         onClick={() => setShowPassword((value) => !value)}
@@ -136,7 +135,7 @@ export function LoginPage() {
                   <p className="my-4 flex items-center gap-3 text-[12px] text-faint before:h-px before:flex-1 before:bg-hairline after:h-px after:flex-1 after:bg-hairline">
                     {t("login.or")}
                   </p>
-                  <Button size="lg" icon={KeyRound} busy={leaving} className="w-full" onClick={loginElsewhere}>
+                  <Button size="lg" icon={ICONS.secret} busy={leaving} className="w-full" onClick={loginElsewhere}>
                     {oidc.label ? t("login.oidcButton", { provider: oidc.label }) : t("login.oidcButtonGeneric")}
                   </Button>
                 </>

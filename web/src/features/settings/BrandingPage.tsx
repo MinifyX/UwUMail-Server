@@ -1,7 +1,7 @@
-import { Button, Field, TextInput, Card } from "@uwusuite/design";
+import { Button, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Check, ImageUp, Inbox, Trash2 } from "lucide-react";
+import { ImageUp, Inbox } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { LogoSymbol } from "@/components/ui/Logo";
@@ -95,7 +95,7 @@ function ColorField({ form }: { form: Form }) {
                   )}
                   style={{ backgroundColor: preset.color }}
                 >
-                  {selected && <Check className="size-4 text-white" strokeWidth={3} aria-hidden />}
+                  {selected && <Icon icon={ICONS.done} className="size-4 text-white" strokeWidth={3} aria-hidden />}
                 </button>
               );
             })}
@@ -159,7 +159,7 @@ function Preview({ color, name, mascot }: { color: string | null; name: string; 
           <span className="truncate">{brandName}</span>
         </span>
         <span className="flex h-9 items-center gap-2 rounded-full bg-pink-tint px-3 text-[13px] font-semibold text-pink-ink">
-          <Inbox className="size-4" aria-hidden />
+          <Icon icon={Inbox} className="size-4" aria-hidden />
           {t("branding.preview.inbox")}
         </span>
         <div className="flex flex-wrap items-center gap-2">
@@ -242,7 +242,7 @@ function LogoCard() {
               {t(logo ? "branding.logo.replace" : "branding.logo.upload")}
             </Button>
             {logo && (
-              <Button variant="ghost" icon={Trash2} busy={remove.isPending} onClick={() => remove.mutate()}>
+              <Button variant="ghost" icon={ICONS.delete} busy={remove.isPending} onClick={() => remove.mutate()}>
                 {t("branding.logo.remove")}
               </Button>
             )}

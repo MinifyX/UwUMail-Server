@@ -1,5 +1,6 @@
+import { ICONS, Icon } from "@uwusuite/design";
 import clsx from "clsx";
-import { ChevronRight, MailWarning } from "lucide-react";
+import { MailWarning } from "lucide-react";
 import { useT } from "@/i18n";
 import { Link } from "@/lib/router";
 import { bannerFacts, worstKind } from "./microsoft";
@@ -28,7 +29,7 @@ export function MicrosoftBanner() {
           throttled ? "text-warning-ink" : "text-danger-ink",
         )}
       >
-        <MailWarning className="size-[18px]" aria-hidden />
+        <Icon icon={MailWarning} className="size-[18px]" aria-hidden />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="text-sm font-bold text-ink">{t(`microsoft.banner.${kind}`)}</p>
@@ -46,7 +47,7 @@ export function MicrosoftBanner() {
             className="inline-flex items-center gap-0.5 font-semibold text-pink-ink hover:underline"
           >
             {t("microsoft.banner.open")}
-            <ChevronRight className="size-3.5" aria-hidden />
+            <Icon icon={ICONS.next} className="size-3.5" aria-hidden />
           </Link>
         </div>
       </div>

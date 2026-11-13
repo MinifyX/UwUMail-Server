@@ -1,7 +1,7 @@
-import { Button, Card } from "@uwusuite/design";
+import { Button, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { CircleCheck, CircleHelp, CircleX, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CircleX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -15,10 +15,10 @@ const key = ["admin", "spam", "antivirus"] as const;
 type Tone = "ok" | "warning" | "problem" | "off";
 
 const TONES: Record<Tone, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success-ink" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning-ink" },
+  ok: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  warning: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
   problem: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
-  off: { icon: CircleHelp, className: "bg-elevated text-muted" },
+  off: { icon: ICONS.help, className: "bg-elevated text-muted" },
 };
 
 function Pill({ tone, children }: { tone: Tone; children: string }) {
@@ -88,7 +88,12 @@ export function AntivirusCard() {
         <p className="text-[13px]">{t("spam.antivirus.found", { count: view.found, days: view.days })}</p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-prose text-[13px] text-muted">{t("spam.antivirus.testHint")}</p>
-          <Button icon={ShieldCheck} busy={test.isPending} disabled={!view.enabled} onClick={() => test.mutate()}>
+          <Button
+            icon={ICONS.securityCheck}
+            busy={test.isPending}
+            disabled={!view.enabled}
+            onClick={() => test.mutate()}
+          >
             {t("spam.antivirus.test")}
           </Button>
         </div>

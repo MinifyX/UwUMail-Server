@@ -1,6 +1,6 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, Card } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveRestore, Check, DatabaseBackup, FolderOpen, History, KeyRound, Plug, RefreshCw, X } from "lucide-react";
+import { DatabaseBackup, Plug } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
@@ -89,7 +89,7 @@ function StatusCard({ view }: { view: BackupsView }) {
           </Button>
           <Button
             variant="ghost"
-            icon={RefreshCw}
+            icon={ICONS.refresh}
             onClick={() => void queryClient.invalidateQueries({ queryKey: key })}
           >
             {t("backups.status.refresh")}
@@ -587,7 +587,13 @@ function RestoreCard({ view }: { view: BackupsView }) {
               </>
             )}
             <div>
-              <Button variant="ghost" size="sm" icon={Check} busy={forget.isPending} onClick={() => forget.mutate()}>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={ICONS.done}
+                busy={forget.isPending}
+                onClick={() => forget.mutate()}
+              >
                 {t("backups.restore.forget")}
               </Button>
             </div>
@@ -698,7 +704,7 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
                 )}
               </Field>
               <Button
-                icon={FolderOpen}
+                icon={ICONS.folderOpen}
                 disabled={!view.target || view.running}
                 busy={open.isPending}
                 onClick={() => open.mutate()}
@@ -828,13 +834,19 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
         )}
         {(job.state === "open" || job.state === "restoring") && (
           <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" icon={X} disabled={busy} busy={close.isPending} onClick={() => close.mutate()}>
+            <Button
+              variant="ghost"
+              icon={ICONS.close}
+              disabled={busy}
+              busy={close.isPending}
+              onClick={() => close.mutate()}
+            >
               {t("backups.mailbox.close")}
             </Button>
             {person && (
               <Button
                 variant="primary"
-                icon={ArchiveRestore}
+                icon={ICONS.restore}
                 disabled={busy || view.running || (!everything && chosen.length === 0)}
                 busy={restore.isPending || job.state === "restoring"}
                 onClick={() => restore.mutate()}
@@ -908,7 +920,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
             </Button>
           )}
           {view.encrypted && (
-            <Button variant="ghost" icon={KeyRound} busy={reveal.isPending} onClick={() => reveal.mutate()}>
+            <Button variant="ghost" icon={ICONS.secret} busy={reveal.isPending} onClick={() => reveal.mutate()}>
               {t("backups.snapshots.showKey")}
             </Button>
           )}
@@ -933,7 +945,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
                 </span>
                 <code className="min-w-0 flex-1 font-mono text-[11px] text-faint">{snapshot.name}</code>
                 {view.restore.available && (
-                  <Button size="sm" icon={History} disabled={busy} onClick={() => setAsking(snapshot)}>
+                  <Button size="sm" icon={ICONS.history} disabled={busy} onClick={() => setAsking(snapshot)}>
                     {t("backups.restore.put")}
                   </Button>
                 )}
@@ -963,7 +975,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
             </Button>
             <Button
               variant="danger"
-              icon={History}
+              icon={ICONS.history}
               busy={restoring.isPending}
               onClick={() => asking && restoring.mutate(asking.name)}
             >

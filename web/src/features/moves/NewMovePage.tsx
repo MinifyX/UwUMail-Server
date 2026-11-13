@@ -1,6 +1,6 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, Card } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Search, Truck } from "lucide-react";
+import { Truck } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/ui/Page";
 import { useMailDomains, usePeople } from "@/features/people/queries";
@@ -158,7 +158,7 @@ export function NewMovePage() {
         to={movesPath}
         className="inline-flex items-center gap-1.5 self-start text-[13px] font-semibold text-pink-ink"
       >
-        <ArrowLeft className="size-4" aria-hidden />
+        <Icon icon={ICONS.back} className="size-4" aria-hidden />
         {t("moves.wizard.back")}
       </Link>
       <PageHeader title={t("moves.wizard.title")} intro={t("moves.wizard.intro")} />
@@ -275,7 +275,7 @@ export function NewMovePage() {
             )}
           </Field>
           <Button
-            icon={Search}
+            icon={ICONS.search}
             className="sm:mb-[22px]"
             busy={discover.isPending}
             disabled={!cleanDomain}
@@ -397,7 +397,7 @@ export function NewMovePage() {
               <p className="text-danger-ink">{t("moves.wizard.planProblems", { count: plan.problems.length })}</p>
             ) : (
               <p className="flex items-center gap-1.5 text-success-ink">
-                <CheckCircle2 className="size-4" aria-hidden />
+                <Icon icon={ICONS.success} className="size-4" aria-hidden />
                 {t("moves.wizard.planReady")}
               </p>
             )}

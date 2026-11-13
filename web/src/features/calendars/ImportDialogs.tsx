@@ -1,6 +1,6 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, Card } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, CloudDownload, FileUp, Rss } from "lucide-react";
+import { CloudDownload, FileUp, Rss } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
@@ -466,7 +466,7 @@ export function ImportCard({ view }: { view: CalendarsView }) {
             {t("calendars.import.fileButton")}
           </Button>
           {view.calendars && (
-            <Button icon={CalendarPlus} onClick={() => setOpen("subscribe")}>
+            <Button icon={ICONS.addEvent} onClick={() => setOpen("subscribe")}>
               {t("calendars.subscribe.button")}
             </Button>
           )}

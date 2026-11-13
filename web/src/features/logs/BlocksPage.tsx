@@ -1,7 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton, Field, TextInput, EmptyState, Card } from "@uwusuite/design";
+import { Button, IconButton, Field, TextInput, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LockOpen, Plus, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -51,7 +50,7 @@ function BlockRow({ block, now }: { block: Block; now: number }) {
       </div>
       <Button
         size="sm"
-        icon={LockOpen}
+        icon={ICONS.unlocked}
         busy={unblock.isPending}
         onClick={() => {
           if (window.confirm(t("logs.blocks.unblockConfirm", { ip: block.ip }))) unblock.mutate();
@@ -111,7 +110,7 @@ function ExemptCard({ exempt, hosts }: { exempt: string[]; hosts: BlocksView["ex
                 {network}
                 <IconButton
                   size="sm"
-                  icon={X}
+                  icon={ICONS.close}
                   label={t("logs.blocks.exempt.remove", { network })}
                   disabled={save.isPending}
                   onClick={() => {
@@ -153,7 +152,7 @@ function ExemptCard({ exempt, hosts }: { exempt: string[]; hosts: BlocksView["ex
                     setProblem(null);
                   }}
                 />
-                <Button type="submit" icon={Plus} busy={save.isPending} disabled={!draft.trim()}>
+                <Button type="submit" icon={ICONS.add} busy={save.isPending} disabled={!draft.trim()}>
                   {t("logs.blocks.exempt.add")}
                 </Button>
               </div>

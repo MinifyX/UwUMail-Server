@@ -1,7 +1,7 @@
-import { Button, Field, Segmented, Toggle, Card } from "@uwusuite/design";
+import { Button, Field, Segmented, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Download, ExternalLink, RefreshCw, RotateCw } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton, PageHeader } from "@/components/ui/Page";
 import { HostCard } from "@/features/admin/HostCard";
@@ -79,7 +79,7 @@ function News({ view }: { view: UpdatesView }) {
               className="inline-flex items-center gap-1 text-[12px] font-normal text-pink-ink hover:underline"
             >
               {t("updates.onGitHub")}
-              <ExternalLink className="size-3" aria-hidden />
+              <Icon icon={ICONS.openExternal} className="size-3" aria-hidden />
             </a>
           </h3>
           <pre className="max-h-56 overflow-y-auto font-sans text-[13px] break-words whitespace-pre-wrap text-muted">
@@ -119,7 +119,7 @@ function Install({ view }: { view: UpdatesView }) {
           ) : (
             <Button
               variant="primary"
-              icon={Download}
+              icon={ICONS.download}
               busy={ask.isPending || (asked && busy)}
               disabled={busy}
               onClick={() => ask.mutate("uwumail-update")}
@@ -180,7 +180,7 @@ function VersionCard({ view }: { view: UpdatesView }) {
         )}
 
         <div>
-          <Button variant="ghost" icon={RefreshCw} busy={check.isPending} onClick={() => check.mutate()}>
+          <Button variant="ghost" icon={ICONS.refresh} busy={check.isPending} onClick={() => check.mutate()}>
             {t("updates.checkNow")}
           </Button>
         </div>

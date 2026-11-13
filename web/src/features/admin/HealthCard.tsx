@@ -1,7 +1,7 @@
-import { Button } from "@uwusuite/design";
+import { Button, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ChevronRight, CircleCheck, CircleHelp, CircleX, RotateCw, TriangleAlert } from "lucide-react";
+import { CircleX, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NyuMood } from "@uwusuite/design";
 import { useT } from "@/i18n";
@@ -12,9 +12,9 @@ import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
 
 export const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: string; mood: NyuMood }> = {
-  ok: { icon: CircleCheck, tint: "bg-success-tint text-success-ink", dot: "bg-success", mood: "happy" },
-  unknown: { icon: CircleHelp, tint: "bg-elevated text-muted", dot: "bg-faint", mood: "puzzled" },
-  warning: { icon: TriangleAlert, tint: "bg-warning-tint text-warning-ink", dot: "bg-warning", mood: "puzzled" },
+  ok: { icon: ICONS.success, tint: "bg-success-tint text-success-ink", dot: "bg-success", mood: "happy" },
+  unknown: { icon: ICONS.help, tint: "bg-elevated text-muted", dot: "bg-faint", mood: "puzzled" },
+  warning: { icon: ICONS.warning, tint: "bg-warning-tint text-warning-ink", dot: "bg-warning", mood: "puzzled" },
   problem: { icon: CircleX, tint: "bg-danger-tint text-danger-ink", dot: "bg-danger", mood: "sad" },
 };
 
@@ -90,7 +90,7 @@ function Finding({ finding }: { finding: HealthFinding }) {
           className="mt-1 inline-flex items-center gap-0.5 text-[13px] font-semibold text-pink-ink hover:underline"
         >
           {t("health.open")}
-          <ChevronRight className="size-3.5" aria-hidden />
+          <SuiteIcon icon={ICONS.next} className="size-3.5" aria-hidden />
         </Link>
       )}
     </li>

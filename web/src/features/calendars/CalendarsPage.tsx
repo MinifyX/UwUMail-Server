@@ -1,6 +1,6 @@
-import { Button, Field, Select, TextInput, Card } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookUser, CalendarDays, LogOut, RefreshCw, Rss, Share2, Trash2, Unlink, UserMinus } from "lucide-react";
+import { BookUser, Rss, UserMinus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -21,7 +21,7 @@ import { calendarsKey, ImportCard, INTERVALS } from "./ImportDialogs";
 const RIGHTS: ShareRights[] = ["read", "write", "all"];
 
 function KindIcon({ kind }: { kind: OwnCollection["kind"] }) {
-  const Icon = kind === "calendar" ? CalendarDays : BookUser;
+  const Icon = kind === "calendar" ? ICONS.calendar : BookUser;
   return <Icon className="size-4 shrink-0 text-muted" aria-hidden />;
 }
 
@@ -76,7 +76,7 @@ function SubscriptionInfo({
   return (
     <div className="flex flex-col gap-2 rounded-control bg-canvas p-3">
       <p className="flex items-center gap-2 text-sm">
-        <Rss className="size-4 shrink-0 text-muted" aria-hidden />
+        <SuiteIcon icon={Rss} className="size-4 shrink-0 text-muted" aria-hidden />
         <span className="min-w-0 flex-1 truncate">
           {t("calendars.subscribe.from", { source: subscription.source })}
         </span>
@@ -108,18 +108,23 @@ function SubscriptionInfo({
             </option>
           ))}
         </Select>
-        <Button size="sm" icon={RefreshCw} busy={refresh.isPending} onClick={() => refresh.mutate()}>
+        <Button size="sm" icon={ICONS.refresh} busy={refresh.isPending} onClick={() => refresh.mutate()}>
           {t("calendars.subscribe.refresh")}
         </Button>
         {ending ? (
           <>
-            <Button size="sm" icon={Unlink} busy={end.isPending && end.variables} onClick={() => end.mutate(true)}>
+            <Button
+              size="sm"
+              icon={ICONS.unlink}
+              busy={end.isPending && end.variables}
+              onClick={() => end.mutate(true)}
+            >
               {t("calendars.subscribe.endKeep")}
             </Button>
             <Button
               size="sm"
               variant="danger"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={end.isPending && !end.variables}
               onClick={() => end.mutate(false)}
             >
@@ -127,7 +132,7 @@ function SubscriptionInfo({
             </Button>
           </>
         ) : (
-          <Button size="sm" variant="danger" icon={Unlink} onClick={() => setEnding(true)}>
+          <Button size="sm" variant="danger" icon={ICONS.unlink} onClick={() => setEnding(true)}>
             {t("calendars.subscribe.end")}
           </Button>
         )}
@@ -261,7 +266,7 @@ function OwnCard({ collection }: { collection: OwnCollection }) {
             )}
           </Field>
           <div>
-            <Button type="submit" icon={Share2} busy={share.isPending} disabled={!address.trim()}>
+            <Button type="submit" icon={ICONS.share} busy={share.isPending} disabled={!address.trim()}>
               {t("calendars.share")}
             </Button>
           </div>
@@ -307,7 +312,7 @@ function SharedWithMe({ shared }: { shared: SharedCollection[] }) {
               </span>
               <Button
                 size="sm"
-                icon={LogOut}
+                icon={ICONS.signOut}
                 busy={leave.isPending && leave.variables?.id === collection.id}
                 onClick={() => leave.mutate(collection)}
               >
@@ -334,7 +339,7 @@ export function CalendarsPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <CalendarDays className="size-5 text-muted" aria-hidden />
+            <SuiteIcon icon={ICONS.calendar} className="size-5 text-muted" aria-hidden />
             {t("calendars.pageTitle")}
           </span>
         }

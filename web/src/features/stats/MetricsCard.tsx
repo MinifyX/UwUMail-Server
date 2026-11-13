@@ -1,6 +1,5 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, ICONS } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
 import { LockedHint, Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
@@ -89,7 +88,7 @@ function MetricsFields({ form }: { form: Form }) {
             />
             {fresh && <CopyButton value={fresh} label={t("stats.metrics.copyToken")} />}
             {!tokenLocked && (
-              <Button icon={KeyRound} onClick={() => form.set("metrics.token", newMetricsToken())}>
+              <Button icon={ICONS.secret} onClick={() => form.set("metrics.token", newMetricsToken())}>
                 {token.kind === "none" ? t("stats.metrics.tokenNew") : t("stats.metrics.tokenReplace")}
               </Button>
             )}

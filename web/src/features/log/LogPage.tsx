@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState } from "@uwusuite/design";
+import { Button, EmptyState, ICONS, Icon } from "@uwusuite/design";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { TFunction } from "i18next";
-import { ChevronDown, History } from "lucide-react";
 import clsx from "clsx";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -253,7 +252,7 @@ function LogEntry({ record }: { record: AuditRecord }) {
         className="flex w-full gap-3 px-4 py-3 text-left hover:bg-canvas/60"
         onClick={() => setOpen((was) => !was)}
       >
-        <History className="mt-0.5 size-4 shrink-0 text-faint" aria-hidden />
+        <Icon icon={ICONS.history} className="mt-0.5 size-4 shrink-0 text-faint" aria-hidden />
         <span className="min-w-0 flex-1">
           <span className="block text-sm break-words">{describe(record, t)}</span>
           {details && <span className="block text-[13px] text-muted">{details}</span>}
@@ -261,7 +260,8 @@ function LogEntry({ record }: { record: AuditRecord }) {
         <time className="shrink-0 text-[12px] text-muted" dateTime={new Date(record.at * 1000).toISOString()}>
           {formatTime(record.at, i18n.language)}
         </time>
-        <ChevronDown
+        <Icon
+          icon={ICONS.expand}
           className={clsx("mt-0.5 size-4 shrink-0 text-faint transition-transform", open && "rotate-180")}
           aria-hidden
         />

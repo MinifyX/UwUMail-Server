@@ -1,5 +1,4 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle, Pill } from "@uwusuite/design";
-import { Check, Copy, X } from "lucide-react";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Pill, ICONS } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
@@ -44,7 +43,7 @@ export function LinkBox({ link }: { link: PasswordLinkCreated }) {
         <Button
           size="sm"
           variant="primary"
-          icon={copied ? Check : Copy}
+          icon={copied ? ICONS.done : ICONS.copy}
           onClick={() => {
             void navigator.clipboard?.writeText(url).then(() => {
               setCopied(true);
@@ -192,7 +191,7 @@ function CreatePerson({
         <form className="flex flex-col gap-4 px-6 pt-5 pb-6" onSubmit={submit}>
           <header className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-bold">{t("people.create.title")}</h2>
-            <IconButton icon={X} label={t("common.close")} onClick={onCancel} />
+            <IconButton icon={ICONS.close} label={t("common.close")} onClick={onCancel} />
           </header>
           {domains.data?.length === 0 && (
             <p className="rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning-ink">

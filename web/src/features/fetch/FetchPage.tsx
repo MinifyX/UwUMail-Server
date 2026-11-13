@@ -1,19 +1,7 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton, Field, Select, TextInput, Toggle, EmptyState, Card } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, EmptyState, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Download,
-  History,
-  KeyRound,
-  Pause,
-  Play,
-  Plus,
-  RefreshCw,
-  ShieldCheck,
-  Trash2,
-} from "lucide-react";
+import { Pause } from "lucide-react";
 import clsx from "clsx";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -119,7 +107,7 @@ function Status({ account }: { account: FetchAccountInfo }) {
   if (need?.kind === "expired" || need?.kind === "passwordRefused") {
     return (
       <span className="flex items-center gap-1.5 text-[12px] text-danger-ink">
-        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+        <Icon icon={ICONS.warning} className="size-3.5 shrink-0" aria-hidden />
         {need.kind === "expired"
           ? t("fetch.signIn.expired", { provider: providerName(need.provider) })
           : t("fetch.signIn.passwordRefused")}
@@ -129,7 +117,7 @@ function Status({ account }: { account: FetchAccountInfo }) {
   if (account.lastError) {
     return (
       <span className="flex items-center gap-1.5 text-[12px] text-danger-ink">
-        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+        <Icon icon={ICONS.warning} className="size-3.5 shrink-0" aria-hidden />
         {account.lastError}
       </span>
     );
@@ -137,7 +125,7 @@ function Status({ account }: { account: FetchAccountInfo }) {
   if (!account.lastOkAt) return <span className="text-[12px] text-muted">{t("fetch.status.waiting")}</span>;
   return (
     <span className="flex items-center gap-1.5 text-[12px] text-muted">
-      <CheckCircle2 className="size-3.5 shrink-0 text-success-ink" aria-hidden />
+      <Icon icon={ICONS.success} className="size-3.5 shrink-0 text-success-ink" aria-hidden />
       {t("fetch.status.lastRun", { date: formatDateTime(account.lastOkAt, i18n.language) })}
     </span>
   );
@@ -217,9 +205,9 @@ function SignInBox({
     <div className="flex flex-col gap-3 rounded-control border border-line bg-surface p-4">
       <p className={clsx("flex items-start gap-2 text-[13px]", danger ? "text-danger-ink" : "text-ink")}>
         {danger ? (
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.warning} className="mt-0.5 size-4 shrink-0" aria-hidden />
         ) : (
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
+          <Icon icon={ICONS.securityCheck} className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
         )}
         {text}
       </p>
@@ -783,19 +771,19 @@ export function FetchPage() {
                   </span>
                   <div className="flex items-center gap-1.5">
                     <IconButton
-                      icon={RefreshCw}
+                      icon={ICONS.refresh}
                       label={t("fetch.actions.runNow")}
                       onClick={() => runNow.mutate(account.id)}
                     />
                     {account.backlogAt === null && (
                       <IconButton
-                        icon={History}
+                        icon={ICONS.history}
                         label={t("fetch.actions.takeExisting")}
                         onClick={() => takeExisting.mutate(account.id)}
                       />
                     )}
                     <IconButton
-                      icon={account.enabled ? Pause : Play}
+                      icon={account.enabled ? Pause : ICONS.start}
                       label={account.enabled ? t("fetch.actions.pause") : t("fetch.actions.resume")}
                       onClick={() => setEnabled.mutate({ id: account.id, enabled: !account.enabled })}
                     />
@@ -803,7 +791,7 @@ export function FetchPage() {
                       <Button
                         size="sm"
                         variant="primary"
-                        icon={KeyRound}
+                        icon={ICONS.secret}
                         onClick={() => {
                           setRenewing(true);
                           setEditing(account);
@@ -825,7 +813,7 @@ export function FetchPage() {
                       {t("fetch.actions.edit")}
                     </Button>
                     <IconButton
-                      icon={Trash2}
+                      icon={ICONS.delete}
                       label={t("fetch.actions.remove")}
                       onClick={() => {
                         if (window.confirm(t("fetch.actions.removeConfirm", { address: account.address }))) {
@@ -840,7 +828,7 @@ export function FetchPage() {
           )}
           <div className="flex items-center justify-between gap-3">
             <p className="text-[12px] text-muted">{t("fetch.card.hint")}</p>
-            <Button variant="primary" icon={Plus} disabled={full} onClick={() => setAdding(true)}>
+            <Button variant="primary" icon={ICONS.add} disabled={full} onClick={() => setAdding(true)}>
               {t("fetch.card.add")}
             </Button>
           </div>
@@ -849,7 +837,7 @@ export function FetchPage() {
       <Card title={t("fetch.about.title")}>
         <div className="flex flex-col gap-2 text-[13px] text-muted">
           <p className="flex items-start gap-2">
-            <Download className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Icon icon={ICONS.download} className="mt-0.5 size-4 shrink-0" aria-hidden />
             {t("fetch.about.spam")}
           </p>
           <p>{t("fetch.about.first")}</p>

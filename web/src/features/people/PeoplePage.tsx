@@ -1,7 +1,7 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Select, TextInput, EmptyState, Pill } from "@uwusuite/design";
+import { Button, Select, TextInput, EmptyState, Pill, ICONS, Icon } from "@uwusuite/design";
 import clsx from "clsx";
-import { Search, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -127,7 +127,8 @@ export function PeoplePage({ session }: { session: Session }) {
             )}
             <label className="relative ml-auto w-full sm:w-64">
               <span className="sr-only">{t("people.search")}</span>
-              <Search
+              <Icon
+                icon={ICONS.search}
                 className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint"
                 aria-hidden
               />

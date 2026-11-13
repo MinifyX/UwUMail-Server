@@ -1,7 +1,6 @@
-import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useT } from "@/i18n";
-import { cx, IconButton } from "@uwusuite/design";
+import { cx, IconButton, ICONS } from "@uwusuite/design";
 
 interface DialogProps {
   open: boolean;
@@ -67,7 +66,7 @@ export function Dialog({ open, onClose, title, children, width = "md", className
               <h2 id={titleId} className="text-section font-bold">
                 {title}
               </h2>
-              <IconButton icon={X} label={t("common.close")} onClick={onClose} />
+              <IconButton icon={ICONS.close} label={t("common.close")} onClick={onClose} />
             </header>
           )}
           <div className="min-h-0 flex-auto overflow-y-auto">{children}</div>

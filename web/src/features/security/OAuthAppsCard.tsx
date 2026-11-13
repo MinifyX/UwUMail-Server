@@ -1,5 +1,5 @@
-import { Button, Card } from "@uwusuite/design";
-import { AppWindow, LogOut } from "lucide-react";
+import { Button, Card, ICONS, Icon } from "@uwusuite/design";
+import { AppWindow } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
@@ -25,7 +25,7 @@ export function OAuthGrantRow({ grant, onRevoke }: { grant: OAuthGrantInfo; onRe
     : t("security.appPasswords.neverUsed");
   return (
     <li className="flex items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-      <AppWindow className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+      <Icon icon={AppWindow} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-semibold">{grant.clientName}</span>
@@ -50,7 +50,7 @@ export function OAuthGrantRow({ grant, onRevoke }: { grant: OAuthGrantInfo; onRe
           {t("security.oauthApps.since", { date: formatDate(grant.createdAt, language) })}
         </span>
       </span>
-      <Button size="sm" variant="danger" icon={LogOut} onClick={onRevoke}>
+      <Button size="sm" variant="danger" icon={ICONS.signOut} onClick={onRevoke}>
         {t("security.oauthApps.signOut")}
       </Button>
     </li>
@@ -81,7 +81,7 @@ export function SignOutAppDialog({
         <p className="text-sm text-muted">{t("security.oauthApps.signOutBody")}</p>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="danger" icon={LogOut} busy={busy} onClick={() => grant && onConfirm(grant)}>
+          <Button variant="danger" icon={ICONS.signOut} busy={busy} onClick={() => grant && onConfirm(grant)}>
             {t("security.oauthApps.signOut")}
           </Button>
         </div>

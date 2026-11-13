@@ -1,6 +1,5 @@
-import { Button, EmptyState } from "@uwusuite/design";
+import { Button, EmptyState, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -83,7 +82,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
         <Button
           variant="primary"
           size="lg"
-          icon={Check}
+          icon={ICONS.done}
           busy={answer.isPending && answer.variables === true}
           onClick={() => answer.mutate(true)}
         >
@@ -91,7 +90,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
         </Button>
         <Button
           size="lg"
-          icon={X}
+          icon={ICONS.close}
           busy={answer.isPending && answer.variables === false}
           onClick={() => answer.mutate(false)}
         >

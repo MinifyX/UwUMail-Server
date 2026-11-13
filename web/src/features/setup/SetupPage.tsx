@@ -1,5 +1,4 @@
-import { Button, Card } from "@uwusuite/design";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { Button, Card, ICONS, Icon } from "@uwusuite/design";
 import { useEffect, useRef } from "react";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
@@ -48,7 +47,7 @@ export function MailFlowPage({ session }: { session: Session }) {
         <Card
           title={t("setup.reach.cardTitle")}
           aside={
-            <Button size="sm" icon={RefreshCw} busy={runReach.isPending} onClick={() => runReach.mutate()}>
+            <Button size="sm" icon={ICONS.refresh} busy={runReach.isPending} onClick={() => runReach.mutate()}>
               {t(reach ? "setup.reach.run" : "setup.reach.start")}
             </Button>
           }
@@ -72,7 +71,7 @@ export function MailFlowPage({ session }: { session: Session }) {
       <Card
         title={t("setup.sending.title")}
         aside={
-          <Button size="sm" icon={RefreshCw} busy={busyPlain} onClick={() => run.mutate(false)}>
+          <Button size="sm" icon={ICONS.refresh} busy={busyPlain} onClick={() => run.mutate(false)}>
             {t("setup.sending.run")}
           </Button>
         }
@@ -118,7 +117,7 @@ export function MailFlowPage({ session }: { session: Session }) {
                 >
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">{domain.name}</span>
                   <DnsStatusPill status={domain.dns?.status ?? null} />
-                  <ChevronRight className="size-4 text-faint" aria-hidden />
+                  <Icon icon={ICONS.next} className="size-4 text-faint" aria-hidden />
                 </Link>
               </li>
             ))}

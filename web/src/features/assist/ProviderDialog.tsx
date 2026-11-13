@@ -1,6 +1,6 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, ICONS, Icon } from "@uwusuite/design";
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, PlugZap } from "lucide-react";
+import { PlugZap } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
@@ -281,7 +281,7 @@ function ProviderForm({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 self-start font-semibold text-pink hover:underline"
                 >
-                  <ExternalLink className="size-3.5" aria-hidden />
+                  <Icon icon={ICONS.openExternal} className="size-3.5" aria-hidden />
                   {t("assist.form.keyWhere", { kind: kind.name })}
                 </a>
               )}

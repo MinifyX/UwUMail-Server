@@ -1,19 +1,7 @@
-import { Button, Field, Segmented, Select, TextInput, Card } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import {
-  CircleCheck,
-  CircleHelp,
-  FileUp,
-  Globe,
-  LoaderCircle,
-  Play,
-  Power,
-  Save,
-  ScrollText,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
+import { FileUp, Power, ScrollText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -55,10 +43,10 @@ const RECENT_SECONDS = 15 * 60;
 type Tone = "good" | "trouble" | "neutral" | "busy";
 
 const TONES: Record<Tone, { icon: LucideIcon; className: string }> = {
-  good: { icon: CircleCheck, className: "bg-success-tint text-success-ink" },
-  trouble: { icon: TriangleAlert, className: "bg-warning-tint text-warning-ink" },
-  neutral: { icon: CircleHelp, className: "bg-elevated text-muted" },
-  busy: { icon: LoaderCircle, className: "bg-pink-tint text-pink-ink" },
+  good: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  trouble: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
+  neutral: { icon: ICONS.help, className: "bg-elevated text-muted" },
+  busy: { icon: ICONS.loading, className: "bg-pink-tint text-pink-ink" },
 };
 
 function State({ tone, children }: { tone: Tone; children: ReactNode }) {
@@ -169,7 +157,7 @@ function StatusCard({ vpn }: { vpn: VpnView }) {
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-prose text-[13px] text-muted">{t("vpn.status.testHint")}</p>
-          <Button icon={Globe} busy={test.isPending} onClick={() => test.mutate()}>
+          <Button icon={ICONS.website} busy={test.isPending} onClick={() => test.mutate()}>
             {t("settings.egress.test")}
           </Button>
         </div>
@@ -677,7 +665,7 @@ function VpnCard({ view }: { view: VpnView }) {
               onClick={() => setShowLog((current) => !current)}
               className="mr-auto inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-ink"
             >
-              <ScrollText className="size-4" aria-hidden />
+              <SuiteIcon icon={ScrollText} className="size-4" aria-hidden />
               {job.state === "waiting"
                 ? t("vpn.job.waiting")
                 : running
@@ -687,11 +675,11 @@ function VpnCard({ view }: { view: VpnView }) {
                     : t("vpn.job.failed", { error: job.error })}
             </button>
           )}
-          <Button icon={Save} busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
+          <Button icon={ICONS.save} busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
             {t("common.save")}
           </Button>
           {(view.saved || active) && (
-            <Button variant="ghost" icon={Trash2} disabled={running} onClick={() => setRemoving(true)}>
+            <Button variant="ghost" icon={ICONS.delete} disabled={running} onClick={() => setRemoving(true)}>
               {t("vpn.form.remove")}
             </Button>
           )}
@@ -702,7 +690,12 @@ function VpnCard({ view }: { view: VpnView }) {
           )}
           {view.helper.canVpn ? (
             <>
-              <Button variant="primary" icon={Play} busy={apply.isPending || running} onClick={() => apply.mutate()}>
+              <Button
+                variant="primary"
+                icon={ICONS.start}
+                busy={apply.isPending || running}
+                onClick={() => apply.mutate()}
+              >
                 {up ? t("vpn.form.restart") : t("vpn.form.start")}
               </Button>
             </>
@@ -736,7 +729,7 @@ function VpnCard({ view }: { view: VpnView }) {
             <Button autoFocus onClick={() => setRemoving(false)}>
               {t("common.cancel")}
             </Button>
-            <Button variant="danger" icon={Trash2} busy={remove.isPending} onClick={() => remove.mutate()}>
+            <Button variant="danger" icon={ICONS.delete} busy={remove.isPending} onClick={() => remove.mutate()}>
               {t("vpn.remove.confirm")}
             </Button>
           </div>

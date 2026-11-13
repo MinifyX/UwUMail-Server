@@ -1,6 +1,6 @@
-import { Button, Segmented, Card } from "@uwusuite/design";
+import { Button, Segmented, Card, ICONS, Icon } from "@uwusuite/design";
 import clsx from "clsx";
-import { Lightbulb, ShieldCheck } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
@@ -15,7 +15,7 @@ type ModeChoice = MtaStsMode | "off";
 function Suggestion({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex gap-2.5 rounded-control bg-pink-tint/60 p-3 text-[13px] text-pink-ink">
-      <Lightbulb className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <Icon icon={Lightbulb} className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
         <div className="min-w-0 self-stretch">{children}</div>
         {action}
@@ -198,7 +198,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                             <span className="font-mono text-[12px]">{source.ip || "?"}</span>
                             {source.ours && (
                               <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-pink-tint px-2 text-[11px] font-semibold text-pink-ink">
-                                <ShieldCheck className="size-3" aria-hidden />
+                                <Icon icon={ICONS.securityCheck} className="size-3" aria-hidden />
                                 {t("domains.reports.ours")}
                               </span>
                             )}

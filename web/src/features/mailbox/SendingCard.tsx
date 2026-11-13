@@ -1,6 +1,5 @@
-import { Field, Select, Card } from "@uwusuite/design";
+import { Field, Select, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send } from "lucide-react";
 import { useState } from "react";
 import { useSession } from "@/features/session/session";
 import { useT } from "@/i18n";
@@ -65,7 +64,7 @@ export function SendingCard() {
       className="lg:col-span-2"
       title={
         <span className="flex items-center gap-2">
-          <Send className="size-4 text-muted" aria-hidden />
+          <Icon icon={ICONS.send} className="size-4 text-muted" aria-hidden />
           {t("mailbox.sending.title")}
         </span>
       }

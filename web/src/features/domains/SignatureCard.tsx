@@ -1,6 +1,5 @@
-import { Button, Field, Select, Card } from "@uwusuite/design";
+import { Button, Field, Select, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { PenLine } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useT } from "@/i18n";
 import { api, type DomainDetail } from "@/lib/api";
@@ -46,7 +45,7 @@ export function SignatureCard({ domain }: { domain: DomainDetail }) {
     <Card
       title={
         <span className="flex items-center gap-2">
-          <PenLine className="size-4 text-muted" aria-hidden />
+          <Icon icon={ICONS.compose} className="size-4 text-muted" aria-hidden />
           {t("domains.signature.title")}
         </span>
       }

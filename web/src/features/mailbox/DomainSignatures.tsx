@@ -1,6 +1,5 @@
-import { Button, Field, Select } from "@uwusuite/design";
+import { Button, Field, Select, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Info } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
@@ -206,13 +205,13 @@ function DomainEditor({ overview, domain }: { overview: SignatureOverview; domai
     <div className="flex flex-col gap-4">
       {start.origin === "template" && (
         <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("mailbox.signatures.fromTemplate")}
         </p>
       )}
       {start.origin === "allDomains" && (
         <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("mailbox.signatures.fromAllDomains")}
         </p>
       )}
@@ -281,7 +280,7 @@ function DomainEditor({ overview, domain }: { overview: SignatureOverview; domai
       {company?.mode === "footer" && (
         <div className="flex flex-col gap-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
           <p className="flex gap-2">
-            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
             {t("mailbox.signatures.companyFooter")}
           </p>
           <pre className="font-sans whitespace-pre-wrap">

@@ -1,17 +1,17 @@
-import {} from "@uwusuite/design";
+import { ICONS } from "@uwusuite/design";
 import clsx from "clsx";
-import { CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX, TriangleAlert } from "lucide-react";
+import { CircleDashed, CircleX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import type { CheckStatus, RecordCheck } from "@/lib/api";
 
 export const CHECK_STYLES: Record<CheckStatus, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success-ink" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning-ink" },
-  missing: { icon: CircleAlert, className: "bg-danger-tint text-danger-ink" },
+  ok: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  warning: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
+  missing: { icon: ICONS.error, className: "bg-danger-tint text-danger-ink" },
   wrong: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
-  error: { icon: CircleHelp, className: "bg-warning-tint text-warning-ink" },
+  error: { icon: ICONS.help, className: "bg-warning-tint text-warning-ink" },
 };
 
 /** A recommended record that is not there yet is a suggestion, not an alarm. */

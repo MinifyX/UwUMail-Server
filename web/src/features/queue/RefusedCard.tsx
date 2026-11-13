@@ -1,7 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, Card } from "@uwusuite/design";
+import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -41,7 +40,7 @@ export function RefusedList({
             {onResend && (
               <Button
                 size="sm"
-                icon={CircleCheck}
+                icon={ICONS.success}
                 className="ml-auto"
                 aria-label={t("queue.refused.resendLabel")}
                 title={t("queue.refused.resendLabel")}
@@ -115,7 +114,7 @@ export function RefusedCard() {
           <Button
             size="sm"
             variant="danger"
-            icon={Trash2}
+            icon={ICONS.delete}
             busy={clear.isPending}
             onClick={() => {
               if (window.confirm(t("queue.refused.clearConfirm"))) clear.mutate();

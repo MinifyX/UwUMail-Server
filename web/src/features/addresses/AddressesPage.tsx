@@ -1,6 +1,6 @@
-import { Button, Field, Select, TextInput, Card } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Folder, Inbox, Plus, RotateCcw, Trash2, UsersRound } from "lucide-react";
+import { AtSign, Inbox, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton, PageHeader } from "@/components/ui/Page";
@@ -73,7 +73,7 @@ function AddressesCard({ data }: { data: OwnAddressesView }) {
                 <Button
                   size="sm"
                   variant="danger"
-                  icon={Trash2}
+                  icon={ICONS.delete}
                   busy={remove.isPending && remove.variables === address.address}
                   onClick={() => remove.mutate(address.address)}
                 >
@@ -128,7 +128,7 @@ function AddressesCard({ data }: { data: OwnAddressesView }) {
                 )}
               </Field>
               <div>
-                <Button type="submit" icon={Plus} busy={create.isPending} disabled={!canCreate || !local.trim()}>
+                <Button type="submit" icon={ICONS.add} busy={create.isPending} disabled={!canCreate || !local.trim()}>
                   {t("addresses.create")}
                 </Button>
               </div>
@@ -151,7 +151,7 @@ function AddressesCard({ data }: { data: OwnAddressesView }) {
                   </span>
                   <Button
                     size="sm"
-                    icon={RotateCcw}
+                    icon={ICONS.reset}
                     disabled={data.used >= data.limit}
                     busy={create.isPending && create.variables === released.address}
                     onClick={() => create.mutate(released.address)}
@@ -184,7 +184,7 @@ function MembershipsCard({ data }: { data: OwnAddressesView }) {
               key={group.address}
               className="flex min-h-11 items-center gap-3 border-b border-hairline py-1.5 last:border-b-0"
             >
-              <UsersRound className="size-4 shrink-0 text-muted" aria-hidden />
+              <Icon icon={UsersRound} className="size-4 shrink-0 text-muted" aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">{group.address}</span>
                 <span className="block text-[12px] text-muted">
@@ -200,7 +200,7 @@ function MembershipsCard({ data }: { data: OwnAddressesView }) {
               key={mailbox.address}
               className="flex min-h-11 items-center gap-3 border-b border-hairline py-1.5 last:border-b-0"
             >
-              <Inbox className="size-4 shrink-0 text-muted" aria-hidden />
+              <Icon icon={Inbox} className="size-4 shrink-0 text-muted" aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">{mailbox.address}</span>
                 <span className="block text-[12px] text-muted">
@@ -271,7 +271,7 @@ function StorageCard({ storage }: { storage: StorageView }) {
           {storage.mailboxes.map((mailbox) => (
             <li key={mailbox.id} className="flex flex-col gap-1">
               <div className="flex items-center gap-2 text-sm">
-                <Folder className="size-4 shrink-0 text-muted" aria-hidden />
+                <Icon icon={ICONS.folder} className="size-4 shrink-0 text-muted" aria-hidden />
                 <span className="min-w-0 flex-1 truncate font-semibold">{folderName(mailbox)}</span>
                 <span className="text-[12px] text-muted">
                   {t("storage.folderSize", { count: mailbox.emails, size: formatBytes(mailbox.sizeBytes, language) })}
@@ -280,7 +280,7 @@ function StorageCard({ storage }: { storage: StorageView }) {
                   <Button
                     size="sm"
                     variant="danger"
-                    icon={Trash2}
+                    icon={ICONS.delete}
                     onClick={() => setEmptying(mailbox.role as "trash" | "junk")}
                   >
                     {t("storage.empty")}
@@ -309,7 +309,7 @@ function StorageCard({ storage }: { storage: StorageView }) {
             <Button onClick={() => setEmptying(null)}>{t("common.cancel")}</Button>
             <Button
               variant="danger"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={empty.isPending}
               onClick={() => emptying && empty.mutate(emptying)}
             >
@@ -339,7 +339,7 @@ export function AddressesPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <AtSign className="size-5 text-muted" aria-hidden />
+            <Icon icon={AtSign} className="size-5 text-muted" aria-hidden />
             {t("addresses.pageTitle")}
           </span>
         }

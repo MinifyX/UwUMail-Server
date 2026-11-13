@@ -1,7 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, Card } from "@uwusuite/design";
+import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Trash2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
@@ -52,13 +51,13 @@ function Waiting({
         )}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" icon={Check} busy={busy} onClick={() => onDecide("deliver")}>
+        <Button variant="primary" icon={ICONS.done} busy={busy} onClick={() => onDecide("deliver")}>
           {t("spam.greylist.decide.deliver")}
         </Button>
-        <Button icon={Trash2} busy={busy} onClick={() => onDecide("discard")}>
+        <Button icon={ICONS.delete} busy={busy} onClick={() => onDecide("discard")}>
           {t("spam.greylist.decide.discard")}
         </Button>
-        <Button icon={TriangleAlert} busy={busy} onClick={() => onDecide("discard-spam")}>
+        <Button icon={ICONS.warning} busy={busy} onClick={() => onDecide("discard-spam")}>
           {t("spam.greylist.decide.discardSpam")}
         </Button>
       </div>
@@ -91,7 +90,7 @@ function ConfirmDiscard({
           </p>
           <div className="flex flex-wrap justify-end gap-2">
             <Button onClick={onCancel}>{t("spam.greylist.confirm.keep")}</Button>
-            <Button variant="danger" icon={Trash2} onClick={onConfirm}>
+            <Button variant="danger" icon={ICONS.delete} onClick={onConfirm}>
               {t("spam.greylist.confirm.discard")}
             </Button>
           </div>
