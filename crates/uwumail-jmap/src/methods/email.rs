@@ -303,11 +303,19 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let filter = scoped_filter(ctx, filter);
     let sort = parse_sort(args.get("sort"))?;
     let collapse = args.get("collapseThreads").and_then(Value::as_bool).unwrap_or(false);
-    let results = ctx.jmap.store.query_emails(ctx.account.id, filter, sort, collapse).await?;
-    let total = results.len();
-
     let limit =
         args.get("limit").and_then(Value::as_u64).map_or(MAX_QUERY_LIMIT, |l| (l as usize).min(MAX_QUERY_LIMIT));
+    // Without an anchor, a total or a position from the end, nothing past the page is needed:
+    // the store then stops sorting there.
+    let needs_all = args.get("anchor").and_then(Value::as_str).is_some()
+        || args.get("calculateTotal").and_then(Value::as_bool).unwrap_or(false);
+    let up_to = match args.get("position").and_then(Value::as_i64).unwrap_or(0) {
+        position if !needs_all && position >= 0 => Some((position as usize).saturating_add(limit)),
+        _ => None,
+    };
+    let results = ctx.jmap.store.query_emails_up_to(ctx.account.id, filter, sort, collapse, up_to).await?;
+    let total = results.len();
+
     let mut position = match args.get("anchor").and_then(Value::as_str) {
         Some(anchor) => {
             let anchor_id = ctx.parse_id('e', anchor).ok_or_else(|| MethodError::kind("anchorNotFound"))?;

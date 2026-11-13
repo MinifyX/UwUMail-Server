@@ -284,3 +284,35 @@ async fn push_connections_per_account_are_bounded() {
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     drop(socket);
 }
+
+/// A page asked for by position and limit (read only up to its end) is the same page as cut
+/// from the whole sorted list.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_positioned_page_is_the_same_as_cut_from_all() {
+    use serde_json::json;
+
+    let server = server().await;
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    for n in 0..6 {
+        server.deliver(login, &format!("From: nyu@example.org\nSubject: Nummer {n}\n\nHallo\n")).await;
+    }
+    let sort = json!([{ "property": "subject", "isAscending": false }]);
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["Email/query", { "accountId": account, "sort": sort, "calculateTotal": true }, "0"],
+                ["Email/query", { "accountId": account, "sort": sort, "position": 2, "limit": 3 }, "1"],
+                ["Email/query", { "accountId": account, "sort": sort, "position": 5, "limit": 3 }, "2"],
+                ["Email/query", { "accountId": account, "sort": sort, "position": 9, "limit": 3 }, "3"],
+            ]),
+        )
+        .await;
+    let all = responses[0][1]["ids"].as_array().unwrap().clone();
+    assert_eq!(all.len(), 6, "{}", responses[0]);
+    assert_eq!(responses[1][1]["ids"].as_array().unwrap()[..], all[2..5]);
+    assert_eq!(responses[1][1]["position"], 2);
+    assert_eq!(responses[2][1]["ids"].as_array().unwrap()[..], all[5..]);
+    assert_eq!((responses[3][1]["ids"].as_array().unwrap().len(), &responses[3][1]["position"]), (0, &json!(6)));
+}
