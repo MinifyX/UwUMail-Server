@@ -309,6 +309,32 @@ async fn folders_are_shared_by_acl_and_used_by_their_rights() {
     leni.expect(&format!("SELECT {SHARED_INBOX}"), "NO [NONEXISTENT]").await;
 }
 
+/// A copy into someone else's mailbox that fails part way (here their quota runs out) leaves
+/// nothing behind: the client got NO and no COPYUID, so it would never learn of the copies.
+#[tokio::test]
+async fn a_failed_copy_into_a_shared_folder_leaves_it_as_it_was() {
+    let server = server().await;
+    let mini_inbox = inbox(&server.store, server.mini).await;
+    for subject in ["eins", "zwei", "drei"] {
+        deliver(&server.store, server.leni, subject).await;
+    }
+    let one = server.store.imap_status(server.leni, inbox(&server.store, server.leni).await).await.unwrap().size / 3;
+    let update = uwumail_store::AccountUpdate { quota_bytes: Some(one as i64 * 3 / 2), ..Default::default() };
+    server.store.update_account("mini@example.org", update).await.unwrap();
+    let mut mini = Client::login(&server, "mini@example.org").await;
+    mini.expect("SETACL INBOX leni@example.org lrswi", "OK").await;
+
+    let mut leni = Client::login(&server, "leni@example.org").await;
+    leni.expect("SELECT INBOX", "OK").await;
+    let (_, done) = leni.command(&format!("COPY 1:3 {SHARED_INBOX}")).await;
+    assert!(done.contains("NO"), "{done}");
+    assert_eq!(server.store.imap_status(server.mini, mini_inbox).await.unwrap().messages, 0);
+    let (_, done) = leni.command(&format!("MOVE 1:3 {SHARED_INBOX}")).await;
+    assert!(done.contains("NO"), "{done}");
+    assert_eq!(server.store.imap_status(server.mini, mini_inbox).await.unwrap().messages, 0);
+    assert_eq!(server.store.imap_status(server.leni, inbox(&server.store, server.leni).await).await.unwrap().messages, 3);
+}
+
 #[tokio::test]
 async fn a_shared_subfolder_shows_under_its_owners_path() {
     let server = server().await;
