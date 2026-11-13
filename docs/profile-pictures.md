@@ -29,7 +29,7 @@ Each account (and each group) chooses:
 | | |
 | --- | --- |
 | **Nobody** (`off`) | The picture is kept, and shown to no one but its owner. |
-| **People on this server** (`server`, the default) | Everyone with an account here sees it next to mail from that address, in the webmail and the apps. |
+| **People on this server** (`server`, the default) | Everyone with an account here sees it next to mail from that address, in the webmail and the apps; admins also see it in the portal's list of accounts. |
 | **Everyone** (`public`) | Other servers can find it too: through Libravatar, and in the `Face:` header if that is switched on. |
 
 An admin can forbid public pictures for the whole server (*Server → Settings →

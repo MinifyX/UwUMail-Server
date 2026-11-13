@@ -8,21 +8,25 @@ export function PersonAvatar({
   person,
   size = "md",
 }: {
-  person: Pick<Person, "name" | "login" | "status">;
+  person: Pick<Person, "name" | "login" | "status" | "picture">;
   size?: "sm" | "md" | "lg";
 }) {
   return (
     <span
       aria-hidden
       className={cx(
-        "flex shrink-0 items-center justify-center rounded-full",
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-full",
         person.status === "deleted" || person.status === "disabled" ? "opacity-45 grayscale" : undefined,
         size === "sm" && "size-8",
         size === "md" && "size-10",
         size === "lg" && "size-14",
       )}
     >
-      <AvatarBlob seed={person.login} />
+      {person.picture ? (
+        <img src={person.picture} alt="" className="size-full object-cover" />
+      ) : (
+        <AvatarBlob seed={person.login} />
+      )}
     </span>
   );
 }

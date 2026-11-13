@@ -3,6 +3,12 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.31.2
+
+- The portal's list of accounts and an account's page show the profile picture instead of the
+  blob: a service's or shared mailbox's always, a person's only when they show it to people on
+  this server (not set to "Nobody").
+
 ## 0.31.1
 
 - The portal shows a blob avatar (blobatar) instead of initials for accounts, services and

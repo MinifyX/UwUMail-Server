@@ -224,6 +224,8 @@ export interface Person {
   deletedAt: number | null;
   purgeAt: number | null;
   addresses: AddressInfo[];
+  /** The profile picture admins may see (a service's, or a person's not set to "off"); null for the blob. */
+  picture?: string | null;
   /** Only in the detail view. */
   security?: PersonSecurity;
   forwarding?: { externalBlocked: boolean; targets: number; external: number };
