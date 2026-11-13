@@ -1209,7 +1209,7 @@ mod tests {
             .unwrap();
         assert!(plan.iter().any(|step| step.contains("contact_emails_account")), "{plan:#?}");
 
-        store.dav_delete(mini, book.id, "anna.vcf", None).await.unwrap();
+        store.dav_delete_by(None, mini, book.id, "anna.vcf", None).await.unwrap();
         assert!(!store.knows_sender(mini, "anna@example.com".into()).await.unwrap(), "gone with the card");
     }
 

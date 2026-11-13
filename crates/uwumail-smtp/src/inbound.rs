@@ -2042,7 +2042,15 @@ pub(crate) async fn receive(
                     smtp_delivered: true,
                     verification: verification.as_ref(),
                 };
-                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
+                // Nothing else keeps this message: a forward that reached nobody is retried, not lost.
+                if !forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await {
+                    temporary = true;
+                    failed.push(FailedRecipient {
+                        address: recipient.address.clone(),
+                        error: "451 4.3.0 Could not pass the message on".into(),
+                    });
+                    continue;
+                }
             }
             note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
             delivered += 1;
@@ -2314,6 +2322,11 @@ pub(crate) async fn receive(
         tests = spam_tests.as_deref(),
         "received message"
     );
+    // One recipient's store failed: the sender tries the whole message again. Who got it already
+    // gets it twice, which beats losing it for the rest.
+    if temporary {
+        return "451 4.3.0 Temporary storage failure, please try again later\r\n".into();
+    }
     // Every recipient stores the same bytes, so this one name stands for the message wherever it
     // went: the sender's reputation counts it, and the history finds what a person says about it
     // later under the same name.
@@ -2370,9 +2383,7 @@ pub(crate) async fn receive(
     }
 
     if delivered == 0 {
-        return if temporary {
-            "451 4.3.0 Temporary storage failure, please try again later\r\n".into()
-        } else if group_refused {
+        return if group_refused {
             "550 5.7.1 This group only takes mail from certain senders, and this one could not be verified\r\n".into()
         } else {
             "552 5.2.2 Mailbox is full\r\n".into()

@@ -947,18 +947,8 @@ impl Store {
         Ok(outcome)
     }
 
-    /// Deletes an entry. `Ok(false)` when it is not there, or the condition does not hold.
-    pub async fn dav_delete(
-        &self,
-        account_id: i64,
-        collection_id: i64,
-        name: &str,
-        if_match: Option<String>,
-    ) -> Result<bool> {
-        self.dav_delete_by(None, account_id, collection_id, name, if_match).await
-    }
-
-    /// [`Store::dav_delete`] by a person, as [`Store::dav_put_by`].
+    /// Deletes an entry, by a person as [`Store::dav_put_by`] (`None` for the server). `Ok(false)`
+    /// when it is not there, or the condition does not hold.
     pub async fn dav_delete_by(
         &self,
         actor_id: Option<i64>,
@@ -1261,7 +1251,7 @@ mod tests {
         assert_eq!(taken, DavWriteOutcome::UidTaken { name: "a.ics".into() });
 
         store.dav_put(mini, id, event("b.ics", "b", "Friseur"), DavPrecondition::default()).await.unwrap();
-        assert!(store.dav_delete(mini, id, "a.ics", None).await.unwrap());
+        assert!(store.dav_delete_by(None, mini, id, "a.ics", None).await.unwrap());
         let later = store.dav_changes(mini, id, start.change).await.unwrap();
         assert_eq!(later.deleted, vec!["a.ics"]);
         assert_eq!(later.changed.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), vec!["b.ics"]);
@@ -1292,7 +1282,7 @@ mod tests {
         put("a.ics", "eins").await.unwrap();
         assert!(matches!(put("b.ics", &"x".repeat(200)).await, Err(StoreError::QuotaExceeded)));
         put("a.ics", "eins, etwas länger").await.unwrap();
-        assert!(store.dav_delete(mini, id, "a.ics", None).await.unwrap());
+        assert!(store.dav_delete_by(None, mini, id, "a.ics", None).await.unwrap());
         put("b.ics", &"x".repeat(200)).await.unwrap();
     }
 

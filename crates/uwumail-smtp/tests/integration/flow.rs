@@ -2236,6 +2236,18 @@ async fn queued_mail_stays_here_once_its_account_is_internal_only() {
     assert!(bounce.contains("5.7.1") && bounce.contains("only send to addresses on this server"), "{bounce}");
     let inbox = b.wait_for_inbox("nyu@b.test", 1).await;
     assert_eq!(inbox.iter().map(|email| email.subject.as_str()).collect::<Vec<_>>(), ["System"]);
+
+    // Turning SMTP off holds what is already waiting the same way (server-smtp F4).
+    let no_smtp = uwumail_store::Protocols { smtp: false, ..Default::default() };
+    let update = uwumail_store::AccountUpdate { protocols: Some(no_smtp), ..Default::default() };
+    store.update_account("mini@a.test", update).await.unwrap();
+    let raw = "From: mini@a.test\r\nTo: nyu@b.test\r\nSubject: Ohne SMTP\r\n\r\nHallo\r\n";
+    store.enqueue("mini@a.test", to_nyu(), raw.as_bytes(), Some(mini.id), None, 3600).await.unwrap();
+    let mut bounces = Vec::new();
+    for email in a.wait_for_inbox("mini@a.test", 2).await {
+        bounces.push(a.raw(&email).await);
+    }
+    assert!(bounces.iter().any(|bounce| bounce.contains("may not send to other servers")), "{bounces:?}");
 }
 
 /// A recipient that is given up on once the message expires gets the sender a bounce, unless it

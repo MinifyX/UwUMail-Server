@@ -572,8 +572,15 @@ impl Smtp {
                                 smtp_delivered: false,
                                 verification: verification.get_or_init(find_verification).await.as_ref(),
                             };
-                            forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
-                            local_deliveries += 1;
+                            // Reached nobody: the sender hears about it instead of the mail vanishing.
+                            if forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await {
+                                local_deliveries += 1;
+                            } else {
+                                failed.push(FailedRecipient {
+                                    address: address.clone(),
+                                    error: format!("451 4.3.0 <{address}>: Could not pass the message on"),
+                                });
+                            }
                         }
                         None => failed.push(FailedRecipient {
                             address: address.clone(),
@@ -595,14 +602,26 @@ impl Smtp {
         let mut queue_message_id = None;
         if !remote.is_empty() {
             let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
-            let queued = ctx
-                .store
-                .enqueue(&mail_from, remote, &signed, Some(account.id), env_id, lifetime)
-                .await
-                .map_err(SubmitError::Queue)?;
-            queue_message_id = Some(queued);
+            let addresses: Vec<String> = remote.iter().map(|r| r.address.clone()).collect();
+            let queued = match ctx.store.enqueue(&mail_from, remote, &signed, Some(account.id), env_id, lifetime).await
+            {
+                Ok(queued) => Some(queued),
+                // Copies here are stored already: a retry by the mail app would deliver them again,
+                // so the remote part fails with a DSN instead.
+                Err(err) if local_deliveries > 0 => {
+                    tracing::warn!(%id, %err, "queueing the remote part of a submission failed");
+                    failed.extend(addresses.into_iter().map(|address| FailedRecipient {
+                        error: format!("451 4.3.0 <{address}>: Could not queue the message for this recipient"),
+                        address,
+                    }));
+                    None
+                }
+                Err(err) => return Err(SubmitError::Queue(err)),
+            };
+            queue_message_id = queued;
             // So a complaint about it can be traced back to this account (docs/outbound-abuse.md).
-            if let Some(message_id) = headers::first_value(&message, "Message-ID")
+            if queue_message_id.is_some()
+                && let Some(message_id) = headers::first_value(&message, "Message-ID")
                 && let Err(err) =
                     ctx.store.record_sent_message_id(account.id, &message_id, remote_domains, crate::now()).await
             {
@@ -770,7 +789,10 @@ impl Smtp {
                 smtp_delivered: false,
                 verification,
             };
-            forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
+            // A forward that reached nobody keeps the copy here instead of losing the mail.
+            if !forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await {
+                plan.keep_copy = true;
+            }
         }
         if !plan.keep_copy {
             return Ok(());

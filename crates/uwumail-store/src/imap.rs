@@ -5,6 +5,7 @@
 //! set in IMAP shows in every mailbox the email is in and in JMAP too.
 
 use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -12,6 +13,9 @@ use crate::blobs::BlobHash;
 use crate::mail::MailboxRole;
 use crate::mutate::{Batch, EmailUpdate, KeywordsChange, MailboxesChange, destroy_one, update_one};
 use crate::{EmailAddress, Result, Store, StoreError};
+
+/// Messages per write in the IMAP bulk changes, so one big command does not hold up every other writer.
+const BLOCK: usize = if cfg!(test) { 3 } else { 1000 };
 
 /// The keyword IMAP's `\Deleted` flag is kept as.
 pub const DELETED_KEYWORD: &str = "$deleted";
@@ -381,24 +385,34 @@ impl Store {
             FlagChange::Remove(flags) => KeywordsChange::Patch(flags.into_iter().map(|flag| (flag, false)).collect()),
             FlagChange::Replace(flags) => KeywordsChange::Replace(flags),
         };
-        let (skipped, modseq, learned) = self
-            .write(move |tx| {
-                own_mailbox(tx, account_id, mailbox_id)?;
-                let by_hand = login == account_id || crate::labels::teaches_in_share(tx, account_id)?;
-                let mut batch = Batch { by_hand, ..Batch::new(account_id) };
-                let mut skipped = Vec::new();
-                for (uid, (email_id, modseq)) in emails_by_uid(tx, mailbox_id, &uids)? {
-                    if unchanged_since.is_some_and(|since| modseq > since) {
-                        skipped.push(uid);
-                        continue;
+        let mut uids = uids;
+        uids.sort_unstable();
+        uids.dedup();
+        let (mut skipped, mut learned) = (Vec::new(), false);
+        // One write per block, so `STORE 1:*` on a big mailbox does not hold up every other writer.
+        for chunk in uids.chunks(BLOCK) {
+            let (chunk, keywords) = (chunk.to_vec(), keywords.clone());
+            let (some, modseq, some_learned) = self
+                .write(move |tx| {
+                    own_mailbox(tx, account_id, mailbox_id)?;
+                    let by_hand = login == account_id || crate::labels::teaches_in_share(tx, account_id)?;
+                    let mut batch = Batch { by_hand, ..Batch::new(account_id) };
+                    let mut skipped = Vec::new();
+                    for (uid, (email_id, modseq)) in emails_by_uid(tx, mailbox_id, &chunk)? {
+                        if unchanged_since.is_some_and(|since| modseq > since) {
+                            skipped.push(uid);
+                            continue;
+                        }
+                        let update = EmailUpdate { id: email_id, keywords: keywords.clone(), ..Default::default() };
+                        update_one(tx, &mut batch, &update)?;
                     }
-                    let update = EmailUpdate { id: email_id, keywords: keywords.clone(), ..Default::default() };
-                    update_one(tx, &mut batch, &update)?;
-                }
-                Ok((skipped, batch.modseq, batch.learned))
-            })
-            .await?;
-        finish(self, account_id, modseq);
+                    Ok((skipped, batch.modseq, batch.learned))
+                })
+                .await?;
+            finish(self, account_id, modseq);
+            skipped.extend(some);
+            learned |= some_learned;
+        }
         if learned {
             self.labels_learned();
         }
@@ -415,16 +429,25 @@ impl Store {
         target: i64,
         remove_source: bool,
     ) -> Result<Vec<(u32, u32)>> {
-        let (pairs, modseq) = self
-            .write(move |tx| {
-                own_mailbox(tx, account_id, source)?;
-                own_mailbox(tx, account_id, target)?;
-                let mut batch = Batch::new(account_id);
-                let pairs = copy_in(tx, &mut batch, source, &uids, target, remove_source)?;
-                Ok((pairs, batch.modseq))
-            })
-            .await?;
-        finish(self, account_id, modseq);
+        let mut uids = uids;
+        uids.sort_unstable();
+        uids.dedup();
+        let mut pairs = Vec::new();
+        // One write per block; a move copies and removes each block together, so a block stays whole.
+        for chunk in uids.chunks(BLOCK) {
+            let chunk = chunk.to_vec();
+            let (some, modseq) = self
+                .write(move |tx| {
+                    own_mailbox(tx, account_id, source)?;
+                    own_mailbox(tx, account_id, target)?;
+                    let mut batch = Batch::new(account_id);
+                    let pairs = copy_in(tx, &mut batch, source, &chunk, target, remove_source)?;
+                    Ok((pairs, batch.modseq))
+                })
+                .await?;
+            finish(self, account_id, modseq);
+            pairs.extend(some);
+        }
         Ok(pairs)
     }
 
@@ -449,47 +472,62 @@ impl Store {
     ) -> Result<Vec<u32>> {
         // A set, not a list: it is asked once for every message of the mailbox, inside the write
         // transaction that holds up every other write (security-audit-0.16.0 PANIC-6).
-        let uids: Option<HashSet<u32>> = uids.map(|uids| uids.into_iter().collect());
-        let (removed, modseq) = self
-            .write(move |tx| {
-                own_mailbox(tx, account_id, mailbox_id)?;
-                let mut stmt = tx.prepare(
-                    "SELECT em.uid, em.email_id, (SELECT count(*) FROM email_mailboxes o WHERE o.email_id = em.email_id)
-                     FROM email_mailboxes em
-                     WHERE em.mailbox_id = ?1
-                       AND (?3 = 0 OR EXISTS (SELECT 1 FROM email_keywords k
-                                              WHERE k.email_id = em.email_id AND k.keyword = ?2))
-                     ORDER BY em.uid",
-                )?;
-                let flagged = stmt
-                    .query_map(params![mailbox_id, DELETED_KEYWORD, only_deleted], |row| {
+        let uids: Option<Arc<HashSet<u32>>> = uids.map(|uids| Arc::new(uids.into_iter().collect()));
+        let (mut removed, mut after) = (Vec::new(), 0u32);
+        // One write per block of removed messages, so emptying a big Trash does not hold up every
+        // other writer; `after` is the last UID a block looked at.
+        loop {
+            let uids = uids.clone();
+            let (some, last, modseq) = self
+                .write(move |tx| {
+                    own_mailbox(tx, account_id, mailbox_id)?;
+                    let mut stmt = tx.prepare(
+                        "SELECT em.uid, em.email_id, (SELECT count(*) FROM email_mailboxes o WHERE o.email_id = em.email_id)
+                         FROM email_mailboxes em
+                         WHERE em.mailbox_id = ?1 AND em.uid > ?4
+                           AND (?3 = 0 OR EXISTS (SELECT 1 FROM email_keywords k
+                                                  WHERE k.email_id = em.email_id AND k.keyword = ?2))
+                         ORDER BY em.uid",
+                    )?;
+                    let mut flagged = Vec::new();
+                    for row in stmt.query_map(params![mailbox_id, DELETED_KEYWORD, only_deleted, after], |row| {
                         Ok((row.get::<_, i64>(0)? as u32, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?;
-                drop(stmt);
-                let mut batch = Batch::new(account_id);
-                let mut removed = Vec::new();
-                for (uid, email_id, memberships) in flagged {
-                    if uids.as_ref().is_some_and(|uids| !uids.contains(&uid)) {
-                        continue;
+                    })? {
+                        let row = row?;
+                        if uids.as_ref().is_none_or(|uids| uids.contains(&row.0)) {
+                            flagged.push(row);
+                            if flagged.len() == BLOCK {
+                                break;
+                            }
+                        }
                     }
-                    if memberships > 1 {
+                    drop(stmt);
+                    let mut batch = Batch::new(account_id);
+                    let mut removed = Vec::new();
+                    let last = (flagged.len() == BLOCK).then(|| flagged[BLOCK - 1].0);
+                    for (uid, email_id, memberships) in flagged {
+                        if memberships > 1 {
                         let update = EmailUpdate {
                             id: email_id,
                             mailboxes: MailboxesChange::Patch(vec![(mailbox_id, false)]),
                             ..Default::default()
                         };
-                        update_one(tx, &mut batch, &update)?;
-                    } else {
-                        destroy_one(tx, &mut batch, email_id)?;
+                            update_one(tx, &mut batch, &update)?;
+                        } else {
+                            destroy_one(tx, &mut batch, email_id)?;
+                        }
+                        removed.push(uid);
                     }
-                    removed.push(uid);
-                }
-                Ok((removed, batch.modseq))
-            })
-            .await?;
-        finish(self, account_id, modseq);
-        Ok(removed)
+                    Ok((removed, last, batch.modseq))
+                })
+                .await?;
+            finish(self, account_id, modseq);
+            removed.extend(some);
+            match last {
+                Some(last) => after = last,
+                None => return Ok(removed),
+            }
+        }
     }
 
     /// UIDs that left a mailbox after the change `since`, as sorted ranges (inclusive) that
@@ -680,6 +718,34 @@ mod tests {
         assert_eq!(store.imap_expunge(account, trash, None).await.unwrap(), vec![1]);
         assert_eq!(store.imap_status(account, trash).await.unwrap().messages, 0);
         assert!(store.imap_emails(account, archive, vec![1]).await.unwrap()[0].keywords.is_empty());
+    }
+
+    #[tokio::test]
+    async fn bulk_changes_run_in_blocks_and_reach_every_message() {
+        let (store, _dir, account, roles) = setup().await;
+        let (inbox, archive) = (roles[&MailboxRole::Inbox], roles[&MailboxRole::Archive]);
+        let mut uids = Vec::new();
+        for n in 0..(BLOCK * 2 + 1) {
+            uids.push(deliver(&store, account, &format!("mail {n}")).await);
+        }
+        store
+            .imap_store_flags(account, inbox, uids.clone(), FlagChange::Add(vec!["$seen".into()]), None)
+            .await
+            .unwrap();
+        assert_eq!(store.imap_status(account, inbox).await.unwrap().unseen, 0);
+
+        let moved = store.imap_copy(account, inbox, uids[1..].to_vec(), archive, true).await.unwrap();
+        assert_eq!(moved.iter().map(|pair| pair.0).collect::<Vec<_>>(), uids[1..]);
+        assert_eq!(store.imap_status(account, archive).await.unwrap().messages, uids.len() as u32 - 1);
+
+        let archived: Vec<u32> = moved.iter().map(|pair| pair.1).collect();
+        store
+            .imap_store_flags(account, archive, archived.clone(), FlagChange::Add(vec![DELETED_KEYWORD.into()]), None)
+            .await
+            .unwrap();
+        assert_eq!(store.imap_expunge(account, archive, None).await.unwrap(), archived);
+        assert_eq!(store.imap_status(account, archive).await.unwrap().messages, 0);
+        assert_eq!(store.imap_status(account, inbox).await.unwrap().messages, 1);
     }
 
     #[tokio::test]

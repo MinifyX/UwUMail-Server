@@ -418,7 +418,7 @@ mod tests {
         assert_eq!(store.changes(mini, "Calendar", start, 0).await.unwrap().created, vec![calendar.id]);
 
         let after = store.account_modseq(mini).await.unwrap();
-        assert!(store.dav_delete(mini, calendar.id, "e.ics", None).await.unwrap());
+        assert!(store.dav_delete_by(None, mini, calendar.id, "e.ics", None).await.unwrap());
         assert_eq!(store.changes(mini, "CalendarEvent", after, 0).await.unwrap().destroyed, vec![events[0].id]);
         store.dav_update_collection(mini, calendar.id, DavCollectionUpdate::default()).await.unwrap();
         assert_eq!(store.changes(mini, "Calendar", after, 0).await.unwrap().updated, vec![calendar.id]);
