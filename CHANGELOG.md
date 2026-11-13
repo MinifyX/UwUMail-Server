@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.31.1
+
+- The portal shows a blob avatar (blobatar) instead of initials for accounts, services and
+  shared mailboxes. The blob comes from the login, so it stays the same everywhere.
+- The account menu at the bottom of the sidebar shows your profile picture, or your blob when
+  you have none.
+- UwUSuite-Design 1.13.0.
+
 ## 0.31.0
 
 Fixes from a full audit of the server, the portal and the webmail.

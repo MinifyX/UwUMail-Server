@@ -1,28 +1,8 @@
-import { Tag, type TagTone, cx } from "@uwusuite/design";
+import { AvatarBlob, Tag, type TagTone, cx } from "@uwusuite/design";
 import { MeterBar } from "@/components/ui/StatTile";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
-
-const AVATAR_COLORS = [
-  "bg-[var(--uwu-account-pink)]",
-  "bg-[var(--uwu-account-violet)]",
-  "bg-[var(--uwu-account-sky)]",
-  "bg-[var(--uwu-account-mint)]",
-  "bg-[var(--uwu-account-amber)]",
-  "bg-[var(--uwu-account-coral)]",
-];
-
-function colorFor(login: string) {
-  let hash = 0;
-  for (const char of login) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
-
-export function initials(person: Pick<Person, "name" | "login">) {
-  const words = (person.name || person.login.split("@")[0] || "?").split(/[\s._-]+/).filter(Boolean);
-  return ((words[0]?.[0] ?? "?") + (words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "")).toUpperCase();
-}
 
 export function PersonAvatar({
   person,
@@ -35,15 +15,14 @@ export function PersonAvatar({
     <span
       aria-hidden
       className={cx(
-        "flex shrink-0 items-center justify-center rounded-full font-bold text-white",
-        colorFor(person.login),
+        "flex shrink-0 items-center justify-center rounded-full",
         person.status === "deleted" || person.status === "disabled" ? "opacity-45 grayscale" : undefined,
-        size === "sm" && "size-8 text-[12px]",
-        size === "md" && "size-10 text-sm",
-        size === "lg" && "size-14 text-lg",
+        size === "sm" && "size-8",
+        size === "md" && "size-10",
+        size === "lg" && "size-14",
       )}
     >
-      {initials(person)}
+      <AvatarBlob seed={person.login} />
     </span>
   );
 }
