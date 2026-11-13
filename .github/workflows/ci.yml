@@ -127,6 +127,8 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
+          cache: pnpm
+          cache-dependency-path: webmail/pnpm-lock.yaml
       - name: Build
         working-directory: webmail
         run: |
@@ -254,6 +256,18 @@ jobs:
           # This job has packages: write and pushes the image. Nothing here needs git credentials
           # afterwards, so none are left lying in .git/config.
           persist-credentials: false
+      - name: The tag matches the workspace version
+        # Before anything is pushed: a wrong tag must not reach latest.
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # A binary that reports a different version than the tag would confuse update.sh's
+          # rollback and the gateway's no-downgrade check (security-audit-0.5.2 S-38).
+          cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$cargo_version" != "$tag_version" ]; then
+            echo "Cargo.toml says $cargo_version but the tag is $tag_version" >&2
+            exit 1
+          fi
       # docker/Dockerfile.release packages dist/${TARGETARCH}/uwumail-server.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -310,6 +324,8 @@ jobs:
           # Fail only on vulnerabilities that have a fix available; log the rest.
           "$RUNNER_TEMP/trivy" image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
             --exit-code 1 --no-progress uwumail-server:scan
+      - name: Check the image starts
+        run: docker run --rm uwumail-server:scan --version
       - name: Push the image
         id: push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
@@ -329,9 +345,6 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
-      - name: Check the image starts
-        run: |
-          docker run --rm "${IMAGE}:sha-$(git rev-parse --short=7 HEAD)" --version
 
   release:
     name: GitHub release
@@ -345,16 +358,6 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - name: The tag matches the workspace version
-        run: |
-          # A binary that reports a different version than the tag would confuse update.sh's
-          # rollback and the gateway's no-downgrade check (security-audit-0.5.2 S-38).
-          cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [ "$cargo_version" != "$tag_version" ]; then
-            echo "Cargo.toml says $cargo_version but the tag is $tag_version" >&2
-            exit 1
-          fi
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: uwumail-gateway-linux-amd64
