@@ -222,6 +222,30 @@ async fn calendars_are_shared_with_people_of_the_server() {
         .await;
     assert_eq!(gone["notUpdated"][&personal]["type"], "invalidProperties", "{gone}");
     assert_eq!(server.calendars(MINI).await[0]["shareWith"], Value::Null);
+
+    // Someone on another domain of this server is found by their address too.
+    server.store.create_domain("example.net").await.unwrap();
+    server
+        .store
+        .create_account(NewAccount {
+            address: "ami@example.net".into(),
+            display_name: "AMI".into(),
+            password: Some(PASSWORD.into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    let other = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &personal: { "shareWith": { "ami@example.net": { "mayReadItems": true } } } } }),
+        )
+        .await;
+    assert!(other["updated"].get(&personal).is_some(), "{other}");
+    assert_eq!(server.calendars(MINI).await[0]["shareWith"].as_object().unwrap().len(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

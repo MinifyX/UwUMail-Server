@@ -1041,32 +1041,26 @@ impl Store {
         self.read(move |conn| resolve(conn, &address)).await
     }
 
+    /// The account `address` is an own address of: its login or an alias, or a sub-address of one;
+    /// never a masked address, a group, a forwarding address or a catch-all, so a masked address
+    /// does not lead to its owner.
+    pub async fn own_address_account(&self, address: &str) -> Result<Option<i64>> {
+        let Ok((local, domain)) = normalize_address(address) else {
+            return Ok(None);
+        };
+        self.read(move |conn| own_address_in(conn, &local, &domain).map(|found| found.map(|(owner, _)| owner))).await
+    }
+
     /// The account whose calendars say when `address` is busy, for a free-busy lookup by `viewer`
-    /// (RFC 6638). Only an address of the account itself counts (its login or an alias, or a
-    /// sub-address of one), never a masked address, a group, a forwarding address or a catch-all:
-    /// a masked address must not lead to its owner. And only people the viewer may know of: in one
-    /// of the viewer's own domains, or sharing a calendar with them (security-audit-0.16.0
-    /// PROTOCOLS-L4). Everyone else is nobody here.
+    /// (RFC 6638). Only an own address ([`Store::own_address_account`]), and only people the
+    /// viewer may know of: in one of the viewer's own domains, or sharing a calendar with them
+    /// (security-audit-0.16.0 PROTOCOLS-L4). Everyone else is nobody here.
     pub async fn free_busy_owner(&self, viewer: i64, address: &str) -> Result<Option<i64>> {
         let Ok((local, domain)) = normalize_address(address) else {
             return Ok(None);
         };
         self.read(move |conn| {
-            let lookup = |local: &str| -> rusqlite::Result<Option<(i64, i64)>> {
-                conn.query_row(
-                    "SELECT a.account_id, a.domain_id FROM addresses a JOIN domains d ON d.id = a.domain_id
-                     JOIN accounts acc ON acc.id = a.account_id
-                     WHERE a.local_part = ?1 AND d.name = ?2 AND acc.deleted_at IS NULL",
-                    params![local, domain],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-            };
-            let found = match lookup(&local)? {
-                Some(found) => Some(found),
-                None => lookup(base_local_part(&local))?,
-            };
-            let Some((owner, domain_id)) = found else {
+            let Some((owner, domain_id)) = own_address_in(conn, &local, &domain)? else {
                 return Ok(None);
             };
             let visible: bool = conn.query_row(
@@ -1179,6 +1173,24 @@ impl Store {
         .await?;
         self.send_as_domains(account_id).await
     }
+}
+
+/// The account and domain of an own address (login, alias or a sub-address of one) of a live account.
+fn own_address_in(conn: &Connection, local: &str, domain: &str) -> Result<Option<(i64, i64)>> {
+    let lookup = |local: &str| -> rusqlite::Result<Option<(i64, i64)>> {
+        conn.query_row(
+            "SELECT a.account_id, a.domain_id FROM addresses a JOIN domains d ON d.id = a.domain_id
+             JOIN accounts acc ON acc.id = a.account_id
+             WHERE a.local_part = ?1 AND d.name = ?2 AND acc.deleted_at IS NULL",
+            params![local, domain],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+    };
+    Ok(match lookup(local)? {
+        Some(found) => Some(found),
+        None => lookup(base_local_part(local))?,
+    })
 }
 
 #[cfg(test)]

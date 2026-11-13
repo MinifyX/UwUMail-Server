@@ -531,9 +531,7 @@ pub(super) async fn apply_sharing(
         let account = match principal_account(&principal) {
             Some(id) => Some(id),
             // Only someone's own addresses: a masked or catch-all address must not name its owner.
-            None if principal.contains('@') => {
-                store.free_busy_owner(ctx.account.id, &principal).await.map_err(SetError::from)?
-            }
+            None if principal.contains('@') => store.own_address_account(&principal).await.map_err(SetError::from)?,
             None => None,
         };
         let account = account.ok_or_else(|| invalid(&format!("{principal} is nobody on this server")))?;
