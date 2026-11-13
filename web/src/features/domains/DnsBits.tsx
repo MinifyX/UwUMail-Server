@@ -1,7 +1,8 @@
+import {} from "@uwusuite/design";
 import clsx from "clsx";
 import { CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import type { CheckStatus, RecordCheck } from "@/lib/api";
 

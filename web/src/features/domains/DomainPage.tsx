@@ -1,7 +1,6 @@
-import { Button, IconButton, Field, Select, Toggle } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, Toggle, Card } from "@uwusuite/design";
 import { ArrowLeft, Globe, Info, KeyRound, RefreshCw, Trash2, X } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { ApiError, type DomainDetail } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -38,7 +37,7 @@ function DnsCard({ domain }: { domain: DomainDetail }) {
     <Card
       id={DNS_CARD_ID}
       title={t("domains.detail.dns")}
-      action={
+      aside={
         <Button size="sm" icon={RefreshCw} busy={check.isPending} onClick={() => check.mutate()}>
           {check.isPending ? t("domains.detail.checking") : t("domains.detail.check")}
         </Button>

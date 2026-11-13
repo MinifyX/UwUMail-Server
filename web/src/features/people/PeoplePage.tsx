@@ -1,10 +1,9 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Select, TextInput, EmptyState } from "@uwusuite/design";
+import { Button, Select, TextInput, EmptyState, Pill } from "@uwusuite/design";
 import clsx from "clsx";
 import { Search, UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus, Session } from "@/lib/api";
 import { formatDate } from "@/lib/format";

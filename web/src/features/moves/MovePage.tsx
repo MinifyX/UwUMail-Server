@@ -1,4 +1,4 @@
-import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
+import { Button, IconButton, Field, TextInput, Card } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
 import { CHECK_STYLES } from "@/features/domains/DnsBits";
 import { useT } from "@/i18n";
@@ -60,7 +60,7 @@ function Overview({ detail }: { detail: MoveDetail }) {
   return (
     <Card
       title={t("moves.detail.overview")}
-      action={
+      aside={
         move.state === "active" ? (
           <Button size="sm" icon={Pause} busy={pause.isPending} onClick={() => pause.mutate(undefined)}>
             {t("moves.actions.pauseAll")}
@@ -486,7 +486,7 @@ function AddPeople({ detail }: { detail: MoveDetail }) {
   return (
     <Card
       title={t("moves.add.title")}
-      action={<IconButton icon={X} label={t("common.close")} onClick={() => setOpen(false)} />}
+      aside={<IconButton icon={X} label={t("common.close")} onClick={() => setOpen(false)} />}
     >
       <div className="flex flex-col gap-3">
         <RowsEditor rows={rows} onChange={setRows} problems={problems} domain={detail.move.domain} />

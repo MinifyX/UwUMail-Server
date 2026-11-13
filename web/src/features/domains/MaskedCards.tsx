@@ -1,7 +1,6 @@
-import { Button, Field, Select, Toggle } from "@uwusuite/design";
+import { Button, Field, Select, Toggle, Card } from "@uwusuite/design";
 import { ArrowLeftRight, EyeOff } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { DomainDetail, DomainMaskedPolicy, KindBlockers, MaskedMode } from "@/lib/api";
 import { useSetDomainKind, useSetMaskedPolicy } from "./queries";

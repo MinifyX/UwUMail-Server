@@ -1,7 +1,7 @@
 import { Button } from "@uwusuite/design";
 import { CheckCircle2, ExternalLink, LogIn } from "lucide-react";
 import { useEffect, useEffectEvent, useReducer } from "react";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

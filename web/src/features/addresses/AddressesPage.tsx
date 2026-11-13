@@ -1,9 +1,9 @@
-import { Button, Field, Select, TextInput } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Folder, Inbox, Plus, RotateCcw, Trash2, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
+import { CopyButton, PageHeader } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type OwnAddressesView, type StorageView } from "@/lib/api";

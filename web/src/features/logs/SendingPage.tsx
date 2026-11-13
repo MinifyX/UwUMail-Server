@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState } from "@uwusuite/design";
+import { Button, EmptyState, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LockOpen } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { api, type AbuseReport, type SendingSuspension, type SendingSuspensions } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

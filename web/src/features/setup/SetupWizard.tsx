@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Eye, EyeOff, RefreshCw, Route } from "lucide-rea
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene, type SceneName } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, type DomainSummary, type Session } from "@/lib/api";

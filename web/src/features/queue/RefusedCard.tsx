@@ -1,10 +1,9 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState } from "@uwusuite/design";
+import { Button, EmptyState, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { api, type RefusedMail, type RefusedResend } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -111,7 +110,7 @@ export function RefusedCard() {
       id={REFUSED_ID}
       className="scroll-mt-4"
       title={t("queue.refused.title")}
-      action={
+      aside={
         list.length > 0 && (
           <Button
             size="sm"

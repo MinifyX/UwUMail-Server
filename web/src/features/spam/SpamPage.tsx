@@ -1,4 +1,4 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Page";
 import { Tabs } from "@/components/ui/Tabs";
 import {
   ANTIVIRUS_SETTING_KEYS,
@@ -326,7 +326,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <Card
           title={t("spam.overview.busiestTitle")}
-          action={
+          aside={
             <Link
               to={rulesLink(rulesPath, { sort: "hits", desc: true })}
               className="text-[13px] font-semibold text-pink-ink hover:underline"
@@ -364,7 +364,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
         <div className="flex flex-col gap-5">
           <Card
             title={t("spam.overview.stateTitle")}
-            action={
+            aside={
               <Link to={PATHS.settings} className="text-[13px] font-semibold text-pink-ink hover:underline">
                 {t("spam.overview.change")}
               </Link>
@@ -390,7 +390,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
           </Card>
           <Card
             title={t("spam.bayes.title")}
-            action={
+            aside={
               <Link to={PATHS.learning} className="text-[13px] font-semibold text-pink-ink hover:underline">
                 {t("spam.overview.more")}
               </Link>

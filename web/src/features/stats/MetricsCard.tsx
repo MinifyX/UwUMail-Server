@@ -2,7 +2,7 @@ import { Button, Field, TextInput } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { LockedHint, Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import { api, type SettingsView } from "@/lib/api";

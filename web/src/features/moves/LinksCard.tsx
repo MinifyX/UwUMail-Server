@@ -1,7 +1,7 @@
-import { Button } from "@uwusuite/design";
+import { Button, Card } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
 import { Download, KeyRound, Printer } from "lucide-react";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, type MoveLinks, type MoveMailboxInfo } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

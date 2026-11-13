@@ -1,7 +1,6 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, Card } from "@uwusuite/design";
 import { Fingerprint, KeyRound, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Card } from "@/components/ui/Card";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";

@@ -1,4 +1,4 @@
-import { Button, IconButton, Field, Select } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, Card, Pill } from "@uwusuite/design";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -21,9 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LoadError } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import {
   api,

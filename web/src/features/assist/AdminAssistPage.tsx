@@ -1,10 +1,9 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton, Field, Select, Toggle, EmptyState } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, Toggle, EmptyState, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useDomains, usePeople } from "@/features/people/queries";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";

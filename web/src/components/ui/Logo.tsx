@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Mail } from "lucide-react";
-import { Nyu, type NyuMood } from "@/components/nyu/Nyu";
+import type { NyuMood } from "@uwusuite/design";
+import { Nyu } from "@/components/nyu/Nyu";
 import { DEFAULT_BRAND, useBrand } from "@/state/brand";
 
 interface LogoSymbolProps {

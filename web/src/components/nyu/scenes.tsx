@@ -1,7 +1,8 @@
 import clsx from "clsx";
 import { useBrand } from "@/state/brand";
 import type { ReactNode } from "react";
-import { Nyu, NYU, Paw, Sticker } from "./Nyu";
+import { NYU, Sticker } from "@uwusuite/design";
+import { Nyu, Paw } from "./Nyu";
 
 // Every scene is drawn on a 320 × 220 canvas. Nyu sits at about 0.4 scale,
 // so props use a 6 px outline and an 18 px edge to match it.

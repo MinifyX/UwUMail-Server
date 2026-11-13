@@ -1,5 +1,5 @@
+import { Tag, type TagTone } from "@uwusuite/design";
 import clsx from "clsx";
-import { Tag, type TagTone } from "@/components/ui/Pill";
 import { MeterBar } from "@/components/ui/StatTile";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus } from "@/lib/api";

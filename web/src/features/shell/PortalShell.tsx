@@ -1,4 +1,4 @@
-import { IconButton, Menu } from "@uwusuite/design";
+import { IconButton, Menu, Tag } from "@uwusuite/design";
 import clsx from "clsx";
 import {
   AtSign,
@@ -28,7 +28,6 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Wordmark } from "@/components/ui/Logo";
-import { Tag } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import { toast } from "@/state/toasts";
 import type { Session } from "@/lib/api";

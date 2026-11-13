@@ -1,7 +1,6 @@
-import { Button } from "@uwusuite/design";
+import { Button, Card } from "@uwusuite/design";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { Link } from "@/lib/router";
@@ -48,7 +47,7 @@ export function MailFlowPage({ session }: { session: Session }) {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card
           title={t("setup.reach.cardTitle")}
-          action={
+          aside={
             <Button size="sm" icon={RefreshCw} busy={runReach.isPending} onClick={() => runReach.mutate()}>
               {t(reach ? "setup.reach.run" : "setup.reach.start")}
             </Button>
@@ -72,7 +71,7 @@ export function MailFlowPage({ session }: { session: Session }) {
 
       <Card
         title={t("setup.sending.title")}
-        action={
+        aside={
           <Button size="sm" icon={RefreshCw} busy={busyPlain} onClick={() => run.mutate(false)}>
             {t("setup.sending.run")}
           </Button>

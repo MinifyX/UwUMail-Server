@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Segmented, TextInput, EmptyState } from "@uwusuite/design";
+import { Button, Segmented, TextInput, EmptyState, Pill } from "@uwusuite/design";
 import clsx from "clsx";
 import { Pause, Play, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogCategory, type LogLine } from "@/lib/api";
 import { LOG_CATEGORIES, toggleCategory } from "./blocks";

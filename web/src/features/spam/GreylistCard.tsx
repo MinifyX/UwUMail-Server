@@ -1,10 +1,9 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState } from "@uwusuite/design";
+import { Button, EmptyState, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Trash2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type GreylistDecision, type GreylistHold, type GreylistView } from "@/lib/api";

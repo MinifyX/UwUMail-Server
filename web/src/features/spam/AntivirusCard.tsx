@@ -1,10 +1,9 @@
-import { Button } from "@uwusuite/design";
+import { Button, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { CircleCheck, CircleHelp, CircleX, ShieldCheck, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { api, type AntivirusTest, type AntivirusView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

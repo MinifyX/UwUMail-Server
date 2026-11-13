@@ -1,9 +1,9 @@
-import { Button, Segmented } from "@uwusuite/design";
+import { Button, Segmented, Card } from "@uwusuite/design";
 import clsx from "clsx";
 import { Lightbulb, ShieldCheck } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import type { DomainDetail, MtaStsMode } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -291,7 +291,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
   return (
     <Card
       title={t("domains.reports.title")}
-      action={
+      aside={
         <Segmented<string>
           label={t("domains.reports.period")}
           value={String(days)}

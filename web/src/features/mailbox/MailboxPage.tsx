@@ -1,9 +1,9 @@
-import { Button, Field, TextInput, Toggle } from "@uwusuite/design";
+import { Button, Field, TextInput, Toggle, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Plus, TreePalm, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Page";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { api, type ForwardingView, type VacationView } from "@/lib/api";

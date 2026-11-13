@@ -1,7 +1,6 @@
-import { Button, Field, Select, TextInput } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Card } from "@uwusuite/design";
 import { Bot, Inbox, Plus, Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import type { Person } from "@/lib/api";
@@ -138,7 +137,7 @@ export function SharedMailboxesSection({ people }: { people: Person[] }) {
   return (
     <Card
       title={t("sharedMailboxes.title")}
-      action={
+      aside={
         <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
           {t("sharedMailboxes.create")}
         </Button>

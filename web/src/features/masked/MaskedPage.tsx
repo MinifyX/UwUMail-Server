@@ -1,10 +1,9 @@
-import { Button, Field, Select, TextInput } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Card, Pill } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeOff, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
-import { Pill } from "@/components/ui/Pill";
+import { CopyButton, PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, type MaskedAddress, type MaskedAddressesView, type MaskedState } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

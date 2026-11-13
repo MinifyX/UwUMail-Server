@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { BookOpen, PlugZap } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { SecretField } from "@/features/logs/LokiCard";
 import { useInfo } from "@/features/session/session";
 import { useT } from "@/i18n";

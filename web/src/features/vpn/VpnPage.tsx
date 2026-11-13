@@ -1,4 +1,4 @@
-import { Button, Field, Segmented, Select, TextInput } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -17,7 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
 import { updateCommand } from "@/features/admin/host";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";

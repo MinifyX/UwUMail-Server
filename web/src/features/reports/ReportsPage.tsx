@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Segmented, EmptyState } from "@uwusuite/design";
+import { Segmented, EmptyState, Card } from "@uwusuite/design";
 import clsx from "clsx";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { DomainReports } from "@/lib/api";
 import { formatNumber } from "@/lib/format";

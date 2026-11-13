@@ -1,7 +1,7 @@
+import { Card } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { Section, ToggleField } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import { api, type SentTlsReport, type SettingsView } from "@/lib/api";

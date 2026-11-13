@@ -1,8 +1,8 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, Card } from "@uwusuite/design";
 import { History, LogOut, MonitorSmartphone } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, type SecurityView, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -124,7 +124,7 @@ function SessionsCard({ security }: { security: SecurityView }) {
   return (
     <Card
       title={t("security.sessions.title")}
-      action={
+      aside={
         others > 0 && (
           <Button
             size="sm"

@@ -1,9 +1,9 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, Check, DatabaseBackup, FolderOpen, History, KeyRound, Plug, RefreshCw, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";

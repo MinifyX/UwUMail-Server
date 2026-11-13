@@ -1,10 +1,9 @@
-import { Segmented, Toggle } from "@uwusuite/design";
+import { Segmented, Toggle, Card, Hint } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Copy, KeyRound, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Page";
 import { SettingRow } from "@/components/ui/SettingRow";
-import { Hint } from "@/components/ui/Hint";
 import { useSession } from "@/features/session/session";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
@@ -80,7 +79,7 @@ export function CodesPage() {
     <div className="flex flex-col gap-5">
       <PageHeader title={t("codes.title")} intro={t("codes.intro")} />
       <div className="flex max-w-[760px] flex-col gap-5">
-        <Card icon={KeyRound} title={t("codes.card.title")} intro={t("codes.card.intro")}>
+        <Card icon={KeyRound} title={t("codes.card.title")} subtitle={t("codes.card.intro")}>
           <div className="flex flex-col gap-4">
             <Toggle
               checked={settings.detect}
@@ -104,7 +103,10 @@ export function CodesPage() {
                 />
               )}
             </SettingRow>
-            <Hint icon={ShieldCheck}>{t("codes.signed", { header: "Verification-Info" })}</Hint>
+            <Hint className="flex gap-2.5">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-pink-ink" aria-hidden />
+              <span>{t("codes.signed", { header: "Verification-Info" })}</span>
+            </Hint>
             <CodeChipPreview />
           </div>
         </Card>

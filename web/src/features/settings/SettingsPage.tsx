@@ -1,9 +1,8 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { SettingRow } from "@/components/ui/SettingRow";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";

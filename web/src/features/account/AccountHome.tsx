@@ -1,4 +1,4 @@
-import { BUTTON_SIZES, BUTTON_VARIANTS, cx } from "@uwusuite/design";
+import { BUTTON_SIZES, BUTTON_VARIANTS, cx, Card } from "@uwusuite/design";
 import {} from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -16,8 +16,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Card, CopyButton, KeyValue, PageHeader } from "@/components/ui/Card";
-import { StatusDot } from "@/components/ui/Pill";
+import { CopyButton, KeyValue, PageHeader } from "@/components/ui/Page";
+import { StatusDot } from "@/components/ui/StatusDot";
 import { MeterBar, StatTile } from "@/components/ui/StatTile";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useSecurity } from "@/features/security/queries";
@@ -127,7 +127,7 @@ function StatusCard({ lines }: { lines: StatusLine[] }) {
   return (
     <Card
       title={t("account.status.title")}
-      intro={open === 0 ? t("account.status.allGood") : t("account.status.open", { count: open })}
+      subtitle={open === 0 ? t("account.status.allGood") : t("account.status.open", { count: open })}
     >
       <ul className="flex flex-col gap-2.5">
         {lines.map((line) => (
@@ -183,7 +183,7 @@ function NextRow({
 function NextCard({ security }: { security: SecurityView | undefined }) {
   const { t } = useT();
   return (
-    <Card title={t("account.next.title")} intro={t("account.next.intro")}>
+    <Card title={t("account.next.title")} subtitle={t("account.next.intro")}>
       <div className="flex flex-col gap-2">
         <NextRow
           icon={KeyRound}

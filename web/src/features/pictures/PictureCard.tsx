@@ -1,10 +1,9 @@
-import { Button, Field, Select, Toggle } from "@uwusuite/design";
+import { Button, Field, Select, Toggle, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { Image, ImageUp, Trash2, UserRound } from "lucide-react";
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type DomainLogoState, type PictureFile, type PictureState, type PictureVisibility } from "@/lib/api";

@@ -1,8 +1,7 @@
-import { Segmented } from "@uwusuite/design";
+import { Segmented, Card } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { api, type StatsRange, type StatsView } from "@/lib/api";
 import { formatBytes, formatNumber } from "@/lib/format";
@@ -55,7 +54,7 @@ function Chart({ spec, view }: { spec: ChartSpec; view: StatsView }) {
   return (
     <Card
       title={title}
-      action={
+      aside={
         <span className="text-right text-[13px] text-muted">
           <span className="block text-lg font-bold text-ink">{headline === null ? "–" : format(headline)}</span>
           {t(spec.gauge ? "stats.latest" : `stats.total.${view.range}`)}

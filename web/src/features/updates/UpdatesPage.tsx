@@ -1,9 +1,9 @@
-import { Button, Field, Segmented, Toggle } from "@uwusuite/design";
+import { Button, Field, Segmented, Toggle, Card } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Download, ExternalLink, RefreshCw, RotateCw } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
+import { CopyButton, PageHeader } from "@/components/ui/Page";
 import { HostCard } from "@/features/admin/HostCard";
 import { helperCan, helperOutdated, JobBox, jobBusy, updateCommand, useAskHost, useHost } from "@/features/admin/host";
 import { useT } from "@/i18n";

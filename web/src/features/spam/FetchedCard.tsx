@@ -1,4 +1,4 @@
-import { Card } from "@/components/ui/Card";
+import { Card } from "@uwusuite/design";
 import { useT } from "@/i18n";
 import type { FetchedVerdicts } from "@/lib/api";
 

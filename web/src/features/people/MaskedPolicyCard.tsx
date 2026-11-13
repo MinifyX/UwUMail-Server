@@ -1,6 +1,5 @@
-import { Button, Field, Select } from "@uwusuite/design";
+import { Button, Field, Select, Card } from "@uwusuite/design";
 import { useState, type FormEvent } from "react";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { MaskedMode, Person, PersonMaskedPolicy } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

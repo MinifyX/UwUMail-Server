@@ -1,7 +1,6 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { Button, Field, TextInput, Card } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { type AccountSpamView, api, type SpamLimits, type SpamLimitsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

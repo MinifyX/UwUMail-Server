@@ -1,8 +1,7 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarPlus, CloudDownload, FileUp, Rss } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import {

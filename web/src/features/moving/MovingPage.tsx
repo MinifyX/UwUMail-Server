@@ -1,10 +1,10 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Field, TextInput, EmptyState } from "@uwusuite/design";
+import { Button, Field, TextInput, EmptyState, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CalendarDays, CheckCircle2, Pause, Play, RefreshCw, Truck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Page";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useT } from "@/i18n";
 import { ApiError, api, type MoveJob, type MovingView } from "@/lib/api";

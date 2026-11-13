@@ -1,6 +1,6 @@
-import { Button } from "@uwusuite/design";
+import { Button, Card } from "@uwusuite/design";
 import { Download, RefreshCw, RotateCcw } from "lucide-react";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { formatDateTime } from "@/lib/format";
 import { helperCan, helperOutdated, JobBox, jobBusy, updateCommand, useAskHost, useHost } from "./host";

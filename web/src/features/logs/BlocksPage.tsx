@@ -1,10 +1,9 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton, Field, TextInput, EmptyState } from "@uwusuite/design";
+import { Button, IconButton, Field, TextInput, EmptyState, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LockOpen, Plus, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { api, type Block, type BlocksView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

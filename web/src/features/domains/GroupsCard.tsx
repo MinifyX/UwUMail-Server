@@ -1,7 +1,6 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card } from "@uwusuite/design";
 import { Pencil, Plus, Trash2, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import type { DomainDetail, GroupInfo, WhoMaySend } from "@/lib/api";
@@ -129,7 +128,7 @@ export function GroupsCard({ domain }: { domain: DomainDetail }) {
   return (
     <Card
       title={t("groups.title")}
-      action={
+      aside={
         <Button size="sm" icon={Plus} onClick={() => setEditing("new")}>
           {t("groups.create")}
         </Button>

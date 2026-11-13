@@ -1,9 +1,9 @@
-import { Button, Field, TextInput, Toggle } from "@uwusuite/design";
+import { Button, Field, TextInput, Toggle, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, ExternalLink, Link2, Unlink } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
@@ -148,7 +148,7 @@ function Paired({ view }: { view: UwuauthView }) {
   return (
     <Card
       title={t("uwuauth.pairedTitle")}
-      action={
+      aside={
         <Button variant="danger" size="sm" icon={Unlink} onClick={() => setAsking(true)}>
           {t("uwuauth.unpair")}
         </Button>

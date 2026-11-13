@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { RotateCw, Trash2 } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, type QueuedMessage, type QueueRecipient } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

@@ -1,4 +1,4 @@
-import { Button } from "@uwusuite/design";
+import { Button, Card } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -16,7 +16,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import {
   api,
@@ -502,7 +501,7 @@ function Checklist() {
           {t("microsoft.checklist.title")}
         </span>
       }
-      action={
+      aside={
         <Button size="sm" icon={RotateCw} busy={check.isPending} onClick={() => check.mutate()}>
           {check.isPending ? t("microsoft.checklist.checking") : t("microsoft.checklist.check")}
         </Button>

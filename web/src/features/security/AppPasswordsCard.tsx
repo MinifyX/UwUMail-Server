@@ -1,7 +1,6 @@
-import { Button, Field, Select, TextInput, Toggle } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Toggle, Card } from "@uwusuite/design";
 import { KeySquare, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Card } from "@/components/ui/Card";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
@@ -234,7 +233,7 @@ export function AppPasswordsCard({
   return (
     <Card
       title={t("security.appPasswords.title")}
-      action={
+      aside={
         <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
           {t("security.appPasswords.new")}
         </Button>

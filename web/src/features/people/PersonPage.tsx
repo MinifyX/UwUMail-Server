@@ -1,4 +1,4 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, KeyValue } from "@/components/ui/Card";
+import { KeyValue } from "@/components/ui/Page";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
@@ -425,7 +425,7 @@ function ServiceAccess({ person }: { person: Person }) {
   return (
     <Card
       title={t("people.serviceAccess.title")}
-      action={
+      aside={
         <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
           {t("people.serviceAccess.create")}
         </Button>
