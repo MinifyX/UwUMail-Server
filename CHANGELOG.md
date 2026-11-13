@@ -3,6 +3,72 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.31.0
+
+Fixes from a full audit of the server, the portal and the webmail.
+
+### Upgrade notes
+
+- Migrations 0089 and 0090 run at the first start (a lease column for the outbound queue, one
+  duplicate index dropped). Both are quick.
+- Queued mail of an account that is suspended, disabled or lost SMTP no longer goes out: a
+  suspended account's mail waits for the end of the suspension, the others fail with a bounce.
+- JMAP `/changes` returns at most 5000 entries per call (`hasMoreChanges` says when to ask
+  again). `EmailSubmission/query` is paged and returns `total` only with `calculateTotal`.
+- Calendars can only be shared with a person's own address (login, alias or sub-address), not
+  with a masked, group, forwarding or catch-all address.
+- A certificate covers at most 100 names (Let's Encrypt's limit); installs with more domains get
+  the first 99 extra names.
+
+### Changed
+
+- Portal and webmail: dialogs, the phone menu and calendar cards no longer close on a click or
+  tap beside them. They close with X, Escape, Back or Cancel, or when the action is done. Menus
+  and dropdowns behave as before.
+- The portal uses the shared UwUSuite design 1.12.0 (buttons, form controls, menus, toasts,
+  cards, icons), offers a high-contrast choice in the appearance settings, and no longer flashes
+  white before dark mode loads.
+- Webmail 0.26.0.
+- Update logs list the applied database migrations.
+
+### Fixed
+
+- Inbound: a temporary storage error for one of several recipients answers 451 for the whole
+  message instead of losing that recipient's copy. A forward that could not be stored or queued
+  is retried instead of being answered with 250.
+- Submission: when the queue cannot take the remote recipients after local copies were stored,
+  the sender gets a failure notice for them instead of an error that led to duplicates.
+- Outbound: a recipient is leased while a delivery runs, so a slow delivery is not started
+  twice, and a failed queue update after a delivery no longer sends the mail again every hour.
+- IMAP: sessions report messages deleted by other sessions in one pass; SEARCH keeps only the
+  header fields it was asked for and handles long message sets quickly; a cross-account COPY or
+  MOVE that fails partway removes the copies it made.
+- JMAP: `Email/query` sorts only up to the requested page when no total or anchor is needed;
+  `Identity/set` checks the whole identity before creating it; `AssistLabel/set` and
+  `AssistProvider/set` have the size limits of every other `/set`; `EmailSubmission/get` refuses
+  requests that are too large; `CalendarEvent/get` without ids stops reading at the limit;
+  shared-account thread lookups load their emails in one query; sharing with an account that no
+  longer exists returns `unknownPerson`; a failed `shareWith` update keeps the existing shares
+  and is capped per calendar.
+- Backups: a mailbox restore is refused when its snapshot has disappeared since it was opened, a
+  failed backup no longer leaves its database copy behind, the command line's check and restore
+  take the backup lock, and the server shuts down cleanly once a restore has stopped its
+  services.
+- The client address is taken from every `X-Forwarded-For` header line, not only the first.
+- Mailbox discovery for fetch accounts is rate-limited per hour.
+- A person created as both admin and service becomes a service account.
+- Assistant: only event participants count as possible own addresses, and non-streamed replies
+  are charged by answer characters, not by JSON size.
+- The gateway's job log tail is limited by size, so a status message always fits.
+- Portal: logging out says when the server did not end the session, the alerts card shows a
+  readable error with a retry button, clearing the spam log reports failures, the profile
+  picture setting shows the right confirmation text, and screen readers announce the title of
+  every dialog.
+- Webmail: thread lists and bulk actions work beyond 500 mails, forwarding keeps the original
+  attachments, Ctrl/Cmd+Enter twice no longer sends twice, draft autosave no longer uploads
+  every attachment again, a reply to your own mail goes to its recipients, and the webmail
+  recovers when the server was briefly unreachable at start.
+
 ## 0.30.2
 
 - Bundled SQLite 3.54.1 (rusqlite 0.41) against CVE-2026-119375 / RUSTSEC-2026-0459.
