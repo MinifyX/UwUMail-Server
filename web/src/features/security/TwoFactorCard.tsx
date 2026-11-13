@@ -32,13 +32,7 @@ function CodesDialog({ codes, onClose }: { codes: string[] | null; onClose: () =
   const [confirming, setConfirming] = useState(false);
   return (
     <>
-      <Dialog
-        open={codes !== null}
-        onClose={() => setConfirming(true)}
-        closeOnOutsideClick={false}
-        title={t("security.recovery.title")}
-        width="sm"
-      >
+      <Dialog open={codes !== null} onClose={() => setConfirming(true)} title={t("security.recovery.title")} width="sm">
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           {codes && <RecoveryCodesBox codes={codes} />}
           <div className="flex justify-end">
@@ -311,12 +305,7 @@ export function TwoFactorCard({
         )}
       </div>
 
-      <Dialog
-        open={setup !== null}
-        onClose={requestCloseTotp}
-        closeOnOutsideClick={!totpDirty}
-        title={t("security.totp.setUpTitle")}
-      >
+      <Dialog open={setup !== null} onClose={requestCloseTotp} title={t("security.totp.setUpTitle")}>
         {setup && (
           <TotpSetupForm
             setup={setup}
@@ -332,7 +321,6 @@ export function TwoFactorCard({
       <Dialog
         open={passkeyName !== null}
         onClose={requestClosePasskey}
-        closeOnOutsideClick={!passkeyDirty}
         title={t("security.passkeys.addTitle")}
         width="sm"
       >

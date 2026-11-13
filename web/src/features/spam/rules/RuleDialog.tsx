@@ -103,7 +103,6 @@ export function RuleDialog({
       open={open}
       onClose={onClose}
       title={editing ? t("spam.rules.dialog.editTitle") : t("spam.rules.dialog.newTitle")}
-      closeOnOutsideClick={!value}
     >
       <form className="flex flex-col gap-4 px-6 pt-2 pb-6" onSubmit={submit}>
         {!editing && (

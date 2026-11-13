@@ -629,7 +629,6 @@ export function ProviderDialog({ open, onClose, ...props }: Props & { open: bool
       <Dialog
         open={open}
         onClose={requestClose}
-        closeOnOutsideClick={!dirty}
         title={props.provider ? t("assist.form.editTitle") : t("assist.form.addTitle")}
       >
         <ProviderForm {...props} onClose={close} onCancel={requestClose} onDirtyChange={setDirty} />

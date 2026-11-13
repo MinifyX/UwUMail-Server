@@ -482,7 +482,7 @@ export function ImportCard({ view }: { view: CalendarsView }) {
       <Dialog open={open === "subscribe"} onClose={close} title={t("calendars.subscribe.title")}>
         {open === "subscribe" && <SubscribeDialog onClose={close} />}
       </Dialog>
-      <Dialog open={open === "remote"} onClose={close} title={t("calendars.remote.title")} closeOnOutsideClick={false}>
+      <Dialog open={open === "remote"} onClose={close} title={t("calendars.remote.title")}>
         {open === "remote" && <RemoteDialog view={view} onClose={close} />}
       </Dialog>
     </Card>

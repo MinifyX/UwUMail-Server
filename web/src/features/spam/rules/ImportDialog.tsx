@@ -112,7 +112,7 @@ export function ImportDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("spam.rules.import.title")} width="lg" closeOnOutsideClick={!text}>
+    <Dialog open={open} onClose={onClose} title={t("spam.rules.import.title")} width="lg">
       <form className="flex flex-col gap-4 px-6 pt-2 pb-6" onSubmit={submit}>
         <p className="-mt-1 text-[13px] text-muted">{t("spam.rules.import.intro")}</p>
         <div className="flex flex-wrap items-center gap-3">

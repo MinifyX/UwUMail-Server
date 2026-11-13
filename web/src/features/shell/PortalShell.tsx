@@ -430,12 +430,8 @@ export function PortalShell({ session, children }: { session: Session; children:
 
       {more && (
         <div className="fixed inset-0 z-40 min-[700px]:hidden">
-          <button
-            type="button"
-            aria-label={t("nav.closeMenu")}
-            className="absolute inset-0 animate-fade bg-scrim"
-            onClick={close}
-          />
+          {/* A tap beside the sheet leaves it open; the X, Escape or a choice closes it. */}
+          <div aria-hidden className="absolute inset-0 animate-fade bg-scrim" />
           <div
             role="dialog"
             aria-modal="true"

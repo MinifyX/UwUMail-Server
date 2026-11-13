@@ -94,7 +94,7 @@ function CropDialog({
   };
 
   return (
-    <Dialog open onClose={onClose} title={t("pictures.crop.title")} closeOnOutsideClick={false}>
+    <Dialog open onClose={onClose} title={t("pictures.crop.title")}>
       <div className="flex flex-col items-center gap-4 px-6 pt-1 pb-6">
         <p className="self-start text-[13px] text-muted">{t("pictures.crop.intro")}</p>
         {broken ? (

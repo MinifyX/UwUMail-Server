@@ -51,12 +51,7 @@ function GroupDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title={group ? group.address : t("groups.create")}
-      closeOnOutsideClick={false}
-    >
+    <Dialog open={open} onClose={onClose} title={group ? group.address : t("groups.create")}>
       <form className="flex flex-col gap-4 px-6 pt-1 pb-6" onSubmit={submit}>
         {!group && (
           <Field label={t("groups.address")}>

@@ -627,12 +627,7 @@ function MailboxDialog({
     <>
       {/* The heading belongs to the dialog, like everywhere else: that is what puts the padding
           and the close button there, instead of a form growing its own title against the edge. */}
-      <Dialog
-        open={open}
-        onClose={requestClose}
-        closeOnOutsideClick={!dirty}
-        title={account ? t("fetch.form.editTitle") : t("fetch.form.addTitle")}
-      >
+      <Dialog open={open} onClose={requestClose} title={account ? t("fetch.form.editTitle") : t("fetch.form.addTitle")}>
         <MailboxForm
           key={account?.id ?? "new"}
           view={view}
@@ -678,7 +673,7 @@ function FinishSignInDialog({ back, onClose }: { back: SignInReturn; onClose: ()
   });
   const failed = failure ?? (status.error ? t(`fetch.signIn.errors.${status.error}`) : null);
   return (
-    <Dialog open={back !== null} onClose={onClose} title={t("fetch.signIn.finishing")} closeOnOutsideClick={false}>
+    <Dialog open={back !== null} onClose={onClose} title={t("fetch.signIn.finishing")}>
       <div className="flex flex-col gap-4 px-6 pb-6" aria-live="polite">
         {failed ? (
           <p className="text-[13px] text-danger-ink">{failed}</p>

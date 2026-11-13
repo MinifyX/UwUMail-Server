@@ -445,7 +445,6 @@ function ServiceAccess({ person }: { person: Person }) {
       <Dialog
         open={creating || created !== null}
         onClose={requestCloseCreate}
-        closeOnOutsideClick={created === null && !name.trim()}
         title={t(created ? "people.serviceAccess.createdTitle" : "people.serviceAccess.create")}
         width="sm"
       >
@@ -825,13 +824,7 @@ function PurgeDialog({ person, open, onClose }: { person: Person; open: boolean;
   };
   return (
     <>
-      <Dialog
-        open={open}
-        onClose={requestClose}
-        closeOnOutsideClick={!dirty}
-        title={t("people.purge.title", { login: person.login })}
-        width="sm"
-      >
+      <Dialog open={open} onClose={requestClose} title={t("people.purge.title", { login: person.login })} width="sm">
         <form
           className="flex flex-col gap-4 px-6 pt-1 pb-6"
           onSubmit={(event) => {

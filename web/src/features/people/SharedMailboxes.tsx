@@ -59,7 +59,7 @@ function CreateSharedMailboxDialog({ open, onClose }: { open: boolean; onClose: 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("sharedMailboxes.create")} closeOnOutsideClick={false}>
+    <Dialog open={open} onClose={onClose} title={t("sharedMailboxes.create")}>
       <form className="flex flex-col gap-4 px-6 pt-1 pb-6" onSubmit={submit}>
         <p className="text-[13px] text-muted">{t("sharedMailboxes.createIntro")}</p>
         <Field label={t("sharedMailboxes.name")}>
@@ -225,12 +225,7 @@ export function ConvertToShared({ person }: { person: Person }) {
       <Button icon={Inbox} onClick={() => setAsking(true)}>
         {t("sharedMailboxes.convert")}
       </Button>
-      <Dialog
-        open={asking}
-        onClose={close}
-        title={t("sharedMailboxes.convertTitle", { login: person.login })}
-        closeOnOutsideClick={false}
-      >
+      <Dialog open={asking} onClose={close} title={t("sharedMailboxes.convertTitle", { login: person.login })}>
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t(`sharedMailboxes.convertBody${from}`)}</p>
           <Field label={t("sharedMailboxes.members")} hint={t("sharedMailboxes.membersHint")}>

@@ -120,13 +120,7 @@ export function usePasswordConfirmation() {
   };
   const dialog = (
     <>
-      <Dialog
-        open={pending !== null}
-        onClose={requestCancel}
-        closeOnOutsideClick={!dirty}
-        title={t("security.confirm.title")}
-        width="sm"
-      >
+      <Dialog open={pending !== null} onClose={requestCancel} title={t("security.confirm.title")} width="sm">
         {pending && (
           <PasswordForm pending={pending} onClose={close} onCancel={requestCancel} onDirtyChange={setDirty} />
         )}
