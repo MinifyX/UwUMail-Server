@@ -372,7 +372,12 @@ pub async fn run(
     tasks.spawn(backups.clone().run(shutdown_rx.clone()));
 
     tracing::info!("ready ✉");
-    wait_for_signal().await;
+    // A restore stops the server through the channel; exiting lets Docker start it on the snapshot.
+    let mut stopped = shutdown_rx.clone();
+    tokio::select! {
+        _ = wait_for_signal() => {}
+        _ = stopped.wait_for(|stop| *stop) => {}
+    }
     tracing::info!("shutting down, see you soon");
     let _ = shutdown.send(true);
     let _ = tokio::time::timeout(Duration::from_secs(10), async { while tasks.join_next().await.is_some() {} }).await;
