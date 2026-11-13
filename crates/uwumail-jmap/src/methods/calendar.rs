@@ -546,17 +546,20 @@ pub(super) async fn apply_sharing(
     resolved.sort_by_key(|(account, _)| *account);
     resolved.dedup_by_key(|(account, _)| *account);
     let current = store.dav_shares(calendar.account_id, Some(calendar.id)).await.map_err(SetError::from)?;
-    // Who is no longer wanted goes only after the grants worked, so a refused grant keeps them.
-    let unwanted: Vec<i64> = if replace {
-        current.iter().filter(|s| !resolved.iter().any(|(id, _)| *id == s.account_id)).map(|s| s.account_id).collect()
-    } else {
-        Vec::new()
-    };
+    // Who is no longer wanted goes first, so a full list can be replaced under the share cap. Every
+    // name is resolved by now; only a failed write can leave the change half done.
+    if replace {
+        for share in current.iter().filter(|s| !resolved.iter().any(|(id, _)| *id == s.account_id)) {
+            store.dav_unshare(ctx.account.id, calendar.id, share.account_id).await.map_err(SetError::from)?;
+        }
+    }
     for (account, rights) in resolved {
         match rights {
             Some(rights) => {
                 store.dav_share_with(ctx.account.id, calendar.id, account, rights).await.map_err(|err| match err {
-                    StoreError::Rule { code: "unknownPerson" | "ownShare", message } => invalid(&message),
+                    StoreError::Rule { code: "unknownPerson" | "ownShare" | "tooManyShares", message } => {
+                        invalid(&message)
+                    }
                     other => SetError::from(other),
                 })?;
             }
@@ -565,9 +568,6 @@ pub(super) async fn apply_sharing(
             }
             None => {}
         }
-    }
-    for account in unwanted {
-        store.dav_unshare(ctx.account.id, calendar.id, account).await.map_err(SetError::from)?;
     }
     Ok(())
 }
