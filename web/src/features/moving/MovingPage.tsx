@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, TextInput } from "@/components/ui/Field";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useT } from "@/i18n";
 import { ApiError, api, type MoveJob, type MovingView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -35,22 +36,6 @@ function ProviderHint({ address }: { address: string }) {
   if (!provider) return null;
   return (
     <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px] text-pink-ink">{t(`moving.hints.${provider}`)}</p>
-  );
-}
-
-function ProgressBar({ done, total, label }: { done: number; total: number; label: string }) {
-  const share = total > 0 ? Math.min(1, done / total) : 0;
-  return (
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(share * 100)}
-      className="h-2.5 overflow-hidden rounded-full bg-canvas"
-    >
-      <div className="h-full rounded-full bg-pink transition-[width]" style={{ width: `${share * 100}%` }} />
-    </div>
   );
 }
 
