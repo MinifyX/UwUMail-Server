@@ -30,6 +30,7 @@ Fixes from a full audit of the server, the portal and the webmail.
   white before dark mode loads.
 - Webmail 0.26.0.
 - Update logs list the applied database migrations.
+- Security updates for libraries (ammonia, quinn, russh).
 
 ### Fixed
 

@@ -886,13 +886,9 @@ fn plausible(words: &[Word<'_>], first: usize, last: usize, code: &str) -> bool 
         }
     }
     // "10115 Berlin": a postal code in front of a town.
-    if code.len() == 5
+    !(code.len() == 5
         && first == last
-        && after.is_some_and(|word| word.text.chars().next().is_some_and(char::is_uppercase))
-    {
-        return false;
-    }
-    true
+        && after.is_some_and(|word| word.text.chars().next().is_some_and(char::is_uppercase)))
 }
 
 /// The one code in the text, what it is for and how long it is valid, or nothing when there is no
