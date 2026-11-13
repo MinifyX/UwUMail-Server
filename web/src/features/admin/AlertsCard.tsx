@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { BellRing, Check, ChevronRight, Info } from "lucide-react";
+import { LoadError } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Segmented } from "@/components/ui/Field";
@@ -138,7 +139,11 @@ export function AlertsCard() {
       <div className="flex flex-col gap-3">
         <p className="-mt-1 text-[13px] text-muted">{t("alerts.intro")}</p>
         {!data ? (
-          <p className="text-sm text-muted">{alerts.isError ? t("errors.loadFailed") : t("alerts.loading")}</p>
+          alerts.isError ? (
+            <LoadError error={alerts.error} onRetry={() => void alerts.refetch()} />
+          ) : (
+            <p className="text-sm text-muted">{t("alerts.loading")}</p>
+          )
         ) : data.open.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted">
             <Info className="size-4" aria-hidden />
