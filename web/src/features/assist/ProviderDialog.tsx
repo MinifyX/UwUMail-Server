@@ -382,7 +382,7 @@ function ProviderForm({
       )}
 
       {problem && (
-        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger">
+        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger-ink">
           {problem}
         </p>
       )}
@@ -564,7 +564,7 @@ function AdminFields({
             description={t("assist.form.foreignMailHint")}
           />
           {errorOf("features") && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorOf("features")}
             </p>
           )}

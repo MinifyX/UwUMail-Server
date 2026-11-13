@@ -25,7 +25,7 @@ export function MicrosoftBanner() {
       <span
         className={clsx(
           "flex size-9 shrink-0 items-center justify-center rounded-full bg-surface",
-          throttled ? "text-warning" : "text-danger",
+          throttled ? "text-warning-ink" : "text-danger-ink",
         )}
       >
         <MailWarning className="size-[18px]" aria-hidden />

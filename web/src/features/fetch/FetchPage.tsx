@@ -119,7 +119,7 @@ function Status({ account }: { account: FetchAccountInfo }) {
   // Said in the person's language, not in the server's English error.
   if (need?.kind === "expired" || need?.kind === "passwordRefused") {
     return (
-      <span className="flex items-center gap-1.5 text-[12px] text-danger">
+      <span className="flex items-center gap-1.5 text-[12px] text-danger-ink">
         <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
         {need.kind === "expired"
           ? t("fetch.signIn.expired", { provider: providerName(need.provider) })
@@ -129,7 +129,7 @@ function Status({ account }: { account: FetchAccountInfo }) {
   }
   if (account.lastError) {
     return (
-      <span className="flex items-center gap-1.5 text-[12px] text-danger">
+      <span className="flex items-center gap-1.5 text-[12px] text-danger-ink">
         <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
         {account.lastError}
       </span>
@@ -138,7 +138,7 @@ function Status({ account }: { account: FetchAccountInfo }) {
   if (!account.lastOkAt) return <span className="text-[12px] text-muted">{t("fetch.status.waiting")}</span>;
   return (
     <span className="flex items-center gap-1.5 text-[12px] text-muted">
-      <CheckCircle2 className="size-3.5 shrink-0 text-success" aria-hidden />
+      <CheckCircle2 className="size-3.5 shrink-0 text-success-ink" aria-hidden />
       {t("fetch.status.lastRun", { date: formatDateTime(account.lastOkAt, i18n.language) })}
     </span>
   );
@@ -216,11 +216,11 @@ function SignInBox({
           : [t("fetch.signIn.detected", { provider: name }), false];
   return (
     <div className="flex flex-col gap-3 rounded-control border border-line bg-surface p-4">
-      <p className={clsx("flex items-start gap-2 text-[13px]", danger ? "text-danger" : "text-ink")}>
+      <p className={clsx("flex items-start gap-2 text-[13px]", danger ? "text-danger-ink" : "text-ink")}>
         {danger ? (
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
         ) : (
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
         )}
         {text}
       </p>
@@ -582,7 +582,7 @@ function MailboxForm({
           {t("fetch.form.showServers")}
         </button>
       )}
-      {error && <p className="text-[13px] text-danger">{error}</p>}
+      {error && <p className="text-[13px] text-danger-ink">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel} type="button">
           {t("common.cancel")}
@@ -682,7 +682,7 @@ function FinishSignInDialog({ back, onClose }: { back: SignInReturn; onClose: ()
     <Dialog open={back !== null} onClose={onClose} title={t("fetch.signIn.finishing")} closeOnOutsideClick={false}>
       <div className="flex flex-col gap-4 px-6 pb-6" aria-live="polite">
         {failed ? (
-          <p className="text-[13px] text-danger">{failed}</p>
+          <p className="text-[13px] text-danger-ink">{failed}</p>
         ) : (
           <p className="flex items-center gap-2 text-[13px] text-muted">
             <span

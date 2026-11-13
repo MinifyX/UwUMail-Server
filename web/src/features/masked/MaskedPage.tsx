@@ -111,7 +111,7 @@ function CreateCard({ domains, defaultDomain }: { domains: string[]; defaultDoma
           )}
         </div>
         {create.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(create.error)}
           </p>
         )}

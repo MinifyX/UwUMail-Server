@@ -21,7 +21,7 @@ import {
 export function ExperimentalBadge() {
   const { t } = useT();
   return (
-    <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning-tint px-2 text-[11px] font-bold tracking-wide text-warning uppercase">
+    <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning-tint px-2 text-[11px] font-bold tracking-wide text-warning-ink uppercase">
       <FlaskConical className="size-3" aria-hidden />
       {t("assist.experimental")}
     </span>
@@ -59,8 +59,8 @@ export function Notice({
       role={tone === "info" ? "note" : "alert"}
       className={clsx(
         "flex items-start gap-2 rounded-control px-3 py-2.5 text-[13px]",
-        tone === "warning" && "bg-warning-tint text-warning",
-        tone === "danger" && "bg-danger-tint text-danger",
+        tone === "warning" && "bg-warning-tint text-warning-ink",
+        tone === "danger" && "bg-danger-tint text-danger-ink",
         tone === "info" && "bg-canvas text-muted",
       )}
     >

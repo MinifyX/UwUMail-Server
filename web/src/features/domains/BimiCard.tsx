@@ -310,7 +310,7 @@ function DmarcSection({ view }: { view: BimiView }) {
       {ok ? (
         <p className="text-[13px] text-muted">{t("bimi.dmarc.ok")}</p>
       ) : (
-        <div className="flex flex-col gap-1.5 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
+        <div className="flex flex-col gap-1.5 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning-ink">
           <p className="font-semibold">{t("bimi.dmarc.needs")}</p>
           <ul className="flex list-disc flex-col gap-0.5 pl-5">
             {reasons.map((reason) => (
@@ -420,7 +420,7 @@ function CertificateSection({ domain, view }: { domain: string; view: BimiView }
           {certificateWarnings(certificate).map((warning) => (
             <p
               key={warning}
-              className="flex gap-2 rounded-control bg-warning-tint px-3 py-2 text-[13px] font-medium text-warning"
+              className="flex gap-2 rounded-control bg-warning-tint px-3 py-2 text-[13px] font-medium text-warning-ink"
             >
               <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
               {t(`bimi.certificate.warnings.${warning}`, { domain })}

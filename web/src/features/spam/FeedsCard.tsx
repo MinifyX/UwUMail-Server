@@ -32,7 +32,7 @@ function Status({ feed, onRefresh, busy }: { feed: FeedStatus; onRefresh: () => 
   }
   return (
     <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-0.5 text-[12px] text-muted">
-      <span className={feed.active && feed.error ? "text-danger" : undefined}>{text}</span>
+      <span className={feed.active && feed.error ? "text-danger-ink" : undefined}>{text}</span>
       <a href={feed.page} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-ink">
         <ExternalLink className="size-3" aria-hidden />
         {feed.source}

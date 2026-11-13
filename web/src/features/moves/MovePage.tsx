@@ -180,7 +180,7 @@ function FinishCard({ detail }: { detail: MoveDetail }) {
   if (move.state === "done") {
     return (
       <Card title={t("moves.finish.title")}>
-        <p className="flex items-center gap-1.5 text-[13px] text-success">
+        <p className="flex items-center gap-1.5 text-[13px] text-success-ink">
           <CheckCircle2 className="size-4" aria-hidden />
           {move.finishedAt
             ? t("moves.finish.doneAt", { date: formatDateTime(move.finishedAt, i18n.language) })
@@ -242,7 +242,7 @@ function FinishCard({ detail }: { detail: MoveDetail }) {
             {confirm === "skip" ? t("moves.finish.confirmSkip") : t("moves.finish.confirmLast")}
           </p>
           {status !== "ok" && confirm === "last" && (
-            <p className="flex items-start gap-1.5 text-[13px] text-warning">
+            <p className="flex items-start gap-1.5 text-[13px] text-warning-ink">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
               {t("moves.finish.confirmMx")}
             </p>
@@ -350,7 +350,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
         <p className="text-[12px] text-muted">{t("moves.mailbox.aliases", { aliases: mailbox.aliases.join(", ") })}</p>
       )}
       {quotaTooSmall(mailbox) && mailbox.sourceBytes !== null && (
-        <p className="flex items-start gap-1.5 text-[12px] text-warning">
+        <p className="flex items-start gap-1.5 text-[12px] text-warning-ink">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           {t("moves.mailbox.quotaWarning", {
             source: formatBytes(mailbox.sourceBytes, i18n.language),
@@ -359,7 +359,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
         </p>
       )}
       {mailbox.state === "paused" && (
-        <p className="flex items-start gap-1.5 text-[12px] text-warning">
+        <p className="flex items-start gap-1.5 text-[12px] text-warning-ink">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
             {t(`moves.errors.${mailbox.error || "failed"}`, { defaultValue: t("moves.errors.failed") })}

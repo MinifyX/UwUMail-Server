@@ -180,7 +180,7 @@ function FileImportDialog({ view, onClose }: { view: CalendarsView; onClose: () 
           description={t("calendars.import.onlyNewHint")}
         />
       )}
-      {run.isError && <p className="text-[13px] text-danger">{errorText(run.error)}</p>}
+      {run.isError && <p className="text-[13px] text-danger-ink">{errorText(run.error)}</p>}
       {run.data && <ReportView report={run.data.report} />}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
@@ -279,7 +279,7 @@ function SubscribeDialog({ onClose }: { onClose: () => void }) {
           />
         </>
       )}
-      {subscribe.isError && <p className="text-[13px] text-danger">{errorText(subscribe.error)}</p>}
+      {subscribe.isError && <p className="text-[13px] text-danger-ink">{errorText(subscribe.error)}</p>}
       {result &&
         ("total" in result.report ? <ReportView report={result.report} /> : <MirrorView report={result.report} />)}
       <div className="flex justify-end gap-2">
@@ -411,7 +411,7 @@ function RemoteDialog({ view, onClose }: { view: CalendarsView; onClose: () => v
         </>
       )}
       {move.isPending && <p className="text-[13px] text-muted">{t("calendars.remote.working")}</p>}
-      {move.isError && <p className="text-[13px] text-danger">{errorText(move.error)}</p>}
+      {move.isError && <p className="text-[13px] text-danger-ink">{errorText(move.error)}</p>}
       {move.data && (
         <div className="flex flex-col gap-2">
           {move.data.provider && (
@@ -424,7 +424,7 @@ function RemoteDialog({ view, onClose }: { view: CalendarsView; onClose: () => v
               {item.report ? (
                 <ReportView report={item.report} />
               ) : (
-                <p className="text-[13px] text-danger">
+                <p className="text-[13px] text-danger-ink">
                   {t(`errors.codes.${item.error ?? "internal"}`, t("errors.codes.internal"))}
                 </p>
               )}

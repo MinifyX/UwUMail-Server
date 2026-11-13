@@ -81,8 +81,8 @@ function Banner({
       className={clsx(
         "flex flex-wrap items-center justify-between gap-3 rounded-card px-4 py-3 text-sm font-medium",
         tone === "pink" && "bg-pink-tint text-pink-ink",
-        tone === "warning" && "bg-warning-tint text-warning",
-        tone === "danger" && "bg-danger-tint text-danger",
+        tone === "warning" && "bg-warning-tint text-warning-ink",
+        tone === "danger" && "bg-danger-tint text-danger-ink",
       )}
     >
       <span>{children}</span>
@@ -310,7 +310,7 @@ function ProtocolCard({ person }: { person: Person }) {
       )}
       {!person.hasMailbox && (
         <div className="mt-4 flex flex-col gap-3 border-t border-hairline pt-4">
-          <p className="text-[13px] text-warning">{t("people.protocols.noMailbox")}</p>
+          <p className="text-[13px] text-warning-ink">{t("people.protocols.noMailbox")}</p>
           <RedirectField key={person.redirectTo} person={person} />
         </div>
       )}
@@ -378,7 +378,7 @@ function Convert({ person }: { person: Person }) {
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t(`people.detail.convert${which}Body`)}</p>
           {update.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(update.error)}
             </p>
           )}
@@ -482,7 +482,7 @@ function ServiceAccess({ person }: { person: Person }) {
               )}
             </Field>
             {create.isError && (
-              <p role="alert" className="text-[13px] text-danger">
+              <p role="alert" className="text-[13px] text-danger-ink">
                 {errorText(create.error)}
               </p>
             )}
@@ -583,7 +583,7 @@ function PasswordSource({ person }: { person: Person }) {
             {t(asking === "ldap" ? "people.authSource.toLdapBody" : "people.authSource.toLocalBody")}
           </p>
           {setSource.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(setSource.error)}
             </p>
           )}
@@ -729,7 +729,7 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
         {!service && (
           <p className="flex items-start gap-2 text-sm">
             {security.secondFactor ? (
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
             ) : (
               <ShieldOff className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
             )}
@@ -785,7 +785,7 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t("people.security.resetBody")}</p>
           {reset.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(reset.error)}
             </p>
           )}
@@ -1060,7 +1060,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
               <div className="flex justify-end">
                 <button
                   type="button"
-                  className="rounded-full px-2 py-1 text-[13px] font-semibold text-danger hover:underline"
+                  className="rounded-full px-2 py-1 text-[13px] font-semibold text-danger-ink hover:underline"
                   onClick={() => setPurging(true)}
                 >
                   {t("people.detail.purge")}

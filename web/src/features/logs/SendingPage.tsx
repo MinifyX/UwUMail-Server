@@ -87,7 +87,7 @@ function ReportRow({ report }: { report: AbuseReport }) {
         <span
           className={
             report.counted
-              ? "inline-flex h-6 items-center rounded-full bg-danger-tint px-2.5 text-[12px] font-semibold text-danger"
+              ? "inline-flex h-6 items-center rounded-full bg-danger-tint px-2.5 text-[12px] font-semibold text-danger-ink"
               : "inline-flex h-6 items-center rounded-full bg-elevated px-2.5 text-[12px] font-semibold text-muted"
           }
         >

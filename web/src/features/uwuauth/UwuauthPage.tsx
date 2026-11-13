@@ -156,7 +156,7 @@ function Paired({ view }: { view: UwuauthView }) {
       }
     >
       <div className="flex flex-col gap-3 text-sm">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-success">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-success-ink">
           <CircleCheck className="size-4" aria-hidden />
           {t("uwuauth.pairedWith", { name: pairing.name || pairing.issuer, version: pairing.version })}
         </span>
@@ -170,7 +170,7 @@ function Paired({ view }: { view: UwuauthView }) {
           <dt className="text-muted">{t("uwuauth.login")}</dt>
           <dd>{view.loginActive ? t("uwuauth.loginActive") : t("uwuauth.loginInactive")}</dd>
         </dl>
-        {view.locked.length > 0 && <p className="text-[13px] text-warning">{t("uwuauth.locked")}</p>}
+        {view.locked.length > 0 && <p className="text-[13px] text-warning-ink">{t("uwuauth.locked")}</p>}
         {pairing.manageUrl && (
           <a
             href={pairing.manageUrl}

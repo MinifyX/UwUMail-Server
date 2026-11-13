@@ -38,9 +38,9 @@ import {
 export const GATEWAY_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/gateway.md";
 
 const RECOMMENDATION_TONE = {
-  gateway: "bg-warning-tint text-warning",
-  direct: "bg-success-tint text-success",
-  paired: "bg-success-tint text-success",
+  gateway: "bg-warning-tint text-warning-ink",
+  direct: "bg-success-tint text-success-ink",
+  paired: "bg-success-tint text-success-ink",
   unknown: "bg-canvas text-muted",
 } as const;
 
@@ -79,7 +79,7 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
         <div className="rounded-control bg-canvas px-3 py-2">
           <p className="text-[13px] font-semibold">
             {t("setup.gateway.machine.states." + machine.job.state, { defaultValue: machine.job.state })}
-            {machine.job.error && <span className="ml-2 font-normal text-danger">{machine.job.error}</span>}
+            {machine.job.error && <span className="ml-2 font-normal text-danger-ink">{machine.job.error}</span>}
           </p>
           {machine.job.log && (
             <pre className="mt-2 max-h-56 overflow-auto font-mono text-[12px] whitespace-pre-wrap">
@@ -112,10 +112,10 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
 }
 
 const CHANGE_ICONS = {
-  none: { icon: CircleCheck, className: "text-success" },
+  none: { icon: CircleCheck, className: "text-success-ink" },
   create: { icon: CirclePlus, className: "text-pink-ink" },
   update: { icon: CirclePlus, className: "text-pink-ink" },
-  replace: { icon: TriangleAlert, className: "text-warning" },
+  replace: { icon: TriangleAlert, className: "text-warning-ink" },
   skip: { icon: CircleHelp, className: "text-muted" },
 } as const;
 
@@ -241,7 +241,7 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
             />
             <span className="font-semibold">{t("setup.gateway.cloudflare.replace")}</span>
           </label>
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning-ink">
             {t("setup.gateway.cloudflare.replaceHint")}
           </p>
         </fieldset>

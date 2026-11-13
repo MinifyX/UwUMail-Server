@@ -390,10 +390,12 @@ function RestoreStep({ code, onBack }: { code: string; onBack: () => void }) {
         )}
 
         {look.isError && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">{errorText(look.error)}</p>
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
+            {errorText(look.error)}
+          </p>
         )}
         {restore.isError && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {errorText(restore.error)}
           </p>
         )}
@@ -558,7 +560,7 @@ function AdminStep({
           {t("setup.admin.hostnameNote", { hostname })}
         </p>
         {complete.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(complete.error)}
           </p>
         )}
@@ -699,7 +701,7 @@ function DnsStep({
           {report ? (
             <>
               {allOk && (
-                <p className="rounded-control bg-success-tint px-3 py-2.5 text-[13px] font-semibold text-success">
+                <p className="rounded-control bg-success-tint px-3 py-2.5 text-[13px] font-semibold text-success-ink">
                   {t("setup.dns.allOk")}
                 </p>
               )}

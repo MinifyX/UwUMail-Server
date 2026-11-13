@@ -15,10 +15,10 @@ import { blocklistLines, ptrLines, receivingLines, sendingLines, type CheckLineD
 import { useCloudflare, useSendTestMail, useTestMailStatus } from "./queries";
 
 const LEVELS: Record<LineLevel, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "text-success" },
+  ok: { icon: CircleCheck, className: "text-success-ink" },
   unknown: { icon: CircleHelp, className: "text-muted" },
-  warning: { icon: TriangleAlert, className: "text-warning" },
-  problem: { icon: CircleX, className: "text-danger" },
+  warning: { icon: TriangleAlert, className: "text-warning-ink" },
+  problem: { icon: CircleX, className: "text-danger-ink" },
 };
 
 /** A small heading inside a card. */
@@ -431,7 +431,7 @@ export function CloudflarePanel({
           <KindChoices kinds={differingKinds} chosen={tidy} onChange={setTidy} />
           <p className="text-[12px] text-muted">{t("setup.cloudflare.tidyHint")}</p>
           {differingKinds.some((kind) => DELICATE.includes(kind)) && (
-            <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning">
+            <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning-ink">
               {t("setup.cloudflare.tidyWarning")}
             </p>
           )}

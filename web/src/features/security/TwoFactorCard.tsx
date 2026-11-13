@@ -205,7 +205,7 @@ export function TwoFactorCard({
         <p className="flex items-start gap-2 text-sm">
           <ShieldCheck
             className={
-              security.secondFactor ? "mt-0.5 size-4 shrink-0 text-success" : "mt-0.5 size-4 shrink-0 text-muted"
+              security.secondFactor ? "mt-0.5 size-4 shrink-0 text-success-ink" : "mt-0.5 size-4 shrink-0 text-muted"
             }
             aria-hidden
           />
@@ -292,7 +292,7 @@ export function TwoFactorCard({
               {t("security.recovery.title")}
             </h3>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className={security.recoveryCodesLeft <= 2 ? "text-sm text-warning" : "text-sm text-muted"}>
+              <p className={security.recoveryCodesLeft <= 2 ? "text-sm text-warning-ink" : "text-sm text-muted"}>
                 {t("security.recovery.left", { count: security.recoveryCodesLeft })}
               </p>
               <Button

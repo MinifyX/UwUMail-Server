@@ -197,7 +197,7 @@ function CreatePerson({
             <IconButton icon={X} label={t("common.close")} onClick={onCancel} />
           </header>
           {domains.data?.length === 0 && (
-            <p className="rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
+            <p className="rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning-ink">
               {t("people.create.noDomains")}
             </p>
           )}
@@ -303,7 +303,7 @@ function CreatePerson({
             </>
           )}
           {create.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(create.error)}
             </p>
           )}

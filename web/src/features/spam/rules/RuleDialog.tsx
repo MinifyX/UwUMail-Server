@@ -133,9 +133,9 @@ export function RuleDialog({
                 }`}
               >
                 {option === "block" ? (
-                  <Ban className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+                  <Ban className="mt-0.5 size-4 shrink-0 text-danger-ink" aria-hidden />
                 ) : (
-                  <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+                  <Check className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
                 )}
                 <span className="flex flex-col gap-0.5">
                   <span className="text-sm font-semibold">{t(`spam.rules.lists.${option}`)}</span>
@@ -253,7 +253,7 @@ export function RuleDialog({
         )}
 
         {save.isError && (
-          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {errorText(save.error)}
           </p>
         )}

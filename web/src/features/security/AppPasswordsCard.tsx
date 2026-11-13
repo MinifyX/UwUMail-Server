@@ -117,7 +117,7 @@ function CreateForm({
         )}
       </Field>
       {failed && (
-        <p role="alert" className="text-[13px] text-danger">
+        <p role="alert" className="text-[13px] text-danger-ink">
           {errorText(create.error)}
         </p>
       )}
@@ -173,7 +173,7 @@ export function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPass
             </span>
           ))}
           {expired && (
-            <span className="rounded-full bg-warning-tint px-2 text-[11px] leading-5 font-semibold text-warning">
+            <span className="rounded-full bg-warning-tint px-2 text-[11px] leading-5 font-semibold text-warning-ink">
               {t("security.appPasswords.expired")}
             </span>
           )}

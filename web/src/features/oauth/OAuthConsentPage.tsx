@@ -212,7 +212,7 @@ export function OAuthConsentPage({ session }: { session: Session }) {
 
         <p className="mt-4 text-[13px] text-faint">{t("oauth.revokeHint")}</p>
         {decide.isError && !expired && !(decide.error instanceof Cancelled) && (
-          <p role="alert" className="mt-3 text-center text-[13px] text-danger">
+          <p role="alert" className="mt-3 text-center text-[13px] text-danger-ink">
             {errorText(decide.error)}
           </p>
         )}

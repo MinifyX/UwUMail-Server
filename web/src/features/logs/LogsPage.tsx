@@ -13,9 +13,9 @@ type Level = "all" | "warn" | "error";
 const MAX_LINES = 1000;
 
 const LEVEL_STYLES: Record<LogLine["level"], string> = {
-  error: "text-danger",
-  warn: "text-warning",
-  info: "text-success",
+  error: "text-danger-ink",
+  warn: "text-warning-ink",
+  info: "text-success-ink",
   debug: "text-muted",
   trace: "text-faint",
 };

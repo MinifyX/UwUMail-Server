@@ -158,9 +158,9 @@ function Tile({
 }) {
   const { i18n } = useT();
   const tones = {
-    danger: "bg-danger-tint text-danger",
-    success: "bg-success-tint text-success",
-    warning: "bg-warning-tint text-warning",
+    danger: "bg-danger-tint text-danger-ink",
+    success: "bg-success-tint text-success-ink",
+    warning: "bg-warning-tint text-warning-ink",
     muted: "bg-elevated text-muted",
   };
   return (

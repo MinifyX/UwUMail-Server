@@ -17,7 +17,7 @@ const VARIANTS: Record<Variant, string> = {
   primary: "bg-pink-solid text-on-pink hover:bg-pink-solid-hover shadow-primary",
   secondary: "bg-surface text-ink border border-line hover:bg-elevated hover:border-faint/50",
   ghost: "text-ink hover:bg-pink-tint/60",
-  danger: "bg-surface text-danger border border-line hover:bg-danger-tint",
+  danger: "bg-surface text-danger-ink border border-line hover:bg-danger-tint",
 };
 
 // On a phone the label may wrap and the button grow taller, rather than a long German word making

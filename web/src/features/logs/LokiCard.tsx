@@ -110,7 +110,7 @@ function LokiFields({ form }: { form: Form }) {
       {enabled && (
         <div className="flex flex-col gap-3 rounded-control bg-warning-tint px-4 py-3">
           <p className="flex items-center gap-2 text-sm font-semibold">
-            <ShieldAlert className="size-4 text-warning" aria-hidden />
+            <ShieldAlert className="size-4 text-warning-ink" aria-hidden />
             {t("logs.loki.privacyTitle")}
           </p>
           <p className="text-[13px] text-muted">{t("logs.loki.privacyText")}</p>
@@ -223,7 +223,7 @@ function LokiFields({ form }: { form: Form }) {
         )}
       </div>
       {state?.error && (
-        <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+        <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
           {t("logs.loki.status.error", { error: state.error })}
         </p>
       )}

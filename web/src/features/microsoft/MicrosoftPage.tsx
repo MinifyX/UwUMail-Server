@@ -55,9 +55,9 @@ function useChecklist() {
 }
 
 const STATUS: Record<MsStatus, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
-  problem: { icon: CircleX, className: "bg-danger-tint text-danger" },
+  ok: { icon: CircleCheck, className: "bg-success-tint text-success-ink" },
+  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning-ink" },
+  problem: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
   unknown: { icon: CircleHelp, className: "bg-elevated text-muted" },
 };
 
@@ -291,7 +291,7 @@ function Issues() {
       </h2>
       {open.length === 0 ? (
         <div className="flex items-start gap-3 rounded-card border border-hairline bg-surface p-5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-tint text-success">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-tint text-success-ink">
             <CircleCheck className="size-[18px]" aria-hidden />
           </span>
           <div>

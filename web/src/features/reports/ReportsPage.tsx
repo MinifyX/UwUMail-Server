@@ -26,8 +26,8 @@ function Number_({ label, value, tone }: { label: string; value: string; tone?: 
       <p
         className={clsx(
           "text-[17px] font-bold tabular-nums",
-          tone === "good" && "text-success",
-          tone === "bad" && "text-danger",
+          tone === "good" && "text-success-ink",
+          tone === "bad" && "text-danger-ink",
         )}
       >
         {value}
@@ -55,7 +55,7 @@ function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
     >
       <div className="flex flex-col gap-3">
         {notRead.length > 0 && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("reports.addressTaken", { addresses: notRead.map((local) => `${local}@${domain.name}`).join(", ") })}
           </p>
         )}
@@ -83,7 +83,7 @@ function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
               </p>
             )}
             {domain.ownFailing > 0 && (
-              <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+              <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
                 {t("reports.ownFailing", { count: domain.ownFailing })}
               </p>
             )}

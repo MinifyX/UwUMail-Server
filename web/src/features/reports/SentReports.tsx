@@ -9,8 +9,8 @@ import { formatDate, formatNumber } from "@/lib/format";
 import { useSentReports } from "./queries";
 
 const STATUS_CLASS: Record<SentTlsReport["status"], string> = {
-  sent: "bg-success-tint text-success",
-  failed: "bg-danger-tint text-danger",
+  sent: "bg-success-tint text-success-ink",
+  failed: "bg-danger-tint text-danger-ink",
   none: "bg-elevated text-muted",
   skipped: "bg-elevated text-muted",
 };
@@ -44,7 +44,7 @@ function SentRow({ report }: { report: SentTlsReport }) {
           {t("reports.sent.to", { destinations: report.destinations.join(", ") })}
         </p>
       )}
-      {report.error && <p className="text-[12px] break-words text-danger">{report.error}</p>}
+      {report.error && <p className="text-[12px] break-words text-danger-ink">{report.error}</p>}
     </li>
   );
 }

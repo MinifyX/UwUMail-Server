@@ -13,9 +13,9 @@ import { toast } from "@/state/toasts";
 import { RefusedCard } from "./RefusedCard";
 
 const STATUS_STYLES: Record<QueueRecipient["status"], string> = {
-  pending: "bg-warning-tint text-warning",
-  delivered: "bg-success-tint text-success",
-  failed: "bg-danger-tint text-danger",
+  pending: "bg-warning-tint text-warning-ink",
+  delivered: "bg-success-tint text-success-ink",
+  failed: "bg-danger-tint text-danger-ink",
 };
 
 function useQueueAction(run: (id: number) => Promise<void>, success: (id: number) => string) {

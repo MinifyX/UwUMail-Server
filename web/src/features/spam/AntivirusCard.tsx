@@ -16,9 +16,9 @@ const key = ["admin", "spam", "antivirus"] as const;
 type Tone = "ok" | "warning" | "problem" | "off";
 
 const TONES: Record<Tone, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
-  problem: { icon: CircleX, className: "bg-danger-tint text-danger" },
+  ok: { icon: CircleCheck, className: "bg-success-tint text-success-ink" },
+  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning-ink" },
+  problem: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
   off: { icon: CircleHelp, className: "bg-elevated text-muted" },
 };
 
@@ -67,7 +67,7 @@ export function AntivirusCard() {
         </div>
         {!view.enabled && <p className="text-[13px] text-muted">{t("spam.antivirus.off")}</p>}
         {view.error && (
-          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {t("spam.antivirus.away", { error: view.error })}
           </p>
         )}
@@ -78,7 +78,7 @@ export function AntivirusCard() {
             {view.status.signatures != null && (
               <>
                 <dt className="font-semibold text-muted">{t("spam.antivirus.signatures")}</dt>
-                <dd className={clsx(old && "text-warning")}>
+                <dd className={clsx(old && "text-warning-ink")}>
                   {view.status.signatures}
                   {view.status.signaturesAt != null && ` · ${formatDateTime(view.status.signaturesAt, i18n.language)}`}
                 </dd>
@@ -94,7 +94,7 @@ export function AntivirusCard() {
           </Button>
         </div>
         {test.data?.error && (
-          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">{test.data.error}</p>
+          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">{test.data.error}</p>
         )}
       </div>
     </Card>

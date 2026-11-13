@@ -52,7 +52,7 @@ export function SecondFactorStep({
 
       {expired ? (
         <div className="mt-5 flex flex-col gap-3">
-          <p role="alert" className="text-center text-[13px] text-danger">
+          <p role="alert" className="text-center text-[13px] text-danger-ink">
             {errorText(failure)}
           </p>
           <Button variant="primary" size="lg" onClick={onRestart}>
@@ -77,7 +77,7 @@ export function SecondFactorStep({
             </Button>
           )}
           {challenge.passkey && !challenge.totp && !canUsePasskey && !recovery && (
-            <p className="mt-4 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
+            <p className="mt-4 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning-ink">
               {t("secondFactor.passkeyHere", { hostname })}
             </p>
           )}
@@ -111,7 +111,7 @@ export function SecondFactorStep({
             </form>
           )}
           {!showCodeForm && failure && (
-            <p role="alert" className="mt-3 text-center text-[13px] text-danger">
+            <p role="alert" className="mt-3 text-center text-[13px] text-danger-ink">
               {errorText(failure)}
             </p>
           )}

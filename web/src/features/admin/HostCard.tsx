@@ -54,7 +54,7 @@ export function HostCard() {
         )}
 
         {machine.rebootRequired && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("host.rebootNeeded")}
             {machine.rebootPackages.length > 0 && ` (${machine.rebootPackages.slice(0, 5).join(", ")})`}
           </p>
@@ -62,7 +62,7 @@ export function HostCard() {
 
         {/* The one thing this card exists to say plainly. */}
         {!alone && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {machine.alone === false ? t("host.notAlone", { others: machine.others.join(", ") }) : t("host.cannotTell")}
           </p>
         )}
@@ -72,7 +72,7 @@ export function HostCard() {
           (selfUpdate ? (
             <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px]">{t("host.helperNewer")}</p>
           ) : (
-            <div className="flex flex-col gap-1.5 rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+            <div className="flex flex-col gap-1.5 rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
               <p>{t("host.helperOld", { version: machine.helper ?? "1" })}</p>
               <div className="flex items-start gap-2 rounded-control bg-surface px-3 py-1.5 text-ink">
                 <code className="min-w-0 flex-1 font-mono text-[12px] break-all">{updateCommand(machine)}</code>

@@ -71,9 +71,9 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
             {forwarding.targets.map((target) => (
               <li key={target.id} className="flex items-center gap-3 border-b border-hairline py-2.5 last:border-b-0">
                 {target.confirmedAt ? (
-                  <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden />
+                  <CheckCircle2 className="size-4 shrink-0 text-success-ink" aria-hidden />
                 ) : (
-                  <Clock className="size-4 shrink-0 text-warning" aria-hidden />
+                  <Clock className="size-4 shrink-0 text-warning-ink" aria-hidden />
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{target.address}</span>

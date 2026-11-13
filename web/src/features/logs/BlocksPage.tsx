@@ -43,7 +43,7 @@ function BlockRow({ block, now }: { block: Block; now: number }) {
         <p className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-semibold break-all">{block.ip}</span>
           {block.times >= 2 && (
-            <span className="inline-flex h-6 items-center rounded-full bg-danger-tint px-2.5 text-[12px] font-semibold text-danger">
+            <span className="inline-flex h-6 items-center rounded-full bg-danger-tint px-2.5 text-[12px] font-semibold text-danger-ink">
               {t("logs.blocks.repeat", { times: block.times })}
             </span>
           )}

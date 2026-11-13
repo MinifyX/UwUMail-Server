@@ -35,7 +35,7 @@ export function RefusedList({
               {formatDateTime(mail.at, i18n.language)}
             </time>
             {mail.gaveUp && (
-              <span className="inline-flex h-6 items-center rounded-full bg-warning-tint px-2.5 text-[12px] font-semibold text-warning">
+              <span className="inline-flex h-6 items-center rounded-full bg-warning-tint px-2.5 text-[12px] font-semibold text-warning-ink">
                 {t("queue.refused.gaveUp")}
               </span>
             )}

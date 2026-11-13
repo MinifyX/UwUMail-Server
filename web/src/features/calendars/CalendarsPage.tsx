@@ -84,7 +84,7 @@ function SubscriptionInfo({
       </p>
       <p className="text-[13px] text-muted">{t("calendars.subscribe.readOnly")}</p>
       {subscription.lastError ? (
-        <p className="text-[13px] text-danger">
+        <p className="text-[13px] text-danger-ink">
           {t("calendars.subscribe.failed", {
             error: t(`errors.codes.${subscription.lastError}`, t("errors.codes.internal")),
           })}

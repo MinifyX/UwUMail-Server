@@ -74,7 +74,7 @@ function StatusCard({ view }: { view: BackupsView }) {
           <p className="text-sm text-muted">{t("backups.status.never")}</p>
         )}
         {failed && (
-          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {t("backups.status.failed", { error: status.lastError })}
           </p>
         )}
@@ -491,7 +491,7 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
         </div>
 
         {(save.isError || test.isError) && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(save.error ?? test.error)}
           </p>
         )}
@@ -549,7 +549,7 @@ function RestoreCard({ view }: { view: BackupsView }) {
           </p>
         )}
         {fetching.state === "failed" && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("backups.restore.fetchFailed", { error: fetching.error })}
           </p>
         )}
@@ -566,8 +566,8 @@ function RestoreCard({ view }: { view: BackupsView }) {
             <p
               className={
                 restore.last.error
-                  ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning"
-                  : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success"
+                  ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink"
+                  : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success-ink"
               }
             >
               {restore.last.error
@@ -673,7 +673,7 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
         {(job.state === "" || job.state === "failed") && (
           <>
             {job.state === "failed" && (
-              <p role="alert" className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+              <p role="alert" className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
                 {t("backups.mailbox.openFailed", { error: job.error })}
               </p>
             )}
@@ -737,8 +737,8 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
           <p
             className={
               job.last.error
-                ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning"
-                : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success"
+                ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink"
+                : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success-ink"
             }
           >
             {job.last.error
@@ -948,7 +948,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
           <p className="text-sm">
             {asking && t("backups.restore.from", { time: formatDateTime(asking.createdAt, i18n.language) })}
           </p>
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("backups.restore.warning")}
           </p>
           <p className="text-[13px] text-muted">{t("backups.restore.how")}</p>

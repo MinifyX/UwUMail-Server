@@ -108,12 +108,12 @@ function TestButton({ path, form, onResult }: { path: string; form: Form; onResu
         </Button>
       </div>
       {test.isSuccess && (
-        <p role="status" className="rounded-control bg-success-tint px-3 py-2 text-[13px] break-words text-success">
+        <p role="status" className="rounded-control bg-success-tint px-3 py-2 text-[13px] break-words text-success-ink">
           {t("externalLogin.testOk", { detail: test.data.detail })}
         </p>
       )}
       {test.isError && (
-        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger">
+        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger-ink">
           {errorText(test.error)}
         </p>
       )}

@@ -78,7 +78,7 @@ function CsvImport({
           </label>
         </div>
         {read.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(read.error)}
           </p>
         )}
@@ -92,7 +92,7 @@ function CsvImport({
               {read.data.header ? t("moves.csv.withHeader") : t("moves.csv.withoutHeader")}
             </p>
             {read.data.problems.length > 0 && (
-              <ul className="mt-1 list-disc pl-5 text-danger">
+              <ul className="mt-1 list-disc pl-5 text-danger-ink">
                 {read.data.problems.map((problem, index) => (
                   <li key={index}>
                     {t("moves.csv.line", { line: problem.line })} {problemText(problem)}
@@ -231,7 +231,7 @@ export function RowsEditor({
                 ) : null,
                 rowProblems.length > 0 ? (
                   <tr key={`problems-${index}`}>
-                    <td colSpan={columns.length + 1} role="alert" className="px-1 pb-1 text-[12px] text-danger">
+                    <td colSpan={columns.length + 1} role="alert" className="px-1 pb-1 text-[12px] text-danger-ink">
                       {rowProblems.map(problemText).join(" · ")}
                     </td>
                   </tr>

@@ -128,14 +128,14 @@ export function ChatgptLogin({
   return (
     <div className="flex flex-col gap-2">
       {done && (
-        <p role="status" className="flex items-center gap-2 text-[13px] font-semibold text-success">
+        <p role="status" className="flex items-center gap-2 text-[13px] font-semibold text-success-ink">
           <CheckCircle2 className="size-4" aria-hidden />
           {t("assist.chatgpt.connected")}
         </p>
       )}
-      {state.phase === "expired" && <p className="text-[13px] text-danger">{t("assist.chatgpt.expired")}</p>}
+      {state.phase === "expired" && <p className="text-[13px] text-danger-ink">{t("assist.chatgpt.expired")}</p>}
       {state.phase === "failed" && (
-        <p role="alert" className="text-[13px] break-words text-danger">
+        <p role="alert" className="text-[13px] break-words text-danger-ink">
           {state.description
             ? t("assist.chatgpt.failed", { detail: state.description })
             : t("assist.chatgpt.failedPlain")}

@@ -192,7 +192,7 @@ export function ImportDialog({
         </div>
         {report && <ImportReportView report={report} />}
         {send.isError && (
-          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {errorText(send.error)}
           </p>
         )}

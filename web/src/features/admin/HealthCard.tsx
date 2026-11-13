@@ -12,10 +12,10 @@ import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
 
 export const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: string; mood: NyuMood }> = {
-  ok: { icon: CircleCheck, tint: "bg-success-tint text-success", dot: "bg-success", mood: "happy" },
+  ok: { icon: CircleCheck, tint: "bg-success-tint text-success-ink", dot: "bg-success", mood: "happy" },
   unknown: { icon: CircleHelp, tint: "bg-elevated text-muted", dot: "bg-faint", mood: "puzzled" },
-  warning: { icon: TriangleAlert, tint: "bg-warning-tint text-warning", dot: "bg-warning", mood: "puzzled" },
-  problem: { icon: CircleX, tint: "bg-danger-tint text-danger", dot: "bg-danger", mood: "sad" },
+  warning: { icon: TriangleAlert, tint: "bg-warning-tint text-warning-ink", dot: "bg-warning", mood: "puzzled" },
+  problem: { icon: CircleX, tint: "bg-danger-tint text-danger-ink", dot: "bg-danger", mood: "sad" },
 };
 
 export function useFindingText() {

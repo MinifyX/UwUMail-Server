@@ -4,17 +4,17 @@ import type { MoveMailboxState, MoveState } from "@/lib/api";
 
 const MOVE_STYLES: Record<MoveState, string> = {
   active: "bg-pink-tint text-pink-ink",
-  paused: "bg-warning-tint text-warning",
+  paused: "bg-warning-tint text-warning-ink",
   finishing: "bg-pink-tint text-pink-ink",
-  done: "bg-success-tint text-success",
+  done: "bg-success-tint text-success-ink",
 };
 
 const MAILBOX_STYLES: Record<MoveMailboxState, string> = {
   queued: "border border-line text-muted",
   running: "bg-pink-tint text-pink-ink",
-  paused: "bg-warning-tint text-warning",
-  synced: "bg-success-tint text-success",
-  done: "bg-success-tint text-success",
+  paused: "bg-warning-tint text-warning-ink",
+  synced: "bg-success-tint text-success-ink",
+  done: "bg-success-tint text-success-ink",
 };
 
 const pill = "inline-flex h-6 shrink-0 items-center rounded-full px-2.5 text-[12px] font-semibold";

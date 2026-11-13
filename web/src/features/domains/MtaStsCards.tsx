@@ -106,8 +106,8 @@ function Stat({ label, value, tone, text }: { label: string; value: string; tone
       <p
         className={clsx(
           text ? "text-[13px] font-semibold break-words" : "text-[17px] font-bold tabular-nums",
-          tone === "good" && "text-success",
-          tone === "bad" && "text-danger",
+          tone === "good" && "text-success-ink",
+          tone === "bad" && "text-danger-ink",
         )}
       >
         {value}
@@ -171,7 +171,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                 />
               </div>
               {ownFailed.length > 0 && (
-                <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+                <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
                   {t("domains.reports.ownFailing", { count: ownFailed.length })}
                 </p>
               )}
@@ -213,7 +213,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                           <td
                             className={clsx(
                               "py-1.5 text-right tabular-nums",
-                              failed === 0 ? "text-success" : source.ours ? "text-danger" : "text-muted",
+                              failed === 0 ? "text-success-ink" : source.ours ? "text-danger-ink" : "text-muted",
                             )}
                           >
                             {percent(source.passed, source.messages, language)}

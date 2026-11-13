@@ -72,7 +72,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
       </p>
       <p className="mt-2 text-center text-[13px] text-faint">{t("forwardConfirm.hint")}</p>
       {answer.isError && (
-        <p role="alert" className="mt-3 text-center text-[13px] text-danger">
+        <p role="alert" className="mt-3 text-center text-[13px] text-danger-ink">
           {errorText(answer.error)}
         </p>
       )}

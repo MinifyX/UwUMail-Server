@@ -107,8 +107,8 @@ export function SignatureCard({ domain }: { domain: DomainDetail }) {
           </>
         )}
         {value.mode === "footer" && <p className="text-[12px] text-muted">{t("domains.signature.footerNote")}</p>}
-        {emptyFooter && <p className="text-[13px] text-danger">{t("domains.signature.footerEmpty")}</p>}
-        {big && <p className="text-[13px] text-danger">{t("mailbox.signatures.tooLarge")}</p>}
+        {emptyFooter && <p className="text-[13px] text-danger-ink">{t("domains.signature.footerEmpty")}</p>}
+        {big && <p className="text-[13px] text-danger-ink">{t("mailbox.signatures.tooLarge")}</p>}
         <div className="flex justify-end">
           <Button
             type="submit"

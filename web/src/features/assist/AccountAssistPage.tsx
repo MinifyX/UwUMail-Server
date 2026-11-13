@@ -67,7 +67,7 @@ function FeaturesCard({ view }: { view: AccountAssistView }) {
           return (
             <li key={feature} className="flex items-start gap-3 border-b border-hairline py-2.5 last:border-b-0">
               {on ? (
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
               ) : (
                 <CircleSlash className="mt-0.5 size-4 shrink-0 text-faint" aria-hidden />
               )}
@@ -147,7 +147,7 @@ function ProviderRow({
             </span>
           )}
           {!provider.connected && (
-            <span className="block text-[12px] font-semibold text-warning">
+            <span className="block text-[12px] font-semibold text-warning-ink">
               {provider.kind === "chatgpt" ? t("assist.provider.notSignedIn") : t("assist.provider.noKey")}
             </span>
           )}

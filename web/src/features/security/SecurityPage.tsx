@@ -151,7 +151,7 @@ function SessionsCard({ security }: { security: SecurityView }) {
               <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
                 {describeDevice(session.userAgent, t)}
                 {session.current && (
-                  <span className="rounded-full bg-success-tint px-2 text-[11px] leading-5 font-semibold text-success">
+                  <span className="rounded-full bg-success-tint px-2 text-[11px] leading-5 font-semibold text-success-ink">
                     {t("security.sessions.thisDevice")}
                   </span>
                 )}
@@ -237,7 +237,7 @@ export function SecurityPage({ session }: { session: Session }) {
     <div className="flex flex-col gap-5">
       <PageHeader title={t("security.title")} intro={t("security.intro")} />
       {!data.secondFactor && session.account.role === "admin" && (
-        <p className="rounded-card bg-warning-tint px-4 py-3 text-sm text-warning">{t("security.adminReminder")}</p>
+        <p className="rounded-card bg-warning-tint px-4 py-3 text-sm text-warning-ink">{t("security.adminReminder")}</p>
       )}
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="flex flex-col gap-5">

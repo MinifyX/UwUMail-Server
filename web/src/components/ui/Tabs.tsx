@@ -36,7 +36,7 @@ export function Tabs<T extends string>({ tabs, value, label }: { tabs: Tab<T>[];
                 {Icon && <Icon className="size-3.5" aria-hidden />}
                 {tab.label}
                 {tab.count !== undefined && tab.count > 0 && (
-                  <span className="rounded-full bg-pink px-1.5 text-[11px] leading-[18px] font-bold text-white">
+                  <span className="rounded-full bg-pink-solid px-1.5 text-[11px] leading-[18px] font-bold text-on-pink">
                     {tab.count > 999 ? "999+" : tab.count}
                   </span>
                 )}

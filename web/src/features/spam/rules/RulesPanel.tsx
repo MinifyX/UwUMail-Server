@@ -119,9 +119,9 @@ const itemKey = (rule: Pick<Rule, "type" | "id">) => `${rule.type}:${rule.id}`;
 function ListBadge({ list }: { list: RuleListName }) {
   const { t } = useT();
   const styles: Record<RuleListName, string> = {
-    block: "bg-danger-tint text-danger",
-    allow: "bg-success-tint text-success",
-    points: "bg-warning-tint text-warning",
+    block: "bg-danger-tint text-danger-ink",
+    allow: "bg-success-tint text-success-ink",
+    points: "bg-warning-tint text-warning-ink",
   };
   const Icon = list === "block" ? Ban : list === "allow" ? Check : Hash;
   return (
@@ -612,7 +612,7 @@ export function RulesPanel({ admin }: { admin: boolean }) {
                             <span
                               className={clsx(
                                 "inline-flex items-center gap-1",
-                                expiresSoon ? "text-warning" : "text-muted",
+                                expiresSoon ? "text-warning-ink" : "text-muted",
                               )}
                               title={formatDate(rule.expiresAt, language)}
                             >

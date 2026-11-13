@@ -87,7 +87,7 @@ export function LoginPage() {
               <h1 className="mt-1 text-center text-[20px] font-bold">{t("login.title")}</h1>
               <p className="mt-1 text-center text-[13px] text-muted">{t("login.subtitle")}</p>
               {providerError && !login.error && (
-                <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2.5 text-[13px] text-danger">
+                <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2.5 text-[13px] text-danger-ink">
                   {t(`login.oidcErrors.${providerError}`)}
                 </p>
               )}

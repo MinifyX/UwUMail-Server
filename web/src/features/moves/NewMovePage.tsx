@@ -395,9 +395,9 @@ export function NewMovePage() {
               <p className="text-muted">{t("moves.wizard.planPasswords")}</p>
             )}
             {plan.problems.length > 0 ? (
-              <p className="text-danger">{t("moves.wizard.planProblems", { count: plan.problems.length })}</p>
+              <p className="text-danger-ink">{t("moves.wizard.planProblems", { count: plan.problems.length })}</p>
             ) : (
-              <p className="flex items-center gap-1.5 text-success">
+              <p className="flex items-center gap-1.5 text-success-ink">
                 <CheckCircle2 className="size-4" aria-hidden />
                 {t("moves.wizard.planReady")}
               </p>
@@ -405,7 +405,7 @@ export function NewMovePage() {
           </div>
         )}
         {(check.isError || start.isError) && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(check.error ?? start.error)}
           </p>
         )}

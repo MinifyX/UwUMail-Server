@@ -29,12 +29,12 @@ const ACTIONS: (SpamLogAction | "all")[] = [
 /** Held-back mail is what the history is for, so it is the one that stands out. */
 const TONE: Record<SpamLogAction, string> = {
   delivered: "text-muted",
-  junk: "text-warning",
-  greylist: "text-warning",
-  reject: "text-danger",
-  dmarc: "text-danger",
-  blocked: "text-danger",
-  virus: "text-danger",
+  junk: "text-warning-ink",
+  greylist: "text-warning-ink",
+  reject: "text-danger-ink",
+  dmarc: "text-danger-ink",
+  blocked: "text-danger-ink",
+  virus: "text-danger-ink",
   settled: "text-muted",
 };
 
@@ -113,7 +113,7 @@ function EntryDialog({ entry, onClose }: { entry: SpamLogEntry | null; onClose: 
                       <span
                         className={clsx(
                           "ml-auto text-[13px] font-semibold tabular-nums",
-                          hit.points > 0 ? "text-danger" : "text-success",
+                          hit.points > 0 ? "text-danger-ink" : "text-success-ink",
                         )}
                       >
                         {hit.points > 0 ? "+" : ""}

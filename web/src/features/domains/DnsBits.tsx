@@ -6,11 +6,11 @@ import { useT } from "@/i18n";
 import type { CheckStatus, RecordCheck } from "@/lib/api";
 
 export const CHECK_STYLES: Record<CheckStatus, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "bg-success-tint text-success" },
-  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
-  missing: { icon: CircleAlert, className: "bg-danger-tint text-danger" },
-  wrong: { icon: CircleX, className: "bg-danger-tint text-danger" },
-  error: { icon: CircleHelp, className: "bg-warning-tint text-warning" },
+  ok: { icon: CircleCheck, className: "bg-success-tint text-success-ink" },
+  warning: { icon: TriangleAlert, className: "bg-warning-tint text-warning-ink" },
+  missing: { icon: CircleAlert, className: "bg-danger-tint text-danger-ink" },
+  wrong: { icon: CircleX, className: "bg-danger-tint text-danger-ink" },
+  error: { icon: CircleHelp, className: "bg-warning-tint text-warning-ink" },
 };
 
 /** A recommended record that is not there yet is a suggestion, not an alarm. */
@@ -119,7 +119,7 @@ export function RecordRow({ record, domain, explain }: { record: RecordCheck; do
       {record.differs && <p className="text-[13px] text-muted">{t("domains.detail.differs")}</p>}
       {record.kind === "tlsa" && record.found.length > 0 && record.status !== "warning" && (
         // Servers that check DANE stop delivering the moment the key no longer matches.
-        <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] font-medium text-danger">
+        <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] font-medium text-danger-ink">
           {t("domains.detail.tlsaKeyChange")}
         </p>
       )}

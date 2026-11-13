@@ -153,7 +153,7 @@ function IdentityOverride({
           }}
         >
           <SignatureEditor value={value} onChange={setValue} idPrefix={`identity-${identity.id}`} />
-          {big && <p className="text-[13px] text-danger">{t("mailbox.signatures.tooLarge")}</p>}
+          {big && <p className="text-[13px] text-danger-ink">{t("mailbox.signatures.tooLarge")}</p>}
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               size="sm"
@@ -262,7 +262,7 @@ function DomainEditor({ overview, domain }: { overview: SignatureOverview; domai
             </pre>
           </div>
         )}
-        {big && <p className="text-[13px] text-danger">{t("mailbox.signatures.tooLarge")}</p>}
+        {big && <p className="text-[13px] text-danger-ink">{t("mailbox.signatures.tooLarge")}</p>}
         <div className="flex flex-wrap justify-end gap-2">
           {(start.origin === "domain" || start.origin === "allDomains") && (
             <Button
@@ -322,7 +322,7 @@ export function DomainSignatures() {
   const domain = chosen && domains.some((entry) => entry.domain === chosen) ? chosen : (domains[0]?.domain ?? null);
 
   if (overview.isPending) return <p className="text-sm text-muted">{t("mailbox.signatures.loading")}</p>;
-  if (overview.isError) return <p className="text-sm text-danger">{t("mailbox.signatures.loadError")}</p>;
+  if (overview.isError) return <p className="text-sm text-danger-ink">{t("mailbox.signatures.loadError")}</p>;
   if (!domain) return <p className="text-sm text-muted">{t("mailbox.signatures.empty")}</p>;
 
   return (

@@ -36,7 +36,7 @@ function News({ view }: { view: UpdatesView }) {
 
   if (info.error) {
     return (
-      <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+      <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
         {t("updates.checkFailed", { error: info.error })}
       </p>
     );

@@ -78,7 +78,7 @@ export function SpamLimitsCard({ limits, queryKey }: { limits: SpamLimitsView; q
           </Field>
         </div>
         {save.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(save.error)}
           </p>
         )}

@@ -161,7 +161,7 @@ function StartCard({ view }: { view: MovingView }) {
           </button>
         )}
         {start.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(start.error)}
           </p>
         )}
@@ -181,7 +181,7 @@ function StateLine({ job }: { job: MoveJob }) {
   const { t, i18n } = useT();
   if (job.state === "paused") {
     return (
-      <p className="flex items-start gap-1.5 text-[13px] text-warning">
+      <p className="flex items-start gap-1.5 text-[13px] text-warning-ink">
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
           {t(`moving.errors.${job.error || "failed"}`, { defaultValue: t("moving.errors.failed") })}
@@ -194,7 +194,7 @@ function StateLine({ job }: { job: MoveJob }) {
   }
   if (job.state === "done") {
     return (
-      <p className="flex items-center gap-1.5 text-[13px] text-success">
+      <p className="flex items-center gap-1.5 text-[13px] text-success-ink">
         <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
         {job.finishedAt
           ? t("moving.job.doneAt", { date: formatDateTime(job.finishedAt, i18n.language) })

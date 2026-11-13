@@ -246,7 +246,7 @@ export function ConvertToShared({ person }: { person: Person }) {
             )}
           </Field>
           {convert.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(convert.error)}
             </p>
           )}
@@ -288,7 +288,7 @@ export function EndShared({ person }: { person: Person }) {
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           <p className="text-sm text-muted">{t("sharedMailboxes.endBody")}</p>
           {end.isError && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorText(end.error)}
             </p>
           )}

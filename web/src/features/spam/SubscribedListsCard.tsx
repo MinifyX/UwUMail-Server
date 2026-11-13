@@ -142,7 +142,7 @@ export function SubscribedListsCard({ admin }: { admin: boolean }) {
                   {/* A fetch error is the one line here worth reading in full, so on a phone it
                         gets a second line instead of ending in an ellipsis. */}
                   <span
-                    className={`block truncate text-[12px] max-sm:line-clamp-2 max-sm:whitespace-normal ${source.error ? "text-danger" : "text-muted"}`}
+                    className={`block truncate text-[12px] max-sm:line-clamp-2 max-sm:whitespace-normal ${source.error ? "text-danger-ink" : "text-muted"}`}
                   >
                     {[
                       admin ? scopeName(source) : null,

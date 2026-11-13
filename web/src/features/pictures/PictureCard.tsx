@@ -99,7 +99,7 @@ function CropDialog({
       <div className="flex flex-col items-center gap-4 px-6 pt-1 pb-6">
         <p className="self-start text-[13px] text-muted">{t("pictures.crop.intro")}</p>
         {broken ? (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {t("errors.codes.pictureType")}
           </p>
         ) : (

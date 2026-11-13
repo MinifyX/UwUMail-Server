@@ -209,7 +209,7 @@ export function SignInPanel({
       <Button variant="primary" icon={failed ? RotateCcw : KeyRound} busy={starting} onClick={() => void start()}>
         {failed ? t("fetch.signIn.again") : (label ?? t("fetch.signIn.button", { provider: name }))}
       </Button>
-      {failed && <p className="text-[13px] text-danger">{failed}</p>}
+      {failed && <p className="text-[13px] text-danger-ink">{failed}</p>}
     </div>
   );
 }
