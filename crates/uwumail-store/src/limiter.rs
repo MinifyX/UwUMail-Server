@@ -263,6 +263,8 @@ struct InFlight {
 #[derive(Default)]
 pub struct AuthLimiter {
     failures: Mutex<HashMap<IpAddr, (Failures, Instant)>>,
+    /// When `failures` was last swept for expired entries: once it is full, at most once a window.
+    failures_swept: Mutex<Option<Instant>>,
     accounts: Mutex<HashMap<String, AccountFailures>>,
     /// Checks that have started and not ended yet. They count like failures until they end: the
     /// failures above are only known once a check is over, and a burst of tries that all start
@@ -301,6 +303,27 @@ pub(crate) fn key(ip: IpAddr) -> IpAddr {
     }
 }
 
+/// The /48 a new IPv6 network is counted under while `failures` is full of fresh entries, so a
+/// spray from many /64s is still limited. It keys like the /64 that ends in `:0`, which then
+/// shares its count.
+fn wide_key(ip: IpAddr) -> Option<IpAddr> {
+    match key(ip) {
+        IpAddr::V6(v6) => {
+            let mut segments = v6.segments();
+            segments[3..].fill(0);
+            Some(IpAddr::V6(segments.into()))
+        }
+        IpAddr::V4(_) => None,
+    }
+}
+
+/// Whether the /48 of `ip` is over the line (see [`wide_key`]).
+fn wide_over_the_line(failures: &HashMap<IpAddr, (Failures, Instant)>, ip: IpAddr) -> bool {
+    wide_key(ip)
+        .and_then(|wide| failures.get(&wide))
+        .is_some_and(|(counted, since)| since.elapsed() <= WINDOW && counted.over_the_line())
+}
+
 /// A login the way it is counted: `Mini@Example.org ` and `mini@example.org` are one.
 fn login_key(login: &str) -> String {
     login.trim().to_lowercase()
@@ -322,6 +345,9 @@ impl AuthLimiter {
             return true;
         }
         let mut failures = self.failures.lock().expect("limiter poisoned");
+        if wide_over_the_line(&failures, ip) {
+            return true;
+        }
         match failures.get(&key(ip)) {
             Some((_, since)) if since.elapsed() > WINDOW => {
                 failures.remove(&key(ip));
@@ -365,6 +391,9 @@ impl AuthLimiter {
         }
         let wrong = {
             let mut failures = self.failures.lock().expect("limiter poisoned");
+            if !exempt && wide_over_the_line(&failures, ip) {
+                return None;
+            }
             match failures.get(&network) {
                 Some((_, since)) if since.elapsed() > WINDOW => {
                     failures.remove(&network);
@@ -445,10 +474,25 @@ impl AuthLimiter {
         let unknown = matches!(tried, Tried::Unknown);
         let crossed = {
             let mut failures = self.failures.lock().expect("limiter poisoned");
-            if failures.len() > MAX_ENTRIES {
-                failures.retain(|_, (_, since)| since.elapsed() <= WINDOW);
+            let mut network = key(ip);
+            if failures.len() > MAX_ENTRIES && !failures.contains_key(&network) {
+                let mut swept = self.failures_swept.lock().expect("limiter poisoned");
+                if swept.is_none_or(|at| at.elapsed() > WINDOW) {
+                    failures.retain(|_, (_, since)| since.elapsed() <= WINDOW);
+                    *swept = Some(Instant::now());
+                }
+                // Still full of fresh entries: a new IPv6 network counts under its /48, up to a
+                // hard cap; a new IPv4 address is left out rather than letting the map grow.
+                if failures.len() > MAX_ENTRIES {
+                    match wide_key(ip) {
+                        Some(wide) if failures.contains_key(&wide) || failures.len() < 2 * MAX_ENTRIES => {
+                            network = wide
+                        }
+                        _ => return,
+                    }
+                }
             }
-            let entry = failures.entry(key(ip)).or_insert((Failures::default(), Instant::now()));
+            let entry = failures.entry(network).or_insert((Failures::default(), Instant::now()));
             if entry.1.elapsed() > WINDOW {
                 *entry = (Failures::default(), Instant::now());
             }
@@ -794,6 +838,28 @@ impl Drop for Attempt {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_full_map_counts_new_ipv6_networks_by_48_and_stays_bounded() {
+        let limiter = AuthLimiter::default();
+        {
+            let mut failures = limiter.failures.lock().unwrap();
+            for n in 0..=MAX_ENTRIES as u32 {
+                failures.insert(IpAddr::V4(n.into()), (Failures::default(), Instant::now()));
+            }
+        }
+        let full = limiter.failures.lock().unwrap().len();
+        for n in 0..MAX_FAILURES as u16 {
+            let fresh = IpAddr::V6(std::net::Ipv6Addr::new(0x2001, 0xdb8, 7, n + 1, 0, 0, 0, 1));
+            assert!(!limiter.is_blocked(fresh));
+            limiter.record_failure(fresh, "mini@example.org");
+            limiter.record_unknown_login("192.0.2.1".parse().unwrap());
+        }
+        assert_eq!(limiter.failures.lock().unwrap().len(), full + 1, "only the /48 was added");
+        let next: IpAddr = "2001:db8:7:ffff::1".parse().unwrap();
+        assert!(limiter.is_blocked(next), "the spray from many /64s is limited");
+        assert!(Arc::new(limiter).begin(next, "mini@example.org").is_none());
+    }
 
     #[test]
     fn blocks_after_repeated_failures() {
