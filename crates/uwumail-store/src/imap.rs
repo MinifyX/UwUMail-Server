@@ -429,25 +429,17 @@ impl Store {
         target: i64,
         remove_source: bool,
     ) -> Result<Vec<(u32, u32)>> {
-        let mut uids = uids;
-        uids.sort_unstable();
-        uids.dedup();
-        let mut pairs = Vec::new();
-        // One write per block; a move copies and removes each block together, so a block stays whole.
-        for chunk in uids.chunks(BLOCK) {
-            let chunk = chunk.to_vec();
-            let (some, modseq) = self
-                .write(move |tx| {
-                    own_mailbox(tx, account_id, source)?;
-                    own_mailbox(tx, account_id, target)?;
-                    let mut batch = Batch::new(account_id);
-                    let pairs = copy_in(tx, &mut batch, source, &chunk, target, remove_source)?;
-                    Ok((pairs, batch.modseq))
-                })
-                .await?;
-            finish(self, account_id, modseq);
-            pairs.extend(some);
-        }
+        // One write for the whole command: a COPY or MOVE the client is told failed leaves nothing behind.
+        let (pairs, modseq) = self
+            .write(move |tx| {
+                own_mailbox(tx, account_id, source)?;
+                own_mailbox(tx, account_id, target)?;
+                let mut batch = Batch::new(account_id);
+                let pairs = copy_in(tx, &mut batch, source, &uids, target, remove_source)?;
+                Ok((pairs, batch.modseq))
+            })
+            .await?;
+        finish(self, account_id, modseq);
         Ok(pairs)
     }
 
