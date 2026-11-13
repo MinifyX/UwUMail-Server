@@ -1,4 +1,5 @@
-import { IconButton, Menu, Tag, ICONS, Icon, cx } from "@uwusuite/design";
+import { AvatarBlob, IconButton, Menu, Tag, ICONS, Icon, cx } from "@uwusuite/design";
+import { useQuery } from "@tanstack/react-query";
 import {
   AtSign,
   ChevronsUpDown,
@@ -15,7 +16,7 @@ import type { LucideIcon } from "lucide-react";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { toast } from "@/state/toasts";
-import type { Session } from "@/lib/api";
+import { api, type PictureState, type Session } from "@/lib/api";
 import { Link, usePath } from "@/lib/router";
 import { adminViewOf, inCalmNav } from "@/features/admin/adminPrefs";
 import { useLogout } from "@/features/session/session";
@@ -224,6 +225,11 @@ function UserMenu({
   const { t } = useT();
   const logout = useLogout();
   const name = session.account.name || session.account.login;
+  // Same key as the picture card, so a new picture shows here at once.
+  const picture = useQuery({
+    queryKey: ["picture", "/api/account/picture"],
+    queryFn: () => api<PictureState>("/api/account/picture"),
+  }).data?.picture;
   return (
     <Menu
       align="start"
@@ -258,8 +264,12 @@ function UserMenu({
           aria-label={t("userMenu.open")}
           className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-hairline p-2 text-left transition-colors hover:bg-pink-tint/50"
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-pink-tint text-sm font-bold text-pink-ink">
-            {name.slice(0, 1).toUpperCase()}
+          <span aria-hidden className="flex size-8 shrink-0 overflow-hidden rounded-full">
+            {picture ? (
+              <img src={picture.url} alt="" className="size-full object-cover" />
+            ) : (
+              <AvatarBlob seed={session.account.login} />
+            )}
           </span>
           <span className="min-w-0 flex-1 leading-tight">
             <span className="block truncate text-sm font-semibold">{name}</span>
