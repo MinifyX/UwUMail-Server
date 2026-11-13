@@ -126,6 +126,12 @@
       "light": "ライト",
       "dark": "ダーク"
     },
+    "contrast": {
+      "label": "ハイコントラスト",
+      "system": "システムと同じ",
+      "normal": "標準",
+      "high": "高"
+    },
     "motion": {
       "label": "アニメーション",
       "system": "システムと同じ",

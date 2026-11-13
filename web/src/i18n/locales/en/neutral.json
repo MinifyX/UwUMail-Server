@@ -126,6 +126,12 @@
       "light": "Light",
       "dark": "Dark"
     },
+    "contrast": {
+      "label": "High contrast",
+      "system": "Same as the system",
+      "normal": "Normal",
+      "high": "High"
+    },
     "motion": {
       "label": "Animations",
       "system": "Same as the system",

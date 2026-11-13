@@ -126,6 +126,12 @@
       "light": "浅色",
       "dark": "深色"
     },
+    "contrast": {
+      "label": "高对比度",
+      "system": "跟随系统",
+      "normal": "标准",
+      "high": "高"
+    },
     "motion": {
       "label": "动画",
       "system": "跟随系统",

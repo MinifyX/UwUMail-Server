@@ -1,3 +1,4 @@
+import { useAppearance } from "@uwusuite/design";
 import { useEffect, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
@@ -35,7 +36,7 @@ import { useApplyLanguage, useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { matchPath, navigate, usePath } from "@/lib/router";
 import { useApplyBrand } from "@/lib/brand";
-import { useApplyTheme } from "@/lib/theme";
+import { usePrefs } from "@/state/prefs";
 
 function NotFound() {
   const { t } = useT();
@@ -156,7 +157,10 @@ function Routes() {
 }
 
 export function App() {
-  useApplyTheme();
+  const theme = usePrefs((s) => s.theme);
+  const contrast = usePrefs((s) => s.contrast);
+  const motion = usePrefs((s) => s.motion);
+  useAppearance({ theme, contrast, motion });
   useApplyLanguage();
   useApplyBrand();
   return (

@@ -126,6 +126,12 @@
       "light": "Licht",
       "dark": "Donker"
     },
+    "contrast": {
+      "label": "Hoog contrast",
+      "system": "Zelfde als het systeem",
+      "normal": "Normaal",
+      "high": "Hoog"
+    },
     "motion": {
       "label": "Animaties",
       "system": "Zelfde als het systeem",

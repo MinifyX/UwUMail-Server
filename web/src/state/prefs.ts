@@ -1,14 +1,16 @@
+import type { ContrastSetting, MotionSetting, ThemeSetting } from "@uwusuite/design";
 import { create } from "zustand";
 
 export type LanguageSetting = "system" | "de" | "en" | "fr" | "nl" | "ja" | "zh";
 export type Tone = "playful" | "neutral";
-export type ThemeSetting = "system" | "light" | "dark";
-export type MotionSetting = "system" | "on" | "off";
+export type { ContrastSetting, MotionSetting, ThemeSetting };
 
 export interface Prefs {
   language: LanguageSetting;
   tone: Tone;
   theme: ThemeSetting;
+  /** Kept in this browser only: the server's preference list has no contrast entry yet. */
+  contrast: ContrastSetting;
   motion: MotionSetting;
 }
 
@@ -16,6 +18,7 @@ export const DEFAULT_PREFS: Prefs = {
   language: "system",
   tone: "playful",
   theme: "system",
+  contrast: "system",
   motion: "system",
 };
 
@@ -23,10 +26,12 @@ const ALLOWED: { [K in keyof Prefs]: readonly Prefs[K][] } = {
   language: ["system", "de", "en", "fr", "nl", "ja", "zh"],
   tone: ["playful", "neutral"],
   theme: ["system", "light", "dark"],
+  contrast: ["system", "normal", "high"],
   motion: ["system", "on", "off"],
 };
 
-const STORAGE_KEY = "uwumail-portal-prefs";
+/** Also read by /boot.js (vite.config.ts) before the first paint. */
+export const STORAGE_KEY = "uwumail-portal-prefs";
 
 /** Keeps only known keys with allowed values, e.g. from the server or localStorage. */
 export function sanitize(raw: unknown): Partial<Prefs> {
@@ -59,8 +64,8 @@ export const usePrefs = create<PrefsState>((set) => ({
     set((state) => {
       const next = { ...state, ...sanitize(prefs) };
       try {
-        const { language, tone, theme, motion } = next;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ language, tone, theme, motion }));
+        const { language, tone, theme, contrast, motion } = next;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ language, tone, theme, contrast, motion }));
       } catch {
         // Private windows may refuse storage; the preferences still apply for now.
       }

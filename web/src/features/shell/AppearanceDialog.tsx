@@ -3,7 +3,14 @@ import { Segmented, Select, SettingRow } from "@/components/ui/Field";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { useBrand } from "@/state/brand";
 import { useSavePrefs } from "@/features/session/session";
-import { usePrefs, type LanguageSetting, type MotionSetting, type ThemeSetting, type Tone } from "@/state/prefs";
+import {
+  usePrefs,
+  type ContrastSetting,
+  type LanguageSetting,
+  type MotionSetting,
+  type ThemeSetting,
+  type Tone,
+} from "@/state/prefs";
 
 export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useT();
@@ -57,6 +64,20 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
               options={(["system", "light", "dark"] as const).map((value) => ({
                 value,
                 label: t(`appearance.theme.${value}`),
+              }))}
+            />
+          )}
+        </SettingRow>
+        {/* Only this browser remembers it: the server keeps no contrast preference. */}
+        <SettingRow label={t("appearance.contrast.label")}>
+          {() => (
+            <Segmented<ContrastSetting>
+              label={t("appearance.contrast.label")}
+              value={prefs.contrast}
+              onChange={(contrast) => prefs.apply({ contrast })}
+              options={(["system", "normal", "high"] as const).map((value) => ({
+                value,
+                label: t(`appearance.contrast.${value}`),
               }))}
             />
           )}

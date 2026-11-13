@@ -126,6 +126,12 @@
       "light": "Hell",
       "dark": "Dunkel"
     },
+    "contrast": {
+      "label": "Hoher Kontrast",
+      "system": "Wie das System",
+      "normal": "Normal",
+      "high": "Hoch"
+    },
     "motion": {
       "label": "Animationen",
       "system": "Wie das System",
