@@ -102,6 +102,7 @@
     "open": "打开账户菜单",
     "appearance": "外观与语言",
     "logout": "退出登录",
+    "logoutFailed": "退出登录失败，请重试。",
     "role": {
       "admin": "管理员",
       "user": "成员"

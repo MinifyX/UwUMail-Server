@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, needsSecondFactor, setCsrfToken, type Info, type LoginResult, type Session } from "@/lib/api";
+import { api, ApiError, needsSecondFactor, setCsrfToken, type Info, type LoginResult, type Session } from "@/lib/api";
 import { assertPasskey, type RequestOptionsJson } from "@/lib/webauthn";
 import { navigate } from "@/lib/router";
 import { useBrand } from "@/state/brand";
@@ -87,8 +87,15 @@ export function usePasskeyLogin() {
 export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api<void>("/api/auth/logout", { method: "POST", body: {} }),
-    onSettled: () => {
+    mutationFn: async () => {
+      try {
+        await api<void>("/api/auth/logout", { method: "POST", body: {} });
+      } catch (error) {
+        // 401: the session had already ended. Any other failure keeps it, so the client must not pretend.
+        if (!(error instanceof ApiError && error.status === 401)) throw error;
+      }
+    },
+    onSuccess: () => {
       setCsrfToken(null);
       queryClient.clear();
       queryClient.setQueryData(["session"], null);

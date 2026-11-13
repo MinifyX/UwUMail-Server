@@ -102,6 +102,7 @@
     "open": "Ouvrir le menu du compte",
     "appearance": "Apparence et langue",
     "logout": "Se déconnecter",
+    "logoutFailed": "La déconnexion a échoué. Réessayez.",
     "role": {
       "admin": "Admin",
       "user": "Membre"

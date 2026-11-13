@@ -31,6 +31,7 @@ import { Wordmark } from "@/components/ui/Logo";
 import { Menu } from "@/components/ui/Menu";
 import { Tag } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
+import { toast } from "@/state/toasts";
 import type { Session } from "@/lib/api";
 import { Link, usePath } from "@/lib/router";
 import { adminViewOf, inCalmNav } from "@/features/admin/adminPrefs";
@@ -262,7 +263,10 @@ function UserMenu({
             onAppearance();
           },
         },
-        { label: icon(LogOut, t("userMenu.logout")), onSelect: () => logout.mutate() },
+        {
+          label: icon(LogOut, t("userMenu.logout")),
+          onSelect: () => logout.mutate(undefined, { onError: () => toast(t("userMenu.logoutFailed"), "error") }),
+        },
       ]}
       trigger={(props) => (
         <button

@@ -102,6 +102,7 @@
     "open": "Accountmenu openen",
     "appearance": "Weergave en taal",
     "logout": "Uitloggen",
+    "logoutFailed": "Uitloggen is niet gelukt. Probeer het opnieuw.",
     "role": {
       "admin": "Beheerder",
       "user": "Lid"

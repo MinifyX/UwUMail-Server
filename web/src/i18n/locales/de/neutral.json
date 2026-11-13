@@ -102,6 +102,7 @@
     "open": "Kontomenü öffnen",
     "appearance": "Darstellung und Sprache",
     "logout": "Abmelden",
+    "logoutFailed": "Abmelden hat nicht geklappt. Bitte versuche es noch einmal.",
     "role": {
       "admin": "Admin",
       "user": "Mitglied"
