@@ -54,7 +54,9 @@ function CreateDomain({
   return (
     <form className="flex flex-col gap-4 px-6 pt-5 pb-6" onSubmit={submit}>
       <header className="flex items-center justify-between gap-4">
-        <h2 id="create-domain-title" className="text-lg font-bold">{t("domains.create.title")}</h2>
+        <h2 id="create-domain-title" className="text-lg font-bold">
+          {t("domains.create.title")}
+        </h2>
         <IconButton icon={ICONS.close} label={t("common.close")} onClick={onCancel} />
       </header>
       <Field
