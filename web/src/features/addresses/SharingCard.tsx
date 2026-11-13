@@ -1,9 +1,8 @@
-import { Button, Field, Select, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Select, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderInput, UserMinus } from "lucide-react";
+import { FolderInput } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type ShareLevel, type SharingView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -118,7 +117,7 @@ export function SharingCard() {
                       <Button
                         size="sm"
                         variant="danger"
-                        icon={UserMinus}
+                        icon={ICONS.removePerson}
                         busy={
                           unshare.isPending &&
                           unshare.variables?.folder.id === folder.id &&

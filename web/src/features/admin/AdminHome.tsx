@@ -1,8 +1,6 @@
-import { Segmented, Card, ICONS } from "@uwusuite/design";
+import { Segmented, Card, ICONS, StatTile } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { AtSign } from "lucide-react";
 import { KeyValue } from "@/components/ui/Page";
-import { StatTile } from "@/components/ui/StatTile";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { MicrosoftBanner } from "@/features/microsoft/MicrosoftBanner";
 import { useT } from "@/i18n";
@@ -84,7 +82,7 @@ function FullHome() {
           }
         />
         <StatTile icon={ICONS.website} label={t("admin.cards.domains")} value={counts.domains} />
-        <StatTile icon={AtSign} label={t("admin.cards.aliases")} value={counts.aliases} />
+        <StatTile icon={ICONS.alias} label={t("admin.cards.aliases")} value={counts.aliases} />
         <StatTile
           icon={ICONS.send}
           label={t("admin.cards.queue")}

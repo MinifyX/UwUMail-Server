@@ -216,6 +216,16 @@ fn load_message(conn: &Connection, id: i64) -> Result<Option<QueuedMessage>> {
     row.map(message_from_row).transpose()
 }
 
+/// Mail an account queued does not leave once the account is gone: nobody is left to answer for
+/// it or to read a bounce, so it goes quietly. System mail has no account and stays.
+pub(crate) fn drop_queued_mail(conn: &Connection, account_id: i64) -> Result<()> {
+    let dropped = conn.execute("DELETE FROM queue_messages WHERE account_id = ?1", [account_id])?;
+    if dropped > 0 {
+        tracing::info!(account = account_id, dropped, "dropped the queued mail of a deleted account");
+    }
+    Ok(())
+}
+
 fn set_recipient(
     conn: &Connection,
     recipient_id: i64,
@@ -588,7 +598,7 @@ mod tests {
         let id = store
             .enqueue(
                 "mini@example.org",
-                vec![recipient("a@gmx.de"), recipient("B@Web.de")],
+                vec![recipient("a@example.net"), recipient("B@Example.ORG")],
                 b"Subject: hi\r\n\r\nhi\r\n",
                 None,
                 None,
@@ -601,7 +611,7 @@ mod tests {
         assert_eq!(claimed.len(), 1);
         assert_eq!(claimed[0].message.id, id);
         let domains: Vec<_> = claimed[0].recipients.iter().map(|r| r.domain.as_str()).collect();
-        assert_eq!(domains, ["gmx.de", "web.de"]);
+        assert_eq!(domains, ["example.net", "example.org"]);
         // Leased: a second pass gets nothing.
         assert!(store.claim_due_deliveries(10, 600).await.unwrap().is_empty());
 
@@ -761,6 +771,28 @@ mod tests {
         // Deleting the person takes their refused mail and its copies along.
         store.delete_account("mini@uwu.test").await.unwrap();
         assert!(store.refused_deliveries(10).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn deleting_an_account_drops_its_queued_mail_only() {
+        let (store, _dir) = store().await;
+        store.create_domain("uwu.test").await.unwrap();
+        let account = crate::NewAccount {
+            address: "mini@uwu.test".into(),
+            display_name: String::new(),
+            password: None,
+            role: crate::Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let account = store.create_account(account).await.unwrap().id;
+        let to = vec![recipient("a@example.net")];
+        store.enqueue("mini@uwu.test", to, b"Subject: hi\r\n\r\nhi\r\n", Some(account), None, 600).await.unwrap();
+        let bounce = store.enqueue("", vec![recipient("b@example.net")], b"bounce", None, None, 600).await.unwrap();
+        store.delete_account("mini@uwu.test").await.unwrap();
+        // The foreign key alone would have kept the message with a blank sender, and it would go.
+        let due = store.claim_due_deliveries(10, 600).await.unwrap();
+        assert_eq!(due.iter().map(|entry| entry.message.id).collect::<Vec<_>>(), [bounce], "the bounce still goes");
     }
 
     #[tokio::test]

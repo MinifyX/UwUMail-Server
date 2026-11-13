@@ -1,16 +1,6 @@
 import { AvatarBlob, IconButton, Menu, Tag, ICONS, Icon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import {
-  AtSign,
-  ChevronsUpDown,
-  CircleFadingArrowUp,
-  Inbox,
-  ScrollText,
-  MailWarning,
-  Palette,
-  ShieldBan,
-  Truck,
-} from "lucide-react";
+import { ScrollText, MailWarning, ShieldBan } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Wordmark } from "@/components/ui/Logo";
@@ -159,7 +149,7 @@ function useNavigation(session: Session) {
       title: t("nav.groups.account"),
       items: [
         { to: "/account", label: t("nav.overview"), icon: ICONS.overview },
-        { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
+        { to: "/account/addresses", label: t("nav.addresses"), icon: ICONS.alias },
         { to: "/account/masked", label: t("nav.masked"), icon: ICONS.hide },
         { to: "/account/security", label: t("nav.security"), icon: ICONS.securityCheck },
       ],
@@ -170,7 +160,7 @@ function useNavigation(session: Session) {
         { to: "/account/mail", label: t("nav.mail"), icon: ICONS.forward },
         { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
         { to: "/account/fetch", label: t("nav.fetch"), icon: ICONS.download },
-        { to: "/account/moving", label: t("nav.moving"), icon: Truck },
+        { to: "/account/moving", label: t("nav.moving"), icon: ICONS.migrate },
         { to: "/account/codes", label: t("nav.codes"), icon: ICONS.secret, newSince: "0.26.0" },
       ],
     },
@@ -199,7 +189,7 @@ function useNavigation(session: Session) {
     { to: "/admin/queue", label: t("nav.queue"), icon: ICONS.send },
     { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
     { to: "/admin/settings", label: t("nav.settings"), icon: ICONS.settings },
-    { to: "/admin/updates", label: t("nav.updates"), icon: CircleFadingArrowUp },
+    { to: "/admin/updates", label: t("nav.updates"), icon: ICONS.updates },
     { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
   ].map(withTag);
   // The calm view keeps the rest one click away instead of hiding it.
@@ -238,10 +228,10 @@ function UserMenu({
       items={[
         // A real address, not a route: the webmail is its own app under /mail.
         ...(session.webmail
-          ? [{ icon: Inbox, label: t("nav.openMailbox"), onSelect: () => window.location.assign("/mail") }]
+          ? [{ icon: ICONS.inbox, label: t("nav.openMailbox"), onSelect: () => window.location.assign("/mail") }]
           : []),
         {
-          icon: Palette,
+          icon: ICONS.appearance,
           label: t("userMenu.appearance"),
           onSelect: () => {
             onNavigate();
@@ -277,7 +267,7 @@ function UserMenu({
               {session.account.role === "admin" ? t(`userMenu.role.admin`) : session.account.login}
             </span>
           </span>
-          <Icon icon={ChevronsUpDown} className="size-4 text-faint" aria-hidden />
+          <Icon icon={ICONS.switcher} className="size-4 text-faint" aria-hidden />
         </button>
       )}
     />
@@ -369,7 +359,7 @@ export function PortalShell({ session, children }: { session: Session; children:
         ]
       : [
           { to: "/account", label: t("nav.overview"), icon: ICONS.overview },
-          { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
+          { to: "/account/addresses", label: t("nav.addresses"), icon: ICONS.alias },
           { to: "/account/codes", label: t("nav.tabs.codes"), icon: ICONS.secret },
         ];
   const tabs: TabItem[] = tabTargets.map((target) => ({ ...target, current: !more && isCurrent(target, path) }));

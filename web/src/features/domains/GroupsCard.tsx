@@ -1,7 +1,6 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import type { DomainDetail, GroupInfo, WhoMaySend } from "@/lib/api";
 import { MemberPicker, memberChoices, type PickedMember } from "@/features/people/MemberPicker";

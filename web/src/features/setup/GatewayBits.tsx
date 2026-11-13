@@ -1,8 +1,7 @@
-import { Button, Field, TextInput, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
-import { BookOpen, CirclePlus, Cloud, Link2, Server } from "lucide-react";
+import { Button, Field, TextInput, ICONS, Icon as SuiteIcon, cx, Dialog } from "@uwusuite/design";
+import { CirclePlus, Link2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import type { CloudflareResult, GatewayHostChange, GatewayView, Reachability } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -58,7 +57,7 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
 
   return (
     <div className="flex flex-col gap-3 border-t border-hairline pt-4">
-      <SubHeading icon={Server}>{t("setup.gateway.machine.title")}</SubHeading>
+      <SubHeading icon={ICONS.server}>{t("setup.gateway.machine.title")}</SubHeading>
       {machine.job && (
         <div className="rounded-control bg-canvas px-3 py-2">
           <p className="text-[13px] font-semibold">
@@ -125,7 +124,7 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
 
   if (!open) {
     return (
-      <Button size="sm" icon={Cloud} className="self-start" onClick={() => setOpen(true)}>
+      <Button size="sm" icon={ICONS.cloud} className="self-start" onClick={() => setOpen(true)}>
         {t("setup.gateway.cloudflare.open")}
       </Button>
     );
@@ -175,7 +174,7 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
 
   return (
     <form className="flex flex-col gap-3 rounded-card border border-hairline bg-canvas p-4" onSubmit={check}>
-      <SubHeading icon={Cloud}>{t("setup.gateway.cloudflare.title")}</SubHeading>
+      <SubHeading icon={ICONS.cloud}>{t("setup.gateway.cloudflare.title")}</SubHeading>
       <p className="text-[13px] text-muted">{t("setup.gateway.cloudflare.body", { hostname })}</p>
       <Field label={t("setup.cloudflare.token")} hint={explain ? t("setup.cloudflare.tokenHint") : undefined}>
         {(id) => (
@@ -240,7 +239,7 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
         {plan && changes.length > 0 ? (
           <Button
             variant="primary"
-            icon={Cloud}
+            icon={ICONS.cloud}
             busy={cloudflare.isPending}
             disabled={!token.trim() || !applicable}
             onClick={apply}
@@ -248,7 +247,13 @@ function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: b
             {t("setup.gateway.cloudflare.apply")}
           </Button>
         ) : (
-          <Button type="submit" variant="primary" icon={Cloud} busy={cloudflare.isPending} disabled={!token.trim()}>
+          <Button
+            type="submit"
+            variant="primary"
+            icon={ICONS.cloud}
+            busy={cloudflare.isPending}
+            disabled={!token.trim()}
+          >
             {t("setup.gateway.cloudflare.check")}
           </Button>
         )}
@@ -383,7 +388,7 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
               rel="noreferrer"
               className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-pink-ink hover:underline"
             >
-              <SuiteIcon icon={BookOpen} className="size-4" aria-hidden />
+              <SuiteIcon icon={ICONS.guide} className="size-4" aria-hidden />
               {t("setup.reach.docs")}
             </a>
             <div className="flex gap-2">

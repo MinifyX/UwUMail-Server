@@ -1,10 +1,9 @@
-import { Button, Field, Select, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Inbox, UsersRound } from "lucide-react";
+import { UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton, PageHeader } from "@/components/ui/Page";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type OwnAddressesView, type StorageView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -200,7 +199,7 @@ function MembershipsCard({ data }: { data: OwnAddressesView }) {
               key={mailbox.address}
               className="flex min-h-11 items-center gap-3 border-b border-hairline py-1.5 last:border-b-0"
             >
-              <Icon icon={Inbox} className="size-4 shrink-0 text-muted" aria-hidden />
+              <Icon icon={ICONS.inbox} className="size-4 shrink-0 text-muted" aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">{mailbox.address}</span>
                 <span className="block text-[12px] text-muted">
@@ -339,7 +338,7 @@ export function AddressesPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <Icon icon={AtSign} className="size-5 text-muted" aria-hidden />
+            <Icon icon={ICONS.alias} className="size-5 text-muted" aria-hidden />
             {t("addresses.pageTitle")}
           </span>
         }

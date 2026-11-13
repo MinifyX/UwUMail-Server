@@ -1,8 +1,7 @@
-import { Button, ICONS } from "@uwusuite/design";
+import { Button, ICONS, StatusDot, type StatusState } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeftRight, ChartColumn, DatabaseBackup, MailWarning, UserPlus } from "lucide-react";
+import { MailWarning } from "lucide-react";
 import { useState } from "react";
-import { StatusDot } from "@/components/ui/StatusDot";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { BackupsPage } from "@/features/backups/BackupsPage";
 import { MicrosoftPage } from "@/features/microsoft/MicrosoftPage";
@@ -30,10 +29,10 @@ export const SERVER_PATHS: Record<ServerTab, string> = {
 };
 const KIND_ICONS = {
   overview: ICONS.overview,
-  stats: ChartColumn,
-  mailFlow: ArrowLeftRight,
+  stats: ICONS.stats,
+  mailFlow: ICONS.mailFlow,
   microsoft: MailWarning,
-  backups: DatabaseBackup,
+  backups: ICONS.backup,
 };
 const INTROS: Record<ServerTab, string> = {
   overview: "admin.intro",
@@ -43,10 +42,10 @@ const INTROS: Record<ServerTab, string> = {
   backups: "backups.intro",
 };
 
-const DOTS: Record<HealthLevel, "success" | "warning" | "danger" | "offline"> = {
-  ok: "success",
+const DOTS: Record<HealthLevel, StatusState> = {
+  ok: "online",
   unknown: "offline",
-  warning: "warning",
+  warning: "error",
   problem: "danger",
 };
 
@@ -67,7 +66,7 @@ function StatusLine() {
   const server = overview.data?.server;
   return (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5" aria-live="polite">
-      <StatusDot tone={DOTS[level]} />
+      <StatusDot state={DOTS[level]} />
       <span className="font-semibold text-ink">{t(`adminView.headline.${level}`)}</span>
       {server && (
         <>
@@ -92,7 +91,7 @@ export function ServerPage({ tab = "overview", session }: { tab?: ServerTab; ses
       intro={overview ? <StatusLine /> : t(INTROS[tab])}
       actions={
         overview && (
-          <Button variant="primary" icon={UserPlus} onClick={() => setCreating(true)}>
+          <Button variant="primary" icon={ICONS.addContact} onClick={() => setCreating(true)}>
             {t("people.add")}
           </Button>
         )

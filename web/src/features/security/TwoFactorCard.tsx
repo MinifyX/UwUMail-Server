@@ -1,8 +1,7 @@
-import { Button, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, TextInput, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type PasskeyInfo, type SecurityView, type Session, type TotpSetup } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

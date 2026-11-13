@@ -1,6 +1,6 @@
 import { Button, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, CircleX, RotateCw } from "lucide-react";
+import { CircleX, RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -508,7 +508,7 @@ function Guides() {
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <SuiteIcon icon={BookOpen} className="size-4 text-pink-ink" aria-hidden />
+          <SuiteIcon icon={ICONS.guide} className="size-4 text-pink-ink" aria-hidden />
           {t("microsoft.guides.title")}
         </span>
       }

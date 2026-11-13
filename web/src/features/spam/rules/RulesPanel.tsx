@@ -1,9 +1,8 @@
-import { Button, IconButton, Field, Select, Card, Pill, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, Card, Pill, ICONS, Icon as SuiteIcon, cx, Dialog } from "@uwusuite/design";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownUp, Clock, FolderInput, Hash } from "lucide-react";
+import { ArrowDownUp, Clock, FolderInput } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LoadError } from "@/components/StatusViews";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import {
   api,
@@ -102,7 +101,7 @@ function ListBadge({ list }: { list: RuleListName }) {
     allow: "bg-success-tint text-success-ink",
     points: "bg-warning-tint text-warning-ink",
   };
-  const Icon = list === "block" ? ICONS.block : list === "allow" ? ICONS.done : Hash;
+  const Icon = list === "block" ? ICONS.block : list === "allow" ? ICONS.done : ICONS.pattern;
   return (
     <span
       className={cx(

@@ -1,8 +1,7 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Dialog } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CloudDownload, FileUp, Rss } from "lucide-react";
+import { CloudDownload, FileUp } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import {
   api,
@@ -285,7 +284,7 @@ function SubscribeDialog({ onClose }: { onClose: () => void }) {
           {result ? t("common.close") : t("common.cancel")}
         </Button>
         {!result && (
-          <Button variant="primary" type="submit" icon={Rss} busy={subscribe.isPending} disabled={!url.trim()}>
+          <Button variant="primary" type="submit" icon={ICONS.feed} busy={subscribe.isPending} disabled={!url.trim()}>
             {once ? t("calendars.import.run") : t("calendars.subscribe.run")}
           </Button>
         )}

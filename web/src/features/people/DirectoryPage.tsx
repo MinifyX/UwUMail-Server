@@ -1,5 +1,5 @@
 import { ICONS } from "@uwusuite/design";
-import { ChartNoAxesColumn, Truck } from "lucide-react";
+import { ChartNoAxesColumn } from "lucide-react";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { DomainsPage } from "@/features/domains/DomainsPage";
 import { MovesPage } from "@/features/moves/MovesPage";
@@ -16,7 +16,7 @@ export const DIRECTORY_PATHS: Record<DirectoryTab, string> = {
   moves: "/admin/moves",
   reports: "/admin/reports",
 };
-const KIND_ICONS = { people: ICONS.people, domains: ICONS.website, moves: Truck, reports: ChartNoAxesColumn };
+const KIND_ICONS = { people: ICONS.people, domains: ICONS.website, moves: ICONS.migrate, reports: ChartNoAxesColumn };
 
 export function DirectoryPage({ tab = "people", session }: { tab?: DirectoryTab; session: Session }) {
   const { t } = useT();

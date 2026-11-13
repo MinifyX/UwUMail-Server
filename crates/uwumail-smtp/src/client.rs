@@ -309,12 +309,12 @@ mod tests {
             command_timeout: Duration::from_secs(5),
             local_ip: None,
         };
-        assert_eq!(client.auth_xoauth2("mini@outlook.com", "good").await.unwrap().code, 235);
-        assert_eq!(client.auth_xoauth2("mini@outlook.com", "bad").await.unwrap().code, 535);
+        assert_eq!(client.auth_xoauth2("mini@example.org", "good").await.unwrap().code, 235);
+        assert_eq!(client.auth_xoauth2("mini@example.org", "bad").await.unwrap().code, 535);
         let heard = server.await.unwrap();
         assert_eq!(
             heard[0],
-            format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2("mini@outlook.com", "good"))
+            format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2("mini@example.org", "good"))
         );
         assert!(heard[1].starts_with("AUTH XOAUTH2 "));
         assert_eq!(heard[2], "\r\n", "the error challenge is answered with an empty line");

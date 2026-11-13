@@ -1,5 +1,5 @@
 import { Button, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
-import { DatabaseBackup, RotateCw } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Nyu } from "@/components/nyu/Nyu";
@@ -179,7 +179,7 @@ export function SimpleHome() {
           <QuickAction icon={ICONS.people} label={t("adminView.quick.people")} to="/admin/people" />
           <QuickAction icon={ICONS.send} label={t("nav.queue")} to="/admin/queue" />
           <QuickAction icon={ICONS.website} label={t("adminView.quick.domains")} to="/admin/domains" />
-          <QuickAction icon={DatabaseBackup} label={t("adminView.quick.backups")} to="/admin/backups" />
+          <QuickAction icon={ICONS.backup} label={t("adminView.quick.backups")} to="/admin/backups" />
         </div>
       </section>
     </div>

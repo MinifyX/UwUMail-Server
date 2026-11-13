@@ -1,9 +1,8 @@
-import { Button, Field, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Toggle, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { KeySquare } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type AppPasswordInfo, type AppScope, type SecurityView, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

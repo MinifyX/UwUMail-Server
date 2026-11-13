@@ -1,6 +1,5 @@
-import { Button, Field, Icon } from "@uwusuite/design";
+import { Button, Field, Icon, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { BookOpen, PlugZap } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
@@ -102,7 +101,7 @@ function TestButton({ path, form, onResult }: { path: string; form: Form; onResu
   return (
     <div className="flex flex-col gap-3 border-t border-hairline pt-4">
       <div>
-        <Button icon={PlugZap} busy={test.isPending} onClick={() => test.mutate()}>
+        <Button icon={ICONS.testConnection} busy={test.isPending} onClick={() => test.mutate()}>
           {t("externalLogin.test")}
         </Button>
       </div>
@@ -382,7 +381,7 @@ function DocsLink({ href, label }: { href: string; label: string }) {
       rel="noreferrer"
       className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-pink-ink hover:underline"
     >
-      <Icon icon={BookOpen} className="size-4" aria-hidden />
+      <Icon icon={ICONS.guide} className="size-4" aria-hidden />
       {label}
     </a>
   );

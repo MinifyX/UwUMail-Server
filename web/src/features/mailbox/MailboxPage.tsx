@@ -1,6 +1,5 @@
 import { Button, Field, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, TreePalm } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -72,7 +71,7 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
                 {target.confirmedAt ? (
                   <Icon icon={ICONS.success} className="size-4 shrink-0 text-success-ink" aria-hidden />
                 ) : (
-                  <Icon icon={Clock} className="size-4 shrink-0 text-warning-ink" aria-hidden />
+                  <Icon icon={ICONS.pending} className="size-4 shrink-0 text-warning-ink" aria-hidden />
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{target.address}</span>
@@ -252,7 +251,7 @@ export function MailboxPage() {
         <Card
           title={
             <span className="flex items-center gap-2">
-              <Icon icon={TreePalm} className="size-4 text-muted" aria-hidden />
+              <Icon icon={ICONS.vacation} className="size-4 text-muted" aria-hidden />
               {t("mailbox.vacation.title")}
             </span>
           }

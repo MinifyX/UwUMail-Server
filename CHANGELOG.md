@@ -3,6 +3,17 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.32.0
+
+- Deleting an account now also drops the mail it still had waiting in the outgoing queue,
+  instead of sending it anyway.
+- The portal uses UwUSuite-Design 1.14.0 for its dialogs, status dots, setting rows, tiles,
+  progress bars and icons; the local copies are gone. Screen readers now read a setting's hint
+  next to its choice buttons, and progress bars no longer need inline styles.
+- Webmail 0.28.0: theme, fonts, icons and basic controls come from the shared design package.
+  The command palette closes when you click beside it.
+- Invented examples in tests and the portal's mock data only use reserved names and addresses.
+
 ## 0.31.2
 
 - The portal's list of accounts and an account's page show the profile picture instead of the

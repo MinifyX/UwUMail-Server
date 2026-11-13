@@ -1,5 +1,4 @@
 import { Button, Segmented, Card, ICONS, Icon, cx } from "@uwusuite/design";
-import { Lightbulb } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
@@ -14,7 +13,7 @@ type ModeChoice = MtaStsMode | "off";
 function Suggestion({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex gap-2.5 rounded-control bg-pink-tint/60 p-3 text-[13px] text-pink-ink">
-      <Icon icon={Lightbulb} className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <Icon icon={ICONS.tip} className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
         <div className="min-w-0 self-stretch">{children}</div>
         {action}

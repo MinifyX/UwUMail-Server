@@ -1,11 +1,9 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Field, TextInput, EmptyState, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, TextInput, EmptyState, Card, ICONS, Icon, ProgressBar } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pause, Truck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useT } from "@/i18n";
 import { ApiError, api, type MoveJob, type MovingView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -166,7 +164,7 @@ function StartCard({ view }: { view: MovingView }) {
         )}
         <div className="flex flex-wrap items-center justify-end gap-3">
           {start.isPending && <span className="text-[13px] text-muted">{t("moving.form.searching")}</span>}
-          <Button type="submit" variant="primary" icon={Truck} disabled={full} busy={start.isPending}>
+          <Button type="submit" variant="primary" icon={ICONS.migrate} disabled={full} busy={start.isPending}>
             {t("moving.form.start")}
           </Button>
         </div>
@@ -257,7 +255,7 @@ function JobCard({ job }: { job: MoveJob }) {
         <StateLine job={job} />
         {(active || job.messagesTotal > 0) && (
           <div className="flex flex-col gap-1.5">
-            <ProgressBar done={job.messagesDone} total={job.messagesTotal} label={t("moving.job.progressLabel")} />
+            <ProgressBar share={job.messagesDone / job.messagesTotal} label={t("moving.job.progressLabel")} />
             <p className="text-[12px] text-muted">
               {job.messagesTotal > 0
                 ? t("moving.job.progress", {
@@ -290,7 +288,7 @@ function JobCard({ job }: { job: MoveJob }) {
         )}
         <div className="flex flex-wrap justify-end gap-2">
           {active && (
-            <Button variant="ghost" icon={Pause} busy={pause.isPending} onClick={() => pause.mutate()}>
+            <Button variant="ghost" icon={ICONS.pause} busy={pause.isPending} onClick={() => pause.mutate()}>
               {t("moving.actions.pause")}
             </Button>
           )}

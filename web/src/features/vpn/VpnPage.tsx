@@ -1,11 +1,21 @@
-import { Button, Field, Segmented, Select, TextInput, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
+import {
+  Button,
+  Field,
+  Segmented,
+  Select,
+  TextInput,
+  Card,
+  ICONS,
+  Icon as SuiteIcon,
+  cx,
+  Dialog,
+} from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileUp, Power, ScrollText } from "lucide-react";
+import { FileUp, ScrollText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
-import { Dialog } from "@/components/ui/Dialog";
 import { updateCommand } from "@/features/admin/host";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import {
@@ -681,7 +691,7 @@ function VpnCard({ view }: { view: VpnView }) {
             </Button>
           )}
           {active && (
-            <Button variant="danger" icon={Power} busy={stop.isPending} onClick={() => stop.mutate()}>
+            <Button variant="danger" icon={ICONS.turnOn} busy={stop.isPending} onClick={() => stop.mutate()}>
               {t("vpn.form.stop")}
             </Button>
           )}

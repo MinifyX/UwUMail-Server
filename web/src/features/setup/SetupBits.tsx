@@ -1,6 +1,6 @@
 import { Button, Field, TextInput, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { CircleX, Cloud } from "lucide-react";
+import { CircleX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -392,7 +392,7 @@ export function CloudflarePanel({
 
   if (!open) {
     return (
-      <Button icon={Cloud} className="self-start" onClick={() => setOpen(true)}>
+      <Button icon={ICONS.cloud} className="self-start" onClick={() => setOpen(true)}>
         {t("setup.cloudflare.open")}
       </Button>
     );
@@ -400,7 +400,7 @@ export function CloudflarePanel({
 
   return (
     <form className="flex flex-col gap-3 rounded-card border border-hairline bg-canvas p-4" onSubmit={submit}>
-      <SubHeading icon={Cloud}>{t("setup.cloudflare.title")}</SubHeading>
+      <SubHeading icon={ICONS.cloud}>{t("setup.cloudflare.title")}</SubHeading>
       <p className="text-[13px] text-muted">
         {nothingToDo && !results ? t("setup.cloudflare.quotesOnly") : t("setup.cloudflare.body")}
       </p>
@@ -451,7 +451,7 @@ export function CloudflarePanel({
         </fieldset>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" variant="primary" icon={Cloud} busy={cloudflare.isPending} disabled={!token.trim()}>
+        <Button type="submit" variant="primary" icon={ICONS.cloud} busy={cloudflare.isPending} disabled={!token.trim()}>
           {t("setup.cloudflare.submit")}
         </Button>
         <Button variant="ghost" onClick={() => setOpen(false)}>

@@ -1,7 +1,5 @@
-import { Button, Field, Select, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
-import { Bot, Inbox } from "lucide-react";
+import { Button, Field, Select, TextInput, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useState, type FormEvent } from "react";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import type { Person } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -185,7 +183,7 @@ export function SharedMembersCard({ person }: { person: Person }) {
     <Card title={t("sharedMailboxes.members")}>
       <div className="flex flex-col gap-3">
         <p className="-mt-1 flex gap-2 text-[13px] text-muted">
-          <Icon icon={Inbox} className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.inbox} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("sharedMailboxes.membersIntro")}
         </p>
         <MemberPicker
@@ -221,7 +219,7 @@ export function ConvertToShared({ person }: { person: Person }) {
   return (
     <div className="flex flex-col items-start gap-2 border-t border-hairline pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <p className="min-w-0 flex-1 text-[13px] text-muted">{t("sharedMailboxes.convertHint")}</p>
-      <Button icon={Inbox} onClick={() => setAsking(true)}>
+      <Button icon={ICONS.inbox} onClick={() => setAsking(true)}>
         {t("sharedMailboxes.convert")}
       </Button>
       <Dialog open={asking} onClose={close} title={t("sharedMailboxes.convertTitle", { login: person.login })}>
@@ -247,7 +245,7 @@ export function ConvertToShared({ person }: { person: Person }) {
             <Button onClick={close}>{t("common.cancel")}</Button>
             <Button
               variant="primary"
-              icon={Inbox}
+              icon={ICONS.inbox}
               busy={convert.isPending}
               onClick={() => convert.mutate(members, { onSuccess: close })}
             >
@@ -269,7 +267,7 @@ export function EndShared({ person }: { person: Person }) {
   return (
     <div className="flex flex-col items-start gap-2 border-t border-hairline pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <p className="min-w-0 flex-1 text-[13px] text-muted">{t("sharedMailboxes.endHint")}</p>
-      <Button icon={Bot} onClick={() => setAsking(true)}>
+      <Button icon={ICONS.bot} onClick={() => setAsking(true)}>
         {t("sharedMailboxes.end")}
       </Button>
       <Dialog
@@ -289,7 +287,7 @@ export function EndShared({ person }: { person: Person }) {
             <Button onClick={() => setAsking(false)}>{t("common.cancel")}</Button>
             <Button
               variant="primary"
-              icon={Bot}
+              icon={ICONS.bot}
               busy={end.isPending}
               onClick={() => end.mutate(undefined, { onSuccess: () => setAsking(false) })}
             >

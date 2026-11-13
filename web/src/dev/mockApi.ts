@@ -1581,11 +1581,11 @@ const mockFetchAccounts: FetchAccountInfo[] = [
   {
     id: 3,
     accountId: 1,
-    address: "lorin@hotmail.de",
+    address: "lorin@firma.example",
     host: "outlook.office365.com",
     port: 993,
     security: "tls",
-    username: "lorin@hotmail.de",
+    username: "lorin@firma.example",
     afterFetch: "markRead",
     fetchJunk: true,
     intervalSecs: 900,
@@ -1612,11 +1612,11 @@ const mockFetchAccounts: FetchAccountInfo[] = [
   {
     id: 4,
     accountId: 1,
-    address: "lorin.mock@gmail.com",
+    address: "lorin@verein.example",
     host: "imap.gmail.com",
     port: 993,
     security: "tls",
-    username: "lorin.mock@gmail.com",
+    username: "lorin@verein.example",
     afterFetch: "markRead",
     fetchJunk: true,
     intervalSecs: 300,
@@ -3833,7 +3833,7 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/egress\/test$/,
     () => {
       log("egress.test", "server");
-      return [200, { proxied: true, address: "185.107.56.10", error: null } satisfies EgressTest];
+      return [200, { proxied: true, address: "203.0.113.10", error: null } satisfies EgressTest];
     },
   ],
   ["GET", /^\/api\/admin\/host$/, () => [200, hostView()]],
@@ -4065,7 +4065,7 @@ const routes: [string, RegExp, Handler][] = [
       // Google's way round reloads the page, and the mock with it: a mock flow comes back as a new
       // Google mailbox then.
       if (!mockSignIns.has(id) && id.startsWith("mockflow")) {
-        mockSignIns.set(id, { provider: "google", address: "neu.mock@gmail.com", switchId: null, polls: 2 });
+        mockSignIns.set(id, { provider: "google", address: "neu@verein.example", switchId: null, polls: 2 });
       }
       const flow = mockSignIns.get(id);
       if (!flow) return [200, { status: "failed", error: "expired" }];

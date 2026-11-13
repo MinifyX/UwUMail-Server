@@ -1,6 +1,6 @@
 import { Button, Field, TextInput, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImageUp, Inbox } from "lucide-react";
+import { ImageUp } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { LogoSymbol } from "@/components/ui/Logo";
@@ -158,7 +158,7 @@ function Preview({ color, name, mascot }: { color: string | null; name: string; 
           <span className="truncate">{brandName}</span>
         </span>
         <span className="flex h-9 items-center gap-2 rounded-full bg-pink-tint px-3 text-[13px] font-semibold text-pink-ink">
-          <Icon icon={Inbox} className="size-4" aria-hidden />
+          <Icon icon={ICONS.inbox} className="size-4" aria-hidden />
           {t("branding.preview.inbox")}
         </span>
         <div className="flex flex-wrap items-center gap-2">

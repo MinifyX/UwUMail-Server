@@ -1,6 +1,6 @@
 import { Button, EmptyState, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Inbox, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
@@ -14,14 +14,14 @@ import { navigate, useSearch } from "@/lib/router";
 import { appPasswordOnly, decisionBody, knownScopes, masksOnly, type KnownScope } from "./authorize";
 
 const SCOPE_ICONS: Record<KnownScope, LucideIcon> = {
-  mail: Inbox,
+  mail: ICONS.inbox,
   smtp: ICONS.send,
   dav: ICONS.calendar,
   maskedemail: ICONS.hide,
   "app-password": ICONS.secret,
   openid: UserRound,
   profile: ICONS.identity,
-  email: AtSign,
+  email: ICONS.alias,
   offline_access: ICONS.refresh,
 };
 

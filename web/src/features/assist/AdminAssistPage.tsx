@@ -1,7 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
 import { Button, IconButton, Field, Select, Toggle, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pause } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useDomains, usePeople } from "@/features/people/queries";
@@ -229,7 +228,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                   </span>
                   <div className="flex items-center gap-1.5">
                     <IconButton
-                      icon={provider.enabled ? Pause : ICONS.start}
+                      icon={provider.enabled ? ICONS.pause : ICONS.start}
                       label={provider.enabled ? t("assist.admin.disable") : t("assist.admin.enable")}
                       onClick={() => setEnabled.mutate({ id: provider.id, enabled: !provider.enabled })}
                     />

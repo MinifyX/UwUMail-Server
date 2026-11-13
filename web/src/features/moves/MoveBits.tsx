@@ -28,18 +28,3 @@ export function MailboxStatePill({ state }: { state: MoveMailboxState }) {
   const { t } = useT();
   return <span className={cx(pill, MAILBOX_STYLES[state])}>{t(`moves.mailboxState.${state}`)}</span>;
 }
-
-export function ProgressBar({ value, label }: { value: number; label: string }) {
-  return (
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(value * 100)}
-      className="h-2 overflow-hidden rounded-full bg-canvas"
-    >
-      <div className="h-full rounded-full bg-pink transition-[width]" style={{ width: `${value * 100}%` }} />
-    </div>
-  );
-}

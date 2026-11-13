@@ -1,7 +1,6 @@
-import { Segmented, cx } from "@uwusuite/design";
+import { Segmented, cx, Dialog } from "@uwusuite/design";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import type { DmarcReportRow, ReportDetail, ReportKind, TlsReportFailure } from "@/lib/api";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";

@@ -1,8 +1,7 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Icon, SettingRow } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { SettingRow } from "@/components/ui/SettingRow";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -129,11 +128,18 @@ export function ChoiceField<T extends string>({
 }) {
   const locked = form.locked(settingKey);
   const value = String(form.value(settingKey) ?? "") as T;
+  // The package row brings a hairline and padding; here the column gap spaces the rows.
   return (
-    <SettingRow label={label} description={locked ? <LockedHint /> : hint}>
+    <SettingRow className="border-b-0 pt-0 pb-0" label={label} description={locked ? <LockedHint /> : hint}>
       {({ id, describedBy }) =>
         segmented && !locked ? (
-          <Segmented<T> label={label} value={value} onChange={(next) => form.set(settingKey, next)} options={options} />
+          <Segmented<T>
+            label={label}
+            describedBy={describedBy}
+            value={value}
+            onChange={(next) => form.set(settingKey, next)}
+            options={options}
+          />
         ) : (
           <Select
             id={id}

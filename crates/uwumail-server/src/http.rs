@@ -560,7 +560,7 @@ mod tests {
         assert_eq!(ip("203.0.113.9:5555"), "203.0.113.9".parse().ok(), "a :port suffix is stripped");
         assert_eq!(ip("[2001:db8::1]:443"), "2001:db8::1".parse().ok());
         assert_eq!(ip("2001:db8::1"), "2001:db8::1".parse().ok());
-        assert_eq!(ip("for=1.2.3.4"), None, "an unreadable hop ends the walk, it is not skipped");
+        assert_eq!(ip("for=192.0.2.4"), None, "an unreadable hop ends the walk, it is not skipped");
         assert_eq!(ip("garbage"), None);
     }
     use axum::body::Body;

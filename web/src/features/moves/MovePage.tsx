@@ -1,10 +1,9 @@
-import { Button, IconButton, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, IconButton, Field, TextInput, Card, ICONS, Icon, Dialog, ProgressBar } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import { FileUp, Pause, UserPlus } from "lucide-react";
+import { FileUp } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
-import { Dialog } from "@/components/ui/Dialog";
 import { CHECK_STYLES } from "@/features/domains/DnsBits";
 import { useT } from "@/i18n";
 import {
@@ -22,7 +21,7 @@ import { Link, navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
 import { LeftOut, leftOutParts } from "@/features/moving/LeftOut";
 import { LinksCard } from "./LinksCard";
-import { MailboxStatePill, MoveStatePill, ProgressBar } from "./MoveBits";
+import { MailboxStatePill, MoveStatePill } from "./MoveBits";
 import {
   emptyRow,
   movesPath,
@@ -50,7 +49,7 @@ function Overview({ detail }: { detail: MoveDetail }) {
       title={t("moves.detail.overview")}
       aside={
         move.state === "active" ? (
-          <Button size="sm" icon={Pause} busy={pause.isPending} onClick={() => pause.mutate(undefined)}>
+          <Button size="sm" icon={ICONS.pause} busy={pause.isPending} onClick={() => pause.mutate(undefined)}>
             {t("moves.actions.pauseAll")}
           </Button>
         ) : move.state === "paused" ? (
@@ -62,7 +61,7 @@ function Overview({ detail }: { detail: MoveDetail }) {
     >
       <div className="flex flex-col gap-3">
         <ProgressBar
-          value={share(summary.messagesDone, summary.messagesTotal)}
+          share={share(summary.messagesDone, summary.messagesTotal)}
           label={t("moves.progress.label", { domain: move.domain })}
         />
         <p className="text-[13px]">
@@ -315,7 +314,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
         </span>
       </div>
       <ProgressBar
-        value={share(mailbox.messagesDone, mailbox.messagesTotal)}
+        share={share(mailbox.messagesDone, mailbox.messagesTotal)}
         label={t("moves.mailbox.progress", { address: mailbox.address })}
       />
       <p className="text-[12px] text-muted">
@@ -396,7 +395,7 @@ function MailboxRow({ detail, mailbox }: { detail: MoveDetail; mailbox: MoveMail
             <Button
               size="sm"
               variant="ghost"
-              icon={Pause}
+              icon={ICONS.pause}
               busy={pause.isPending}
               onClick={() => pause.mutate(undefined)}
             >
@@ -466,7 +465,7 @@ function AddPeople({ detail }: { detail: MoveDetail }) {
   if (detail.move.kind !== "domain" || detail.move.state === "finishing" || detail.move.state === "done") return null;
   if (!open) {
     return (
-      <Button icon={UserPlus} className="self-start" onClick={() => setOpen(true)}>
+      <Button icon={ICONS.addContact} className="self-start" onClick={() => setOpen(true)}>
         {t("moves.add.button")}
       </Button>
     );

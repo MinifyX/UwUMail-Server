@@ -1,6 +1,5 @@
 import { NyuScene } from "@/components/nyu/scenes";
 import { Button, Segmented, TextInput, EmptyState, Pill, ICONS, Icon, cx } from "@uwusuite/design";
-import { Pause } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogCategory, type LogLine } from "@/lib/api";
@@ -91,7 +90,11 @@ export function LogsPage() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <Button className="sm:ml-auto" icon={live ? Pause : ICONS.start} onClick={() => setLive((value) => !value)}>
+        <Button
+          className="sm:ml-auto"
+          icon={live ? ICONS.pause : ICONS.start}
+          onClick={() => setLive((value) => !value)}
+        >
           {live ? t("logs.pause") : t("logs.resume")}
         </Button>
       </div>

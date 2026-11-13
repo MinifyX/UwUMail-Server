@@ -11,14 +11,13 @@ import {
   ICONS,
   Icon,
   cx,
+  Dialog,
 } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pause } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import {
   api,
@@ -794,7 +793,7 @@ export function FetchPage() {
                       />
                     )}
                     <IconButton
-                      icon={account.enabled ? Pause : ICONS.start}
+                      icon={account.enabled ? ICONS.pause : ICONS.start}
                       label={account.enabled ? t("fetch.actions.pause") : t("fetch.actions.resume")}
                       onClick={() => setEnabled.mutate({ id: account.id, enabled: !account.enabled })}
                     />

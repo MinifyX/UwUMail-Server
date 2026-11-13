@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
+import { Button, EmptyState, Card, ICONS, Dialog } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type GreylistDecision, type GreylistHold, type GreylistView } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
