@@ -28,7 +28,7 @@ Fixes from a full audit of the server, the portal and the webmail.
 - The portal uses the shared UwUSuite design 1.12.0 (buttons, form controls, menus, toasts,
   cards, icons), offers a high-contrast choice in the appearance settings, and no longer flashes
   white before dark mode loads.
-- Webmail 0.26.0.
+- Webmail 0.27.0 (the audit fixes of 0.26.0, and blob avatars instead of initials).
 - Update logs list the applied database migrations.
 - Security updates for libraries (ammonia, quinn, russh).
 
