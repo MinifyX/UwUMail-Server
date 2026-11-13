@@ -277,3 +277,15 @@ async fn a_stream_that_is_left_is_still_counted() {
     assert_eq!(today[0].requests, 1);
     assert!(today[0].tokens > 0, "{:?}", today[0].tokens);
 }
+
+/// A reply that is JSON but no answer is not charged as if all of it were answer text.
+#[tokio::test]
+async fn a_garbled_reply_is_not_charged_by_its_size() {
+    let rig = rig().await;
+    rig.server_provider("openaiCompatible", json!({ "tokensPerDay": 1_000_000 })).await;
+    rig.fake.push(Reply::Json(200, json!({ "padding": "x".repeat(200_000) }), vec![]));
+    assert!(rig.assist.compose(&rig.mia, write(), None).await.is_err());
+    let today = rig.assist.today(&rig.mia).await.unwrap();
+    assert_eq!(today[0].requests, 1);
+    assert!(today[0].tokens < 10_000, "{:?}", today[0].tokens);
+}

@@ -352,13 +352,17 @@ async fn ask(
         }
     } else {
         let body = read_all(body, MAX_RESPONSE_BYTES).await?;
-        target.received.fetch_add(body.len(), Ordering::Relaxed);
         let value: Value = serde_json::from_slice(&body).map_err(|_| ProviderError::Garbled("not JSON".into()))?;
-        match target.shape {
+        let parsed = match target.shape {
             Shape::Chat => parse_chat(&value),
             Shape::Anthropic => parse_anthropic(&value),
             Shape::Codex => Err(ProviderError::Garbled("expected a stream".into())),
+        };
+        // Characters of the answer, as the stream counts them, not the bytes of the JSON around it.
+        if let Ok(completion) = &parsed {
+            target.received.fetch_add(completion.text.chars().count(), Ordering::Relaxed);
         }
+        parsed
     }
 }
 
