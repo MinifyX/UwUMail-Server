@@ -89,8 +89,26 @@ pub(crate) fn aligned(a: &str, b: &str) -> bool {
 /// Sends a received message on. `recipient` is the address it arrived for; it goes into a
 /// Delivered-To header, which also stops mail going round in circles between forwards.
 ///
-/// Returns whether the message reached at least one target (stored here or queued for elsewhere),
-/// so a caller that keeps no copy of its own can keep one after all when it went nowhere.
+/// How a forward went for the caller that keeps no copy of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Sent {
+    /// At least one target has it (stored here or queued for elsewhere).
+    Reached,
+    /// Nobody gets it and trying again would not change that (a loop, a target without a
+    /// mailbox, a From that may not go out, no SRS secret).
+    Dropped,
+    /// Nobody got it because storing or queueing failed: worth trying again.
+    Failed,
+}
+
+impl Sent {
+    pub(crate) fn reached(self) -> bool {
+        self == Sent::Reached
+    }
+}
+
+/// Returns how far the message got, so a caller that keeps no copy of its own can keep one after
+/// all, or ask for a retry, when it went nowhere.
 pub(crate) async fn send(
     ctx: &Context,
     forwarder: Forwarder<'_>,
@@ -98,9 +116,9 @@ pub(crate) async fn send(
     envelope_from: &str,
     message: &[u8],
     targets: &[(String, Option<i64>)],
-) -> bool {
+) -> Sent {
     if targets.is_empty() {
-        return false;
+        return Sent::Dropped;
     }
     let (fields, _) = headers::split(message);
     let looped = fields
@@ -108,13 +126,19 @@ pub(crate) async fn send(
         .any(|field| field.name.eq_ignore_ascii_case("Delivered-To") && field.value().eq_ignore_ascii_case(recipient));
     if looped {
         tracing::warn!(forwarder = %forwarder.name, %recipient, "not forwarding a message that was here before");
-        return false;
+        return Sent::Dropped;
     }
     let mut forwarded = format!("Delivered-To: {recipient}\r\n").into_bytes();
     forwarded.extend_from_slice(message);
 
     let mut remote = Vec::new();
     let mut reached = false;
+    let mut failed = false;
+    let outcome = |reached: bool, failed: bool| match (reached, failed) {
+        (true, _) => Sent::Reached,
+        (false, true) => Sent::Failed,
+        (false, false) => Sent::Dropped,
+    };
     for (address, local) in targets {
         match local {
             // People on this server get it directly; their own forwarding does not apply again.
@@ -142,6 +166,7 @@ pub(crate) async fn send(
                         }
                     }
                     Err(err) => {
+                        failed = true;
                         tracing::warn!(%err, forwarder = %forwarder.name, to = %address, "forwarding to a local mailbox failed");
                     }
                 }
@@ -170,7 +195,7 @@ pub(crate) async fn send(
                 %from,
                 "not forwarding to other servers: the From did not pass DMARC and would look sent by us"
             );
-            return reached;
+            return outcome(reached, failed);
         }
         let sender_domain = envelope_from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
         // Our own sender keeps its address only when the checks proved it; otherwise it is
@@ -183,7 +208,7 @@ pub(crate) async fn send(
                 Some(secret) => srs::rewrite(&secret, envelope_from, our_domain),
                 None => {
                     tracing::error!(forwarder = %forwarder.name, "no SRS secret, not forwarding to other servers");
-                    return reached;
+                    return outcome(reached, failed);
                 }
             }
         };
@@ -192,10 +217,10 @@ pub(crate) async fn send(
             ctx.store.enqueue(&return_path, remote, &forwarded, forwarder.account_id, None, lifetime).await
         {
             tracing::error!(%err, forwarder = %forwarder.name, "queueing a forward failed");
-            return reached;
+            return outcome(reached, true);
         }
         reached = true;
     }
     tracing::info!(forwarder = %forwarder.name, targets = targets.len(), reached, "forwarded message");
-    reached
+    outcome(reached, failed)
 }

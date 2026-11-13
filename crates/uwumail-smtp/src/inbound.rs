@@ -2042,8 +2042,11 @@ pub(crate) async fn receive(
                     smtp_delivered: true,
                     verification: verification.as_ref(),
                 };
-                // Nothing else keeps this message: a forward that reached nobody is retried, not lost.
-                if !forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await {
+                // Nothing else keeps this message: a forward that failed to store or queue is retried,
+                // one that may never go anywhere (a loop, nobody takes mail) is not.
+                if forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await
+                    == forward::Sent::Failed
+                {
                     temporary = true;
                     failed.push(FailedRecipient {
                         address: recipient.address.clone(),
@@ -2193,8 +2196,9 @@ pub(crate) async fn receive(
                 smtp_delivered: true,
                 verification: verification.as_ref(),
             };
-            forwarded =
-                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
+            forwarded = forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets)
+                .await
+                .reached();
         }
         // Mail that went nowhere else stays, whatever the person chose to keep.
         if !plan.keep_copy && forwarded {

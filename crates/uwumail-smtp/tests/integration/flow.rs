@@ -867,6 +867,30 @@ async fn forwarding_addresses_pass_mail_on_without_a_mailbox() {
     assert!(inbox.iter().any(|email| email.subject == "Quittung"));
 }
 
+/// A forward the loop guard stops can never go anywhere: no 451, so the co-recipient is not sent
+/// a new copy on every retry.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_looped_forward_is_not_retried() {
+    let a = start("a.test", &["mini", "leni"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    a.smtp.store().set_forward_address("kasse@a.test", vec!["leni@a.test".into()], "").await.unwrap();
+
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<kasse@a.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session
+        .command("Delivered-To: kasse@a.test\r\nFrom: news@sender.test\r\nSubject: Schon hier\r\n\r\nMiau\r\n.")
+        .await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.wait_for_inbox("mini@a.test", 1).await.len(), 1);
+    assert!(a.inbox("leni@a.test").await.is_empty());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_service_without_a_mailbox_takes_no_mail_from_anywhere() {
     let a = start("a.test", &["mini", "leni"], &[]).await;

@@ -299,7 +299,7 @@ pub(crate) async fn deliver(
                 };
                 // A redirect that reached nobody (a loop, a target that takes no mail, a queue that
                 // failed) must not take the message with it.
-                if forward::send(ctx, forwarder, recipient, envelope_from, message, &[target]).await {
+                if forward::send(ctx, forwarder, recipient, envelope_from, message, &[target]).await.reached() {
                     redirected = true;
                 } else {
                     refused = true;

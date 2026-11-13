@@ -572,8 +572,11 @@ impl Smtp {
                                 smtp_delivered: false,
                                 verification: verification.get_or_init(find_verification).await.as_ref(),
                             };
-                            // Reached nobody: the sender hears about it instead of the mail vanishing.
-                            if forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await {
+                            // Storing or queueing failed: the sender hears about it instead of the
+                            // mail vanishing. A forward that may never go anywhere counts as before.
+                            if forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await
+                                != forward::Sent::Failed
+                            {
                                 local_deliveries += 1;
                             } else {
                                 failed.push(FailedRecipient {
@@ -789,8 +792,8 @@ impl Smtp {
                 smtp_delivered: false,
                 verification,
             };
-            // A forward that reached nobody keeps the copy here instead of losing the mail.
-            if !forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await {
+            // A forward that failed to store or queue keeps the copy here instead of losing the mail.
+            if forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await == forward::Sent::Failed {
                 plan.keep_copy = true;
             }
         }
