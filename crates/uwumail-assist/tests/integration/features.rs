@@ -62,6 +62,24 @@ async fn events_are_checked_against_the_mail_and_its_pictures() {
     assert!(!rig.fake.seen()[1].body["messages"][1]["content"].as_str().unwrap().contains("KINO"));
 }
 
+/// The reader's aliases are not guests either, found without asking about every address book entry.
+#[tokio::test]
+async fn the_readers_own_aliases_are_never_participants() {
+    let rig = rig().await;
+    rig.store.add_alias("kasse@example.org", "mia@example.org").await.unwrap();
+    let assist = Assist::for_tests(rig.store.clone(), "mx.example.org", chatgpt::Endpoints::default());
+    rig.server_provider("openaiCompatible", json!({})).await;
+    let raw = INVOICE.replace("Cc: Leni Beispiel <leni@example.org>", "Cc: Leni Beispiel <leni@example.org>, Kasse <kasse@example.org>");
+    let email = rig.deliver(&rig.mia, &raw).await;
+    let answer = json!({ "events": [
+        event("Abholung", "2026-10-06T09:30:00", "am Dienstag, 6. Oktober um 9:30 Uhr", json!(["kasse@example.org", "Leni"]))
+    ] });
+    rig.fake.push(Reply::Json(200, chat(&answer.to_string()), vec![]));
+    let result = assist.extract_events(&rig.mia, EventsArgs { email_id: email, ..Default::default() }).await.unwrap();
+    let people: Vec<&str> = result.events[0].participants.iter().map(|p| p.email.as_str()).collect();
+    assert_eq!(people, ["leni@example.org"]);
+}
+
 #[tokio::test]
 async fn a_reply_is_written_with_the_mail_it_answers() {
     let rig = rig().await;
