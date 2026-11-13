@@ -1,7 +1,5 @@
-import { Button, Card, ICONS, Icon } from "@uwusuite/design";
-import { AppWindow } from "lucide-react";
+import { Button, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useState } from "react";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type OAuthGrantInfo, type SecurityView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -25,7 +23,7 @@ export function OAuthGrantRow({ grant, onRevoke }: { grant: OAuthGrantInfo; onRe
     : t("security.appPasswords.neverUsed");
   return (
     <li className="flex items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-      <Icon icon={AppWindow} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+      <Icon icon={ICONS.app} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-semibold">{grant.clientName}</span>

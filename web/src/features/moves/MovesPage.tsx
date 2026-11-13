@@ -1,19 +1,18 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
-import { Inbox, Truck } from "lucide-react";
+import { Button, EmptyState, Card, ICONS, ProgressBar } from "@uwusuite/design";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import type { MoveInfo } from "@/lib/api";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { Link, navigate } from "@/lib/router";
-import { MoveStatePill, ProgressBar } from "./MoveBits";
+import { MoveStatePill } from "./MoveBits";
 import { moveUrl, newMovePath, share } from "./moves";
 import { useMoves } from "./queries";
 
 function MoveRowCard({ move }: { move: MoveInfo }) {
   const { t, i18n } = useT();
   const { summary } = move;
-  const Icon = move.kind === "domain" ? ICONS.website : Inbox;
+  const Icon = move.kind === "domain" ? ICONS.website : ICONS.inbox;
   return (
     <Link
       to={moveUrl(move.id)}
@@ -30,7 +29,7 @@ function MoveRowCard({ move }: { move: MoveInfo }) {
         <MoveStatePill state={move.state} />
       </div>
       <ProgressBar
-        value={share(summary.messagesDone, summary.messagesTotal)}
+        share={share(summary.messagesDone, summary.messagesTotal)}
         label={t("moves.progress.label", { domain: move.domain })}
       />
       <p className="text-[12px] text-muted">
@@ -68,7 +67,7 @@ export function MovesPage() {
             title={t("moves.list.emptyTitle")}
             body={t("moves.list.emptyBody")}
             action={
-              <Button icon={Truck} onClick={() => navigate(newMovePath)}>
+              <Button icon={ICONS.migrate} onClick={() => navigate(newMovePath)}>
                 {t("moves.list.new")}
               </Button>
             }

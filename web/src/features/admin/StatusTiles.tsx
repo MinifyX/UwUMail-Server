@@ -1,6 +1,5 @@
 import { ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeftRight, DatabaseBackup } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { describe } from "@/features/log/LogPage";
 import { useUpdates } from "@/features/updates/queries";
@@ -84,7 +83,7 @@ function MailFlowTile({ counts }: { counts: Overview["counts"] }) {
   return (
     <Tile
       to="/admin/mail-flow"
-      icon={ArrowLeftRight}
+      icon={ICONS.mailFlow}
       title={t("admin.tabs.mailFlow")}
       tone={level}
       text={t(`admin.tiles.mailFlow.${level}`)}
@@ -99,7 +98,7 @@ function BackupsTile() {
   const title = t("admin.tabs.backups");
   if (!query.data) {
     return (
-      <Tile to="/admin/backups" icon={DatabaseBackup} title={title} tone="unknown" text={t("admin.tiles.loading")} />
+      <Tile to="/admin/backups" icon={ICONS.backup} title={title} tone="unknown" text={t("admin.tiles.loading")} />
     );
   }
   const { status, target, enabled, running } = query.data;
@@ -129,7 +128,7 @@ function BackupsTile() {
   } else if (!last || stale) {
     tone = "warning";
   }
-  return <Tile to="/admin/backups" icon={DatabaseBackup} title={title} tone={tone} text={text} note={note} />;
+  return <Tile to="/admin/backups" icon={ICONS.backup} title={title} tone={tone} text={text} note={note} />;
 }
 
 function UpdatesTile() {

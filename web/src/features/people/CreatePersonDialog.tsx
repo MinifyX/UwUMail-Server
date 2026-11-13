@@ -1,8 +1,7 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle, Pill, ICONS } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Pill, ICONS, Dialog } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { absoluteUrl, type PasswordLinkCreated } from "@/lib/api";
 import { SecretBox } from "@/features/security/SecurityBits";

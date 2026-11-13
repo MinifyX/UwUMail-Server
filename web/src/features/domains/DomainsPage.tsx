@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon } from "@uwusuite/design";
+import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import type { DomainKind } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

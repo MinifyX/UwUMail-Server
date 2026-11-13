@@ -1,6 +1,6 @@
 import { ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { Server, User, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "@/i18n";
 import { api, type RuleScopeCount } from "@/lib/api";
@@ -117,7 +117,7 @@ export function ScopePicker({
           </label>
           <ul id={listId} role="listbox" aria-label={label} className="max-h-80 overflow-y-auto">
             {filter && !search && option("all", t("spam.rules.scope.all"), ICONS.search)}
-            {!search && option("server", t("spam.rules.scope.server"), Server, server?.count)}
+            {!search && option("server", t("spam.rules.scope.server"), ICONS.server, server?.count)}
             {filter && !search && option("domains", t("spam.rules.scope.domains"), ICONS.website)}
             {filter && !search && option("accounts", t("spam.rules.scope.accounts"), ICONS.people)}
             {domains.length > 0 && (
@@ -134,7 +134,7 @@ export function ScopePicker({
               </li>
             )}
             {people.map((scope) =>
-              option(scope.key, scope.scope.type === "account" ? scope.scope.name : "", User, scope.count),
+              option(scope.key, scope.scope.type === "account" ? scope.scope.name : "", ICONS.account, scope.count),
             )}
             {query.isPending && <li className="px-2.5 py-2 text-[13px] text-muted">{t("common.loading")}</li>}
             {!query.isPending && search && domains.length + people.length === 0 && (

@@ -1,8 +1,7 @@
-import { Segmented, Toggle, Card, Hint, ICONS, Icon } from "@uwusuite/design";
+import { Segmented, Toggle, Card, Hint, ICONS, Icon, SettingRow } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageHeader } from "@/components/ui/Page";
-import { SettingRow } from "@/components/ui/SettingRow";
 import { useSession } from "@/features/session/session";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
@@ -88,13 +87,16 @@ export function CodesPage() {
               description={t("codes.detect.description")}
             />
             <div className="border-t border-hairline" />
+            {/* The package row brings a hairline and padding; here the column gap spaces the rows. */}
             <SettingRow
+              className="border-b-0 pt-0 pb-0"
               label={t("codes.cleanup.label")}
               description={t(`codes.cleanup.description.${settings.cleanup}`)}
             >
-              {() => (
+              {({ describedBy }) => (
                 <Segmented
                   label={t("codes.cleanup.label")}
+                  describedBy={describedBy}
                   disabled={settings.saving}
                   value={settings.cleanup}
                   onChange={(cleanup) => settings.set({ cleanup })}

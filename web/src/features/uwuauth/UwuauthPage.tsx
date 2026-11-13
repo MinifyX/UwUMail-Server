@@ -1,10 +1,9 @@
-import { Button, Field, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, TextInput, Toggle, Card, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
-import { Dialog } from "@/components/ui/Dialog";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { api, type UwuauthView } from "@/lib/api";

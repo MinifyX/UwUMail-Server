@@ -1,11 +1,10 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
+import { Button, IconButton, Field, Select, TextInput, Toggle, Card, ICONS, Icon, cx, Dialog } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, ShieldOff, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { KeyValue } from "@/components/ui/Page";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { AppPasswordRow } from "@/features/security/AppPasswordsCard";
 import { OAuthGrantRow, SignOutAppDialog } from "@/features/security/OAuthAppsCard";
@@ -351,7 +350,7 @@ function Convert({ person }: { person: Person }) {
   return (
     <div className="flex flex-col items-start gap-2 border-t border-hairline pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <p className="min-w-0 flex-1 text-[13px] text-muted">{t(`people.detail.convert${which}Hint`)}</p>
-      <Button icon={service ? UserRound : Bot} onClick={() => setAsking(true)}>
+      <Button icon={service ? UserRound : ICONS.bot} onClick={() => setAsking(true)}>
         {t(`people.detail.convert${which}`)}
       </Button>
       <Dialog
@@ -371,7 +370,7 @@ function Convert({ person }: { person: Person }) {
             <Button onClick={() => setAsking(false)}>{t("common.cancel")}</Button>
             <Button
               variant="primary"
-              icon={service ? UserRound : Bot}
+              icon={service ? UserRound : ICONS.bot}
               busy={update.isPending}
               onClick={() => update.mutate({ service: !service }, { onSuccess: () => setAsking(false) })}
             >
@@ -715,7 +714,7 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
             {security.secondFactor ? (
               <Icon icon={ICONS.securityCheck} className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
             ) : (
-              <Icon icon={ShieldOff} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+              <Icon icon={ICONS.securityOff} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
             )}
             <span>
               {security.secondFactor
@@ -733,7 +732,7 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
         {security.secondFactor && !isMe && (
           <div className="flex flex-col items-start gap-2 border-t border-hairline pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="min-w-0 flex-1 text-[13px] text-muted">{t("people.security.resetHint")}</p>
-            <Button icon={ShieldOff} onClick={() => setAsking(true)}>
+            <Button icon={ICONS.securityOff} onClick={() => setAsking(true)}>
               {t("people.security.reset")}
             </Button>
           </div>
@@ -777,7 +776,7 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
             <Button onClick={() => setAsking(false)}>{t("common.cancel")}</Button>
             <Button
               variant="danger"
-              icon={ShieldOff}
+              icon={ICONS.securityOff}
               busy={reset.isPending}
               onClick={() =>
                 reset.mutate(undefined, {

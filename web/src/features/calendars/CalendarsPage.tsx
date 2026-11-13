@@ -1,6 +1,5 @@
 import { Button, Field, Select, TextInput, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookUser, Rss, UserMinus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -21,7 +20,7 @@ import { calendarsKey, ImportCard, INTERVALS } from "./ImportDialogs";
 const RIGHTS: ShareRights[] = ["read", "write", "all"];
 
 function KindIcon({ kind }: { kind: OwnCollection["kind"] }) {
-  const Icon = kind === "calendar" ? ICONS.calendar : BookUser;
+  const Icon = kind === "calendar" ? ICONS.calendar : ICONS.contacts;
   return <Icon className="size-4 shrink-0 text-muted" aria-hidden />;
 }
 
@@ -76,7 +75,7 @@ function SubscriptionInfo({
   return (
     <div className="flex flex-col gap-2 rounded-control bg-canvas p-3">
       <p className="flex items-center gap-2 text-sm">
-        <SuiteIcon icon={Rss} className="size-4 shrink-0 text-muted" aria-hidden />
+        <SuiteIcon icon={ICONS.feed} className="size-4 shrink-0 text-muted" aria-hidden />
         <span className="min-w-0 flex-1 truncate">
           {t("calendars.subscribe.from", { source: subscription.source })}
         </span>
@@ -219,7 +218,7 @@ function OwnCard({ collection }: { collection: OwnCollection }) {
                 <Button
                   size="sm"
                   variant="danger"
-                  icon={UserMinus}
+                  icon={ICONS.removePerson}
                   busy={unshare.isPending && unshare.variables === person.accountId}
                   onClick={() => unshare.mutate(person.accountId)}
                 >

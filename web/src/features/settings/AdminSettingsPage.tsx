@@ -1,5 +1,4 @@
 import { ICONS } from "@uwusuite/design";
-import { AppWindow, EarthLock, Palette } from "lucide-react";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { AdminAssistPage } from "@/features/assist/AdminAssistPage";
 import { PublicPicturesCard } from "@/features/pictures/PictureCard";
@@ -25,12 +24,12 @@ export const SETTINGS_PATHS: Record<AdminSettingsTab, string> = {
 const KIND_ICONS = {
   general: ICONS.adjust,
   mail: ICONS.send,
-  apps: AppWindow,
+  apps: ICONS.app,
   login: ICONS.secret,
   uwuauth: ICONS.securityCheck,
-  branding: Palette,
+  branding: ICONS.appearance,
   assist: ICONS.ai,
-  vpn: EarthLock,
+  vpn: ICONS.vpn,
 };
 const INTROS: Record<AdminSettingsTab, string> = {
   general: "settings.intro",

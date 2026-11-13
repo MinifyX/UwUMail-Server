@@ -1,6 +1,6 @@
 import { Button, Field, Segmented, TextInput, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, FileUp, Image } from "lucide-react";
+import { ArrowUp, FileUp } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { KeyValue } from "@/components/ui/Page";
@@ -76,7 +76,7 @@ function Previews({ domain, view }: { domain: string; view: BimiView }) {
             {preview.data ? (
               <img src={preview.data} alt={t("bimi.preview.alt", { domain })} className="size-full object-cover" />
             ) : (
-              <Icon icon={Image} className="size-8" aria-hidden />
+              <Icon icon={ICONS.image} className="size-8" aria-hidden />
             )}
           </span>
           <figcaption className="text-[12px] text-muted">{shape.label}</figcaption>

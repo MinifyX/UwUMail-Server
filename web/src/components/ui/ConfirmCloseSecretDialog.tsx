@@ -1,8 +1,7 @@
 import { useId } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { useT } from "@/i18n";
-import { Button } from "@uwusuite/design";
-import { Dialog } from "./Dialog";
+import { Button, Dialog } from "@uwusuite/design";
 
 interface ConfirmCloseSecretDialogProps {
   open: boolean;

@@ -1,6 +1,5 @@
 import { Button, Field, Select, TextInput, Card, Pill, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Power, PowerOff } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton, PageHeader } from "@/components/ui/Page";
@@ -198,7 +197,7 @@ function AddressList({ addresses }: { addresses: MaskedAddress[] }) {
                   {address.state === "disabled" || address.state === "deleted" ? (
                     <Button
                       size="sm"
-                      icon={Power}
+                      icon={ICONS.turnOn}
                       busy={busy}
                       onClick={() => change.mutate({ id: address.id, state: "enabled" })}
                     >
@@ -207,7 +206,7 @@ function AddressList({ addresses }: { addresses: MaskedAddress[] }) {
                   ) : (
                     <Button
                       size="sm"
-                      icon={PowerOff}
+                      icon={ICONS.turnOff}
                       busy={busy}
                       onClick={() => change.mutate({ id: address.id, state: "disabled" })}
                     >

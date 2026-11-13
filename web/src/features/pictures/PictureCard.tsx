@@ -1,9 +1,8 @@
-import { Button, Field, Select, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
+import { Button, Field, Select, Toggle, Card, ICONS, Icon, cx, Dialog } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Image, ImageUp, UserRound } from "lucide-react";
+import { ImageUp, UserRound } from "lucide-react";
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type DomainLogoState, type PictureFile, type PictureState, type PictureVisibility } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -182,7 +181,7 @@ function Current({ picture, round, label }: { picture: PictureFile | null; round
       ) : round ? (
         <Icon icon={UserRound} className="size-9" aria-hidden />
       ) : (
-        <Icon icon={Image} className="size-9" aria-hidden />
+        <Icon icon={ICONS.image} className="size-9" aria-hidden />
       )}
     </span>
   );

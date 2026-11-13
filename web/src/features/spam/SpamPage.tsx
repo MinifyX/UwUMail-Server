@@ -1,6 +1,6 @@
-import { Button, Field, TextInput, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
+import { Button, Field, TextInput, Card, ICONS, Icon as SuiteIcon, cx, ProgressBar } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Clock, GraduationCap, Hash, Rss, Settings2, type LucideIcon } from "lucide-react";
+import { Clock, Settings2, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -60,8 +60,8 @@ const KIND_ICONS = {
   overview: ICONS.overview,
   rules: ICONS.rules,
   settings: Settings2,
-  lists: Rss,
-  learning: GraduationCap,
+  lists: ICONS.feed,
+  learning: ICONS.learn,
   antivirus: ICONS.spam,
   history: ICONS.history,
   waiting: ICONS.oneTimeCode,
@@ -89,12 +89,7 @@ function Progress({ totals, minimum }: { totals: BayesTotals; minimum: number })
           {value < minimum ? t("spam.bayes.countLearning", { value, minimum }) : t("spam.bayes.countDone", { value })}
         </span>
       </div>
-      <div className="h-2.5 overflow-hidden rounded-full bg-canvas" aria-hidden>
-        <div
-          className="h-full rounded-full bg-pink"
-          style={{ width: `${Math.min(100, (value / Math.max(minimum, 1)) * 100)}%` }}
-        />
-      </div>
+      <ProgressBar share={value / Math.max(minimum, 1)} />
     </div>
   );
   return (
@@ -234,7 +229,7 @@ function QuickRule() {
           </Button>
           <Button
             variant="ghost"
-            icon={Hash}
+            icon={ICONS.pattern}
             disabled={!value.trim() || add.isPending}
             onClick={() => add.mutate("points")}
           >
@@ -395,7 +390,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
       </div>
 
       <p className="flex items-start gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-        <SuiteIcon icon={BookOpen} className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <SuiteIcon icon={ICONS.guide} className="mt-0.5 size-4 shrink-0" aria-hidden />
         {t("spam.overview.howItWorks")}
       </p>
     </>
@@ -487,7 +482,7 @@ export function AccountSpamPage({ tab = "rules" }: { tab?: AccountSpamTab }) {
           </section>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-prose text-[13px] text-muted">{t("spam.bayes.learnHint")}</p>
-            <Button icon={GraduationCap} busy={learn.isPending} onClick={() => learn.mutate()}>
+            <Button icon={ICONS.learn} busy={learn.isPending} onClick={() => learn.mutate()}>
               {t("spam.bayes.learnOwn")}
             </Button>
           </div>
@@ -578,7 +573,7 @@ export function AdminSpamPage({ tab = "overview" }: { tab?: SpamTab }) {
               </p>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="max-w-prose text-[13px] text-muted">{t("spam.bayes.learnHintAdmin")}</p>
-                <Button icon={GraduationCap} busy={learn.isPending} onClick={() => learn.mutate()}>
+                <Button icon={ICONS.learn} busy={learn.isPending} onClick={() => learn.mutate()}>
                   {t("spam.bayes.learnAll")}
                 </Button>
               </div>

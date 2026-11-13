@@ -1,6 +1,6 @@
 import { Button, IconButton, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import { FileUp, Server } from "lucide-react";
+import { FileUp } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { useT } from "@/i18n";
 import { api, type MoveCsvRead, type MoveRowProblem } from "@/lib/api";
@@ -179,7 +179,7 @@ export function RowsEditor({
                   ))}
                   <td className="whitespace-nowrap">
                     <IconButton
-                      icon={Server}
+                      icon={ICONS.server}
                       label={t("moves.rows.servers")}
                       onClick={() =>
                         setServers((open) => {

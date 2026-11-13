@@ -1,5 +1,4 @@
-import { AvatarBlob, Tag, type TagTone, cx } from "@uwusuite/design";
-import { MeterBar } from "@/components/ui/StatTile";
+import { AvatarBlob, Tag, type TagTone, cx, ProgressBar } from "@uwusuite/design";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
@@ -62,7 +61,7 @@ export function StorageLine({ person }: { person: Pick<Person, "usedBytes" | "qu
     return <span className="text-[13px] text-muted tabular-nums">{t("people.storageUsed", { used })}</span>;
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <MeterBar share={person.usedBytes / person.quotaBytes} className="min-w-12 flex-1" />
+      <ProgressBar kind="usage" share={person.usedBytes / person.quotaBytes} className="min-w-12 flex-1" />
       <span className="shrink-0 text-[13px] text-muted tabular-nums">
         {t("people.storageOf", { used, quota: formatBytes(person.quotaBytes, i18n.language) })}
       </span>

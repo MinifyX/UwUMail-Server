@@ -1,6 +1,5 @@
 import { NyuScene } from "@/components/nyu/scenes";
 import { Button, Select, TextInput, EmptyState, Pill, ICONS, Icon, cx } from "@uwusuite/design";
-import { UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -73,7 +72,7 @@ export function PeoplePage({ session }: { session: Session }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex justify-end">
-        <Button variant="primary" icon={UserPlus} onClick={() => setCreating(true)}>
+        <Button variant="primary" icon={ICONS.addContact} onClick={() => setCreating(true)}>
           {t("people.add")}
         </Button>
       </div>
@@ -84,7 +83,7 @@ export function PeoplePage({ session }: { session: Session }) {
           title={t("people.empty.title")}
           body={t("people.empty.body")}
           action={
-            <Button variant="primary" icon={UserPlus} onClick={() => setCreating(true)}>
+            <Button variant="primary" icon={ICONS.addContact} onClick={() => setCreating(true)}>
               {t("people.add")}
             </Button>
           }

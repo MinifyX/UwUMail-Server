@@ -1,6 +1,4 @@
-import { Segmented, Select } from "@uwusuite/design";
-import { Dialog } from "@/components/ui/Dialog";
-import { SettingRow } from "@/components/ui/SettingRow";
+import { Segmented, Select, Dialog, SettingRow } from "@uwusuite/design";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { useBrand } from "@/state/brand";
 import { useSavePrefs } from "@/features/session/session";
@@ -22,7 +20,8 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
   return (
     <Dialog open={open} onClose={onClose} title={t("appearance.title")} width="sm">
       <div className="flex flex-col gap-4 px-6 pt-2 pb-6">
-        <SettingRow label={t("appearance.language.label")}>
+        {/* The package row brings a hairline and padding; here the column gap spaces the rows. */}
+        <SettingRow className="border-b-0 pt-0 pb-0" label={t("appearance.language.label")}>
           {({ id }) => (
             <Select
               id={id}
@@ -41,10 +40,15 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
         </SettingRow>
         {/* Without the mascot everything is plain, so there is no tone to choose. */}
         {mascot && (
-          <SettingRow label={t("appearance.tone.label")} description={t("appearance.tone.hint")}>
-            {() => (
+          <SettingRow
+            className="border-b-0 pt-0 pb-0"
+            label={t("appearance.tone.label")}
+            description={t("appearance.tone.hint")}
+          >
+            {({ describedBy }) => (
               <Segmented<Tone>
                 label={t("appearance.tone.label")}
+                describedBy={describedBy}
                 value={prefs.tone}
                 onChange={(tone) => save.mutate({ tone })}
                 options={[
@@ -55,7 +59,7 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
             )}
           </SettingRow>
         )}
-        <SettingRow label={t("appearance.theme.label")}>
+        <SettingRow className="border-b-0 pt-0 pb-0" label={t("appearance.theme.label")}>
           {() => (
             <Segmented<ThemeSetting>
               label={t("appearance.theme.label")}
@@ -68,7 +72,7 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
             />
           )}
         </SettingRow>
-        <SettingRow label={t("appearance.contrast.label")}>
+        <SettingRow className="border-b-0 pt-0 pb-0" label={t("appearance.contrast.label")}>
           {() => (
             <Segmented<ContrastSetting>
               label={t("appearance.contrast.label")}
@@ -81,7 +85,7 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
             />
           )}
         </SettingRow>
-        <SettingRow label={t("appearance.motion.label")}>
+        <SettingRow className="border-b-0 pt-0 pb-0" label={t("appearance.motion.label")}>
           {() => (
             <Segmented<MotionSetting>
               label={t("appearance.motion.label")}

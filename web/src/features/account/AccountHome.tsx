@@ -1,11 +1,18 @@
-import { BUTTON_SIZES, BUTTON_VARIANTS, cx, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
-import {} from "@uwusuite/design";
+import {
+  BUTTON_SIZES,
+  BUTTON_VARIANTS,
+  cx,
+  Card,
+  ICONS,
+  Icon as SuiteIcon,
+  ProgressBar,
+  StatTile,
+  StatusDot,
+} from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { AtSign, ChevronUp, Inbox, MonitorSmartphone, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { CopyButton, KeyValue, PageHeader } from "@/components/ui/Page";
-import { StatusDot } from "@/components/ui/StatusDot";
-import { MeterBar, StatTile } from "@/components/ui/StatTile";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useSecurity } from "@/features/security/queries";
 import { useT } from "@/i18n";
@@ -57,7 +64,7 @@ function AddressList({ addresses }: { addresses: string[] }) {
           aria-expanded={expanded}
         >
           {expanded ? (
-            <SuiteIcon icon={ChevronUp} className="size-4" aria-hidden />
+            <SuiteIcon icon={ICONS.collapse} className="size-4" aria-hidden />
           ) : (
             <SuiteIcon icon={ICONS.expand} className="size-4" aria-hidden />
           )}
@@ -69,6 +76,7 @@ function AddressList({ addresses }: { addresses: string[] }) {
 }
 
 type Tone = "success" | "warning" | "danger";
+const DOT_STATES = { success: "online", warning: "error", danger: "danger" } as const;
 
 /** One line of the status card: a dot and what it means, so the colour is never the only hint. */
 interface StatusLine {
@@ -123,7 +131,7 @@ function StatusCard({ lines }: { lines: StatusLine[] }) {
       <ul className="flex flex-col gap-2.5">
         {lines.map((line) => (
           <li key={line.text} className="flex items-center gap-2.5 text-[13px]">
-            <StatusDot tone={line.tone} />
+            <StatusDot state={DOT_STATES[line.tone]} />
             <span className="min-w-0">{line.text}</span>
           </li>
         ))}
@@ -197,7 +205,7 @@ function NextCard({ security }: { security: SecurityView | undefined }) {
           text={t("account.next.masked.text")}
         />
         <NextRow
-          icon={MonitorSmartphone}
+          icon={ICONS.devices}
           title={t("account.next.device.title")}
           text={t("account.next.device.text")}
           onClick={() => document.getElementById("apps")?.scrollIntoView({ behavior: "smooth", block: "start" })}
@@ -248,7 +256,7 @@ export function AccountHome({ session }: { session: Session }) {
                 BUTTON_SIZES.lg,
               )}
             >
-              <SuiteIcon icon={Inbox} className="size-4" strokeWidth={2.2} aria-hidden />
+              <SuiteIcon icon={ICONS.inbox} className="size-4" strokeWidth={2.2} aria-hidden />
               {t("nav.openMailbox")}
             </a>
           )
@@ -257,7 +265,7 @@ export function AccountHome({ session }: { session: Session }) {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
-          icon={AtSign}
+          icon={ICONS.alias}
           value={t("account.tiles.addresses", { count: data.addresses.length })}
           label={
             maskedActive === undefined
@@ -275,7 +283,7 @@ export function AccountHome({ session }: { session: Session }) {
               : t("account.tiles.storageUnlimited")
           }
         >
-          {data.quotaBytes > 0 && <MeterBar share={share} />}
+          {data.quotaBytes > 0 && <ProgressBar kind="usage" share={share} />}
         </StatTile>
         <StatTile
           icon={ICONS.securityCheck}

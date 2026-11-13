@@ -1,9 +1,7 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, Toggle, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useQueryClient } from "@tanstack/react-query";
-import { PlugZap } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -357,7 +355,12 @@ function ProviderForm({
       )}
       <div className="flex flex-col gap-1.5">
         <div>
-          <Button icon={PlugZap} busy={busy === "test"} disabled={busy === "save"} onClick={() => void test()}>
+          <Button
+            icon={ICONS.testConnection}
+            busy={busy === "test"}
+            disabled={busy === "save"}
+            onClick={() => void test()}
+          >
             {t("assist.form.test")}
           </Button>
         </div>

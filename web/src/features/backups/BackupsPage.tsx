@@ -1,11 +1,19 @@
-import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
+import {
+  Button,
+  Field,
+  Segmented,
+  Select,
+  TextInput,
+  Toggle,
+  Card,
+  ICONS,
+  Dialog,
+  ProgressBar,
+} from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DatabaseBackup, Plug } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
-import { Dialog } from "@/components/ui/Dialog";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { ApiError, api, type BackupSnapshot, type BackupTarget, type BackupsView } from "@/lib/api";
@@ -80,7 +88,7 @@ function StatusCard({ view }: { view: BackupsView }) {
         {!view.enabled && view.target && <p className="text-[13px] text-muted">{t("backups.status.paused")}</p>}
         <div className="flex flex-wrap gap-2">
           <Button
-            icon={DatabaseBackup}
+            icon={ICONS.backup}
             busy={run.isPending || view.running}
             disabled={!view.target}
             onClick={() => run.mutate()}
@@ -500,7 +508,13 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
               {t("backups.target.trustNewKey")}
             </Button>
           )}
-          <Button variant="ghost" icon={Plug} disabled={!target} busy={test.isPending} onClick={() => test.mutate()}>
+          <Button
+            variant="ghost"
+            icon={ICONS.testConnection}
+            disabled={!target}
+            busy={test.isPending}
+            onClick={() => test.mutate()}
+          >
             {t("backups.target.test")}
           </Button>
           <Button type="submit" variant="primary" busy={save.isPending}>
@@ -722,7 +736,7 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
                 total: formatBytes(job.totalBytes, i18n.language),
               })}
             </p>
-            <ProgressBar done={job.doneBytes} total={job.totalBytes} label={t("backups.mailbox.title")} />
+            <ProgressBar share={job.doneBytes / job.totalBytes} label={t("backups.mailbox.title")} />
           </div>
         )}
         {(job.state === "open" || job.state === "restoring") && (
@@ -735,7 +749,7 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
             <p className="text-[13px]">
               {t("backups.mailbox.restoring", { account: job.account, done: job.done, total: job.total })}
             </p>
-            <ProgressBar done={job.done} total={job.total} label={t("backups.mailbox.title")} />
+            <ProgressBar share={job.done / job.total} label={t("backups.mailbox.title")} />
           </div>
         )}
         {job.last && !busy && (

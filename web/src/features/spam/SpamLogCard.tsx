@@ -1,9 +1,8 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, Field, Segmented, Select, TextInput, EmptyState, Card, ICONS, cx } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, EmptyState, Card, ICONS, cx, Dialog } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type SpamLogAction, type SpamLogEntry, type SpamLogView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

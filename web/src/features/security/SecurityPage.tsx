@@ -1,5 +1,4 @@
 import { Button, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
-import { MonitorSmartphone } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Page";
@@ -145,7 +144,7 @@ function SessionsCard({ security }: { security: SecurityView }) {
       <ul className="flex flex-col">
         {security.sessions.map((session) => (
           <li key={session.id} className="flex items-center gap-3 border-b border-hairline py-2.5 last:border-b-0">
-            <Icon icon={MonitorSmartphone} className="size-4 shrink-0 text-muted" aria-hidden />
+            <Icon icon={ICONS.devices} className="size-4 shrink-0 text-muted" aria-hidden />
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
                 {describeDevice(session.userAgent, t)}

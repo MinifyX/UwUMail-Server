@@ -1,8 +1,7 @@
-import { Button, Field, Segmented, Select, TextInput, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Segmented, Select, TextInput, ICONS, Icon, Dialog } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import { Hash, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";
 import { api, type NewRule, type Rule, type RuleChange, type SenderKind } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -238,7 +237,7 @@ export function RuleDialog({
         {rule && (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[12px] text-muted">
             <span className="inline-flex items-center gap-1">
-              <Icon icon={Hash} className="size-3" aria-hidden />
+              <Icon icon={ICONS.pattern} className="size-3" aria-hidden />
               {t("spam.rules.hits", { count: rule.hits })}
             </span>
             {rule.createdBy && (

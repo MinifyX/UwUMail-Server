@@ -1,6 +1,5 @@
 import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Truck } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/ui/Page";
 import { useMailDomains, usePeople } from "@/features/people/queries";
@@ -414,7 +413,7 @@ export function NewMovePage() {
           </Button>
           <Button
             variant="primary"
-            icon={Truck}
+            icon={ICONS.migrate}
             busy={start.isPending}
             disabled={!ready || sourceMissing}
             onClick={() => start.mutate()}
