@@ -293,15 +293,23 @@ pub async fn backup(
     });
     let mut database = Vec::new();
     let mut database_size = 0;
-    while let Some(chunk) = chunks.recv().await {
-        let chunk = chunk?;
-        database_size += chunk.len() as u64;
-        let (id, bytes) = repo.put(&chunk, &mut known).await?;
-        uploaded += bytes;
-        database.push(id);
+    let sent = async {
+        while let Some(chunk) = chunks.recv().await {
+            let chunk = chunk?;
+            database_size += chunk.len() as u64;
+            let (id, bytes) = repo.put(&chunk, &mut known).await?;
+            uploaded += bytes;
+            database.push(id);
+        }
+        Ok::<_, Error>(())
     }
-    chunker.await.map_err(|err| Error::Storage(err.to_string()))?;
+    .await;
+    // The chunker stops once nobody listens; the plain copy goes whether the upload worked or not.
+    drop(chunks);
+    let chunked = chunker.await;
     let _ = tokio::fs::remove_file(&copy).await;
+    sent?;
+    chunked.map_err(|err| Error::Storage(err.to_string()))?;
 
     // Mail blobs, each on its own.
     let mut blobs = Vec::new();
