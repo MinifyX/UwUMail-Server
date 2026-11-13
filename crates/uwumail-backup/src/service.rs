@@ -463,7 +463,7 @@ impl Backups {
 
     /// Takes [`LOCK_FILE`]: a backup prunes what no snapshot needs, and must not do that under a
     /// restore that is reading it. Held until the file is dropped; `busy` says who else has it.
-    fn hold(&self, busy: impl FnOnce() -> String) -> Result<std::fs::File, Error> {
+    pub fn hold(&self, busy: impl FnOnce() -> String) -> Result<std::fs::File, Error> {
         let file = std::fs::File::options()
             .create(true)
             .truncate(false)
