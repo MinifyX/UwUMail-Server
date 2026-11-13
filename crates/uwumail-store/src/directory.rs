@@ -820,6 +820,23 @@ impl Store {
 
     pub async fn delete_account(&self, login: &str) -> Result<()> {
         let login = login_key(login)?;
+        // The mail goes first, a thousand emails per write, so a big account does not hold up
+        // every other writer; the account itself then goes in one transaction.
+        loop {
+            let login = login.clone();
+            let deleted = self
+                .write(move |tx| {
+                    let id = account_id(tx, &login)?;
+                    Ok(tx.execute(
+                        "DELETE FROM emails WHERE id IN (SELECT id FROM emails WHERE account_id = ?1 LIMIT 1000)",
+                        [id],
+                    )?)
+                })
+                .await?;
+            if deleted == 0 {
+                break;
+            }
+        }
         let granted = self
             .write(move |tx| {
                 let id = account_id(tx, &login)?;
