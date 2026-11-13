@@ -191,9 +191,35 @@ impl Store {
         sort: Vec<EmailSort>,
         collapse_threads: bool,
     ) -> Result<Vec<(i64, i64)>> {
+        self.query_emails_up_to(account_id, filter, sort, collapse_threads, None).await
+    }
+
+    /// [`Store::query_emails`], at most the first `limit` results: for a query that needs
+    /// neither the total nor an anchor, so a page of a big mailbox is not sorted in full.
+    pub async fn query_emails_up_to(
+        &self,
+        account_id: i64,
+        filter: Option<EmailFilter>,
+        sort: Vec<EmailSort>,
+        collapse_threads: bool,
+        limit: Option<usize>,
+    ) -> Result<Vec<(i64, i64)>> {
         self.read(move |conn| {
             let mut sql = Sql { params: Vec::new() };
             let account = sql.bind(account_id);
+            // A mailbox the whole query is inside drives the scan through its (mailbox_id, uid) index.
+            let mailbox = match &filter {
+                Some(EmailFilter::InMailbox(id)) => Some(*id),
+                Some(EmailFilter::And(items)) => items.iter().find_map(|item| match item {
+                    EmailFilter::InMailbox(id) => Some(*id),
+                    _ => None,
+                }),
+                _ => None,
+            };
+            let join = match mailbox {
+                Some(id) => format!("JOIN email_mailboxes em ON em.email_id = e.id AND em.mailbox_id = {}", sql.bind(id)),
+                None => String::new(),
+            };
             let condition = filter.as_ref().map(|f| sql.filter(f)).unwrap_or_else(|| "1".into());
             let mut sort = sort;
             if sort.is_empty() {
@@ -210,10 +236,10 @@ impl Store {
             let order = order.join(", ");
             let columns = columns.join(", ");
             let base = format!(
-                "SELECT e.id AS id, e.thread_id AS thread_id, {columns} FROM emails e
+                "SELECT e.id AS id, e.thread_id AS thread_id, {columns} FROM emails e {join}
                  WHERE e.account_id = {account} AND {condition}"
             );
-            let statement = if collapse_threads {
+            let mut statement = if collapse_threads {
                 format!(
                     "SELECT id, thread_id FROM (SELECT *, row_number() OVER (PARTITION BY thread_id ORDER BY {order}) AS rank
                      FROM ({base})) WHERE rank = 1 ORDER BY {order}"
@@ -221,6 +247,9 @@ impl Store {
             } else {
                 format!("SELECT id, thread_id FROM ({base}) ORDER BY {order}")
             };
+            if let Some(limit) = limit {
+                statement += &format!(" LIMIT {}", sql.bind(limit as i64));
+            }
             let mut stmt = conn.prepare(&statement)?;
             let rows = stmt.query_map(rusqlite::params_from_iter(sql.params.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?;
             Ok(rows.collect::<Result<_, _>>()?)
@@ -314,5 +343,10 @@ mod tests {
         assert_eq!(q(None, by_subject, false).await, vec![ids[0], ids[1], ids[2]]);
         let unread_thread = EmailFilter::SomeInThreadHaveKeyword("$seen".into());
         assert_eq!(q(Some(unread_thread), vec![], false).await, vec![ids[1], ids[0]]);
+        let in_inbox_unseen =
+            EmailFilter::And(vec![EmailFilter::NotKeyword("$seen".into()), EmailFilter::InMailbox(inbox)]);
+        assert_eq!(q(Some(in_inbox_unseen), vec![], false).await, vec![ids[1]]);
+        let first = store.query_emails_up_to(account, None, vec![], false, Some(2)).await.unwrap();
+        assert_eq!(first.into_iter().map(|(id, _)| id).collect::<Vec<_>>(), vec![ids[2], ids[1]]);
     }
 }
