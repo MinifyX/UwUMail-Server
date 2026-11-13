@@ -933,25 +933,6 @@ impl Store {
         Ok(label)
     }
 
-    /// Changes a label's name, description and color; the rest stays.
-    pub async fn update_assist_label(
-        &self,
-        account_id: i64,
-        id: i64,
-        name: String,
-        description: String,
-        color: Option<String>,
-    ) -> Result<AssistLabel> {
-        let before = self
-            .assist_labels(account_id)
-            .await?
-            .into_iter()
-            .find(|label| label.id == id)
-            .ok_or_else(|| StoreError::NotFound(format!("label {id}")))?;
-        let write = AssistLabelWrite { name, description, color, ..AssistLabelWrite::of(&before) };
-        self.update_assist_label_with(account_id, id, write).await
-    }
-
     pub async fn update_assist_label_with(
         &self,
         account_id: i64,
@@ -1143,29 +1124,6 @@ impl Store {
             Ok(())
         })
         .await
-    }
-
-    /// Notes which label the model put on an email and why.
-    pub async fn add_label_log(
-        &self,
-        account_id: i64,
-        email_id: i64,
-        label_id: i64,
-        reason: String,
-        provider: String,
-        model: String,
-    ) -> Result<i64> {
-        let entry = LabelLogWrite {
-            email_id,
-            label_id,
-            source: "ai".into(),
-            code: "ai".into(),
-            params: Value::Object(serde_json::Map::new()),
-            reason,
-            provider,
-            model,
-        };
-        Ok(self.add_label_log_entries(account_id, vec![entry]).await?.pop().unwrap_or_default())
     }
 
     /// Notes labels that were put on emails, by whom and why; answers the entries' ids.

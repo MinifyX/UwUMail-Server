@@ -1233,7 +1233,7 @@ DTSTART:20260105T180000Z\r\nSUMMARY:{summary}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n
             Err(StoreError::Rule { code: "readOnly", .. })
         ));
         assert!(matches!(
-            store.dav_delete(mini, feed.id, "a.ics", None).await,
+            store.dav_delete_by(None, mini, feed.id, "a.ics", None).await,
             Err(StoreError::Rule { code: "readOnly", .. })
         ));
         assert!(matches!(
