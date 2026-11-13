@@ -82,7 +82,11 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         return Err(SetError::invalid_properties(&[property], format!("{property} is too long")));
                     }
                 }
-                let id = store.create_identity(account_id, name, email).await?;
+                // shortcut: mirrors IDENTITY_NAME_MAX_CHARS, which update_identity checks but create_identity
+                // does not (store is out of this change); move the check into create_identity.
+                if name.trim().chars().count() > 200 {
+                    return Err(SetError::invalid_properties(&["name"], "name is too long"));
+                }
                 let update = IdentityUpdate {
                     reply_to: object.get("replyTo").map(|v| addresses(v, "replyTo")).transpose()?,
                     bcc: object.get("bcc").map(|v| addresses(v, "bcc")).transpose()?,
@@ -100,6 +104,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         .map(str::to_owned),
                     ..IdentityUpdate::default()
                 };
+                let id = store.create_identity(account_id, name, email).await?;
                 store.update_identity(account_id, id, update).await?;
                 Ok(id)
             }

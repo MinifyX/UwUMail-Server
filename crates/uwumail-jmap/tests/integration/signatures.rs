@@ -45,12 +45,18 @@ async fn signatures_are_kept_on_the_server_and_shared_with_the_portal() {
             login,
             json!([["Identity/set", { "accountId": account,
                 "update": { &id: { "htmlSignature": huge } },
-                "create": { "n": { "email": login, "textSignature": huge } } }, "0"]]),
+                "create": {
+                    "n": { "email": login, "textSignature": huge },
+                    "r": { "email": login, "replyTo": "not a list" },
+                    "l": { "email": login, "name": "N".repeat(201) },
+                } }, "0"]]),
         )
         .await;
     let set = args(&responses, 0, "Identity/set");
     assert_eq!(set["notUpdated"][&id]["type"], "invalidProperties");
-    assert_eq!(set["notCreated"]["n"]["type"], "invalidProperties");
+    for creation in ["n", "r", "l"] {
+        assert_eq!(set["notCreated"][creation]["type"], "invalidProperties", "{set}");
+    }
     let responses = server.api(login, json!([["Identity/get", { "accountId": account }, "0"]])).await;
     assert_eq!(args(&responses, 0, "Identity/get")["list"].as_array().unwrap().len(), 1, "nothing half created");
 }
