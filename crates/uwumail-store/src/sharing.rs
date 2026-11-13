@@ -236,9 +236,10 @@ impl Store {
                         message: "a calendar cannot be shared with its owner".into(),
                     });
                 }
-                let active: bool =
-                    tx.query_row("SELECT deleted_at IS NULL FROM accounts WHERE id = ?1", [grantee], |row| row.get(0))?;
-                if !active {
+                let active: Option<bool> = tx
+                    .query_row("SELECT deleted_at IS NULL FROM accounts WHERE id = ?1", [grantee], |row| row.get(0))
+                    .optional()?;
+                if !active.unwrap_or(false) {
                     return Err(StoreError::Rule { code: "unknownPerson", message: "that account is gone".into() });
                 }
                 let before: Option<String> = tx

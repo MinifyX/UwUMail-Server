@@ -501,6 +501,8 @@ pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> a
             }
         }
         BackupCommand::Check => {
+            // A backup running meanwhile prunes, and what it removes would look missing here.
+            let _lock = backups.hold(|| "a backup is running; check again when it is done".into())?;
             let snapshots = backups.snapshots().await?;
             let Some((name, _)) = snapshots.first() else { anyhow::bail!("there are no snapshots yet") };
             let repo = backups.repository().await?;
@@ -541,7 +543,7 @@ pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> a
 
 /// Puts a snapshot back into an empty data directory. This one runs without a store, and has to:
 /// opening one would leave a fresh database in the directory the restore wants empty.
-pub async fn backup_restore(command: BackupCommand) -> anyhow::Result<()> {
+pub async fn backup_restore(data_dir: &std::path::Path, command: BackupCommand) -> anyhow::Result<()> {
     let BackupCommand::Restore {
         sftp,
         port,
@@ -630,6 +632,11 @@ pub async fn backup_restore(command: BackupCommand) -> anyhow::Result<()> {
         text => Some(uwumail_backup::RepoKey::from_recovery_text(text)?),
     };
     let repo = uwumail_backup::Repository::open_existing(storage, key).await?;
+    // On the host of a running server its nightly backup may prune what this reads; wait for it.
+    let _lock = match data_dir.join("uwumail.db").exists() {
+        true => Some(crate::restore::lock_backups(data_dir).await?),
+        false => None,
+    };
     let result = async {
         let name = match snapshot.as_str() {
             "latest" => repo.snapshots().await?.pop().ok_or_else(|| anyhow::anyhow!("there are no snapshots"))?,

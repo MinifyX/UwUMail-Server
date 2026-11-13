@@ -257,14 +257,22 @@ pub async fn filter_changes(
         "Thread" => {
             let ids: Vec<i64> = created.iter().chain(updated.iter()).copied().collect();
             let threads = ctx.jmap.store.thread_emails(ctx.account.id, ids).await?;
-            let mut visible = HashSet::new();
-            for (thread, emails) in threads {
-                let records = ctx.jmap.store.emails_by_ids(ctx.account.id, emails).await?;
-                if records.iter().any(|record| view.may_read_email(&record.mailbox_ids)) {
-                    visible.insert(thread);
-                }
-            }
-            visible
+            // One lookup for the emails of all threads, not one per thread.
+            let emails: Vec<i64> = threads.values().flatten().copied().collect();
+            let readable: HashSet<i64> = ctx
+                .jmap
+                .store
+                .emails_by_ids(ctx.account.id, emails)
+                .await?
+                .into_iter()
+                .filter(|record| view.may_read_email(&record.mailbox_ids))
+                .map(|record| record.id)
+                .collect();
+            threads
+                .into_iter()
+                .filter(|(_, emails)| emails.iter().any(|email| readable.contains(email)))
+                .map(|(thread, _)| thread)
+                .collect()
         }
         _ => HashSet::new(),
     };

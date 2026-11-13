@@ -1,7 +1,5 @@
+import { Button, Field, TextInput, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Field, TextInput } from "@/components/ui/Field";
 import { Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import { api, type FeedStatus, type FeedsView, type SettingsView } from "@/lib/api";
@@ -32,13 +30,13 @@ function Status({ feed, onRefresh, busy }: { feed: FeedStatus; onRefresh: () => 
   }
   return (
     <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-0.5 text-[12px] text-muted">
-      <span className={feed.active && feed.error ? "text-danger" : undefined}>{text}</span>
+      <span className={feed.active && feed.error ? "text-danger-ink" : undefined}>{text}</span>
       <a href={feed.page} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-ink">
-        <ExternalLink className="size-3" aria-hidden />
+        <Icon icon={ICONS.openExternal} className="size-3" aria-hidden />
         {feed.source}
       </a>
       {feed.active && (
-        <Button size="sm" variant="ghost" icon={RefreshCw} busy={busy} onClick={onRefresh}>
+        <Button size="sm" variant="ghost" icon={ICONS.refresh} busy={busy} onClick={onRefresh}>
           {t("spam.feeds.refresh")}
         </Button>
       )}

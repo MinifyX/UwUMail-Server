@@ -1,13 +1,10 @@
+import { Button, IconButton, Field, Segmented, TextInput, EmptyState, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import clsx from "clsx";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, RefreshCw, Route } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene, type SceneName } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { CopyButton } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Segmented, TextInput } from "@/components/ui/Field";
+import { CopyButton } from "@/components/ui/Page";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, type DomainSummary, type Session } from "@/lib/api";
@@ -121,13 +118,13 @@ function Frame({
             {STEPS.map((entry, position) => (
               <li key={entry} className="min-w-0 flex-1">
                 <span
-                  className={clsx(
+                  className={cx(
                     "block h-1.5 rounded-full transition-colors duration-300",
                     position <= index ? "bg-pink" : "bg-line",
                   )}
                 />
                 <span
-                  className={clsx(
+                  className={cx(
                     "mt-1.5 hidden truncate text-[11px] font-semibold md:block",
                     position === index ? "text-pink-ink" : "text-faint",
                   )}
@@ -171,7 +168,7 @@ function Nav({ onBack, onNext, nextLabel }: { onBack?: () => void; onNext: () =>
   return (
     <>
       {onBack ? (
-        <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+        <Button variant="ghost" icon={ICONS.back} onClick={onBack}>
           {t("setup.back")}
         </Button>
       ) : (
@@ -179,7 +176,7 @@ function Nav({ onBack, onNext, nextLabel }: { onBack?: () => void; onNext: () =>
       )}
       <Button variant="primary" size="lg" onClick={onNext}>
         {nextLabel ?? t("setup.next")}
-        <ArrowRight className="size-4" aria-hidden />
+        <Icon icon={ArrowRight} className="size-4" aria-hidden />
       </Button>
     </>
   );
@@ -230,7 +227,7 @@ function WelcomeStep({ hostname, onCode }: { hostname: string; onCode: (code: st
           <span className="text-[12px] text-faint">{t("setup.welcome.hostname", { hostname })}</span>
           <Button type="submit" variant="primary" size="lg" busy={verify.isPending} disabled={!code.trim()}>
             {t("setup.welcome.submit")}
-            <ArrowRight className="size-4" aria-hidden />
+            <Icon icon={ArrowRight} className="size-4" aria-hidden />
           </Button>
         </div>
       </form>
@@ -390,10 +387,12 @@ function RestoreStep({ code, onBack }: { code: string; onBack: () => void }) {
         )}
 
         {look.isError && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">{errorText(look.error)}</p>
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
+            {errorText(look.error)}
+          </p>
         )}
         {restore.isError && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {errorText(restore.error)}
           </p>
         )}
@@ -532,7 +531,7 @@ function AdminStep({
                 />
                 <IconButton
                   size="sm"
-                  icon={visible ? EyeOff : Eye}
+                  icon={visible ? ICONS.hide : ICONS.show}
                   label={visible ? t("common.hidePassword") : t("common.showPassword")}
                   className="absolute top-1/2 right-1.5 -translate-y-1/2"
                   onClick={() => setVisible((value) => !value)}
@@ -558,17 +557,17 @@ function AdminStep({
           {t("setup.admin.hostnameNote", { hostname })}
         </p>
         {complete.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(complete.error)}
           </p>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+          <Button variant="ghost" icon={ICONS.back} onClick={onBack}>
             {codeGone ? t("setup.admin.newCode") : t("setup.back")}
           </Button>
           <Button type="submit" variant="primary" size="lg" busy={complete.isPending} disabled={missing > 0}>
             {t("setup.admin.submit")}
-            <ArrowRight className="size-4" aria-hidden />
+            <Icon icon={ArrowRight} className="size-4" aria-hidden />
           </Button>
         </div>
         {/* The other thing you can do here: this machine may be standing in for one that died. */}
@@ -610,7 +609,7 @@ function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void 
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <CheckedAt check={reach} />
-              <Button size="sm" icon={RefreshCw} onClick={() => run.mutate()}>
+              <Button size="sm" icon={ICONS.refresh} onClick={() => run.mutate()}>
                 {t("setup.reach.run")}
               </Button>
             </div>
@@ -618,7 +617,7 @@ function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void 
           </>
         )}
         <div className="flex flex-col gap-3">
-          <SubHeading icon={Route}>{t("setup.reach.wayTitle")}</SubHeading>
+          <SubHeading icon={ICONS.redirect}>{t("setup.reach.wayTitle")}</SubHeading>
           <Segmented<"direct" | "gateway">
             label={t("setup.reach.wayTitle")}
             value={way}
@@ -684,7 +683,7 @@ function DnsStep({
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[13px] text-muted">{t("setup.dns.hostnameNote", { hostname })}</p>
-            <Button size="sm" icon={RefreshCw} busy={check.isPending} onClick={() => check.mutate()}>
+            <Button size="sm" icon={ICONS.refresh} busy={check.isPending} onClick={() => check.mutate()}>
               {check.isPending ? t("setup.dns.checking") : t("setup.dns.check")}
             </Button>
           </div>
@@ -699,7 +698,7 @@ function DnsStep({
           {report ? (
             <>
               {allOk && (
-                <p className="rounded-control bg-success-tint px-3 py-2.5 text-[13px] font-semibold text-success">
+                <p className="rounded-control bg-success-tint px-3 py-2.5 text-[13px] font-semibold text-success-ink">
                   {t("setup.dns.allOk")}
                 </p>
               )}
@@ -748,7 +747,7 @@ function SendingStep({ onBack, onNext }: { onBack: () => void; onNext: () => voi
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <CheckedAt check={check} />
-              <Button size="sm" icon={RefreshCw} onClick={() => run.mutate(false)}>
+              <Button size="sm" icon={ICONS.refresh} onClick={() => run.mutate(false)}>
                 {t("setup.sending.run")}
               </Button>
             </div>
@@ -831,7 +830,7 @@ function Closed() {
           <Wordmark className="text-2xl" />
         </div>
         <EmptyState
-          scene={noCode ? "loadError" : "done"}
+          art={<NyuScene name={noCode ? "loadError" : "done"} />}
           title={noCode ? t("setup.noCode.title") : t("setup.closed.title")}
           body={noCode ? t("setup.noCode.body") : t("setup.closed.body")}
           action={

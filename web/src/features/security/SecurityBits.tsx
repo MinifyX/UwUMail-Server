@@ -1,6 +1,5 @@
-import { Check, Copy } from "lucide-react";
+import { Button, ICONS } from "@uwusuite/design";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
 import { useT } from "@/i18n";
 import type { SecurityEventInfo } from "@/lib/api";
 
@@ -39,7 +38,7 @@ export function CopyTextButton({ value, label }: { value: string; label: string 
   return (
     <Button
       size="sm"
-      icon={copied ? Check : Copy}
+      icon={copied ? ICONS.done : ICONS.copy}
       onClick={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true))}
     >
       {copied ? t("common.copied") : label}

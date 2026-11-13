@@ -1,11 +1,9 @@
+import { Button, Field, Segmented, TextInput, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { ArrowUp, FileUp, Image, Info, RefreshCw, Save, TriangleAlert, Trash2, Upload } from "lucide-react";
+import { ArrowUp, FileUp, Image } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, KeyValue } from "@/components/ui/Card";
-import { Field, Segmented, TextInput, Toggle } from "@/components/ui/Field";
+import { KeyValue } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, ApiError, type BimiView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -70,7 +68,7 @@ function Previews({ domain, view }: { domain: string; view: BimiView }) {
       {shapes.map((shape) => (
         <figure key={shape.label} className="flex flex-col items-center gap-1.5">
           <span
-            className={clsx(
+            className={cx(
               "flex size-20 items-center justify-center overflow-hidden border border-hairline bg-canvas text-faint",
               shape.round ? "rounded-full" : "rounded-card",
             )}
@@ -78,7 +76,7 @@ function Previews({ domain, view }: { domain: string; view: BimiView }) {
             {preview.data ? (
               <img src={preview.data} alt={t("bimi.preview.alt", { domain })} className="size-full object-cover" />
             ) : (
-              <Image className="size-8" aria-hidden />
+              <Icon icon={Image} className="size-8" aria-hidden />
             )}
           </span>
           <figcaption className="text-[12px] text-muted">{shape.label}</figcaption>
@@ -157,7 +155,7 @@ function LogoForm({ domain, view }: { domain: string; view: BimiView }) {
       </div>
       {view.domainLogo && !view.hasSvg && (
         <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("bimi.logo.pixelLogo")}
         </p>
       )}
@@ -174,7 +172,7 @@ function LogoForm({ domain, view }: { domain: string; view: BimiView }) {
             if (chosen) void choose(chosen);
           }}
         />
-        <Button icon={Upload} onClick={() => input.current?.click()}>
+        <Button icon={ICONS.upload} onClick={() => input.current?.click()}>
           {t(view.hasSvg ? "bimi.logo.replace" : "bimi.logo.choose")}
         </Button>
         {file && (
@@ -217,13 +215,13 @@ function LogoForm({ domain, view }: { domain: string; view: BimiView }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" icon={Save} busy={busy} disabled={!file && !changedTitle} onClick={save}>
+        <Button variant="primary" icon={ICONS.save} busy={busy} disabled={!file && !changedTitle} onClick={save}>
           {t("bimi.logo.save")}
         </Button>
         {view.hasSvg && (
           <Button
             variant="ghost"
-            icon={Trash2}
+            icon={ICONS.delete}
             busy={remove.isPending}
             onClick={() => {
               if (window.confirm(t("bimi.logo.removeConfirm"))) remove.mutate(undefined);
@@ -254,7 +252,7 @@ function RecordSection({ domain, view }: { domain: string; view: BimiView }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Subheading>{t("bimi.record.title")}</Subheading>
-        <Button size="sm" icon={RefreshCw} busy={check.isPending} onClick={() => check.mutate(undefined)}>
+        <Button size="sm" icon={ICONS.refresh} busy={check.isPending} onClick={() => check.mutate(undefined)}>
           {check.isPending ? t("bimi.record.checking") : t("bimi.record.check")}
         </Button>
       </div>
@@ -269,7 +267,7 @@ function RecordSection({ domain, view }: { domain: string; view: BimiView }) {
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={clsx(
+              className={cx(
                 "inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold",
                 style.className,
               )}
@@ -310,7 +308,7 @@ function DmarcSection({ view }: { view: BimiView }) {
       {ok ? (
         <p className="text-[13px] text-muted">{t("bimi.dmarc.ok")}</p>
       ) : (
-        <div className="flex flex-col gap-1.5 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
+        <div className="flex flex-col gap-1.5 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning-ink">
           <p className="font-semibold">{t("bimi.dmarc.needs")}</p>
           <ul className="flex list-disc flex-col gap-0.5 pl-5">
             {reasons.map((reason) => (
@@ -393,7 +391,7 @@ function CertificateSection({ domain, view }: { domain: string; view: BimiView }
         </Button>
         <Button
           variant="primary"
-          icon={Save}
+          icon={ICONS.save}
           busy={save.isPending}
           disabled={!pem.trim()}
           onClick={() =>
@@ -420,9 +418,9 @@ function CertificateSection({ domain, view }: { domain: string; view: BimiView }
           {certificateWarnings(certificate).map((warning) => (
             <p
               key={warning}
-              className="flex gap-2 rounded-control bg-warning-tint px-3 py-2 text-[13px] font-medium text-warning"
+              className="flex gap-2 rounded-control bg-warning-tint px-3 py-2 text-[13px] font-medium text-warning-ink"
             >
-              <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <Icon icon={ICONS.warning} className="mt-0.5 size-4 shrink-0" aria-hidden />
               {t(`bimi.certificate.warnings.${warning}`, { domain })}
             </p>
           ))}
@@ -443,7 +441,7 @@ function CertificateSection({ domain, view }: { domain: string; view: BimiView }
             {!replacing && <Button onClick={() => setReplacing(true)}>{t("bimi.certificate.replace")}</Button>}
             <Button
               variant="ghost"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={remove.isPending}
               onClick={() => {
                 if (window.confirm(t("bimi.certificate.removeConfirm"))) remove.mutate(undefined);
@@ -477,7 +475,7 @@ export function BimiCard({ domain }: { domain: string }) {
       <div className="flex flex-col gap-4">
         <p className="-mt-1 text-[13px] text-muted">{t("bimi.intro", { domain })}</p>
         <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("bimi.support")}
         </p>
         <Toggle

@@ -1,10 +1,9 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState, ICONS, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { RotateCw, Trash2 } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { PageHeader } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, type QueuedMessage, type QueueRecipient } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -13,9 +12,9 @@ import { toast } from "@/state/toasts";
 import { RefusedCard } from "./RefusedCard";
 
 const STATUS_STYLES: Record<QueueRecipient["status"], string> = {
-  pending: "bg-warning-tint text-warning",
-  delivered: "bg-success-tint text-success",
-  failed: "bg-danger-tint text-danger",
+  pending: "bg-warning-tint text-warning-ink",
+  delivered: "bg-success-tint text-success-ink",
+  failed: "bg-danger-tint text-danger-ink",
 };
 
 function useQueueAction(run: (id: number) => Promise<void>, success: (id: number) => string) {
@@ -67,7 +66,7 @@ function Message({ message }: { message: QueuedMessage }) {
           <Button
             size="sm"
             variant="danger"
-            icon={Trash2}
+            icon={ICONS.delete}
             busy={drop.isPending}
             onClick={() => {
               if (window.confirm(t("queue.dropConfirm", { id: message.id }))) drop.mutate(message.id);
@@ -82,7 +81,7 @@ function Message({ message }: { message: QueuedMessage }) {
           <li key={recipient.address} className="flex flex-col gap-1 border-t border-hairline py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={clsx(
+                className={cx(
                   "inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-semibold",
                   STATUS_STYLES[recipient.status],
                 )}
@@ -124,7 +123,7 @@ export function QueuePage() {
     <div className="flex flex-col gap-5">
       <PageHeader title={t("queue.title")} intro={t("queue.intro")} />
       {queue.data.length === 0 ? (
-        <EmptyState scene="inbox" title={t("queue.empty.title")} body={t("queue.empty.body")} />
+        <EmptyState art={<NyuScene name="inbox" />} title={t("queue.empty.title")} body={t("queue.empty.body")} />
       ) : (
         <ul className="flex flex-col gap-3">
           {queue.data.map((message) => (

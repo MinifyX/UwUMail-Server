@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{
-    CalendarPrefs, CalendarPrefsUpdate, DavAccess, DavCollection, DavCollectionUpdate, DavKind, DavShare,
-    NewDavCollection, ShareRights, StoreError,
+    CalendarPrefs, CalendarPrefsUpdate, DAV_SHARES_PER_COLLECTION, DavAccess, DavCollection, DavCollectionUpdate,
+    DavKind, DavShare, NewDavCollection, ShareRights, StoreError,
 };
 
 use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, properties};
@@ -329,6 +329,9 @@ pub(super) fn parse_share_with(key: &str, value: &Value, sharing: &mut Option<(b
             match value {
                 Value::Null => {}
                 Value::Object(map) => {
+                    if map.len() > DAV_SHARES_PER_COLLECTION as usize {
+                        return Err(());
+                    }
                     for (principal, rights) in map {
                         if !principal_ok(principal) {
                             return Err(());
@@ -346,6 +349,9 @@ pub(super) fn parse_share_with(key: &str, value: &Value, sharing: &mut Option<(b
                 return Err(());
             }
             let (_, list) = sharing.get_or_insert_with(|| (false, Vec::new()));
+            if list.len() >= DAV_SHARES_PER_COLLECTION as usize {
+                return Err(());
+            }
             list.push((principal, entry(value)?));
         }
     }
@@ -524,7 +530,8 @@ pub(super) async fn apply_sharing(
     for (principal, rights) in wanted {
         let account = match principal_account(&principal) {
             Some(id) => Some(id),
-            None if principal.contains('@') => store.resolve_recipient(&principal).await.map_err(SetError::from)?,
+            // Only someone's own addresses: a masked or catch-all address must not name its owner.
+            None if principal.contains('@') => store.own_address_account(&principal).await.map_err(SetError::from)?,
             None => None,
         };
         let account = account.ok_or_else(|| invalid(&format!("{principal} is nobody on this server")))?;
@@ -533,7 +540,12 @@ pub(super) async fn apply_sharing(
         }
         resolved.push((account, rights));
     }
+    // Several keys may name one account (sub-addresses, `p` and `a` ids): one write for each.
+    resolved.sort_by_key(|(account, _)| *account);
+    resolved.dedup_by_key(|(account, _)| *account);
     let current = store.dav_shares(calendar.account_id, Some(calendar.id)).await.map_err(SetError::from)?;
+    // Who is no longer wanted goes first, so a full list can be replaced under the share cap. Every
+    // name is resolved by now; only a failed write can leave the change half done.
     if replace {
         for share in current.iter().filter(|s| !resolved.iter().any(|(id, _)| *id == s.account_id)) {
             store.dav_unshare(ctx.account.id, calendar.id, share.account_id).await.map_err(SetError::from)?;
@@ -543,7 +555,9 @@ pub(super) async fn apply_sharing(
         match rights {
             Some(rights) => {
                 store.dav_share_with(ctx.account.id, calendar.id, account, rights).await.map_err(|err| match err {
-                    StoreError::Rule { code: "unknownPerson" | "ownShare", message } => invalid(&message),
+                    StoreError::Rule { code: "unknownPerson" | "ownShare" | "tooManyShares", message } => {
+                        invalid(&message)
+                    }
                     other => SetError::from(other),
                 })?;
             }
@@ -640,6 +654,8 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         return Err(SetError::new("forbidden", "this calendar is someone else's"));
                     }
                 }
+                // Checked before anything is stored, so a refused patch changes nothing.
+                check_alert_ids(&known, Some(calendar_id), &parsed.prefs)?;
                 if !is_empty(&parsed.update) {
                     let owner = listed.collection.account_id;
                     store.dav_update_collection(owner, calendar_id, parsed.update).await.map_err(|err| match err {
@@ -647,7 +663,6 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         other => SetError::from(other),
                     })?;
                 }
-                check_alert_ids(&known, Some(calendar_id), &parsed.prefs)?;
                 let defaults = changes_defaults(&parsed.prefs);
                 store.set_calendar_prefs(account_id, calendar_id, parsed.prefs).await.map_err(SetError::from)?;
                 // Events of one's own calendar that use the defaults carry them for CalDAV clients.

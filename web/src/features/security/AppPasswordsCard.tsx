@@ -1,11 +1,9 @@
-import { KeySquare, Plus, Trash2 } from "lucide-react";
+import { Button, Field, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
+import { KeySquare } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type AppPasswordInfo, type AppScope, type SecurityView, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -117,7 +115,7 @@ function CreateForm({
         )}
       </Field>
       {failed && (
-        <p role="alert" className="text-[13px] text-danger">
+        <p role="alert" className="text-[13px] text-danger-ink">
           {errorText(create.error)}
         </p>
       )}
@@ -160,7 +158,7 @@ export function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPass
     : t("security.appPasswords.neverUsed");
   return (
     <li className="flex items-start gap-3 border-b border-hairline py-3 last:border-b-0">
-      <KeySquare className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+      <Icon icon={KeySquare} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-semibold">{appPassword.name}</span>
@@ -173,7 +171,7 @@ export function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPass
             </span>
           ))}
           {expired && (
-            <span className="rounded-full bg-warning-tint px-2 text-[11px] leading-5 font-semibold text-warning">
+            <span className="rounded-full bg-warning-tint px-2 text-[11px] leading-5 font-semibold text-warning-ink">
               {t("security.appPasswords.expired")}
             </span>
           )}
@@ -186,7 +184,7 @@ export function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPass
             ` · ${t("security.appPasswords.expires", { date: formatDate(appPassword.expiresAt, language) })}`}
         </span>
       </span>
-      <Button size="sm" variant="danger" icon={Trash2} onClick={onRevoke}>
+      <Button size="sm" variant="danger" icon={ICONS.delete} onClick={onRevoke}>
         {t("security.appPasswords.revoke")}
       </Button>
     </li>
@@ -235,8 +233,8 @@ export function AppPasswordsCard({
   return (
     <Card
       title={t("security.appPasswords.title")}
-      action={
-        <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+      aside={
+        <Button size="sm" icon={ICONS.add} onClick={() => setCreating(true)}>
           {t("security.appPasswords.new")}
         </Button>
       }
@@ -272,7 +270,6 @@ export function AppPasswordsCard({
       <Dialog
         open={creating || created !== null}
         onClose={requestCloseCreate}
-        closeOnOutsideClick={!dirty && created === null}
         title={created ? t("security.appPasswords.createdTitle") : t("security.appPasswords.newTitle")}
       >
         {created ? (
@@ -322,7 +319,7 @@ export function AppPasswordsCard({
             <Button onClick={() => setRevoking(null)}>{t("common.cancel")}</Button>
             <Button
               variant="danger"
-              icon={Trash2}
+              icon={ICONS.delete}
               busy={revoke.isPending}
               onClick={() =>
                 revoking &&

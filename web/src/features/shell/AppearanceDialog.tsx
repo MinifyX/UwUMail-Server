@@ -1,9 +1,17 @@
+import { Segmented, Select } from "@uwusuite/design";
 import { Dialog } from "@/components/ui/Dialog";
-import { Segmented, Select, SettingRow } from "@/components/ui/Field";
+import { SettingRow } from "@/components/ui/SettingRow";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { useBrand } from "@/state/brand";
 import { useSavePrefs } from "@/features/session/session";
-import { usePrefs, type LanguageSetting, type MotionSetting, type ThemeSetting, type Tone } from "@/state/prefs";
+import {
+  usePrefs,
+  type ContrastSetting,
+  type LanguageSetting,
+  type MotionSetting,
+  type ThemeSetting,
+  type Tone,
+} from "@/state/prefs";
 
 export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useT();
@@ -34,9 +42,8 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
         {/* Without the mascot everything is plain, so there is no tone to choose. */}
         {mascot && (
           <SettingRow label={t("appearance.tone.label")} description={t("appearance.tone.hint")}>
-            {({ describedBy }) => (
+            {() => (
               <Segmented<Tone>
-                describedBy={describedBy}
                 label={t("appearance.tone.label")}
                 value={prefs.tone}
                 onChange={(tone) => save.mutate({ tone })}
@@ -61,6 +68,19 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
             />
           )}
         </SettingRow>
+        <SettingRow label={t("appearance.contrast.label")}>
+          {() => (
+            <Segmented<ContrastSetting>
+              label={t("appearance.contrast.label")}
+              value={prefs.contrast}
+              onChange={(contrast) => save.mutate({ contrast })}
+              options={(["system", "normal", "high"] as const).map((value) => ({
+                value,
+                label: t(`appearance.contrast.${value}`),
+              }))}
+            />
+          )}
+        </SettingRow>
         <SettingRow label={t("appearance.motion.label")}>
           {() => (
             <Segmented<MotionSetting>
@@ -75,7 +95,7 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
           )}
         </SettingRow>
         {save.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {t("appearance.saveFailed")}
           </p>
         )}

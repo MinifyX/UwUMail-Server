@@ -1,11 +1,11 @@
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveRestore, Check, DatabaseBackup, FolderOpen, History, KeyRound, Plug, RefreshCw, X } from "lucide-react";
+import { DatabaseBackup, Plug } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { ApiError, api, type BackupSnapshot, type BackupTarget, type BackupsView } from "@/lib/api";
@@ -73,7 +73,7 @@ function StatusCard({ view }: { view: BackupsView }) {
           <p className="text-sm text-muted">{t("backups.status.never")}</p>
         )}
         {failed && (
-          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {t("backups.status.failed", { error: status.lastError })}
           </p>
         )}
@@ -89,7 +89,7 @@ function StatusCard({ view }: { view: BackupsView }) {
           </Button>
           <Button
             variant="ghost"
-            icon={RefreshCw}
+            icon={ICONS.refresh}
             onClick={() => void queryClient.invalidateQueries({ queryKey: key })}
           >
             {t("backups.status.refresh")}
@@ -490,7 +490,7 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
         </div>
 
         {(save.isError || test.isError) && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(save.error ?? test.error)}
           </p>
         )}
@@ -548,7 +548,7 @@ function RestoreCard({ view }: { view: BackupsView }) {
           </p>
         )}
         {fetching.state === "failed" && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("backups.restore.fetchFailed", { error: fetching.error })}
           </p>
         )}
@@ -565,8 +565,8 @@ function RestoreCard({ view }: { view: BackupsView }) {
             <p
               className={
                 restore.last.error
-                  ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning"
-                  : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success"
+                  ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink"
+                  : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success-ink"
               }
             >
               {restore.last.error
@@ -587,7 +587,13 @@ function RestoreCard({ view }: { view: BackupsView }) {
               </>
             )}
             <div>
-              <Button variant="ghost" size="sm" icon={Check} busy={forget.isPending} onClick={() => forget.mutate()}>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={ICONS.done}
+                busy={forget.isPending}
+                onClick={() => forget.mutate()}
+              >
                 {t("backups.restore.forget")}
               </Button>
             </div>
@@ -610,22 +616,6 @@ function restoreCommand(target: BackupTarget | null): string {
   }
   if (target?.kind === "folder") return `uwumail-server backup restore --folder ${target.path} --into /data`;
   return "uwumail-server backup restore --sftp user@host:/path --into /data";
-}
-
-function ProgressBar({ done, total, label }: { done: number; total: number; label: string }) {
-  const share = total > 0 ? Math.min(1, done / total) : 0;
-  return (
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(share * 100)}
-      className="h-2.5 overflow-hidden rounded-full bg-canvas"
-    >
-      <div className="h-full rounded-full bg-pink transition-[width]" style={{ width: `${share * 100}%` }} />
-    </div>
-  );
 }
 
 /**
@@ -688,7 +678,7 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
         {(job.state === "" || job.state === "failed") && (
           <>
             {job.state === "failed" && (
-              <p role="alert" className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+              <p role="alert" className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
                 {t("backups.mailbox.openFailed", { error: job.error })}
               </p>
             )}
@@ -714,7 +704,7 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
                 )}
               </Field>
               <Button
-                icon={FolderOpen}
+                icon={ICONS.folderOpen}
                 disabled={!view.target || view.running}
                 busy={open.isPending}
                 onClick={() => open.mutate()}
@@ -752,8 +742,8 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
           <p
             className={
               job.last.error
-                ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning"
-                : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success"
+                ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink"
+                : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success-ink"
             }
           >
             {job.last.error
@@ -844,13 +834,19 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
         )}
         {(job.state === "open" || job.state === "restoring") && (
           <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" icon={X} disabled={busy} busy={close.isPending} onClick={() => close.mutate()}>
+            <Button
+              variant="ghost"
+              icon={ICONS.close}
+              disabled={busy}
+              busy={close.isPending}
+              onClick={() => close.mutate()}
+            >
               {t("backups.mailbox.close")}
             </Button>
             {person && (
               <Button
                 variant="primary"
-                icon={ArchiveRestore}
+                icon={ICONS.restore}
                 disabled={busy || view.running || (!everything && chosen.length === 0)}
                 busy={restore.isPending || job.state === "restoring"}
                 onClick={() => restore.mutate()}
@@ -924,7 +920,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
             </Button>
           )}
           {view.encrypted && (
-            <Button variant="ghost" icon={KeyRound} busy={reveal.isPending} onClick={() => reveal.mutate()}>
+            <Button variant="ghost" icon={ICONS.secret} busy={reveal.isPending} onClick={() => reveal.mutate()}>
               {t("backups.snapshots.showKey")}
             </Button>
           )}
@@ -949,7 +945,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
                 </span>
                 <code className="min-w-0 flex-1 font-mono text-[11px] text-faint">{snapshot.name}</code>
                 {view.restore.available && (
-                  <Button size="sm" icon={History} disabled={busy} onClick={() => setAsking(snapshot)}>
+                  <Button size="sm" icon={ICONS.history} disabled={busy} onClick={() => setAsking(snapshot)}>
                     {t("backups.restore.put")}
                   </Button>
                 )}
@@ -963,7 +959,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
           <p className="text-sm">
             {asking && t("backups.restore.from", { time: formatDateTime(asking.createdAt, i18n.language) })}
           </p>
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("backups.restore.warning")}
           </p>
           <p className="text-[13px] text-muted">{t("backups.restore.how")}</p>
@@ -979,7 +975,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
             </Button>
             <Button
               variant="danger"
-              icon={History}
+              icon={ICONS.history}
               busy={restoring.isPending}
               onClick={() => asking && restoring.mutate(asking.name)}
             >

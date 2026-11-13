@@ -1,8 +1,6 @@
+import { Button, Field, Select, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Info } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Field, Select } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -153,7 +151,7 @@ function IdentityOverride({
           }}
         >
           <SignatureEditor value={value} onChange={setValue} idPrefix={`identity-${identity.id}`} />
-          {big && <p className="text-[13px] text-danger">{t("mailbox.signatures.tooLarge")}</p>}
+          {big && <p className="text-[13px] text-danger-ink">{t("mailbox.signatures.tooLarge")}</p>}
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               size="sm"
@@ -207,13 +205,13 @@ function DomainEditor({ overview, domain }: { overview: SignatureOverview; domai
     <div className="flex flex-col gap-4">
       {start.origin === "template" && (
         <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("mailbox.signatures.fromTemplate")}
         </p>
       )}
       {start.origin === "allDomains" && (
         <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
           {t("mailbox.signatures.fromAllDomains")}
         </p>
       )}
@@ -262,7 +260,7 @@ function DomainEditor({ overview, domain }: { overview: SignatureOverview; domai
             </pre>
           </div>
         )}
-        {big && <p className="text-[13px] text-danger">{t("mailbox.signatures.tooLarge")}</p>}
+        {big && <p className="text-[13px] text-danger-ink">{t("mailbox.signatures.tooLarge")}</p>}
         <div className="flex flex-wrap justify-end gap-2">
           {(start.origin === "domain" || start.origin === "allDomains") && (
             <Button
@@ -282,7 +280,7 @@ function DomainEditor({ overview, domain }: { overview: SignatureOverview; domai
       {company?.mode === "footer" && (
         <div className="flex flex-col gap-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
           <p className="flex gap-2">
-            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Icon icon={ICONS.info} className="mt-0.5 size-4 shrink-0" aria-hidden />
             {t("mailbox.signatures.companyFooter")}
           </p>
           <pre className="font-sans whitespace-pre-wrap">
@@ -322,7 +320,7 @@ export function DomainSignatures() {
   const domain = chosen && domains.some((entry) => entry.domain === chosen) ? chosen : (domains[0]?.domain ?? null);
 
   if (overview.isPending) return <p className="text-sm text-muted">{t("mailbox.signatures.loading")}</p>;
-  if (overview.isError) return <p className="text-sm text-danger">{t("mailbox.signatures.loadError")}</p>;
+  if (overview.isError) return <p className="text-sm text-danger-ink">{t("mailbox.signatures.loadError")}</p>;
   if (!domain) return <p className="text-sm text-muted">{t("mailbox.signatures.empty")}</p>;
 
   return (

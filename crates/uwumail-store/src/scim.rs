@@ -248,25 +248,6 @@ impl Store {
         Ok(user)
     }
 
-    /// The SCIM id of an account, made now if it has none, with the provider's id for the person.
-    /// Another account with the same external id is a conflict.
-    pub async fn scim_link(&self, account_id: i64, external_id: Option<String>) -> Result<ScimUser> {
-        self.write(move |tx| {
-            ensure_ids(tx)?;
-            let id: String = tx
-                .query_row("SELECT id FROM scim_users WHERE account_id = ?1", [account_id], |row| row.get(0))
-                .optional()?
-                .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
-            tx.execute(
-                "UPDATE scim_users SET external_id = ?1, updated = ?2 WHERE id = ?3",
-                params![external_id, now(), id],
-            )
-            .map_err(|err| conflict_on_unique(err, "externalId".into()))?;
-            find_user(tx, &id, false)?.ok_or_else(|| StoreError::NotFound(format!("user {id}")))
-        })
-        .await
-    }
-
     /// Changes the provider's id of a person.
     pub async fn scim_set_external_id(&self, id: &str, external_id: Option<String>) -> Result<()> {
         let id = id.to_owned();

@@ -529,6 +529,8 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
 
     if let Some(destroy) = args.get("destroy").and_then(Value::as_array) {
         let remove_emails = args.get("onDestroyRemoveEmails").and_then(Value::as_bool).unwrap_or(false);
+        let inbox =
+            store.mailboxes(account_id).await?.iter().find(|m| m.role == Some(MailboxRole::Inbox)).map(|m| m.id);
         for id in destroy.iter().filter_map(Value::as_str) {
             let result = match ctx.parse_id('m', id) {
                 Some(mailbox_id) if ctx.shared.as_ref().is_some_and(|view| !view.visible(mailbox_id)) => {
@@ -538,12 +540,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     Err(SetError::new("forbidden", "you may not delete this mailbox"))
                 }
                 Some(mailbox_id) => {
-                    let is_inbox = store
-                        .mailboxes(account_id)
-                        .await?
-                        .iter()
-                        .any(|m| m.id == mailbox_id && m.role == Some(MailboxRole::Inbox));
-                    if is_inbox {
+                    if inbox == Some(mailbox_id) {
                         Err(SetError::new("forbidden", "the inbox cannot be deleted"))
                     } else {
                         store.destroy_mailbox(account_id, mailbox_id, remove_emails).await.map_err(|err| match err {

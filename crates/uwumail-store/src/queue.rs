@@ -226,7 +226,7 @@ fn set_recipient(
     let changed = conn.execute(
         "UPDATE queue_recipients
          SET status = ?1, last_error = ?2, attempts = attempts + 1,
-             next_attempt_at = coalesce(?3, next_attempt_at), updated_at = ?4
+             next_attempt_at = coalesce(?3, next_attempt_at), updated_at = ?4, leased_until = 0
          WHERE id = ?5",
         params![status, message, next_attempt_at, now(), recipient_id],
     )?;
@@ -286,7 +286,7 @@ impl Store {
         self.write(move |tx| {
             let now = now();
             let mut stmt = tx.prepare(&format!(
-                "UPDATE queue_recipients SET next_attempt_at = ?1
+                "UPDATE queue_recipients SET next_attempt_at = ?1, leased_until = ?1
                  WHERE id IN (SELECT id FROM queue_recipients WHERE status = 'pending' AND next_attempt_at <= ?2
                               ORDER BY next_attempt_at LIMIT ?3)
                  RETURNING {RECIPIENT_COLUMNS}"
@@ -539,14 +539,20 @@ impl Store {
         .await
     }
 
-    /// Makes all pending recipients of a message due now.
+    /// Makes all pending recipients of a message due now, except those a worker is sending right now.
     pub async fn retry_queue_message(&self, message_id: i64) -> Result<()> {
         self.write(move |tx| {
-            let changed = tx.execute(
-                "UPDATE queue_recipients SET next_attempt_at = ?1 WHERE message_id = ?2 AND status = 'pending'",
+            tx.execute(
+                "UPDATE queue_recipients SET next_attempt_at = ?1
+                 WHERE message_id = ?2 AND status = 'pending' AND leased_until <= ?1",
                 params![now(), message_id],
             )?;
-            if changed == 0 {
+            let pending: i64 = tx.query_row(
+                "SELECT count(*) FROM queue_recipients WHERE message_id = ?1 AND status = 'pending'",
+                [message_id],
+                |row| row.get(0),
+            )?;
+            if pending == 0 {
                 return Err(StoreError::NotFound(format!("pending queue message {message_id}")));
             }
             Ok(())
@@ -619,6 +625,30 @@ mod tests {
         assert_eq!(store.clear_refused_deliveries().await.unwrap(), 1);
         assert!(store.refused_deliveries(10).await.unwrap().is_empty());
         assert_eq!(store.collect_garbage(0).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn retry_leaves_a_leased_recipient_alone() {
+        let (store, _dir) = store().await;
+        let id = store
+            .enqueue(
+                "mini@example.org",
+                vec![recipient("a@example.com")],
+                b"Subject: hi\r\n\r\nhi\r\n",
+                None,
+                None,
+                3600,
+            )
+            .await
+            .unwrap();
+        let claimed = store.claim_due_deliveries(10, 600).await.unwrap();
+        store.retry_queue_message(id).await.unwrap();
+        assert!(store.claim_due_deliveries(10, 600).await.unwrap().is_empty(), "still being sent");
+
+        // Once the attempt is over, Retry makes it due again.
+        store.mark_recipient_deferred(claimed[0].recipients[0].id, "451 try later", now() + 3600).await.unwrap();
+        store.retry_queue_message(id).await.unwrap();
+        assert_eq!(store.claim_due_deliveries(10, 600).await.unwrap().len(), 1);
     }
 
     #[test]

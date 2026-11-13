@@ -1,11 +1,11 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, Field, TextInput, EmptyState, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarDays, CheckCircle2, Pause, Play, RefreshCw, Truck } from "lucide-react";
+import { Pause, Truck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, PageHeader } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, TextInput } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/Page";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useT } from "@/i18n";
 import { ApiError, api, type MoveJob, type MovingView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -35,22 +35,6 @@ function ProviderHint({ address }: { address: string }) {
   if (!provider) return null;
   return (
     <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px] text-pink-ink">{t(`moving.hints.${provider}`)}</p>
-  );
-}
-
-function ProgressBar({ done, total, label }: { done: number; total: number; label: string }) {
-  const share = total > 0 ? Math.min(1, done / total) : 0;
-  return (
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(share * 100)}
-      className="h-2.5 overflow-hidden rounded-full bg-canvas"
-    >
-      <div className="h-full rounded-full bg-pink transition-[width]" style={{ width: `${share * 100}%` }} />
-    </div>
   );
 }
 
@@ -176,7 +160,7 @@ function StartCard({ view }: { view: MovingView }) {
           </button>
         )}
         {start.isError && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(start.error)}
           </p>
         )}
@@ -196,8 +180,8 @@ function StateLine({ job }: { job: MoveJob }) {
   const { t, i18n } = useT();
   if (job.state === "paused") {
     return (
-      <p className="flex items-start gap-1.5 text-[13px] text-warning">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <p className="flex items-start gap-1.5 text-[13px] text-warning-ink">
+        <Icon icon={ICONS.warning} className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
           {t(`moving.errors.${job.error || "failed"}`, { defaultValue: t("moving.errors.failed") })}
           {job.errorDetail && job.error !== "stopped" && (
@@ -209,8 +193,8 @@ function StateLine({ job }: { job: MoveJob }) {
   }
   if (job.state === "done") {
     return (
-      <p className="flex items-center gap-1.5 text-[13px] text-success">
-        <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
+      <p className="flex items-center gap-1.5 text-[13px] text-success-ink">
+        <Icon icon={ICONS.success} className="size-3.5 shrink-0" aria-hidden />
         {job.finishedAt
           ? t("moving.job.doneAt", { date: formatDateTime(job.finishedAt, i18n.language) })
           : t("moving.job.done")}
@@ -312,7 +296,7 @@ function JobCard({ job }: { job: MoveJob }) {
           )}
           {job.state === "paused" && (
             <Button
-              icon={Play}
+              icon={ICONS.start}
               busy={sync.isPending}
               disabled={passwordRefused && !password}
               onClick={() => sync.mutate()}
@@ -321,13 +305,13 @@ function JobCard({ job }: { job: MoveJob }) {
             </Button>
           )}
           {job.state === "done" && (
-            <Button icon={RefreshCw} busy={sync.isPending} onClick={() => sync.mutate()}>
+            <Button icon={ICONS.refresh} busy={sync.isPending} onClick={() => sync.mutate()}>
               {t("moving.actions.syncAgain")}
             </Button>
           )}
           <Button
             variant={job.state === "done" ? "primary" : "ghost"}
-            icon={CheckCircle2}
+            icon={ICONS.success}
             busy={finish.isPending}
             onClick={() => {
               if (window.confirm(t("moving.actions.finishConfirm", { address: job.address }))) finish.mutate();
@@ -360,7 +344,11 @@ export function MovingPage() {
       <PageHeader title={t("moving.title")} intro={t("moving.intro")} />
       {!view.data.hasMailbox ? (
         <Card>
-          <EmptyState scene="inbox" title={t("moving.noMailbox.title")} body={t("moving.noMailbox.body")} />
+          <EmptyState
+            art={<NyuScene name="inbox" />}
+            title={t("moving.noMailbox.title")}
+            body={t("moving.noMailbox.body")}
+          />
         </Card>
       ) : (
         <>
@@ -377,7 +365,7 @@ export function MovingPage() {
           <p>{t("moving.about.switch")}</p>
           <p>{t("moving.about.password")}</p>
           <p className="flex items-start gap-2">
-            <CalendarDays className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Icon icon={ICONS.calendar} className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
               {t("moving.about.calendars")}{" "}
               <Link to="/account/calendars" className="font-semibold text-pink-ink hover:underline">

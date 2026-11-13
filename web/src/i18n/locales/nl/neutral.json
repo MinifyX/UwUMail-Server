@@ -102,6 +102,7 @@
     "open": "Accountmenu openen",
     "appearance": "Weergave en taal",
     "logout": "Uitloggen",
+    "logoutFailed": "Uitloggen is niet gelukt. Probeer het opnieuw.",
     "role": {
       "admin": "Beheerder",
       "user": "Lid"
@@ -124,6 +125,12 @@
       "system": "Zelfde als het systeem",
       "light": "Licht",
       "dark": "Donker"
+    },
+    "contrast": {
+      "label": "Hoog contrast",
+      "system": "Zelfde als het systeem",
+      "normal": "Normaal",
+      "high": "Hoog"
     },
     "motion": {
       "label": "Animaties",

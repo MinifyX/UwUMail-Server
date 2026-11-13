@@ -1,4 +1,5 @@
-import { AppWindow, EarthLock, KeyRound, Palette, Send, ShieldCheck, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ICONS } from "@uwusuite/design";
+import { AppWindow, EarthLock, Palette } from "lucide-react";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { AdminAssistPage } from "@/features/assist/AdminAssistPage";
 import { PublicPicturesCard } from "@/features/pictures/PictureCard";
@@ -21,14 +22,14 @@ export const SETTINGS_PATHS: Record<AdminSettingsTab, string> = {
   assist: "/admin/settings/assist",
   vpn: "/admin/settings/vpn",
 };
-const ICONS = {
-  general: SlidersHorizontal,
-  mail: Send,
+const KIND_ICONS = {
+  general: ICONS.adjust,
+  mail: ICONS.send,
   apps: AppWindow,
-  login: KeyRound,
-  uwuauth: ShieldCheck,
+  login: ICONS.secret,
+  uwuauth: ICONS.securityCheck,
   branding: Palette,
-  assist: Sparkles,
+  assist: ICONS.ai,
   vpn: EarthLock,
 };
 const INTROS: Record<AdminSettingsTab, string> = {
@@ -53,7 +54,7 @@ export function AdminSettingsPage({ tab = "general" }: { tab?: AdminSettingsTab 
       tabs={(Object.keys(SETTINGS_PATHS) as AdminSettingsTab[]).map((value) => ({
         value,
         to: SETTINGS_PATHS[value],
-        icon: ICONS[value],
+        icon: KIND_ICONS[value],
         label: t(`settings.tabs.${value}`),
       }))}
     >

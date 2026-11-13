@@ -10,7 +10,7 @@ use uwumail_store::{NewHeldSubmission, StoreError, SubmissionRecord};
 use super::email::{apply_destroys, apply_updates};
 use super::{Ctx, Outputs, SetResponse, check_set_size, get_ids, if_in_state, pick, properties};
 use crate::error::{MethodError, MethodResult, SetError};
-use crate::{MAX_DELAYED_SEND_SECS, dates, ids};
+use crate::{MAX_DELAYED_SEND_SECS, MAX_OBJECTS_IN_GET, dates, ids};
 
 const DEFAULTS: &[&str] = &[
     "id",
@@ -67,6 +67,10 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let requested = get_ids(args)?;
     let numbers = requested.as_ref().map(|list| list.iter().filter_map(|id| ctx.parse_id('s', id)).collect());
     let records = ctx.jmap.store.submissions(ctx.account.id, numbers).await?;
+    // shortcut: all rows are read before refusing; a count query in the store would avoid that.
+    if requested.is_none() && records.len() > MAX_OBJECTS_IN_GET {
+        return Err(MethodError::new("requestTooLarge", "too many submissions to fetch at once; ask for ids"));
+    }
     let list: Vec<Value> = records.iter().map(|r| pick(to_json(r), &properties)).collect();
     let not_found: Vec<String> = requested
         .unwrap_or_default()
@@ -114,9 +118,7 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     }
     let ids: Vec<String> = records.iter().map(|r| ids::submission(r.id)).collect();
-    Ok(
-        json!({ "accountId": ctx.account_id(), "queryState": state, "canCalculateChanges": false, "position": 0, "total": ids.len(), "ids": ids }),
-    )
+    super::query_response(ctx, args, state, ids, 5000)
 }
 
 fn envelope_addresses(value: &Value) -> Option<Vec<String>> {

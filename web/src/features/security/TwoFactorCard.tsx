@@ -1,11 +1,8 @@
-import { Fingerprint, KeyRound, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
+import { Button, Field, TextInput, Card, ICONS, Icon } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type PasskeyInfo, type SecurityView, type Session, type TotpSetup } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -33,13 +30,7 @@ function CodesDialog({ codes, onClose }: { codes: string[] | null; onClose: () =
   const [confirming, setConfirming] = useState(false);
   return (
     <>
-      <Dialog
-        open={codes !== null}
-        onClose={() => setConfirming(true)}
-        closeOnOutsideClick={false}
-        title={t("security.recovery.title")}
-        width="sm"
-      >
+      <Dialog open={codes !== null} onClose={() => setConfirming(true)} title={t("security.recovery.title")} width="sm">
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
           {codes && <RecoveryCodesBox codes={codes} />}
           <div className="flex justify-end">
@@ -136,7 +127,7 @@ function PasskeyRow({ passkey, onRemove }: { passkey: PasskeyInfo; onRemove: () 
   const { t, i18n } = useT();
   return (
     <li className="flex min-h-12 items-center gap-3 border-b border-hairline py-2 last:border-b-0">
-      <Fingerprint className="size-4 shrink-0 text-muted" aria-hidden />
+      <Icon icon={ICONS.fingerprint} className="size-4 shrink-0 text-muted" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{passkey.name}</span>
         <span className="block text-[12px] text-muted">
@@ -145,7 +136,7 @@ function PasskeyRow({ passkey, onRemove }: { passkey: PasskeyInfo; onRemove: () 
             : t("security.passkeys.added", { date: formatDate(passkey.createdAt, i18n.language) })}
         </span>
       </span>
-      <Button size="sm" variant="danger" icon={Trash2} onClick={onRemove}>
+      <Button size="sm" variant="danger" icon={ICONS.delete} onClick={onRemove}>
         {t("security.passkeys.remove")}
       </Button>
     </li>
@@ -203,9 +194,10 @@ export function TwoFactorCard({
     <Card title={t("security.twoFactor.title")}>
       <div className="flex flex-col gap-5">
         <p className="flex items-start gap-2 text-sm">
-          <ShieldCheck
+          <Icon
+            icon={ICONS.securityCheck}
             className={
-              security.secondFactor ? "mt-0.5 size-4 shrink-0 text-success" : "mt-0.5 size-4 shrink-0 text-muted"
+              security.secondFactor ? "mt-0.5 size-4 shrink-0 text-success-ink" : "mt-0.5 size-4 shrink-0 text-muted"
             }
             aria-hidden
           />
@@ -216,7 +208,7 @@ export function TwoFactorCard({
 
         <section className="flex flex-col gap-2">
           <h3 className="flex items-center gap-2 text-[13px] font-bold">
-            <Smartphone className="size-4 text-muted" aria-hidden />
+            <Icon icon={ICONS.device} className="size-4 text-muted" aria-hidden />
             {t("security.totp.title")}
           </h3>
           {security.totp ? (
@@ -253,7 +245,7 @@ export function TwoFactorCard({
 
         <section className="flex flex-col gap-2 border-t border-hairline pt-4">
           <h3 className="flex items-center gap-2 text-[13px] font-bold">
-            <Fingerprint className="size-4 text-muted" aria-hidden />
+            <Icon icon={ICONS.fingerprint} className="size-4 text-muted" aria-hidden />
             {t("security.passkeys.title")}
           </h3>
           {security.passkeys.length > 0 && (
@@ -274,7 +266,7 @@ export function TwoFactorCard({
           )}
           {canAddPasskey ? (
             <div>
-              <Button size="sm" icon={Fingerprint} onClick={() => setPasskeyName("")}>
+              <Button size="sm" icon={ICONS.fingerprint} onClick={() => setPasskeyName("")}>
                 {t("security.passkeys.add")}
               </Button>
             </div>
@@ -288,11 +280,11 @@ export function TwoFactorCard({
         {security.secondFactor && (
           <section className="flex flex-col gap-2 border-t border-hairline pt-4">
             <h3 className="flex items-center gap-2 text-[13px] font-bold">
-              <KeyRound className="size-4 text-muted" aria-hidden />
+              <Icon icon={ICONS.secret} className="size-4 text-muted" aria-hidden />
               {t("security.recovery.title")}
             </h3>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className={security.recoveryCodesLeft <= 2 ? "text-sm text-warning" : "text-sm text-muted"}>
+              <p className={security.recoveryCodesLeft <= 2 ? "text-sm text-warning-ink" : "text-sm text-muted"}>
                 {t("security.recovery.left", { count: security.recoveryCodesLeft })}
               </p>
               <Button
@@ -312,12 +304,7 @@ export function TwoFactorCard({
         )}
       </div>
 
-      <Dialog
-        open={setup !== null}
-        onClose={requestCloseTotp}
-        closeOnOutsideClick={!totpDirty}
-        title={t("security.totp.setUpTitle")}
-      >
+      <Dialog open={setup !== null} onClose={requestCloseTotp} title={t("security.totp.setUpTitle")}>
         {setup && (
           <TotpSetupForm
             setup={setup}
@@ -333,7 +320,6 @@ export function TwoFactorCard({
       <Dialog
         open={passkeyName !== null}
         onClose={requestClosePasskey}
-        closeOnOutsideClick={!passkeyDirty}
         title={t("security.passkeys.addTitle")}
         width="sm"
       >
@@ -366,7 +352,7 @@ export function TwoFactorCard({
             </Field>
             <div className="flex justify-end gap-2">
               <Button onClick={requestClosePasskey}>{t("common.cancel")}</Button>
-              <Button type="submit" variant="primary" icon={Fingerprint} busy={addPasskey.isPending}>
+              <Button type="submit" variant="primary" icon={ICONS.fingerprint} busy={addPasskey.isPending}>
                 {t("security.passkeys.create")}
               </Button>
             </div>

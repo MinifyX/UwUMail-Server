@@ -460,8 +460,6 @@ impl Store {
         .await
     }
 
-    /// Moves that were running when the server stopped go back in the queue; they continue where
-    /// their folders stood.
     /// [`Store::recover_interrupted_moves`] for personal moves: at the start of the server, a move
     /// still marked running goes on, unless the server went down during it
     /// [`crate::INTERRUPTIONS`] times in a row; then it is paused with `interrupted`.
@@ -478,10 +476,6 @@ impl Store {
             Ok((queued, paused))
         })
         .await
-    }
-
-    pub async fn requeue_running_migrations(&self) -> Result<usize> {
-        self.write(|tx| Ok(tx.execute("UPDATE migration_jobs SET state = 'queued' WHERE state = 'running'", [])?)).await
     }
 }
 
@@ -615,7 +609,7 @@ mod tests {
         // A restart puts running moves back in the queue.
         store.sync_migration_job(mini, job.id, None).await.unwrap();
         store.take_migration_job().await.unwrap().unwrap();
-        assert_eq!(store.requeue_running_migrations().await.unwrap(), 1);
+        assert_eq!(store.recover_interrupted_migrations().await.unwrap(), (1, 0));
         assert_eq!(store.migration_job(mini, job.id).await.unwrap().unwrap().state, MigrationState::Queued);
 
         // Done for good: the job and its password go; nobody else can remove it.

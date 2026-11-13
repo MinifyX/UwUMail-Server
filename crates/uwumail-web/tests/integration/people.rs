@@ -305,3 +305,20 @@ async fn change_lock_out_trash_and_restore() {
     let actions: Vec<_> = log.as_array().unwrap().iter().map(|r| r["action"].as_str().unwrap().to_owned()).collect();
     assert_eq!(actions, ["account.purge", "alias.remove", "account.restore"]);
 }
+
+/// Asked for both, a new person becomes a service, as a change to both does.
+#[tokio::test]
+async fn admin_and_service_together_make_a_service() {
+    let portal = Portal::new().await;
+    let nyu = portal.login("nyu@example.org", "katzenpfote-123").await;
+    let (status, _, created) = portal
+        .request(
+            "POST",
+            "/api/admin/people",
+            Some(json!({ "address": "robot@example.org", "name": "Robot", "admin": true, "service": true })),
+            Some(&nyu),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    assert_eq!(created["person"]["role"], "service", "{created}");
+}

@@ -1377,11 +1377,8 @@ where
                     out.raw(&format!("* VANISHED {}\r\n", response::sequence_set(&gone)));
                     selected.messages.retain(|known| !known.expunged);
                 } else {
-                    for index in (0..selected.messages.len()).rev() {
-                        if selected.messages[index].expunged {
-                            out.raw(&format!("* {} EXPUNGE\r\n", index + 1));
-                            selected.messages.remove(index);
-                        }
+                    for at in selected.forget(&gone) {
+                        out.raw(&format!("* {} EXPUNGE\r\n", at + 1));
                     }
                 }
             }
@@ -1532,7 +1529,7 @@ where
         let prepared = search::prepare(&self.store, account, &criteria, &emails).await?;
         // Every key against every message of the mailbox: work for a blocking thread, not for the
         // thread every other session shares (security-audit-0.16.0 PANIC-4).
-        let checked = criteria.clone();
+        let checked = search::sort_sets(criteria.clone(), &scope);
         let (mut found, mut found_uids, highest) = tokio::task::spawn_blocking(move || {
             let mut found = Vec::new();
             let mut found_uids = Vec::new();
@@ -2024,21 +2021,34 @@ where
         target: &Named,
     ) -> Result<Vec<(u32, u32)>, StoreError> {
         let mut pairs = Vec::new();
-        for email in self.store.imap_emails(source_owner, source, uids).await? {
-            let raw = self.store.blob(&email.blob).await?;
-            let keywords =
-                email.keywords.iter().filter(|keyword| may_set_keyword(&target.rights, keyword)).cloned().collect();
-            let request = IngestRequest {
-                account_id: target.owner,
-                raw,
-                mailboxes: vec![MailboxTarget::Id(target.mailbox.id)],
-                keywords,
-                received_at: Some(email.received_at),
-            };
-            // A copy is what its original is (security review 0.22 R2-L2).
-            let delivered = self.store.smtp_delivered(email.email_id).await?;
-            let copied = self.store.ingest_marked(request, delivered).await?;
-            pairs.push((email.uid, copied.uid as u32));
+        let copied = async {
+            for email in self.store.imap_emails(source_owner, source, uids).await? {
+                let raw = self.store.blob(&email.blob).await?;
+                let keywords =
+                    email.keywords.iter().filter(|keyword| may_set_keyword(&target.rights, keyword)).cloned().collect();
+                let request = IngestRequest {
+                    account_id: target.owner,
+                    raw,
+                    mailboxes: vec![MailboxTarget::Id(target.mailbox.id)],
+                    keywords,
+                    received_at: Some(email.received_at),
+                };
+                // A copy is what its original is (security review 0.22 R2-L2).
+                let delivered = self.store.smtp_delivered(email.email_id).await?;
+                let copied = self.store.ingest_marked(request, delivered).await?;
+                pairs.push((email.uid, copied.uid as u32));
+            }
+            Ok::<_, StoreError>(())
+        }
+        .await;
+        if let Err(err) = copied {
+            // A failed COPY leaves the destination as it was (RFC 3501 6.4.7), so the client's
+            // retry does not pile up copies in the other account.
+            let made = pairs.iter().map(|(_, copy)| *copy).collect();
+            if let Err(undo) = self.store.imap_remove(target.owner, target.mailbox.id, made).await {
+                tracing::warn!(error = %undo, "could not take back a partial cross-account copy");
+            }
+            return Err(err);
         }
         Ok(pairs)
     }

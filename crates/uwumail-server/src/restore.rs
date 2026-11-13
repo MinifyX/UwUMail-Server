@@ -59,7 +59,7 @@ pub fn waiting(data_dir: &Path) -> Option<Staged> {
 /// restore that cannot be finished is not fatal: the staging directory goes, the server starts on
 /// what it had, and the portal says why.
 /// Holds the lock backups and restores share, waiting for whoever has it now.
-async fn lock_backups(data_dir: &Path) -> std::io::Result<std::fs::File> {
+pub(crate) async fn lock_backups(data_dir: &Path) -> std::io::Result<std::fs::File> {
     let path = data_dir.join(LOCK_FILE);
     tokio::task::spawn_blocking(move || {
         let file = std::fs::File::options().create(true).truncate(false).write(true).open(path)?;

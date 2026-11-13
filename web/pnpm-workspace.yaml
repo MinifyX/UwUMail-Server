@@ -1,0 +1,5 @@
+# pnpm 11 checks every lockfile entry's publish date against the npm registry (minimumReleaseAge).
+# The suite's design package is no npm package but a GitHub release tarball, pinned by integrity in
+# the lockfile, so the registry has nothing to say about it.
+minimumReleaseAgeExclude:
+  - "@uwusuite/design"

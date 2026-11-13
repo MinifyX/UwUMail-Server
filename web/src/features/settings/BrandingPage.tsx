@@ -1,11 +1,8 @@
+import { Button, Field, TextInput, Card, ICONS, Icon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { Check, ImageUp, Inbox, Trash2 } from "lucide-react";
+import { ImageUp, Inbox } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Field, TextInput } from "@/components/ui/Field";
 import { LogoSymbol } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, type SettingsView } from "@/lib/api";
@@ -78,7 +75,7 @@ function ColorField({ form }: { form: Form }) {
   return (
     <Field label={t("branding.color.label")} hint={locked ? <LockedHint /> : t("branding.color.hint")}>
       {(id) => (
-        <div className={clsx("flex flex-col gap-3", locked && "pointer-events-none opacity-60")}>
+        <div className={cx("flex flex-col gap-3", locked && "pointer-events-none opacity-60")}>
           <div role="radiogroup" aria-label={t("branding.color.presets")} className="flex flex-wrap gap-2">
             {PRESETS.map((preset) => {
               const selected = shown === preset.color;
@@ -91,13 +88,13 @@ function ColorField({ form }: { form: Form }) {
                   aria-label={t(`branding.color.preset.${preset.key}`)}
                   title={t(`branding.color.preset.${preset.key}`)}
                   onClick={() => choose(preset.color)}
-                  className={clsx(
+                  className={cx(
                     "flex size-9 items-center justify-center rounded-full ring-offset-2 ring-offset-surface transition-shadow",
                     selected ? "ring-2 ring-ink" : "hover:ring-2 hover:ring-line",
                   )}
                   style={{ backgroundColor: preset.color }}
                 >
-                  {selected && <Check className="size-4 text-white" strokeWidth={3} aria-hidden />}
+                  {selected && <Icon icon={ICONS.done} className="size-4 text-white" strokeWidth={3} aria-hidden />}
                 </button>
               );
             })}
@@ -161,7 +158,7 @@ function Preview({ color, name, mascot }: { color: string | null; name: string; 
           <span className="truncate">{brandName}</span>
         </span>
         <span className="flex h-9 items-center gap-2 rounded-full bg-pink-tint px-3 text-[13px] font-semibold text-pink-ink">
-          <Inbox className="size-4" aria-hidden />
+          <Icon icon={Inbox} className="size-4" aria-hidden />
           {t("branding.preview.inbox")}
         </span>
         <div className="flex flex-wrap items-center gap-2">
@@ -244,7 +241,7 @@ function LogoCard() {
               {t(logo ? "branding.logo.replace" : "branding.logo.upload")}
             </Button>
             {logo && (
-              <Button variant="ghost" icon={Trash2} busy={remove.isPending} onClick={() => remove.mutate()}>
+              <Button variant="ghost" icon={ICONS.delete} busy={remove.isPending} onClick={() => remove.mutate()}>
                 {t("branding.logo.remove")}
               </Button>
             )}

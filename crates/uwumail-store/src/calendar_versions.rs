@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(store.calendar_event_version(mini, id, single).await.unwrap(), Some(None), "not a series then");
         let then = store.calendar_event_version(mini, id, series).await.unwrap().flatten().unwrap();
         assert!(then.contains("COUNT=3"), "{then}");
-        assert!(store.dav_delete(mini, calendar.id, "a.ics", None).await.unwrap());
+        assert!(store.dav_delete_by(None, mini, calendar.id, "a.ics", None).await.unwrap());
         let last = store.calendar_event_version(mini, id, store.account_modseq(mini).await.unwrap() - 1).await.unwrap();
         assert!(last.flatten().unwrap().contains("COUNT=2"));
     }

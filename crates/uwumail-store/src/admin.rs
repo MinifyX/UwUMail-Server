@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row, account_id, login_key};
+use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row, login_key};
 use crate::held::HeldBy;
 use crate::identity_grants::{Granted, granted_addresses, revoke_identities};
 use crate::{Account, Protocols, Result, Role, Store, StoreError, now, password, random_bytes};
@@ -615,24 +615,6 @@ impl Store {
                  JOIN addresses a ON a.domain_id = d.id GROUP BY d.name",
             )?;
             let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, (row.get(1)?, row.get(2)?))))?;
-            Ok(rows.collect::<Result<_, _>>()?)
-        })
-        .await
-    }
-
-    /// Addresses of an account with their kind, primary address first.
-    pub async fn account_addresses(&self, login: &str) -> Result<Vec<AddressInfo>> {
-        let login = login_key(login)?;
-        self.read(move |conn| {
-            let id = account_id(conn, &login)?;
-            let mut stmt = conn.prepare(
-                "SELECT a.local_part || '@' || d.name, a.kind, a.created_at FROM addresses a
-                 JOIN domains d ON d.id = a.domain_id
-                 WHERE a.account_id = ?1 ORDER BY a.kind = 'primary' DESC, 1",
-            )?;
-            let rows = stmt.query_map([id], |row| {
-                Ok(AddressInfo { address: row.get(0)?, kind: row.get(1)?, created_at: row.get(2)? })
-            })?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
         .await

@@ -1,7 +1,6 @@
+import { Button, Card, ICONS } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import { Download, KeyRound, Printer } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import { api, type MoveLinks, type MoveMailboxInfo } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -139,15 +138,15 @@ export function LinksCard({
           {waiting > 0 ? t("moves.links.explain", { count: waiting }) : t("moves.links.none")}
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button icon={KeyRound} busy={make.isPending} disabled={waiting === 0} onClick={() => make.mutate()}>
+          <Button icon={ICONS.secret} busy={make.isPending} disabled={waiting === 0} onClick={() => make.mutate()}>
             {links ? t("moves.links.again") : t("moves.links.make")}
           </Button>
           {links && links.links.length > 0 && (
             <>
-              <Button icon={Download} onClick={download}>
+              <Button icon={ICONS.download} onClick={download}>
                 {t("moves.links.csv")}
               </Button>
-              <Button icon={Printer} onClick={print}>
+              <Button icon={ICONS.print} onClick={print}>
                 {t("moves.links.print")}
               </Button>
             </>

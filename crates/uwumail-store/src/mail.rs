@@ -629,9 +629,12 @@ impl Store {
             let quoted = serde_json::to_string(&message_id).unwrap_or_default();
             let reply: Option<String> = conn
                 .query_row(
+                    // A reply comes after the test message's own copy, so the scan starts there.
                     "SELECT from_addr FROM emails WHERE account_id = ?1 AND instr(in_reply_to, ?2) > 0
+                       AND received_at >= coalesce((SELECT min(received_at) FROM emails
+                                                    WHERE account_id = ?1 AND message_id = ?3), 0)
                      ORDER BY received_at LIMIT 1",
-                    rusqlite::params![account_id, quoted],
+                    rusqlite::params![account_id, quoted, message_id],
                     |row| row.get(0),
                 )
                 .optional()?;

@@ -1,8 +1,6 @@
-import clsx from "clsx";
-import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useT } from "@/i18n";
-import { IconButton } from "./Button";
+import { cx, IconButton, ICONS } from "@uwusuite/design";
 
 interface DialogProps {
   open: boolean;
@@ -11,22 +9,21 @@ interface DialogProps {
   children: ReactNode;
   width?: "sm" | "md" | "lg" | "viewer";
   className?: string;
-  /** False while a form inside has unsaved input: a click beside the window leaves it open instead of closing it. Escape still counts as closing on purpose, like the X. Defaults to true. */
-  closeOnOutsideClick?: boolean;
+  /** The id of the heading that names a dialog drawn without `title`. */
+  labelledBy?: string;
 }
 
-/** Modal built on <dialog>: focus trapping, Escape and backdrop come from the browser. */
-export function Dialog({
-  open,
-  onClose,
-  title,
-  children,
-  width = "md",
-  className,
-  closeOnOutsideClick = true,
-}: DialogProps) {
+/**
+ * Modal built on <dialog>: focus trapping, Escape and backdrop come from the browser. It closes
+ * only on purpose (the X, Escape, a button inside), never on a click beside it.
+ *
+ * shortcut: a copy of @uwusuite/design's Dialog because that one does not tie the dialog to its
+ * title (aria-labelledby); switch to the package once it does.
+ */
+export function Dialog({ open, onClose, title, children, width = "md", className, labelledBy }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const { t } = useT();
+  const titleId = useId();
 
   useEffect(() => {
     const dialog = ref.current;
@@ -38,14 +35,14 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
+      aria-labelledby={title !== undefined ? titleId : labelledBy}
       onCancel={(event) => {
+        // Escape in a nested dialog closes only that one.
+        if (event.target !== ref.current) return;
         event.preventDefault();
         onClose();
       }}
-      onClick={(event) => {
-        if (closeOnOutsideClick && event.target === ref.current) onClose();
-      }}
-      className={clsx(
+      className={cx(
         // svh, not vh: on a phone `vh` is the height with the address bar hidden, so a dialog sized
         // by it reaches below the visible area and takes its buttons with it.
         "m-auto max-h-[min(720px,calc(100svh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-dialog border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-backdrop backdrop:backdrop-blur-[2px] open:flex open:animate-pop open:flex-col",
@@ -55,7 +52,7 @@ export function Dialog({
         width === "viewer" && "h-[calc(100svh-48px)] max-h-none max-w-[1200px]",
         // Phones: everything but small confirmations fills the screen.
         width !== "sm" &&
-          "max-[699px]:h-full max-[699px]:max-h-none max-[699px]:w-full max-[699px]:max-w-none max-[699px]:rounded-none max-[699px]:border-0",
+          "phone:h-full phone:max-h-none phone:w-full phone:max-w-none phone:rounded-none phone:border-0 phone:pt-[env(safe-area-inset-top)] phone:pb-[env(safe-area-inset-bottom)]",
         className,
       )}
     >
@@ -66,8 +63,10 @@ export function Dialog({
         <div className="flex min-h-0 flex-auto flex-col">
           {title !== undefined && (
             <header className="flex items-center justify-between gap-4 px-6 pt-5 pb-2">
-              <h2 className="text-lg font-bold">{title}</h2>
-              <IconButton icon={X} label={t("common.close")} onClick={onClose} />
+              <h2 id={titleId} className="text-section font-bold">
+                {title}
+              </h2>
+              <IconButton icon={ICONS.close} label={t("common.close")} onClick={onClose} />
             </header>
           )}
           <div className="min-h-0 flex-auto overflow-y-auto">{children}</div>

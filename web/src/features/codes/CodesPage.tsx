@@ -1,9 +1,8 @@
+import { Segmented, Toggle, Card, Hint, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Copy, KeyRound, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { Card, PageHeader } from "@/components/ui/Card";
-import { Segmented, SettingRow, Toggle } from "@/components/ui/Field";
-import { Hint } from "@/components/ui/Hint";
+import { PageHeader } from "@/components/ui/Page";
+import { SettingRow } from "@/components/ui/SettingRow";
 import { useSession } from "@/features/session/session";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
@@ -24,14 +23,14 @@ function CodeChipPreview() {
         aria-hidden
         className="inline-flex max-w-full items-center gap-2.5 self-start rounded-full border border-line bg-surface py-1 pr-1 pl-3"
       >
-        <ShieldCheck className="size-4 shrink-0 text-pink-ink" />
+        <Icon icon={ICONS.securityCheck} className="size-4 shrink-0 text-pink-ink" />
         <span className="font-mono text-[15px] font-bold tabular-nums">482&#8194;913</span>
         <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
           <span className="truncate">login.bank.example</span>
           <span className="tabular-nums">{t("codes.preview.left", { time: "4:32" })}</span>
         </span>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted">
-          <Copy className="size-4" />
+          <Icon icon={ICONS.copy} className="size-4" />
         </span>
       </div>
       <p className="text-[12px] text-muted">{t("codes.preview.caption")}</p>
@@ -79,7 +78,7 @@ export function CodesPage() {
     <div className="flex flex-col gap-5">
       <PageHeader title={t("codes.title")} intro={t("codes.intro")} />
       <div className="flex max-w-[760px] flex-col gap-5">
-        <Card icon={KeyRound} title={t("codes.card.title")} intro={t("codes.card.intro")}>
+        <Card icon={ICONS.secret} title={t("codes.card.title")} subtitle={t("codes.card.intro")}>
           <div className="flex flex-col gap-4">
             <Toggle
               checked={settings.detect}
@@ -93,10 +92,9 @@ export function CodesPage() {
               label={t("codes.cleanup.label")}
               description={t(`codes.cleanup.description.${settings.cleanup}`)}
             >
-              {({ describedBy }) => (
+              {() => (
                 <Segmented
                   label={t("codes.cleanup.label")}
-                  describedBy={describedBy}
                   disabled={settings.saving}
                   value={settings.cleanup}
                   onChange={(cleanup) => settings.set({ cleanup })}
@@ -104,7 +102,10 @@ export function CodesPage() {
                 />
               )}
             </SettingRow>
-            <Hint icon={ShieldCheck}>{t("codes.signed", { header: "Verification-Info" })}</Hint>
+            <Hint className="flex gap-2.5">
+              <Icon icon={ICONS.securityCheck} className="mt-0.5 size-4 shrink-0 text-pink-ink" aria-hidden />
+              <span>{t("codes.signed", { header: "Verification-Info" })}</span>
+            </Hint>
             <CodeChipPreview />
           </div>
         </Card>

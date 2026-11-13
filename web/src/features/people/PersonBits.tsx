@@ -1,5 +1,4 @@
-import clsx from "clsx";
-import { Tag, type TagTone } from "@/components/ui/Pill";
+import { Tag, type TagTone, cx } from "@uwusuite/design";
 import { MeterBar } from "@/components/ui/StatTile";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus } from "@/lib/api";
@@ -35,7 +34,7 @@ export function PersonAvatar({
   return (
     <span
       aria-hidden
-      className={clsx(
+      className={cx(
         "flex shrink-0 items-center justify-center rounded-full font-bold text-white",
         colorFor(person.login),
         person.status === "deleted" || person.status === "disabled" ? "opacity-45 grayscale" : undefined,

@@ -1,39 +1,10 @@
+import { NYU, Sticker, type NyuMood } from "@uwusuite/design";
 import type { ReactNode } from "react";
 
-/**
- * Nyu's palette. The mascot is artwork with fixed colors: it looks the same in
- * both themes, and a white sticker edge keeps it readable on dark backgrounds.
+/*
+ * Kept here: the package draws Nyu on the suite's 256 grid as a whole <svg>. The portal's scenes
+ * place this envelope Nyu (512 grid) inside their own pictures, with a position, tilt and extras.
  */
-export const NYU = {
-  ink: "#4B1D3F",
-  body: "#FF6FA6",
-  flap: "#FFB8D3",
-  blush: "#FF7FB0",
-  paper: "#FFFFFF",
-  star: "#FFD66E",
-  tear: "#9ED8FF",
-  lilac: "#CDB8FF",
-  violet: "#A78BFA",
-  mint: "#B9F0D0",
-  sky: "#BDE6FF",
-  kraft: "#F2C58F",
-  kraftLight: "#F8DDB8",
-  cloud: "#ECE6F4",
-} as const;
-
-export type NyuMood = "uwu" | "sleepy" | "happy" | "cheer" | "sparkle" | "sad" | "puzzled";
-
-/** Draws its children twice: first as a white die-cut edge, then as they are. */
-export function Sticker({ edge, children }: { edge: number; children: ReactNode }) {
-  return (
-    <>
-      <g className="nyu-edge" strokeWidth={edge}>
-        {children}
-      </g>
-      {children}
-    </>
-  );
-}
 
 const line = { fill: "none", stroke: NYU.ink, strokeWidth: 14 } as const;
 

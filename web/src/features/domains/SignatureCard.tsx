@@ -1,9 +1,6 @@
+import { Button, Field, Select, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { PenLine } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Field, Select } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type DomainDetail } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -48,7 +45,7 @@ export function SignatureCard({ domain }: { domain: DomainDetail }) {
     <Card
       title={
         <span className="flex items-center gap-2">
-          <PenLine className="size-4 text-muted" aria-hidden />
+          <Icon icon={ICONS.compose} className="size-4 text-muted" aria-hidden />
           {t("domains.signature.title")}
         </span>
       }
@@ -107,8 +104,8 @@ export function SignatureCard({ domain }: { domain: DomainDetail }) {
           </>
         )}
         {value.mode === "footer" && <p className="text-[12px] text-muted">{t("domains.signature.footerNote")}</p>}
-        {emptyFooter && <p className="text-[13px] text-danger">{t("domains.signature.footerEmpty")}</p>}
-        {big && <p className="text-[13px] text-danger">{t("mailbox.signatures.tooLarge")}</p>}
+        {emptyFooter && <p className="text-[13px] text-danger-ink">{t("domains.signature.footerEmpty")}</p>}
+        {big && <p className="text-[13px] text-danger-ink">{t("mailbox.signatures.tooLarge")}</p>}
         <div className="flex justify-end">
           <Button
             type="submit"

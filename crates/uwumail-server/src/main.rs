@@ -94,7 +94,7 @@ async fn run(
     // directory, and a restore wants an empty one. It is the one command that runs without a store.
     if matches!(command, Command::Backup(crate::cli::BackupCommand::Restore { .. })) {
         let Command::Backup(command) = command else { unreachable!("matched a line ago") };
-        return commands::backup_restore(command).await;
+        return commands::backup_restore(&config.data_dir, command).await;
     }
     let store = uwumail_store::Store::open(&config.data_dir).await?;
     match command {

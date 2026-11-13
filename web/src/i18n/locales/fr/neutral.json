@@ -102,6 +102,7 @@
     "open": "Ouvrir le menu du compte",
     "appearance": "Apparence et langue",
     "logout": "Se déconnecter",
+    "logoutFailed": "La déconnexion a échoué. Réessayez.",
     "role": {
       "admin": "Admin",
       "user": "Membre"
@@ -124,6 +125,12 @@
       "system": "Comme le système",
       "light": "Clair",
       "dark": "Sombre"
+    },
+    "contrast": {
+      "label": "Contraste élevé",
+      "system": "Comme le système",
+      "normal": "Normal",
+      "high": "Élevé"
     },
     "motion": {
       "label": "Animations",

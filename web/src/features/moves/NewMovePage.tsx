@@ -1,9 +1,8 @@
+import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Search, Truck } from "lucide-react";
+import { Truck } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card, PageHeader } from "@/components/ui/Card";
-import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/Page";
 import { useMailDomains, usePeople } from "@/features/people/queries";
 import { useT } from "@/i18n";
 import {
@@ -159,7 +158,7 @@ export function NewMovePage() {
         to={movesPath}
         className="inline-flex items-center gap-1.5 self-start text-[13px] font-semibold text-pink-ink"
       >
-        <ArrowLeft className="size-4" aria-hidden />
+        <Icon icon={ICONS.back} className="size-4" aria-hidden />
         {t("moves.wizard.back")}
       </Link>
       <PageHeader title={t("moves.wizard.title")} intro={t("moves.wizard.intro")} />
@@ -276,7 +275,7 @@ export function NewMovePage() {
             )}
           </Field>
           <Button
-            icon={Search}
+            icon={ICONS.search}
             className="sm:mb-[22px]"
             busy={discover.isPending}
             disabled={!cleanDomain}
@@ -395,17 +394,17 @@ export function NewMovePage() {
               <p className="text-muted">{t("moves.wizard.planPasswords")}</p>
             )}
             {plan.problems.length > 0 ? (
-              <p className="text-danger">{t("moves.wizard.planProblems", { count: plan.problems.length })}</p>
+              <p className="text-danger-ink">{t("moves.wizard.planProblems", { count: plan.problems.length })}</p>
             ) : (
-              <p className="flex items-center gap-1.5 text-success">
-                <CheckCircle2 className="size-4" aria-hidden />
+              <p className="flex items-center gap-1.5 text-success-ink">
+                <Icon icon={ICONS.success} className="size-4" aria-hidden />
                 {t("moves.wizard.planReady")}
               </p>
             )}
           </div>
         )}
         {(check.isError || start.isError) && (
-          <p role="alert" className="text-[13px] text-danger">
+          <p role="alert" className="text-[13px] text-danger-ink">
             {errorText(check.error ?? start.error)}
           </p>
         )}

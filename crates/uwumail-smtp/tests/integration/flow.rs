@@ -867,6 +867,30 @@ async fn forwarding_addresses_pass_mail_on_without_a_mailbox() {
     assert!(inbox.iter().any(|email| email.subject == "Quittung"));
 }
 
+/// A forward the loop guard stops can never go anywhere: no 451, so the co-recipient is not sent
+/// a new copy on every retry.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_looped_forward_is_not_retried() {
+    let a = start("a.test", &["mini", "leni"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    a.smtp.store().set_forward_address("kasse@a.test", vec!["leni@a.test".into()], "").await.unwrap();
+
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<kasse@a.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session
+        .command("Delivered-To: kasse@a.test\r\nFrom: news@sender.test\r\nSubject: Schon hier\r\n\r\nMiau\r\n.")
+        .await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.wait_for_inbox("mini@a.test", 1).await.len(), 1);
+    assert!(a.inbox("leni@a.test").await.is_empty());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_service_without_a_mailbox_takes_no_mail_from_anywhere() {
     let a = start("a.test", &["mini", "leni"], &[]).await;
@@ -2236,6 +2260,18 @@ async fn queued_mail_stays_here_once_its_account_is_internal_only() {
     assert!(bounce.contains("5.7.1") && bounce.contains("only send to addresses on this server"), "{bounce}");
     let inbox = b.wait_for_inbox("nyu@b.test", 1).await;
     assert_eq!(inbox.iter().map(|email| email.subject.as_str()).collect::<Vec<_>>(), ["System"]);
+
+    // Turning SMTP off holds what is already waiting the same way (server-smtp F4).
+    let no_smtp = uwumail_store::Protocols { smtp: false, ..Default::default() };
+    let update = uwumail_store::AccountUpdate { protocols: Some(no_smtp), ..Default::default() };
+    store.update_account("mini@a.test", update).await.unwrap();
+    let raw = "From: mini@a.test\r\nTo: nyu@b.test\r\nSubject: Ohne SMTP\r\n\r\nHallo\r\n";
+    store.enqueue("mini@a.test", to_nyu(), raw.as_bytes(), Some(mini.id), None, 3600).await.unwrap();
+    let mut bounces = Vec::new();
+    for email in a.wait_for_inbox("mini@a.test", 2).await {
+        bounces.push(a.raw(&email).await);
+    }
+    assert!(bounces.iter().any(|bounce| bounce.contains("may not send to other servers")), "{bounces:?}");
 }
 
 /// A recipient that is given up on once the message expires gets the sender a bounce, unless it

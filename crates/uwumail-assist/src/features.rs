@@ -1029,23 +1029,28 @@ impl Assist {
             people.push((address.name.clone().unwrap_or_default(), address.email.trim().to_lowercase()));
         }
         people.extend(self.store().contact_addresses(account.id, MAX_CONTACTS).await?);
-        let mut mine = HashSet::new();
-        mine.insert(account.login.to_lowercase());
-        for (_, email) in &people {
-            if !mine.contains(email) && self.store().account_owns_address(account.id, email).await.unwrap_or(false) {
-                mine.insert(email.clone());
-            }
-            if mine.len() > 50 {
-                break;
-            }
-        }
+        let mine = HashSet::from([account.login.to_lowercase()]);
         let mut source = mail.searchable();
         for text in &image_text {
             source.push('\n');
             source.push_str(text);
         }
         let context = EventContext { source: &source, links: &mail.links, people: &people, mine: &mine };
-        let events = parse_events(&answer, &context);
+        let mut events = parse_events(&answer, &context);
+        // The person's own addresses are never suggested as guests. Asked only for the few the
+        // events name, not for the whole address book: one store read each.
+        let mut own = HashSet::new();
+        let mut checked = HashSet::new();
+        for participant in events.iter().flat_map(|event| &event.participants) {
+            if checked.insert(participant.email.clone())
+                && self.store().account_owns_address(account.id, &participant.email).await.unwrap_or(false)
+            {
+                own.insert(participant.email.clone());
+            }
+        }
+        for event in &mut events {
+            event.participants.retain(|participant| !own.contains(&participant.email));
+        }
         Ok(EventsResult { events, effective, usage: Usage::of(&completion) })
     }
 

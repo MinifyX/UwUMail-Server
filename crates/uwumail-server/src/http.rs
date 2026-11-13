@@ -138,7 +138,13 @@ async fn client_info(State(trusted): State<Arc<Vec<IpNetwork>>>, mut request: Re
     }
     if is_trusted(info.ip) {
         let headers = request.headers();
-        if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        if headers.contains_key("x-forwarded-for") {
+            // Every header line, in order: a proxy may add its own line instead of appending to
+            // the client's. A line that is not text ends the walk there, like an unreadable hop.
+            let lines = headers.get_all("x-forwarded-for").iter().rev().map_while(|v| v.to_str().ok());
+            let mut lines: Vec<&str> = lines.collect();
+            lines.reverse();
+            let forwarded = lines.join(",");
             // The rightmost address that is not one of our proxies is the real client. A hop that
             // cannot be read as an address ends the walk rather than being skipped over -- skipping
             // it let a client behind a proxy that appends `ip:port` pick its own address for the
@@ -656,6 +662,29 @@ mod tests {
         let plain = Request::get("/login").header("x-forwarded-proto", "http").body(Body::empty()).unwrap();
         let response = redirect_app(state()).oneshot(plain).await.unwrap();
         assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    }
+
+    /// A proxy that adds its own X-Forwarded-For line wins over the line the client sent.
+    #[tokio::test]
+    async fn every_forwarded_line_is_walked_from_the_right() {
+        let trusted: Arc<Vec<IpNetwork>> = Arc::new(vec!["172.30.25.0/24".parse().unwrap()]);
+        let echo = Router::new()
+            .route(
+                "/",
+                get(|request: axum::extract::Request| async move {
+                    request.extensions().get::<ClientInfo>().unwrap().ip.to_string()
+                }),
+            )
+            .layer(middleware::from_fn_with_state(trusted, client_info));
+        let mut request = Request::get("/")
+            .header("x-forwarded-for", "192.0.2.66")
+            .header("x-forwarded-for", "198.51.100.5")
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(Peer { addr: "172.30.25.2:40000".parse().unwrap(), tls: false });
+        let response = echo.oneshot(request).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(&body[..], b"198.51.100.5");
     }
 
     #[test]

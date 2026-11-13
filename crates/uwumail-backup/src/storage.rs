@@ -10,8 +10,8 @@ use crate::{Error, Target};
 
 pub enum Storage {
     Local(PathBuf),
-    Sftp(Sftp),
-    /// Boxed: the client with its connection pool is much bigger than the other two.
+    /// Boxed, like S3: a client with its connection is much bigger than a path.
+    Sftp(Box<Sftp>),
     S3(Box<S3>),
 }
 
@@ -20,7 +20,7 @@ impl Storage {
     /// there would otherwise quietly become a folder on the disk the server runs from.
     pub async fn open(target: &Target) -> Result<Storage, Error> {
         match target {
-            Target::Sftp(sftp) => Ok(Storage::Sftp(Sftp::connect(sftp).await?)),
+            Target::Sftp(sftp) => Ok(Storage::Sftp(Box::new(Sftp::connect(sftp).await?))),
             Target::S3(s3) => {
                 let s3 = S3::new(s3)?;
                 s3.check_route().await?;

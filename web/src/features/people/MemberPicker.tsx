@@ -1,6 +1,5 @@
-import { Search } from "lucide-react";
+import { TextInput, ICONS, Icon } from "@uwusuite/design";
 import { useState } from "react";
-import { TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { Person } from "@/lib/api";
 
@@ -41,7 +40,8 @@ export function MemberPicker({
     <div className="flex flex-col gap-2">
       <label className="relative">
         <span className="sr-only">{t("groups.members.search")}</span>
-        <Search
+        <Icon
+          icon={ICONS.search}
           className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint"
           aria-hidden
         />

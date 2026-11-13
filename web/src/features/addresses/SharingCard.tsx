@@ -1,11 +1,9 @@
+import { Button, Field, Select, Card, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Folder, FolderInput, Share2, UserMinus } from "lucide-react";
+import { FolderInput, UserMinus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type ShareLevel, type SharingView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -14,7 +12,7 @@ import { toast } from "@/state/toasts";
 const sharingKey = ["account", "sharing"] as const;
 const LEVELS: ShareLevel[] = ["read", "write", "all"];
 
-type Folder = SharingView["folders"][number];
+type SharedFolder = SharingView["folders"][number];
 
 /** Sharing one's folders with people on the server, and what others share (docs/sharing.md). */
 export function SharingCard() {
@@ -22,11 +20,11 @@ export function SharingCard() {
   const errorText = useErrorText();
   const queryClient = useQueryClient();
   const sharing = useQuery({ queryKey: sharingKey, queryFn: () => api<SharingView>("/api/account/sharing") });
-  const [sharingFolder, setSharingFolder] = useState<Folder | null>(null);
+  const [sharingFolder, setSharingFolder] = useState<SharedFolder | null>(null);
   const [person, setPerson] = useState("");
   const [level, setLevel] = useState<ShareLevel>("read");
 
-  const folderName = (folder: { path: string; role: Folder["role"] }) =>
+  const folderName = (folder: { path: string; role: SharedFolder["role"] }) =>
     folder.role ? t(`storage.roles.${folder.role}`) : folder.path;
   const personName = (login: string) => {
     const found = sharing.data?.people.find((entry) => entry.login === login);
@@ -34,7 +32,7 @@ export function SharingCard() {
   };
 
   const share = useMutation({
-    mutationFn: (input: { folder: Folder; login: string; level: ShareLevel }) =>
+    mutationFn: (input: { folder: SharedFolder; login: string; level: ShareLevel }) =>
       api<SharingView>(`/api/account/sharing/${input.folder.id}`, {
         method: "PUT",
         body: { login: input.login, level: input.level },
@@ -47,7 +45,7 @@ export function SharingCard() {
     onError: (error) => toast(errorText(error), "error"),
   });
   const unshare = useMutation({
-    mutationFn: (input: { folder: Folder; login: string }) =>
+    mutationFn: (input: { folder: SharedFolder; login: string }) =>
       api<SharingView>(`/api/account/sharing/${input.folder.id}/${encodeURIComponent(input.login)}`, {
         method: "DELETE",
       }),
@@ -62,7 +60,7 @@ export function SharingCard() {
   if (sharing.isError) return <LoadError error={sharing.error} onRetry={() => void sharing.refetch()} />;
   const data = sharing.data;
 
-  const open = (folder: Folder) => {
+  const open = (folder: SharedFolder) => {
     const taken = new Set(folder.shares.map((entry) => entry.login));
     setPerson(data.people.find((entry) => !taken.has(entry.login))?.login ?? "");
     setLevel("read");
@@ -84,7 +82,7 @@ export function SharingCard() {
           {data.folders.map((folder) => (
             <li key={folder.id} className="flex flex-col gap-1.5 border-b border-hairline py-2 last:border-b-0">
               <div className="flex min-h-9 items-center gap-2 text-sm">
-                <Folder className="size-4 shrink-0 text-muted" aria-hidden />
+                <Icon icon={ICONS.folder} className="size-4 shrink-0 text-muted" aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{folderName(folder)}</span>
                   <span className="block text-[12px] text-muted">
@@ -93,7 +91,7 @@ export function SharingCard() {
                       : t("sharing.sharedWith", { count: folder.shares.length })}
                   </span>
                 </span>
-                <Button size="sm" icon={Share2} disabled={data.people.length === 0} onClick={() => open(folder)}>
+                <Button size="sm" icon={ICONS.share} disabled={data.people.length === 0} onClick={() => open(folder)}>
                   {t("sharing.share")}
                 </Button>
               </div>
@@ -148,7 +146,7 @@ export function SharingCard() {
               <ul className="flex flex-col">
                 {data.sharedWithMe.map((entry) => (
                   <li key={`${entry.owner}-${entry.id}`} className="flex min-h-10 items-center gap-2 text-sm">
-                    <FolderInput className="size-4 shrink-0 text-muted" aria-hidden />
+                    <Icon icon={FolderInput} className="size-4 shrink-0 text-muted" aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-semibold">{folderName(entry)}</span>
                       <span className="block truncate text-[12px] text-muted">
@@ -200,7 +198,7 @@ export function SharingCard() {
           </Field>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setSharingFolder(null)}>{t("common.cancel")}</Button>
-            <Button type="submit" icon={Share2} busy={share.isPending} disabled={!person}>
+            <Button type="submit" icon={ICONS.share} busy={share.isPending} disabled={!person}>
               {t("sharing.share")}
             </Button>
           </div>

@@ -189,10 +189,17 @@ async fn addresses(host: &str) -> Vec<std::net::IpAddr> {
     }
 }
 
+/// Names a Let's Encrypt certificate may carry.
+const MAX_NAMES: usize = 100;
+
 /// The server's own name first, then the extra names that did not fail recently.
 fn names_to_request(hostname: &str, extra: &[String], failed: &HashMap<String, i64>, now: i64) -> Vec<String> {
     let mut names = vec![hostname.to_owned()];
     for name in extra {
+        // Let's Encrypt refuses an order with more names than this, which would cost all of them.
+        if names.len() == MAX_NAMES {
+            break;
+        }
         let paused = failed.get(name).is_some_and(|at| now - at < FAILED_NAME_PAUSE_SECS);
         if !paused && !names.contains(name) {
             names.push(name.clone());
@@ -434,6 +441,9 @@ mod tests {
         );
         let later = now + FAILED_NAME_PAUSE_SECS;
         assert_eq!(names_to_request("mail.example.org", &extra, &failed, later).len(), 3, "tried again a day later");
+        let many: Vec<String> = (0..200).map(|n| format!("mail.d{n}.example")).collect();
+        let names = names_to_request("mail.example.org", &many, &failed, now);
+        assert_eq!((names.len(), names[0].as_str()), (MAX_NAMES, "mail.example.org"), "one order the CA takes");
     }
 
     #[test]

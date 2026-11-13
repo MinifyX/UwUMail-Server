@@ -400,14 +400,6 @@ fn reminders_of(lines: &[RawLine]) -> Vec<Reminder> {
     reminders
 }
 
-/// The reminders of a card, also of one without dates, as `X-UWUMAIL-REMINDER` has them.
-pub fn card_reminders(content: &str) -> Vec<Reminder> {
-    if !content.to_ascii_uppercase().contains(REMINDER_PROPERTY) {
-        return Vec::new();
-    }
-    reminders_of(&raw_lines(content))
-}
-
 /// One content line of a vCard as written: `group.NAME;params:value`, unfolded.
 struct RawLine {
     group: Option<String>,
@@ -1326,7 +1318,7 @@ UID:nyu\r\nEND:VCARD\r\n";
             assert_eq!((changes.created.len(), changes.updated, changes.destroyed.len()), (1, vec![event_id], 0));
 
             // CalDAV and JMAP cannot write into it.
-            let refused = store.dav_delete(mini, calendar.id, &list[0].0, None).await;
+            let refused = store.dav_delete_by(None, mini, calendar.id, &list[0].0, None).await;
             assert!(matches!(refused, Err(StoreError::Rule { code: "readOnly", .. })));
             assert!(matches!(
                 store.destroy_calendar_event(mini, event_id, None).await,

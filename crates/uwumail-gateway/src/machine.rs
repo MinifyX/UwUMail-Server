@@ -30,8 +30,9 @@ const BANS: &str = "bans.jsonl";
 const TRUSTED: &str = "trusted";
 const JOBS: &str = "jobs.jsonl";
 
-/// The most of a task's output that is passed on to the portal at once.
-const LOG_MAX: usize = 16 * 1024;
+/// The most of a task's output, in bytes, that is passed on to the portal at once. JSON escaping can
+/// grow it sixfold (control characters), and the frame must stay under the tunnel's 64 KiB.
+const LOG_MAX: usize = 8 * 1024;
 /// The verbs the gateway will pass on. The helper checks them again -- it is the side with the
 /// rights -- but a word the gateway has never heard of never reaches a file at all.
 const VERBS: [&str; 3] = ["os-update", "reboot", "gateway-update"];
@@ -205,9 +206,10 @@ impl Machine {
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or(JobAnswer { id: id.clone(), state: "running".into(), ..JobAnswer::default() });
         let log = std::fs::read_to_string(self.dir.join(format!("job-{id}.log")))
-            .map(|text| match text.char_indices().nth_back(LOG_MAX) {
-                Some((at, _)) => text[at..].to_owned(),
-                None => text,
+            .map(|text| {
+                let start = text.len().saturating_sub(LOG_MAX);
+                let start = (start..text.len()).find(|&at| text.is_char_boundary(at)).unwrap_or(text.len());
+                text[start..].to_owned()
             })
             .unwrap_or_default();
         Some(uwumail_tunnel::proto::TaskState { id, state: answer.state, error: answer.error, at: answer.at, log })
@@ -425,6 +427,20 @@ mod tests {
 
         std::fs::write(dir.path().join(BANS), vec![b'x'; BANS_MAX_BYTES as usize + 1]).unwrap();
         assert!(!machine.ban("192.0.2.8".parse().unwrap(), 60, "no"), "stops instead of filling the disk");
+    }
+
+    #[test]
+    fn a_noisy_job_log_still_fits_in_one_status_frame() {
+        let dir = tempfile::tempdir().unwrap();
+        let machine = Machine::new(dir.path());
+        assert!(machine.ask("abc1", "os-update", None));
+        // Colour codes escape to six bytes each, and non-ASCII text is several bytes per character.
+        std::fs::write(dir.path().join("job-abc1.log"), "\u{1b}\u{1b}\u{1b}ä€".repeat(20_000)).unwrap();
+        let status = machine.status(String::new());
+        let log = &status.job.as_ref().unwrap().log;
+        assert!(!log.is_empty() && log.len() <= LOG_MAX);
+        let frame = serde_json::to_vec(&uwumail_tunnel::proto::GatewayMessage::Status(Box::new(status))).unwrap();
+        assert!(frame.len() < 64 * 1024, "{} bytes", frame.len());
     }
 
     #[test]

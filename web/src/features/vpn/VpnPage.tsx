@@ -1,25 +1,11 @@
+import { Button, Field, Segmented, Select, TextInput, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import {
-  CircleCheck,
-  CircleHelp,
-  FileUp,
-  Globe,
-  LoaderCircle,
-  Play,
-  Power,
-  Save,
-  ScrollText,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
+import { FileUp, Power, ScrollText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { updateCommand } from "@/features/admin/host";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import {
@@ -56,19 +42,17 @@ const RECENT_SECONDS = 15 * 60;
 type Tone = "good" | "trouble" | "neutral" | "busy";
 
 const TONES: Record<Tone, { icon: LucideIcon; className: string }> = {
-  good: { icon: CircleCheck, className: "bg-success-tint text-success" },
-  trouble: { icon: TriangleAlert, className: "bg-warning-tint text-warning" },
-  neutral: { icon: CircleHelp, className: "bg-elevated text-muted" },
-  busy: { icon: LoaderCircle, className: "bg-pink-tint text-pink-ink" },
+  good: { icon: ICONS.success, className: "bg-success-tint text-success-ink" },
+  trouble: { icon: ICONS.warning, className: "bg-warning-tint text-warning-ink" },
+  neutral: { icon: ICONS.help, className: "bg-elevated text-muted" },
+  busy: { icon: ICONS.loading, className: "bg-pink-tint text-pink-ink" },
 };
 
 function State({ tone, children }: { tone: Tone; children: ReactNode }) {
   const { icon: Icon, className } = TONES[tone];
   return (
-    <span
-      className={clsx("inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold", className)}
-    >
-      <Icon className={clsx("size-4", tone === "busy" && "animate-spin")} aria-hidden />
+    <span className={cx("inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold", className)}>
+      <Icon className={cx("size-4", tone === "busy" && "animate-spin")} aria-hidden />
       {children}
     </span>
   );
@@ -155,9 +139,9 @@ function StatusCard({ vpn }: { vpn: VpnView }) {
         </dl>
         {failure && (
           <p
-            className={clsx(
+            className={cx(
               "rounded-control px-3 py-2 text-[13px]",
-              recent ? "bg-warning-tint text-warning" : "bg-canvas text-muted",
+              recent ? "bg-warning-tint text-warning-ink" : "bg-canvas text-muted",
             )}
           >
             {t("settings.egress.proxyFailed", {
@@ -170,22 +154,24 @@ function StatusCard({ vpn }: { vpn: VpnView }) {
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-prose text-[13px] text-muted">{t("vpn.status.testHint")}</p>
-          <Button icon={Globe} busy={test.isPending} onClick={() => test.mutate()}>
+          <Button icon={ICONS.website} busy={test.isPending} onClick={() => test.mutate()}>
             {t("settings.egress.test")}
           </Button>
         </div>
         {test.isError && (
-          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">{errorText(test.error)}</p>
+          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
+            {errorText(test.error)}
+          </p>
         )}
         {test.data?.address && (
-          <p className="rounded-control bg-success-tint px-3 py-2 text-[13px] text-success">
+          <p className="rounded-control bg-success-tint px-3 py-2 text-[13px] text-success-ink">
             {t(test.data.proxied ? "settings.egress.testProxied" : "settings.egress.testDirect", {
               address: test.data.address,
             })}
           </p>
         )}
         {test.data?.error && (
-          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {t("settings.egress.testFailed", { error: test.data.error })}
           </p>
         )}
@@ -398,7 +384,7 @@ function VpnCard({ view }: { view: VpnView }) {
         {!view.helper.available ? (
           <p className="rounded-control bg-canvas px-3 py-2.5 text-[13px]">{t("vpn.helper.missing")}</p>
         ) : !view.helper.canVpn ? (
-          <div className="flex flex-col gap-2 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
+          <div className="flex flex-col gap-2 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning-ink">
             <p>{t("vpn.helper.old", { version: view.helper.version ?? "1" })}</p>
             <div className="flex items-start gap-2 rounded-control bg-surface px-3 py-1.5 text-ink">
               <code className="min-w-0 flex-1 font-mono text-[12px] break-all">{updateCommand(null)}</code>
@@ -664,7 +650,7 @@ function VpnCard({ view }: { view: VpnView }) {
         </button>
 
         {view.complete && view.saved && !dirty && (
-          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning-ink">
             {t("vpn.form.incomplete", { reason: view.complete })}
           </p>
         )}
@@ -676,7 +662,7 @@ function VpnCard({ view }: { view: VpnView }) {
               onClick={() => setShowLog((current) => !current)}
               className="mr-auto inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-ink"
             >
-              <ScrollText className="size-4" aria-hidden />
+              <SuiteIcon icon={ScrollText} className="size-4" aria-hidden />
               {job.state === "waiting"
                 ? t("vpn.job.waiting")
                 : running
@@ -686,11 +672,11 @@ function VpnCard({ view }: { view: VpnView }) {
                     : t("vpn.job.failed", { error: job.error })}
             </button>
           )}
-          <Button icon={Save} busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
+          <Button icon={ICONS.save} busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
             {t("common.save")}
           </Button>
           {(view.saved || active) && (
-            <Button variant="ghost" icon={Trash2} disabled={running} onClick={() => setRemoving(true)}>
+            <Button variant="ghost" icon={ICONS.delete} disabled={running} onClick={() => setRemoving(true)}>
               {t("vpn.form.remove")}
             </Button>
           )}
@@ -701,7 +687,12 @@ function VpnCard({ view }: { view: VpnView }) {
           )}
           {view.helper.canVpn ? (
             <>
-              <Button variant="primary" icon={Play} busy={apply.isPending || running} onClick={() => apply.mutate()}>
+              <Button
+                variant="primary"
+                icon={ICONS.start}
+                busy={apply.isPending || running}
+                onClick={() => apply.mutate()}
+              >
                 {up ? t("vpn.form.restart") : t("vpn.form.start")}
               </Button>
             </>
@@ -735,7 +726,7 @@ function VpnCard({ view }: { view: VpnView }) {
             <Button autoFocus onClick={() => setRemoving(false)}>
               {t("common.cancel")}
             </Button>
-            <Button variant="danger" icon={Trash2} busy={remove.isPending} onClick={() => remove.mutate()}>
+            <Button variant="danger" icon={ICONS.delete} busy={remove.isPending} onClick={() => remove.mutate()}>
               {t("vpn.remove.confirm")}
             </Button>
           </div>

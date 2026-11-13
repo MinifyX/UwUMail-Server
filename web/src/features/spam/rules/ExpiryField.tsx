@@ -1,5 +1,5 @@
+import { Field, Select, TextInput } from "@uwusuite/design";
 import { useState } from "react";
-import { Field, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { formatDate } from "@/lib/format";
 import { EXPIRY_PRESETS, dateInputValue, expiryFromDate, expiryFromDays } from "./scope";

@@ -1,22 +1,10 @@
+import { BUTTON_SIZES, BUTTON_VARIANTS, cx, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import {} from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import {
-  AtSign,
-  CalendarDays,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  EyeOff,
-  HardDrive,
-  Inbox,
-  KeyRound,
-  MonitorSmartphone,
-  ShieldCheck,
-  type LucideIcon,
-} from "lucide-react";
+import { AtSign, ChevronUp, Inbox, MonitorSmartphone, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { buttonClass } from "@/components/ui/Button";
-import { Card, CopyButton, KeyValue, PageHeader } from "@/components/ui/Card";
-import { StatusDot } from "@/components/ui/Pill";
+import { CopyButton, KeyValue, PageHeader } from "@/components/ui/Page";
+import { StatusDot } from "@/components/ui/StatusDot";
 import { MeterBar, StatTile } from "@/components/ui/StatTile";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useSecurity } from "@/features/security/queries";
@@ -68,7 +56,11 @@ function AddressList({ addresses }: { addresses: string[] }) {
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
         >
-          {expanded ? <ChevronUp className="size-4" aria-hidden /> : <ChevronDown className="size-4" aria-hidden />}
+          {expanded ? (
+            <SuiteIcon icon={ChevronUp} className="size-4" aria-hidden />
+          ) : (
+            <SuiteIcon icon={ICONS.expand} className="size-4" aria-hidden />
+          )}
           {expanded ? t("account.addresses.less") : t("account.addresses.more", { count: hidden })}
         </button>
       )}
@@ -126,7 +118,7 @@ function StatusCard({ lines }: { lines: StatusLine[] }) {
   return (
     <Card
       title={t("account.status.title")}
-      intro={open === 0 ? t("account.status.allGood") : t("account.status.open", { count: open })}
+      subtitle={open === 0 ? t("account.status.allGood") : t("account.status.open", { count: open })}
     >
       <ul className="flex flex-col gap-2.5">
         {lines.map((line) => (
@@ -164,7 +156,7 @@ function NextRow({
         <span className="text-sm font-semibold">{title}</span>
         <span className="text-[12px] text-muted">{text}</span>
       </span>
-      <ChevronRight className="size-4 shrink-0 text-muted" aria-hidden />
+      <SuiteIcon icon={ICONS.next} className="size-4 shrink-0 text-muted" aria-hidden />
     </>
   );
   return to ? (
@@ -182,24 +174,24 @@ function NextRow({
 function NextCard({ security }: { security: SecurityView | undefined }) {
   const { t } = useT();
   return (
-    <Card title={t("account.next.title")} intro={t("account.next.intro")}>
+    <Card title={t("account.next.title")} subtitle={t("account.next.intro")}>
       <div className="flex flex-col gap-2">
         <NextRow
-          icon={KeyRound}
+          icon={ICONS.secret}
           to="/account/codes"
           title={t("account.next.codes.title")}
           text={t("account.next.codes.text")}
         />
         {security && !security.secondFactor && (
           <NextRow
-            icon={ShieldCheck}
+            icon={ICONS.securityCheck}
             to="/account/security"
             title={t("account.next.secondFactor.title")}
             text={t("account.next.secondFactor.text")}
           />
         )}
         <NextRow
-          icon={EyeOff}
+          icon={ICONS.hide}
           to="/account/masked"
           title={t("account.next.masked.title")}
           text={t("account.next.masked.text")}
@@ -248,8 +240,15 @@ export function AccountHome({ session }: { session: Session }) {
         intro={t("account.intro")}
         actions={
           session.webmail && (
-            <a href="/mail" className={buttonClass("primary", "lg")}>
-              <Inbox className="size-4" strokeWidth={2.2} aria-hidden />
+            <a
+              href="/mail"
+              className={cx(
+                "inline-flex items-center justify-center rounded-full font-semibold focus-visible:shadow-focus",
+                BUTTON_VARIANTS.primary,
+                BUTTON_SIZES.lg,
+              )}
+            >
+              <SuiteIcon icon={Inbox} className="size-4" strokeWidth={2.2} aria-hidden />
               {t("nav.openMailbox")}
             </a>
           )
@@ -267,7 +266,7 @@ export function AccountHome({ session }: { session: Session }) {
           }
         />
         <StatTile
-          icon={HardDrive}
+          icon={ICONS.drive}
           tone={share > 0.9 ? "danger" : share > 0.75 ? "warning" : "normal"}
           value={formatBytes(data.usedBytes, language)}
           label={
@@ -279,7 +278,7 @@ export function AccountHome({ session }: { session: Session }) {
           {data.quotaBytes > 0 && <MeterBar share={share} />}
         </StatTile>
         <StatTile
-          icon={ShieldCheck}
+          icon={ICONS.securityCheck}
           tone={security.data && !security.data.secondFactor ? "warning" : "normal"}
           value={
             security.data
@@ -294,7 +293,7 @@ export function AccountHome({ session }: { session: Session }) {
               : t("account.tiles.secondFactor")
           }
         />
-        <StatTile icon={CalendarDays} value={formatDate(data.createdAt, language)} label={t("account.tiles.since")} />
+        <StatTile icon={ICONS.calendar} value={formatDate(data.createdAt, language)} label={t("account.tiles.since")} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">

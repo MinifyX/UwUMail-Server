@@ -256,12 +256,6 @@ impl Store {
         .await
     }
 
-    /// One entry by its id.
-    pub async fn spam_log_entry(&self, id: i64) -> Result<Option<SpamLogEntry>> {
-        let entries = self.spam_log(SpamLogFilter { before: Some(id + 1), limit: 1, ..Default::default() }).await?;
-        Ok(entries.into_iter().find(|entry| entry.id == id))
-    }
-
     /// How many entries there are, and the oldest one's time, for the page to say what it covers.
     pub async fn spam_log_extent(&self) -> Result<(i64, Option<i64>)> {
         self.read(move |conn| {
@@ -425,9 +419,6 @@ mod tests {
         let (count, oldest) = store.spam_log_extent().await.unwrap();
         assert_eq!(count, 3);
         assert!(oldest.is_some());
-
-        let one = store.spam_log_entry(all[1].id).await.unwrap().unwrap();
-        assert_eq!(one.smtp_id, "a2");
 
         assert_eq!(store.prune_spam_log(3600).await.unwrap(), 0, "nothing is old yet");
         assert_eq!(store.prune_spam_log(-1).await.unwrap(), 3, "a cut-off in the future takes everything");

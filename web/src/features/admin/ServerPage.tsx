@@ -1,8 +1,8 @@
+import { Button, ICONS } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeftRight, ChartColumn, DatabaseBackup, LayoutDashboard, MailWarning, UserPlus } from "lucide-react";
+import { ArrowLeftRight, ChartColumn, DatabaseBackup, MailWarning, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { StatusDot } from "@/components/ui/Pill";
+import { StatusDot } from "@/components/ui/StatusDot";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { BackupsPage } from "@/features/backups/BackupsPage";
 import { MicrosoftPage } from "@/features/microsoft/MicrosoftPage";
@@ -28,8 +28,8 @@ export const SERVER_PATHS: Record<ServerTab, string> = {
   microsoft: "/admin/microsoft",
   backups: "/admin/backups",
 };
-const ICONS = {
-  overview: LayoutDashboard,
+const KIND_ICONS = {
+  overview: ICONS.overview,
   stats: ChartColumn,
   mailFlow: ArrowLeftRight,
   microsoft: MailWarning,
@@ -102,7 +102,7 @@ export function ServerPage({ tab = "overview", session }: { tab?: ServerTab; ses
       tabs={(Object.keys(SERVER_PATHS) as ServerTab[]).map((value) => ({
         value,
         to: SERVER_PATHS[value],
-        icon: ICONS[value],
+        icon: KIND_ICONS[value],
         label: t(`admin.tabs.${value}`),
       }))}
     >

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { PageHeader } from "./Card";
+import { PageHeader } from "./Page";
 import { Tabs, type Tab } from "./Tabs";
 
 /**

@@ -1,27 +1,9 @@
+import { Button, Field, TextInput, Card, ICONS, Icon as SuiteIcon, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import {
-  Ban,
-  BookOpen,
-  Check,
-  ChevronRight,
-  Clock,
-  GraduationCap,
-  Hash,
-  History,
-  LayoutDashboard,
-  ListFilter,
-  Rss,
-  Settings2,
-  ShieldAlert,
-  Sparkles,
-  Timer,
-} from "lucide-react";
+import { BookOpen, Clock, GraduationCap, Hash, Rss, Settings2, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card, PageHeader } from "@/components/ui/Card";
-import { Field, TextInput } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/Page";
 import { Tabs } from "@/components/ui/Tabs";
 import {
   ANTIVIRUS_SETTING_KEYS,
@@ -74,15 +56,15 @@ const PATHS: Record<SpamTab, string> = {
   history: "/admin/spam/history",
 };
 export const SPAM_TABS = Object.keys(PATHS) as SpamTab[];
-const ICONS = {
-  overview: LayoutDashboard,
-  rules: ListFilter,
+const KIND_ICONS = {
+  overview: ICONS.overview,
+  rules: ICONS.rules,
   settings: Settings2,
   lists: Rss,
   learning: GraduationCap,
-  antivirus: ShieldAlert,
-  history: History,
-  waiting: Timer,
+  antivirus: ICONS.spam,
+  history: ICONS.history,
+  waiting: ICONS.oneTimeCode,
 };
 
 /** In My account: one's own rules, subscribed lists, what the filter learned, and what waits. */
@@ -151,16 +133,16 @@ function Tile({
   tone,
 }: {
   to: string;
-  icon: typeof Ban;
+  icon: LucideIcon;
   label: string;
   value: number | undefined;
   tone: "danger" | "success" | "warning" | "muted";
 }) {
   const { i18n } = useT();
   const tones = {
-    danger: "bg-danger-tint text-danger",
-    success: "bg-success-tint text-success",
-    warning: "bg-warning-tint text-warning",
+    danger: "bg-danger-tint text-danger-ink",
+    success: "bg-success-tint text-success-ink",
+    warning: "bg-warning-tint text-warning-ink",
     muted: "bg-elevated text-muted",
   };
   return (
@@ -168,7 +150,7 @@ function Tile({
       to={to}
       className="group flex items-center gap-3 rounded-[14px] border border-hairline bg-surface p-3.5 transition-colors hover:border-pink/40"
     >
-      <span className={clsx("flex size-9 shrink-0 items-center justify-center rounded-full", tones[tone])}>
+      <span className={cx("flex size-9 shrink-0 items-center justify-center rounded-full", tones[tone])}>
         <Icon className="size-4" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
@@ -177,7 +159,7 @@ function Tile({
         </span>
         <span className="block text-[12px] leading-tight text-muted">{label}</span>
       </span>
-      <ChevronRight className="size-4 text-faint group-hover:text-pink-ink" aria-hidden />
+      <SuiteIcon icon={ICONS.next} className="size-4 text-faint group-hover:text-pink-ink" aria-hidden />
     </Link>
   );
 }
@@ -244,10 +226,10 @@ function QuickRule() {
           </Field>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" variant="primary" icon={Ban} busy={add.isPending} disabled={!value.trim()}>
+          <Button type="submit" variant="primary" icon={ICONS.block} busy={add.isPending} disabled={!value.trim()}>
             {t("spam.rules.lists.block")}
           </Button>
-          <Button icon={Check} disabled={!value.trim() || add.isPending} onClick={() => add.mutate("allow")}>
+          <Button icon={ICONS.done} disabled={!value.trim() || add.isPending} onClick={() => add.mutate("allow")}>
             {t("spam.rules.lists.allow")}
           </Button>
           <Button
@@ -276,7 +258,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
   const busiest = (top.data?.rules ?? []).filter((rule) => rule.hits > 0).slice(0, 5);
   const state = (on: boolean, label: string, detail?: string) => (
     <li className="flex items-center gap-2 text-[13px]">
-      <span className={clsx("size-2 shrink-0 rounded-full", on ? "bg-success" : "bg-faint")} aria-hidden />
+      <span className={cx("size-2 shrink-0 rounded-full", on ? "bg-success" : "bg-faint")} aria-hidden />
       <span className="font-semibold">{label}</span>
       <span className="text-muted">{detail ?? (on ? t("spam.overview.on") : t("spam.overview.off"))}</span>
     </li>
@@ -287,21 +269,21 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Tile
           to={rulesPath}
-          icon={ListFilter}
+          icon={ICONS.rules}
           label={t("spam.overview.tiles.all")}
           value={all.data?.total}
           tone="muted"
         />
         <Tile
           to={rulesLink(rulesPath, { list: "block" })}
-          icon={Ban}
+          icon={ICONS.block}
           label={t("spam.overview.tiles.block")}
           value={all.data?.lists.block ?? 0}
           tone="danger"
         />
         <Tile
           to={rulesLink(rulesPath, { list: "allow" })}
-          icon={Check}
+          icon={ICONS.done}
           label={t("spam.overview.tiles.allow")}
           value={all.data?.lists.allow ?? 0}
           tone="success"
@@ -315,7 +297,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
         />
         <Tile
           to={rulesLink(rulesPath, { state: "stale" })}
-          icon={Sparkles}
+          icon={ICONS.ai}
           label={t("spam.overview.tiles.stale")}
           value={unused.data?.total}
           tone="muted"
@@ -327,7 +309,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <Card
           title={t("spam.overview.busiestTitle")}
-          action={
+          aside={
             <Link
               to={rulesLink(rulesPath, { sort: "hits", desc: true })}
               className="text-[13px] font-semibold text-pink-ink hover:underline"
@@ -365,7 +347,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
         <div className="flex flex-col gap-5">
           <Card
             title={t("spam.overview.stateTitle")}
-            action={
+            aside={
               <Link to={PATHS.settings} className="text-[13px] font-semibold text-pink-ink hover:underline">
                 {t("spam.overview.change")}
               </Link>
@@ -391,7 +373,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
           </Card>
           <Card
             title={t("spam.bayes.title")}
-            action={
+            aside={
               <Link to={PATHS.learning} className="text-[13px] font-semibold text-pink-ink hover:underline">
                 {t("spam.overview.more")}
               </Link>
@@ -413,7 +395,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
       </div>
 
       <p className="flex items-start gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-        <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <SuiteIcon icon={BookOpen} className="mt-0.5 size-4 shrink-0" aria-hidden />
         {t("spam.overview.howItWorks")}
       </p>
     </>
@@ -450,7 +432,7 @@ export function AccountSpamPage({ tab = "rules" }: { tab?: AccountSpamTab }) {
       tabs={(Object.keys(ACCOUNT_PATHS) as AccountSpamTab[]).map((value) => ({
         value,
         to: ACCOUNT_PATHS[value],
-        icon: ICONS[value],
+        icon: KIND_ICONS[value],
         label: t(`spam.account.tabs.${value}`),
         count: value === "waiting" ? waiting : undefined,
       }))}
@@ -533,7 +515,7 @@ export function AdminSpamPage({ tab = "overview" }: { tab?: SpamTab }) {
       tabs={(Object.keys(PATHS) as SpamTab[]).map((value) => ({
         value,
         to: PATHS[value],
-        icon: ICONS[value],
+        icon: KIND_ICONS[value],
         label: t(`spam.admin.tabs.${value}`),
       }))}
     />

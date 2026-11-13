@@ -463,7 +463,7 @@ impl Backups {
 
     /// Takes [`LOCK_FILE`]: a backup prunes what no snapshot needs, and must not do that under a
     /// restore that is reading it. Held until the file is dropped; `busy` says who else has it.
-    fn hold(&self, busy: impl FnOnce() -> String) -> Result<std::fs::File, Error> {
+    pub fn hold(&self, busy: impl FnOnce() -> String) -> Result<std::fs::File, Error> {
         let file = std::fs::File::options()
             .create(true)
             .truncate(false)
@@ -756,6 +756,15 @@ impl Backups {
     ) -> Result<MailboxRestoreReport, Error> {
         let mut settings = self.settings().await?;
         let repo = self.open(&mut settings).await?;
+        // Nothing pins the snapshot between opening and restoring: a prune or new settings may
+        // have taken it away, and its objects with it.
+        if let Err(err) = repo.manifest(&self.mailbox_restore().snapshot).await {
+            repo.storage.close().await;
+            return Err(match err {
+                Error::Config(_) => Error::Config("the snapshot is no longer in the backup, open it again".into()),
+                other => other,
+            });
+        }
         let this = self.clone();
         let mut progress = move |state: MailboxProgress| {
             this.set_mailbox(|job| {

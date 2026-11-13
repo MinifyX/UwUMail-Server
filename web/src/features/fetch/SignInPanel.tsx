@@ -1,7 +1,6 @@
-import { ExternalLink, KeyRound, RotateCcw } from "lucide-react";
+import { Button, ICONS, Icon } from "@uwusuite/design";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { CopyButton } from "@/components/ui/Card";
+import { CopyButton } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import {
   api,
@@ -193,7 +192,7 @@ export function SignInPanel({
           rel="noreferrer noopener"
           className="inline-flex items-center justify-center gap-1.5 self-center rounded-full bg-pink-solid px-4 py-2 text-sm font-semibold text-on-pink hover:bg-pink-solid-hover"
         >
-          <ExternalLink className="size-4" aria-hidden />
+          <Icon icon={ICONS.openExternal} className="size-4" aria-hidden />
           {t("fetch.signIn.openPage", { page: device.verificationUri.replace(/^https:\/\//, "") })}
         </a>
         <p className="flex items-center justify-center gap-2 text-[12px] text-muted">
@@ -206,10 +205,10 @@ export function SignInPanel({
 
   return (
     <div className="flex flex-col gap-2">
-      <Button variant="primary" icon={failed ? RotateCcw : KeyRound} busy={starting} onClick={() => void start()}>
+      <Button variant="primary" icon={failed ? ICONS.reset : ICONS.secret} busy={starting} onClick={() => void start()}>
         {failed ? t("fetch.signIn.again") : (label ?? t("fetch.signIn.button", { provider: name }))}
       </Button>
-      {failed && <p className="text-[13px] text-danger">{failed}</p>}
+      {failed && <p className="text-[13px] text-danger-ink">{failed}</p>}
     </div>
   );
 }

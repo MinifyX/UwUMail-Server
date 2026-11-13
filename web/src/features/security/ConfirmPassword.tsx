@@ -1,8 +1,7 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { ApiError } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -121,13 +120,7 @@ export function usePasswordConfirmation() {
   };
   const dialog = (
     <>
-      <Dialog
-        open={pending !== null}
-        onClose={requestCancel}
-        closeOnOutsideClick={!dirty}
-        title={t("security.confirm.title")}
-        width="sm"
-      >
+      <Dialog open={pending !== null} onClose={requestCancel} title={t("security.confirm.title")} width="sm">
         {pending && (
           <PasswordForm pending={pending} onClose={close} onCancel={requestCancel} onDirtyChange={setDirty} />
         )}

@@ -53,7 +53,7 @@ async fn backup_and_restore_over_sftp() {
     let host_key = first.host_key.clone();
     assert!(host_key.starts_with("SHA256:"), "{host_key}");
     let key = RepoKey::generate();
-    let repo = Repository::open(Storage::Sftp(first), Some(key.clone()), 1).await.unwrap();
+    let repo = Repository::open(Storage::Sftp(Box::new(first)), Some(key.clone()), 1).await.unwrap();
     let report =
         uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000).await.unwrap();
     assert!(uwumail_backup::check(&repo, &report.snapshot).await.unwrap().is_empty());
@@ -63,7 +63,7 @@ async fn backup_and_restore_over_sftp() {
     assert!(matches!(Sftp::connect(&wrong).await, Err(uwumail_backup::Error::HostKeyChanged { .. })));
 
     let again = Sftp::connect(&target(Some(host_key))).await.unwrap();
-    let repo = Repository::open(Storage::Sftp(again), Some(key), 1).await.unwrap();
+    let repo = Repository::open(Storage::Sftp(Box::new(again)), Some(key), 1).await.unwrap();
     let restored = dir.path().join("restored");
     uwumail_backup::restore(&repo, &report.snapshot, &restored).await.unwrap();
     repo.storage.close().await;

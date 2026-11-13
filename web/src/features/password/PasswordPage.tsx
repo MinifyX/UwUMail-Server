@@ -1,11 +1,8 @@
+import { Button, IconButton, Field, TextInput, EmptyState, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, TextInput } from "@/components/ui/Field";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, needsSecondFactor, type LoginResult, type PasswordLinkInfo } from "@/lib/api";
@@ -58,7 +55,7 @@ export function PasswordPage({ token }: { token: string }) {
   if (invalid) {
     return wrapper(
       <EmptyState
-        scene="loadError"
+        art={<NyuScene name="loadError" />}
         title={t("password.invalid.title")}
         body={t("password.invalid.body")}
         action={
@@ -123,7 +120,7 @@ export function PasswordPage({ token }: { token: string }) {
               />
               <IconButton
                 size="sm"
-                icon={visible ? EyeOff : Eye}
+                icon={visible ? ICONS.hide : ICONS.show}
                 label={visible ? t("common.hidePassword") : t("common.showPassword")}
                 className="absolute top-1/2 right-1.5 -translate-y-1/2"
                 onClick={() => setVisible((value) => !value)}

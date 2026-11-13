@@ -171,6 +171,7 @@ impl Component {
         self.properties.iter().find(|p| p.name.eq_ignore_ascii_case(name))
     }
 
+    #[cfg(test)]
     pub fn property_mut(&mut self, name: &str) -> Option<&mut Property> {
         self.properties.iter_mut().find(|p| p.name.eq_ignore_ascii_case(name))
     }

@@ -311,7 +311,7 @@ mod tests {
         let after = store.account_modseq(mini).await.unwrap();
         store.dav_update_collection(mini, book.id, DavCollectionUpdate::default()).await.unwrap();
         assert_eq!(store.changes(mini, "AddressBook", after, 0).await.unwrap().updated, vec![book.id]);
-        assert!(store.dav_delete(mini, book.id, "nyu.vcf", None).await.unwrap());
+        assert!(store.dav_delete_by(None, mini, book.id, "nyu.vcf", None).await.unwrap());
         assert_eq!(store.changes(mini, "ContactCard", after, 0).await.unwrap().destroyed, vec![cards[0].id]);
     }
 

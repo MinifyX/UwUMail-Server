@@ -95,6 +95,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0086_emails_blob_index.sql"),
     include_str!("migrations/0087_change_marks.sql"),
     include_str!("migrations/0088_verification_rescanned.sql"),
+    include_str!("migrations/0089_queue_lease.sql"),
+    include_str!("migrations/0090_drop_duplicate_mailbox_index.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -163,7 +165,8 @@ fn migrate(conn: &mut Connection) -> Result<()> {
         tx.execute_batch(sql)?;
         tx.pragma_update(None, "user_version", (index + 1) as i64)?;
         tx.commit()?;
-        tracing::info!(version = index + 1, "applied database migration");
+        // warn, not info: update.sh greps for this line to decide on a rollback, also with log.level = "warn".
+        tracing::warn!(version = index + 1, "applied database migration");
     }
     // The version this installation started with, so the portal marks only what came with an
     // update as new. A database from before this setting was installed with an older version.

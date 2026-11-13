@@ -197,6 +197,55 @@ async fn calendars_are_shared_with_people_of_the_server() {
         )
         .await;
     assert_eq!(nobody["notUpdated"][&personal]["type"], "invalidProperties");
+
+    // A masked address is nobody to share with: it must not tell whose it is.
+    let policy = uwumail_store::DomainMaskedPolicy { mode: uwumail_store::MaskedMode::Own, ..Default::default() };
+    server.store.set_domain_masked_policy("example.org", policy).await.unwrap();
+    let nyu_number = server.account_id(NYU).await.trim_start_matches('a').parse().unwrap();
+    let masked =
+        server.store.create_masked_address(nyu_number, uwumail_store::NewMaskedAddress::default()).await.unwrap();
+    let masked = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &personal: { "shareWith": { &masked.email: { "mayReadItems": true } } } } }),
+        )
+        .await;
+    assert_eq!(masked["notUpdated"][&personal]["type"], "invalidProperties", "{masked}");
+    // A principal id with no account behind it is a field error, not a server failure.
+    let gone = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &personal: { "shareWith/p999999": { "mayReadItems": true } } } }),
+        )
+        .await;
+    assert_eq!(gone["notUpdated"][&personal]["type"], "invalidProperties", "{gone}");
+    assert_eq!(server.calendars(MINI).await[0]["shareWith"], Value::Null);
+
+    // Someone on another domain of this server is found by their address too.
+    server.store.create_domain("example.net").await.unwrap();
+    server
+        .store
+        .create_account(NewAccount {
+            address: "ami@example.net".into(),
+            display_name: "AMI".into(),
+            password: Some(PASSWORD.into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    let other = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &personal: { "shareWith": { "ami@example.net": { "mayReadItems": true } } } } }),
+        )
+        .await;
+    assert!(other["updated"].get(&personal).is_some(), "{other}");
+    assert_eq!(server.calendars(MINI).await[0]["shareWith"].as_object().unwrap().len(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -102,6 +102,7 @@
     "open": "打开账户菜单",
     "appearance": "外观与语言",
     "logout": "退出登录",
+    "logoutFailed": "退出登录失败，请重试。",
     "role": {
       "admin": "管理员",
       "user": "成员"
@@ -124,6 +125,12 @@
       "system": "跟随系统",
       "light": "浅色",
       "dark": "深色"
+    },
+    "contrast": {
+      "label": "高对比度",
+      "system": "跟随系统",
+      "normal": "标准",
+      "high": "高"
     },
     "motion": {
       "label": "动画",

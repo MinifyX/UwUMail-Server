@@ -1,15 +1,12 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, Field, Segmented, Select, TextInput, EmptyState, Card, ICONS, cx } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
-import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type SpamLogAction, type SpamLogEntry, type SpamLogView } from "@/lib/api";
+import { useErrorText } from "@/lib/errors";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { usePhone } from "@/lib/media";
 import { toast } from "@/state/toasts";
@@ -28,12 +25,12 @@ const ACTIONS: (SpamLogAction | "all")[] = [
 /** Held-back mail is what the history is for, so it is the one that stands out. */
 const TONE: Record<SpamLogAction, string> = {
   delivered: "text-muted",
-  junk: "text-warning",
-  greylist: "text-warning",
-  reject: "text-danger",
-  dmarc: "text-danger",
-  blocked: "text-danger",
-  virus: "text-danger",
+  junk: "text-warning-ink",
+  greylist: "text-warning-ink",
+  reject: "text-danger-ink",
+  dmarc: "text-danger-ink",
+  blocked: "text-danger-ink",
+  virus: "text-danger-ink",
   settled: "text-muted",
 };
 
@@ -110,9 +107,9 @@ function EntryDialog({ entry, onClose }: { entry: SpamLogEntry | null; onClose: 
                       <span className="font-mono text-[12px]">{hit.rule}</span>
                       {hit.detail && <span className="min-w-0 flex-1 text-[12px] text-muted">{hit.detail}</span>}
                       <span
-                        className={clsx(
+                        className={cx(
                           "ml-auto text-[13px] font-semibold tabular-nums",
-                          hit.points > 0 ? "text-danger" : "text-success",
+                          hit.points > 0 ? "text-danger-ink" : "text-success-ink",
                         )}
                       >
                         {hit.points > 0 ? "+" : ""}
@@ -142,6 +139,7 @@ function EntryDialog({ entry, onClose }: { entry: SpamLogEntry | null; onClose: 
 /** What the filter decided, message by message. The one place that says who writes to whom. */
 export function SpamLogCard() {
   const { t, i18n } = useT();
+  const errorText = useErrorText();
   const queryClient = useQueryClient();
   const [action, setAction] = useState<SpamLogAction | "all">("all");
   const [search, setSearch] = useState("");
@@ -166,6 +164,7 @@ export function SpamLogCard() {
       toast(t("spam.log.cleared", { count: result.removed }), "success");
       void queryClient.invalidateQueries({ queryKey: ["admin", "spam", "log"] });
     },
+    onError: (error) => toast(errorText(error), "error"),
   });
 
   const body = () => {
@@ -214,7 +213,12 @@ export function SpamLogCard() {
         />
 
         {entries.length === 0 ? (
-          <EmptyState compact scene="search" title={t("spam.log.empty.title")} body={t("spam.log.empty.body")} />
+          <EmptyState
+            compact
+            art={<NyuScene name="search" />}
+            title={t("spam.log.empty.title")}
+            body={t("spam.log.empty.body")}
+          />
         ) : (
           <ul className="flex flex-col">
             {entries.map((entry) => (
@@ -225,7 +229,7 @@ export function SpamLogCard() {
                   className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-control border-b border-hairline px-2 py-2 text-left hover:bg-pink-tint/40"
                 >
                   <span className="text-[12px] text-muted tabular-nums">{formatDate(entry.at, i18n.language)}</span>
-                  <span className={clsx("text-[12px] font-semibold", TONE[entry.action])}>
+                  <span className={cx("text-[12px] font-semibold", TONE[entry.action])}>
                     {t(`spam.log.actions.${entry.action}`)}
                   </span>
                   <span className="min-w-0 flex-1 basis-40 text-[13px] break-words">
@@ -250,7 +254,7 @@ export function SpamLogCard() {
               since: oldest ? formatDate(oldest, i18n.language) : "–",
             })}
           </p>
-          <Button size="sm" variant="danger" icon={Trash2} onClick={() => setClearing(true)}>
+          <Button size="sm" variant="danger" icon={ICONS.delete} onClick={() => setClearing(true)}>
             {t("spam.log.clear")}
           </Button>
         </div>

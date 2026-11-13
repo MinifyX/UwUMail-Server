@@ -1,4 +1,4 @@
-import clsx from "clsx";
+import { cx } from "@uwusuite/design";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useT } from "@/i18n";
 import type { StatsRange } from "@/lib/api";
@@ -151,10 +151,7 @@ export function BarChart({
                 {value > 0 && (
                   <path
                     d={column(x, top, bar, TOP + plotHeight - top)}
-                    className={clsx(
-                      "fill-chart transition-opacity",
-                      active !== null && active !== index && "opacity-60",
-                    )}
+                    className={cx("fill-chart transition-opacity", active !== null && active !== index && "opacity-60")}
                   />
                 )}
                 {index % every === 0 || index === points.length - 1 ? (

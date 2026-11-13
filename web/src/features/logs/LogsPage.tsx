@@ -1,10 +1,7 @@
-import clsx from "clsx";
-import { Pause, Play, Search } from "lucide-react";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, Segmented, TextInput, EmptyState, Pill, ICONS, Icon, cx } from "@uwusuite/design";
+import { Pause } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Button } from "@/components/ui/Button";
-import { Segmented, TextInput } from "@/components/ui/Field";
-import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogCategory, type LogLine } from "@/lib/api";
 import { LOG_CATEGORIES, toggleCategory } from "./blocks";
@@ -13,9 +10,9 @@ type Level = "all" | "warn" | "error";
 const MAX_LINES = 1000;
 
 const LEVEL_STYLES: Record<LogLine["level"], string> = {
-  error: "text-danger",
-  warn: "text-warning",
-  info: "text-success",
+  error: "text-danger-ink",
+  warn: "text-warning-ink",
+  info: "text-success-ink",
   debug: "text-muted",
   trace: "text-faint",
 };
@@ -81,7 +78,8 @@ export function LogsPage() {
         />
         <label className="relative w-full sm:w-64">
           <span className="sr-only">{t("logs.search")}</span>
-          <Search
+          <Icon
+            icon={ICONS.search}
             className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint"
             aria-hidden
           />
@@ -93,7 +91,7 @@ export function LogsPage() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <Button className="sm:ml-auto" icon={live ? Pause : Play} onClick={() => setLive((value) => !value)}>
+        <Button className="sm:ml-auto" icon={live ? Pause : ICONS.start} onClick={() => setLive((value) => !value)}>
           {live ? t("logs.pause") : t("logs.resume")}
         </Button>
       </div>
@@ -110,7 +108,7 @@ export function LogsPage() {
       </div>
 
       {unavailable ? (
-        <EmptyState compact scene="loadError" title={t("logs.unavailable")} />
+        <EmptyState compact art={<NyuScene name="loadError" />} title={t("logs.unavailable")} />
       ) : (
         <div className="max-h-[calc(100svh-340px)] min-h-[320px] overflow-auto rounded-card border border-hairline bg-surface p-3 font-mono text-[12px] leading-5">
           {lines.length === 0 ? (
@@ -119,7 +117,7 @@ export function LogsPage() {
             lines.map((line) => (
               <div key={line.seq} className="flex gap-3 rounded px-1 hover:bg-elevated">
                 <span className="shrink-0 text-faint">{time.format(new Date(line.at))}</span>
-                <span className={clsx("w-12 shrink-0 font-semibold uppercase", LEVEL_STYLES[line.level])}>
+                <span className={cx("w-12 shrink-0 font-semibold uppercase", LEVEL_STYLES[line.level])}>
                   {line.level}
                 </span>
                 <span className="min-w-0 break-words">

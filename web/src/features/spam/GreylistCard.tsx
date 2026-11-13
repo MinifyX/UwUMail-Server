@@ -1,11 +1,9 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Trash2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type GreylistDecision, type GreylistHold, type GreylistView } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
@@ -53,13 +51,13 @@ function Waiting({
         )}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" icon={Check} busy={busy} onClick={() => onDecide("deliver")}>
+        <Button variant="primary" icon={ICONS.done} busy={busy} onClick={() => onDecide("deliver")}>
           {t("spam.greylist.decide.deliver")}
         </Button>
-        <Button icon={Trash2} busy={busy} onClick={() => onDecide("discard")}>
+        <Button icon={ICONS.delete} busy={busy} onClick={() => onDecide("discard")}>
           {t("spam.greylist.decide.discard")}
         </Button>
-        <Button icon={TriangleAlert} busy={busy} onClick={() => onDecide("discard-spam")}>
+        <Button icon={ICONS.warning} busy={busy} onClick={() => onDecide("discard-spam")}>
           {t("spam.greylist.decide.discardSpam")}
         </Button>
       </div>
@@ -92,7 +90,7 @@ function ConfirmDiscard({
           </p>
           <div className="flex flex-wrap justify-end gap-2">
             <Button onClick={onCancel}>{t("spam.greylist.confirm.keep")}</Button>
-            <Button variant="danger" icon={Trash2} onClick={onConfirm}>
+            <Button variant="danger" icon={ICONS.delete} onClick={onConfirm}>
               {t("spam.greylist.confirm.discard")}
             </Button>
           </div>
@@ -148,7 +146,7 @@ export function GreylistCard() {
         {!enabled && <p className="rounded-control bg-canvas px-3 py-2 text-[13px]">{t("spam.greylist.off")}</p>}
         {waiting.length === 0 ? (
           <EmptyState
-            scene="done"
+            art={<NyuScene name="done" />}
             compact
             title={t("spam.greylist.empty")}
             body={enabled ? t("spam.greylist.emptyHint") : undefined}

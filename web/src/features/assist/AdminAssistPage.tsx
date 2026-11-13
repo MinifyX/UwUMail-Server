@@ -1,11 +1,9 @@
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, IconButton, Field, Select, Toggle, EmptyState, Card, ICONS } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pause, Play, Plus, Trash2 } from "lucide-react";
+import { Pause } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useDomains, usePeople } from "@/features/people/queries";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
@@ -176,7 +174,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
         {view.providers.length === 0 ? (
           <EmptyState
             compact
-            scene="addons"
+            art={<NyuScene name="addons" />}
             title={t("assist.admin.providersEmptyTitle")}
             body={t("assist.admin.providersEmpty")}
           />
@@ -231,7 +229,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                   </span>
                   <div className="flex items-center gap-1.5">
                     <IconButton
-                      icon={provider.enabled ? Pause : Play}
+                      icon={provider.enabled ? Pause : ICONS.start}
                       label={provider.enabled ? t("assist.admin.disable") : t("assist.admin.enable")}
                       onClick={() => setEnabled.mutate({ id: provider.id, enabled: !provider.enabled })}
                     />
@@ -239,7 +237,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                       {t("assist.provider.edit")}
                     </Button>
                     <IconButton
-                      icon={Trash2}
+                      icon={ICONS.delete}
                       label={t("assist.provider.remove")}
                       onClick={() => {
                         if (window.confirm(t("assist.admin.removeConfirm", { name: provider.name }))) {
@@ -276,7 +274,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
           </p>
         )}
         <div className="flex justify-end">
-          <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
+          <Button variant="primary" icon={ICONS.add} onClick={() => setAdding(true)}>
             {t("assist.admin.addProvider")}
           </Button>
         </div>

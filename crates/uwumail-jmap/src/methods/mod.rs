@@ -483,6 +483,9 @@ pub fn if_in_state(args: &Value, state: &str) -> MethodResult<()> {
     }
 }
 
+/// Changes one /changes answer lists at most; clients follow `hasMoreChanges` for the rest.
+const MAX_CHANGES: usize = 5000;
+
 /// Shared /changes implementation over the store's change log.
 async fn changes(ctx: &Ctx<'_>, args: &Value, kind: &str, prefix: char) -> MethodResult<Value> {
     let since = args
@@ -491,10 +494,10 @@ async fn changes(ctx: &Ctx<'_>, args: &Value, kind: &str, prefix: char) -> Metho
         .ok_or_else(|| MethodError::invalid_arguments("sinceState is required"))?;
     let since: i64 = since.parse().map_err(|_| MethodError::kind("cannotCalculateChanges"))?;
     let max_changes = match args.get("maxChanges") {
-        None | Some(Value::Null) => 0,
+        None | Some(Value::Null) => MAX_CHANGES,
         Some(value) => match value.as_u64() {
             Some(0) | None => return Err(MethodError::invalid_arguments("maxChanges must be a positive integer")),
-            Some(max) => max as usize,
+            Some(max) => (max as usize).min(MAX_CHANGES),
         },
     };
     let Changes { mut created, mut updated, mut destroyed, new_state, has_more } =

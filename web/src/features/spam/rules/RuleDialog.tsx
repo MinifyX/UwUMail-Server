@@ -1,9 +1,8 @@
+import { Button, Field, Segmented, Select, TextInput, ICONS, Icon } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
-import { Ban, Check, Hash, UserRound } from "lucide-react";
+import { Hash, UserRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type NewRule, type Rule, type RuleChange, type SenderKind } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -104,7 +103,6 @@ export function RuleDialog({
       open={open}
       onClose={onClose}
       title={editing ? t("spam.rules.dialog.editTitle") : t("spam.rules.dialog.newTitle")}
-      closeOnOutsideClick={!value}
     >
       <form className="flex flex-col gap-4 px-6 pt-2 pb-6" onSubmit={submit}>
         {!editing && (
@@ -133,9 +131,9 @@ export function RuleDialog({
                 }`}
               >
                 {option === "block" ? (
-                  <Ban className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+                  <Icon icon={ICONS.block} className="mt-0.5 size-4 shrink-0 text-danger-ink" aria-hidden />
                 ) : (
-                  <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+                  <Icon icon={ICONS.done} className="mt-0.5 size-4 shrink-0 text-success-ink" aria-hidden />
                 )}
                 <span className="flex flex-col gap-0.5">
                   <span className="text-sm font-semibold">{t(`spam.rules.lists.${option}`)}</span>
@@ -240,12 +238,12 @@ export function RuleDialog({
         {rule && (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[12px] text-muted">
             <span className="inline-flex items-center gap-1">
-              <Hash className="size-3" aria-hidden />
+              <Icon icon={Hash} className="size-3" aria-hidden />
               {t("spam.rules.hits", { count: rule.hits })}
             </span>
             {rule.createdBy && (
               <span className="inline-flex items-center gap-1">
-                <UserRound className="size-3" aria-hidden />
+                <Icon icon={UserRound} className="size-3" aria-hidden />
                 {t("spam.rules.createdBy", { name: rule.createdBy })}
               </span>
             )}
@@ -253,7 +251,7 @@ export function RuleDialog({
         )}
 
         {save.isError && (
-          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger">
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] text-danger-ink">
             {errorText(save.error)}
           </p>
         )}

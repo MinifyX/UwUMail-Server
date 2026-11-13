@@ -1,8 +1,7 @@
-import clsx from "clsx";
+import { Segmented, cx } from "@uwusuite/design";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Dialog } from "@/components/ui/Dialog";
-import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DmarcReportRow, ReportDetail, ReportKind, TlsReportFailure } from "@/lib/api";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
@@ -35,7 +34,7 @@ function DmarcRowCard({ row }: { row: DmarcReportRow }) {
             {t("reports.ours")}
           </span>
         )}
-        <span className={clsx("text-[12px] font-semibold", aligned ? "text-success" : "text-danger")}>
+        <span className={cx("text-[12px] font-semibold", aligned ? "text-success-ink" : "text-danger-ink")}>
           {aligned ? t("reports.genuine") : t("reports.notGenuine")}
         </span>
         <span className="ml-auto text-[13px] font-bold tabular-nums">{formatNumber(row.messages, i18n.language)}</span>
@@ -76,7 +75,7 @@ function TlsFailureCard({ failure }: { failure: TlsReportFailure }) {
   return (
     <div className="rounded-control bg-canvas px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-semibold text-danger">{failure.resultType}</span>
+        <span className="text-[13px] font-semibold text-danger-ink">{failure.resultType}</span>
         <span className="ml-auto text-[13px] font-bold tabular-nums">
           {formatNumber(failure.sessions, i18n.language)}
         </span>
@@ -111,7 +110,7 @@ function Detail({ detail }: { detail: ReportDetail }) {
         {report.policy && <Line label={t("reports.policy")}>{report.policy}</Line>}
         {!report.authenticated && (
           <Line label={t("reports.sender")}>
-            <span className="text-warning">{t("reports.unauthenticated")}</span>
+            <span className="text-warning-ink">{t("reports.unauthenticated")}</span>
           </Line>
         )}
       </div>
@@ -183,7 +182,9 @@ export function ReportList({ domain }: { domain: string }) {
                 <span className="text-[12px] text-muted">{formatDate(entry.endAt, i18n.language)}</span>
                 <span className="text-[12px] tabular-nums">
                   {formatNumber(entry.good, i18n.language)}
-                  {entry.bad > 0 && <span className="text-danger"> · {formatNumber(entry.bad, i18n.language)}</span>}
+                  {entry.bad > 0 && (
+                    <span className="text-danger-ink"> · {formatNumber(entry.bad, i18n.language)}</span>
+                  )}
                 </span>
               </button>
             </li>

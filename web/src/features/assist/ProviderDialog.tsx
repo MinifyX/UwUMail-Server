@@ -1,10 +1,9 @@
+import { Button, Field, Segmented, Select, TextInput, Toggle, ICONS, Icon } from "@uwusuite/design";
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, PlugZap } from "lucide-react";
+import { PlugZap } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -282,7 +281,7 @@ function ProviderForm({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 self-start font-semibold text-pink hover:underline"
                 >
-                  <ExternalLink className="size-3.5" aria-hidden />
+                  <Icon icon={ICONS.openExternal} className="size-3.5" aria-hidden />
                   {t("assist.form.keyWhere", { kind: kind.name })}
                 </a>
               )}
@@ -382,7 +381,7 @@ function ProviderForm({
       )}
 
       {problem && (
-        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger">
+        <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-[13px] break-words text-danger-ink">
           {problem}
         </p>
       )}
@@ -564,7 +563,7 @@ function AdminFields({
             description={t("assist.form.foreignMailHint")}
           />
           {errorOf("features") && (
-            <p role="alert" className="text-[13px] text-danger">
+            <p role="alert" className="text-[13px] text-danger-ink">
               {errorOf("features")}
             </p>
           )}
@@ -630,7 +629,6 @@ export function ProviderDialog({ open, onClose, ...props }: Props & { open: bool
       <Dialog
         open={open}
         onClose={requestClose}
-        closeOnOutsideClick={!dirty}
         title={props.provider ? t("assist.form.editTitle") : t("assist.form.addTitle")}
       >
         <ProviderForm {...props} onClose={close} onCancel={requestClose} onDirtyChange={setDirty} />
