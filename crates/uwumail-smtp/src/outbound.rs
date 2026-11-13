@@ -227,22 +227,37 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
 
 /// Mail queued by an account that may now only send to addresses on this server stays here: the
 /// switch holds for what is already waiting too, and the recipients fail as if the server
-/// elsewhere had refused them (docs/jmap-sending.md). System mail without an account goes on.
+/// elsewhere had refused them (docs/jmap-sending.md). The same goes for an account that was
+/// disabled, deleted or lost SMTP since; a suspended one's mail waits for the suspension to end
+/// and expires otherwise (docs/outbound-abuse.md). System mail without an account goes on.
 async fn held_inside(ctx: &Context, message: &QueuedMessage, recipients: &[QueueRecipient]) -> Option<Vec<Outcome>> {
     let account_id = message.account_id?;
-    match ctx.store.account_internal_only(account_id).await {
-        Ok(false) => None,
-        Ok(true) => Some(
+    let state = async {
+        let account = ctx.store.account_by_id(account_id).await?;
+        let suspended = ctx.store.send_suspension(account_id, now()).await?.is_some();
+        Ok::<_, uwumail_store::StoreError>((account, suspended))
+    };
+    let refuse = |why: &str| {
+        let outcomes =
+            recipients.iter().map(|recipient| Outcome::Failed(format!("550 5.7.1 <{}>: {why}", recipient.address)));
+        Some(outcomes.collect())
+    };
+    match state.await {
+        // An account that is gone entirely counts as not held, as before.
+        Ok((None, _)) => None,
+        Ok((Some(account), _)) if account.disabled || account.deleted_at.is_some() || !account.protocols.smtp => {
+            refuse("This account may not send to other servers")
+        }
+        Ok((Some(account), _)) if account.internal_only => {
+            refuse("This account may only send to addresses on this server")
+        }
+        Ok((Some(_), true)) => Some(
             recipients
                 .iter()
-                .map(|recipient| {
-                    let address = &recipient.address;
-                    Outcome::Failed(format!(
-                        "550 5.7.1 <{address}>: This account may only send to addresses on this server"
-                    ))
-                })
+                .map(|_| Outcome::Deferred("451 4.7.1 This account may not send to other servers for now".into()))
                 .collect(),
         ),
+        Ok((Some(_), false)) => None,
         Err(err) => {
             tracing::error!(%err, message = message.id, "checking the sender of queued mail failed");
             Some(recipients.iter().map(|_| Outcome::Deferred(format!("451 4.3.0 {err}"))).collect())
