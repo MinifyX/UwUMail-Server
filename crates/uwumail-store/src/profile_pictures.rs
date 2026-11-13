@@ -394,6 +394,19 @@ impl Store {
         .await
     }
 
+    /// Every account's picture hash with the visibility the account chose, for the admins' list.
+    pub async fn account_picture_hashes(&self) -> Result<std::collections::HashMap<i64, (String, String)>> {
+        self.read(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT p.account_id, p.hash, acc.picture_visibility FROM profile_pictures p
+                 JOIN accounts acc ON acc.id = p.account_id",
+            )?;
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
     /// The logo of a domain, without its bytes.
     pub async fn domain_logo(&self, domain_id: i64) -> Result<Option<PictureMeta>> {
         self.read(move |conn| meta(conn, PictureOwner::Domain(domain_id))).await

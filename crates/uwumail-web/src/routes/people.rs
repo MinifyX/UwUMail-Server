@@ -64,7 +64,14 @@ fn link_json(token: &str, expires_at: i64) -> Value {
 
 pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
     let people = web.store().people().await?;
-    Ok(Json(Value::Array(people.iter().map(person_json).collect())))
+    let pictures = web.store().account_picture_hashes().await?;
+    let list = people.iter().map(|person| {
+        let mut value = person_json(person);
+        let url = super::pictures::admin_picture_url(&person.account, pictures.get(&person.account.id));
+        value["picture"] = json!(url);
+        value
+    });
+    Ok(Json(Value::Array(list.collect())))
 }
 
 pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<String>) -> ApiResult<Json<Value>> {
@@ -73,6 +80,9 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
     let app_passwords = web.store().app_passwords(person.account.id).await?.len();
     let forwarding = web.store().forwarding(person.account.id).await?;
     let mut value = person_json(&person);
+    let profile = web.store().profile_settings(person.account.id).await?;
+    let picture = profile.picture.map(|meta| (meta.hash, profile.visibility.as_str().to_owned()));
+    value["picture"] = json!(super::pictures::admin_picture_url(&person.account, picture.as_ref()));
     value["security"] = json!({
         "secondFactor": security.second_factor,
         "totp": security.totp,

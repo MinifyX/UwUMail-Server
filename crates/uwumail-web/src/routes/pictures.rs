@@ -151,6 +151,19 @@ fn service_file(login: &str) -> String {
     format!("/api/admin/people/{}/picture/file", urlencode(login))
 }
 
+/// What admins may see of an account's picture: a service's always (they choose it), a person's
+/// only when the person shows it to people here.
+fn admin_may_see(account: &Account, visibility: &str) -> bool {
+    account.is_service() || visibility != "off"
+}
+
+/// Where the admins' list loads an account's picture, or `None` for the blob.
+pub fn admin_picture_url(account: &Account, picture: Option<&(String, String)>) -> Option<String> {
+    let (hash, visibility) = picture?;
+    admin_may_see(account, visibility)
+        .then(|| format!("{}?v={}", service_file(&account.login), &hash[..16.min(hash.len())]))
+}
+
 /// Enough percent-encoding for an address in a path.
 fn urlencode(value: &str) -> String {
     value
@@ -174,7 +187,11 @@ pub async fn service_picture(
 }
 
 pub async fn service_file_get(State(web): State<Web>, _admin: Admin, Path(login): Path<String>) -> ApiResult<Response> {
-    let account = service(&web, &login).await?;
+    let account = web.store().account(&login).await?.ok_or_else(|| ApiError::NotFound(format!("account {login}")))?;
+    let visibility = web.store().profile_settings(account.id).await?.visibility;
+    if !admin_may_see(&account, visibility.as_str()) {
+        return Ok(file_response(None));
+    }
     Ok(file_response(web.store().picture(PictureOwner::Account(account.id)).await?))
 }
 

@@ -144,6 +144,27 @@ async fn my_own_picture() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn admins_see_pictures_people_show() {
+    let (_dir, _store, app) = setup().await;
+    let nyu = login(&app, "nyu@example.org").await;
+    let mini = login(&app, "mini@example.org").await;
+    send(&app, "PUT", "/api/account/picture", sample(64, 64, "png"), &mini).await;
+    let listed = |list: Value| {
+        list.as_array().unwrap().iter().find(|p| p["login"] == "mini@example.org").unwrap()["picture"].clone()
+    };
+
+    let url = listed(send(&app, "GET", "/api/admin/people", vec![], &nyu).await.json());
+    let url = url.as_str().unwrap().to_owned();
+    assert!(url.starts_with("/api/admin/people/mini@example.org/picture/file?v="), "{url}");
+    assert_eq!(send(&app, "GET", &url, vec![], &nyu).await.status, StatusCode::OK);
+
+    // Hidden from people here means hidden from admins too.
+    send(&app, "PATCH", "/api/account/picture", br#"{"visibility":"off"}"#.to_vec(), &mini).await;
+    assert_eq!(listed(send(&app, "GET", "/api/admin/people", vec![], &nyu).await.json()), Value::Null);
+    assert_eq!(send(&app, "GET", &url, vec![], &nyu).await.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn admins_set_pictures_for_services_groups_and_domains() {
     let (_dir, store, app) = setup().await;
     let nyu = login(&app, "nyu@example.org").await;
