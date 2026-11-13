@@ -1,6 +1,6 @@
 //! The delivery worker: takes due messages from the queue and hands them to other servers.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
@@ -133,6 +133,7 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
     let mut failed = Vec::new();
     let mut delayed = Vec::new();
     let mut unknown_user = false;
+    let mut unrecorded = HashSet::new();
     let hold_until = message.expires_at.min(message.created_at + HOLD_SECS);
     for (recipient, outcome) in recipients.iter().zip(outcomes) {
         let result = match &outcome {
@@ -184,13 +185,21 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
         };
         if let Err(err) = result {
             tracing::error!(%err, recipient = recipient.id, "updating the queue failed");
+            // A deferral that was not written is just tried again; a delivery must not be.
+            if matches!(outcome, Outcome::Delivered(_) | Outcome::Failed(_)) {
+                unrecorded.insert(recipient.id);
+            }
         }
     }
 
     {
+        // shortcut: an outcome the store did not take stays in flight, so this process does not
+        // try that recipient again; a restart does. Record outcomes in one transaction if that bites.
         let mut inflight = ctx.inflight.lock().expect("inflight set poisoned");
         for recipient in &recipients {
-            inflight.remove(&recipient.id);
+            if !unrecorded.contains(&recipient.id) {
+                inflight.remove(&recipient.id);
+            }
         }
     }
 
