@@ -180,9 +180,10 @@ pub async fn create(
     }
     // Nobody signs in as a service, so it gets neither a password nor an invitation.
     let invite = new.password.is_none() && !new.service;
+    // Service wins over admin, as in `update`: the password and invitation above follow `service`.
     let role = match (new.admin, new.service) {
-        (true, _) => Role::Admin,
         (_, true) => Role::Service,
+        (true, _) => Role::Admin,
         _ => Role::User,
     };
     let account = web
