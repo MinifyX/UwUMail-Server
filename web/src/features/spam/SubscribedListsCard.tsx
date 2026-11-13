@@ -1,10 +1,9 @@
+import { Button, IconButton, Field, Select, TextInput, Toggle } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type WordSource, type WordsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

@@ -1,3 +1,4 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -19,9 +20,7 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { Field, TextInput } from "@/components/ui/Field";
 import { Tabs } from "@/components/ui/Tabs";
 import {
   ANTIVIRUS_SETTING_KEYS,

@@ -1,7 +1,7 @@
+import { Button } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LockOpen } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";

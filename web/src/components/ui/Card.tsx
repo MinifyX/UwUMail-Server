@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { Check, Copy, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "@/i18n";
-import { IconButton } from "./Button";
+import { IconButton } from "@uwusuite/design";
 
 export function Card({
   title,

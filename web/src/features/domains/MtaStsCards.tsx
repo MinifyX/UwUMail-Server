@@ -1,10 +1,9 @@
+import { Button, Segmented } from "@uwusuite/design";
 import clsx from "clsx";
 import { Lightbulb, ShieldCheck } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card, CopyButton } from "@/components/ui/Card";
-import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainDetail, MtaStsMode } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";

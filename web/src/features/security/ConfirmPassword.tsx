@@ -1,8 +1,7 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { ApiError } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

@@ -1,8 +1,8 @@
+import { Field, Select } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send } from "lucide-react";
 import { useState } from "react";
 import { Card } from "@/components/ui/Card";
-import { Field, Select } from "@/components/ui/Field";
 import { useSession } from "@/features/session/session";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";

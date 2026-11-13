@@ -1,9 +1,8 @@
+import { Button, Segmented, TextInput } from "@uwusuite/design";
 import clsx from "clsx";
 import { Pause, Play, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Button } from "@/components/ui/Button";
-import { Segmented, TextInput } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogCategory, type LogLine } from "@/lib/api";

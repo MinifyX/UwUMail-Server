@@ -1,11 +1,10 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { CircleCheck, CircleHelp, CircleX, Cloud, Info, Mail, Send, ShieldCheck, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type DomainReport, type ServerCheck, type SettingsView, type TestMailSent } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";

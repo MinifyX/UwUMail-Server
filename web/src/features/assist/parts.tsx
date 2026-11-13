@@ -1,7 +1,7 @@
+import { Select, TextInput } from "@uwusuite/design";
 import clsx from "clsx";
 import { AlertTriangle, FlaskConical, X } from "lucide-react";
 import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { formatNumber } from "@/lib/format";
 import {

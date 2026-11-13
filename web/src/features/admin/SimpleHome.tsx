@@ -1,9 +1,9 @@
+import { Button } from "@uwusuite/design";
 import clsx from "clsx";
 import { ChevronRight, DatabaseBackup, Globe, RotateCw, Send, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Nyu } from "@/components/nyu/Nyu";
-import { Button } from "@/components/ui/Button";
 import { useT } from "@/i18n";
 import { api, type Health, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

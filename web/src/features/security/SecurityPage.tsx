@@ -1,9 +1,8 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { History, LogOut, MonitorSmartphone } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type SecurityView, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

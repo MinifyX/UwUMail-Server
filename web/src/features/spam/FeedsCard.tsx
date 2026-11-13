@@ -1,7 +1,6 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Field, TextInput } from "@/components/ui/Field";
 import { Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import { api, type FeedStatus, type FeedsView, type SettingsView } from "@/lib/api";

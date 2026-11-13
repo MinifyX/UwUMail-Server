@@ -1,8 +1,7 @@
+import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
 import { Forward, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { Button, IconButton } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainDetail, ForwardAddress } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

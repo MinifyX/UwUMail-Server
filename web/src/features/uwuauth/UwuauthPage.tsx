@@ -1,11 +1,10 @@
+import { Button, Field, TextInput, Toggle } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, ExternalLink, Link2, Unlink } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card, CopyButton } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput, Toggle } from "@/components/ui/Field";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { api, type UwuauthView } from "@/lib/api";

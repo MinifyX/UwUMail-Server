@@ -1,10 +1,9 @@
+import { Button, IconButton, Field, Select, TextInput, Toggle } from "@uwusuite/design";
 import { Check, Copy, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import { absoluteUrl, type PasswordLinkCreated } from "@/lib/api";

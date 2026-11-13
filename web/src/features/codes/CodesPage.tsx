@@ -1,8 +1,9 @@
+import { Segmented, Toggle } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Copy, KeyRound, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { Segmented, SettingRow, Toggle } from "@/components/ui/Field";
+import { SettingRow } from "@/components/ui/SettingRow";
 import { Hint } from "@/components/ui/Hint";
 import { useSession } from "@/features/session/session";
 import { useT } from "@/i18n";
@@ -93,10 +94,9 @@ export function CodesPage() {
               label={t("codes.cleanup.label")}
               description={t(`codes.cleanup.description.${settings.cleanup}`)}
             >
-              {({ describedBy }) => (
+              {() => (
                 <Segmented
                   label={t("codes.cleanup.label")}
-                  describedBy={describedBy}
                   disabled={settings.saving}
                   value={settings.cleanup}
                   onChange={(cleanup) => settings.set({ cleanup })}

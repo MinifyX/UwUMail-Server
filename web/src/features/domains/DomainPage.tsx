@@ -1,8 +1,7 @@
+import { Button, IconButton, Field, Select, Toggle } from "@uwusuite/design";
 import { ArrowLeft, Globe, Info, KeyRound, RefreshCw, Trash2, X } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { ApiError, type DomainDetail } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";

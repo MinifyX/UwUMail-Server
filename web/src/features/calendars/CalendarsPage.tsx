@@ -1,10 +1,9 @@
+import { Button, Field, Select, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookUser, CalendarDays, LogOut, RefreshCw, Rss, Share2, Trash2, Unlink, UserMinus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { Field, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import {
   api,

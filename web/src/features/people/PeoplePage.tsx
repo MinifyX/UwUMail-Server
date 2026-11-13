@@ -1,10 +1,9 @@
+import { Button, Select, TextInput } from "@uwusuite/design";
 import clsx from "clsx";
 import { Search, UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Select, TextInput } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus, Session } from "@/lib/api";

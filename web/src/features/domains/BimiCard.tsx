@@ -1,11 +1,10 @@
+import { Button, Field, Segmented, TextInput, Toggle } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { ArrowUp, FileUp, Image, Info, RefreshCw, Save, TriangleAlert, Trash2, Upload } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card, KeyValue } from "@/components/ui/Card";
-import { Field, Segmented, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, ApiError, type BimiView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

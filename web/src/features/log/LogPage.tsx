@@ -1,10 +1,10 @@
+import { Button } from "@uwusuite/design";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { TFunction } from "i18next";
 import { ChevronDown, History } from "lucide-react";
 import clsx from "clsx";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type AuditRecord, type MaskedMode } from "@/lib/api";

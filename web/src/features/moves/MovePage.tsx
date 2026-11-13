@@ -1,3 +1,4 @@
+import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -14,10 +15,8 @@ import {
 } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput } from "@/components/ui/Field";
 import { CHECK_STYLES } from "@/features/domains/DnsBits";
 import { useT } from "@/i18n";
 import {

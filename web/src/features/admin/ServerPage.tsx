@@ -1,7 +1,7 @@
+import { Button } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftRight, ChartColumn, DatabaseBackup, LayoutDashboard, MailWarning, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@/components/ui/Button";
 import { StatusDot } from "@/components/ui/Pill";
 import { TabbedPage } from "@/components/ui/TabbedPage";
 import { BackupsPage } from "@/features/backups/BackupsPage";

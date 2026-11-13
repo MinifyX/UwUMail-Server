@@ -1,3 +1,5 @@
+import { BUTTON_SIZES, BUTTON_VARIANTS, cx } from "@uwusuite/design";
+import {} from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import {
   AtSign,
@@ -14,7 +16,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { buttonClass } from "@/components/ui/Button";
 import { Card, CopyButton, KeyValue, PageHeader } from "@/components/ui/Card";
 import { StatusDot } from "@/components/ui/Pill";
 import { MeterBar, StatTile } from "@/components/ui/StatTile";
@@ -248,7 +249,14 @@ export function AccountHome({ session }: { session: Session }) {
         intro={t("account.intro")}
         actions={
           session.webmail && (
-            <a href="/mail" className={buttonClass("primary", "lg")}>
+            <a
+              href="/mail"
+              className={cx(
+                "inline-flex items-center justify-center rounded-full font-semibold focus-visible:shadow-focus",
+                BUTTON_VARIANTS.primary,
+                BUTTON_SIZES.lg,
+              )}
+            >
               <Inbox className="size-4" strokeWidth={2.2} aria-hidden />
               {t("nav.openMailbox")}
             </a>

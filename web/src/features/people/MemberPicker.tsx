@@ -1,6 +1,6 @@
+import { TextInput } from "@uwusuite/design";
 import { Search } from "lucide-react";
 import { useState } from "react";
-import { TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { Person } from "@/lib/api";
 

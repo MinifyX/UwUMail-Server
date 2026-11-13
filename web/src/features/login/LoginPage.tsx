@@ -1,8 +1,7 @@
+import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Field, TextInput } from "@/components/ui/Field";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { ApiError, needsSecondFactor } from "@/lib/api";

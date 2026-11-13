@@ -1,11 +1,10 @@
+import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, TextInput } from "@/components/ui/Field";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, needsSecondFactor, type LoginResult, type PasswordLinkInfo } from "@/lib/api";

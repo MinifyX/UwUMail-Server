@@ -1,11 +1,10 @@
+import { Button, Field, Select, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Folder, Inbox, Plus, RotateCcw, Trash2, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type OwnAddressesView, type StorageView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

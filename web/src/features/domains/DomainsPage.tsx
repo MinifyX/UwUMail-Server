@@ -1,11 +1,10 @@
+import { Button, IconButton, Field, Segmented, TextInput } from "@uwusuite/design";
 import { Globe, Plus, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainKind } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

@@ -1,6 +1,6 @@
+import { Button } from "@uwusuite/design";
 import { Globe, Inbox, Plus, Truck } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";

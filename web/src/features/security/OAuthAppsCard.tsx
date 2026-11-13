@@ -1,6 +1,6 @@
+import { Button } from "@uwusuite/design";
 import { AppWindow, LogOut } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { useT } from "@/i18n";

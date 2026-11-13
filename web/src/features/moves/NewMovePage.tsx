@@ -1,9 +1,8 @@
+import { Button, Field, Segmented, Select, TextInput, Toggle } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Search, Truck } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useMailDomains, usePeople } from "@/features/people/queries";
 import { useT } from "@/i18n";
 import {

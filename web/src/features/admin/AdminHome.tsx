@@ -1,7 +1,7 @@
+import { Segmented } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import { AtSign, Globe, HardDrive, Send, ShieldCheck, Users } from "lucide-react";
 import { Card, KeyValue } from "@/components/ui/Card";
-import { Segmented } from "@/components/ui/Field";
 import { StatTile } from "@/components/ui/StatTile";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { MicrosoftBanner } from "@/features/microsoft/MicrosoftBanner";

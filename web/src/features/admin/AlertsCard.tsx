@@ -1,10 +1,9 @@
+import { Button, Segmented } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { BellRing, Check, ChevronRight, Info } from "lucide-react";
 import { LoadError } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type AdminAlert, type AlertLevel, type AlertsView, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

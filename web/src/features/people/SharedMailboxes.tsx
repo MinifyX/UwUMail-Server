@@ -1,9 +1,8 @@
+import { Button, Field, Select, TextInput } from "@uwusuite/design";
 import { Bot, Inbox, Plus, Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { Person } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

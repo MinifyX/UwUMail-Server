@@ -1,6 +1,6 @@
+import { Button } from "@uwusuite/design";
 import { RotateCw } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Button } from "@/components/ui/Button";
 import { LogoSymbol } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { ApiError } from "@/lib/api";

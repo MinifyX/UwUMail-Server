@@ -1,9 +1,8 @@
+import { Button, IconButton, Field, Select, TextInput, Toggle } from "@uwusuite/design";
 import { Pencil, Plus, Trash2, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button, IconButton } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainDetail, GroupInfo, WhoMaySend } from "@/lib/api";
 import { MemberPicker, memberChoices, type PickedMember } from "@/features/people/MemberPicker";

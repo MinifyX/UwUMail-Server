@@ -1,13 +1,12 @@
+import { Button, Field, Segmented, Select, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type SpamLogAction, type SpamLogEntry, type SpamLogView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

@@ -1,8 +1,7 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { ArrowLeft, Fingerprint } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button } from "@/components/ui/Button";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { ApiError, type SecondFactorChallenge } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

@@ -1,9 +1,8 @@
+import { Button, Field, Segmented, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
-import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { ChoiceField, LockedHint, Section, TextField, ToggleField, type Form } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import { api, type LokiStatus, type SettingsView } from "@/lib/api";

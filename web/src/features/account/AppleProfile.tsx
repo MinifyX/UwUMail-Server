@@ -1,8 +1,7 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Smartphone } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Field, TextInput } from "@/components/ui/Field";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { securityKey } from "@/features/security/queries";
 import { useT } from "@/i18n";

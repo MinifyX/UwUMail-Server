@@ -1,11 +1,10 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { Check, ImageUp, Inbox, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, TextInput } from "@/components/ui/Field";
 import { LogoSymbol } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, type SettingsView } from "@/lib/api";

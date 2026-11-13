@@ -1,11 +1,10 @@
+import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LockOpen, Plus, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type Block, type BlocksView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

@@ -1,11 +1,10 @@
+import { Button, Field, Select, TextInput, Toggle } from "@uwusuite/design";
 import { KeySquare, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type AppPasswordInfo, type AppScope, type SecurityView, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

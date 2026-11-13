@@ -1,5 +1,6 @@
+import { Segmented, Select } from "@uwusuite/design";
 import { Dialog } from "@/components/ui/Dialog";
-import { Segmented, Select, SettingRow } from "@/components/ui/Field";
+import { SettingRow } from "@/components/ui/SettingRow";
 import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { useBrand } from "@/state/brand";
 import { useSavePrefs } from "@/features/session/session";
@@ -41,9 +42,8 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
         {/* Without the mascot everything is plain, so there is no tone to choose. */}
         {mascot && (
           <SettingRow label={t("appearance.tone.label")} description={t("appearance.tone.hint")}>
-            {({ describedBy }) => (
+            {() => (
               <Segmented<Tone>
-                describedBy={describedBy}
                 label={t("appearance.tone.label")}
                 value={prefs.tone}
                 onChange={(tone) => save.mutate({ tone })}

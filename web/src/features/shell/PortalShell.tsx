@@ -1,3 +1,4 @@
+import { IconButton } from "@uwusuite/design";
 import clsx from "clsx";
 import {
   AtSign,
@@ -26,7 +27,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { IconButton } from "@/components/ui/Button";
 import { Wordmark } from "@/components/ui/Logo";
 import { Menu } from "@/components/ui/Menu";
 import { Tag } from "@/components/ui/Pill";

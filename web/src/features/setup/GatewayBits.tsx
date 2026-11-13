@@ -1,3 +1,4 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import clsx from "clsx";
 import {
   BookOpen,
@@ -16,9 +17,7 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { CloudflareResult, GatewayHostChange, GatewayView, Reachability } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

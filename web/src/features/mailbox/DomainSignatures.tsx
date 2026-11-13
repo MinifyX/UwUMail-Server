@@ -1,8 +1,7 @@
+import { Button, Field, Select } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
-import { Field, Select } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

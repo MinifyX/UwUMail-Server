@@ -1,10 +1,9 @@
+import { Button, Field } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { BookOpen, PlugZap } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { CopyButton } from "@/components/ui/Card";
-import { Field } from "@/components/ui/Field";
 import { SecretField } from "@/features/logs/LokiCard";
 import { useInfo } from "@/features/session/session";
 import { useT } from "@/i18n";

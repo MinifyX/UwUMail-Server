@@ -1,9 +1,8 @@
+import { Button, Field, Segmented, TextInput } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
 import { FileUp } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type RulesImport } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

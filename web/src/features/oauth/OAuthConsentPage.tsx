@@ -1,3 +1,4 @@
+import { Button } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AtSign,
@@ -16,7 +17,6 @@ import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LogoSymbol, Wordmark } from "@/components/ui/Logo";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";

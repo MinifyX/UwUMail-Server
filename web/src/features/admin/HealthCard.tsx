@@ -1,9 +1,9 @@
+import { Button } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { ChevronRight, CircleCheck, CircleHelp, CircleX, RotateCw, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NyuMood } from "@/components/nyu/Nyu";
-import { Button } from "@/components/ui/Button";
 import { useT } from "@/i18n";
 import { api, type Health, type HealthArea, type HealthFinding, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

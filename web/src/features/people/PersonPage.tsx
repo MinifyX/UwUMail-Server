@@ -1,3 +1,4 @@
+import { Button, IconButton, Field, Select, TextInput, Toggle } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -16,11 +17,9 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { Card, KeyValue } from "@/components/ui/Card";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { AppPasswordRow } from "@/features/security/AppPasswordsCard";
 import { OAuthGrantRow, SignOutAppDialog } from "@/features/security/OAuthAppsCard";

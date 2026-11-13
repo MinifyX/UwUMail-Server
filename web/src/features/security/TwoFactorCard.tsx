@@ -1,11 +1,10 @@
+import { Button, Field, TextInput } from "@uwusuite/design";
 import { Fingerprint, KeyRound, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type PasskeyInfo, type SecurityView, type Session, type TotpSetup } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

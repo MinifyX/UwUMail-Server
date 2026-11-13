@@ -1,5 +1,5 @@
+import { Button } from "@uwusuite/design";
 import { Download, RefreshCw, RotateCcw } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { Card, CopyButton } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import { formatDateTime } from "@/lib/format";

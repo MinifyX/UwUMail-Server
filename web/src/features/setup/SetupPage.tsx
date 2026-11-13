@@ -1,6 +1,6 @@
+import { Button } from "@uwusuite/design";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";

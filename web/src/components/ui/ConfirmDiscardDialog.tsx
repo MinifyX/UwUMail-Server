@@ -1,6 +1,6 @@
 import { NyuScene } from "@/components/nyu/scenes";
 import { useT } from "@/i18n";
-import { Button } from "./Button";
+import { Button } from "@uwusuite/design";
 import { Dialog } from "./Dialog";
 
 interface ConfirmDiscardDialogProps {

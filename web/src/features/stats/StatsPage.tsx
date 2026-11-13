@@ -1,8 +1,8 @@
+import { Segmented } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Card } from "@/components/ui/Card";
-import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type StatsRange, type StatsView } from "@/lib/api";
 import { formatBytes, formatNumber } from "@/lib/format";

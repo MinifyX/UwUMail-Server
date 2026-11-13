@@ -1,6 +1,6 @@
+import { Button } from "@uwusuite/design";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
 import { useT } from "@/i18n";
 import type { SecurityEventInfo } from "@/lib/api";
 

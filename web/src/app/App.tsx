@@ -1,7 +1,6 @@
-import { useAppearance } from "@uwusuite/design";
+import { useAppearance, Button } from "@uwusuite/design";
 import { useEffect, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";

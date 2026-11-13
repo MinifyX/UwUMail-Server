@@ -1,6 +1,6 @@
+import { Button } from "@uwusuite/design";
 import { ExternalLink, KeyRound, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/Button";
 import { CopyButton } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import {

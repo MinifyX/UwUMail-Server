@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useT } from "@/i18n";
-import { IconButton } from "./Button";
+import { IconButton } from "@uwusuite/design";
 
 interface DialogProps {
   open: boolean;

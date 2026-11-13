@@ -1,9 +1,9 @@
+import { Segmented } from "@uwusuite/design";
 import clsx from "clsx";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainReports } from "@/lib/api";
 import { formatNumber } from "@/lib/format";

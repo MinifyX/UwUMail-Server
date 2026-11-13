@@ -1,8 +1,8 @@
+import { Button, IconButton } from "@uwusuite/design";
 import { useMutation } from "@tanstack/react-query";
 import clsx from "clsx";
 import { FileUp, Plus, Server, Trash2 } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
-import { Button, IconButton } from "@/components/ui/Button";
 import { useT } from "@/i18n";
 import { api, type MoveCsvRead, type MoveRowProblem } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";

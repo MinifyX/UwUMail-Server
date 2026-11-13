@@ -1,9 +1,9 @@
+import { Button } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";

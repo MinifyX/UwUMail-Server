@@ -1,13 +1,12 @@
+import { Button, IconButton, Field, Segmented, TextInput } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, RefreshCw, Route } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene, type SceneName } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Button, IconButton } from "@/components/ui/Button";
 import { CopyButton } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, type DomainSummary, type Session } from "@/lib/api";
