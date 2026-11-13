@@ -1,9 +1,9 @@
-import { Segmented } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Segmented, EmptyState } from "@uwusuite/design";
 import clsx from "clsx";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import type { DomainReports } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
@@ -142,7 +142,11 @@ export function ReportsPage() {
       ) : query.isError ? (
         <LoadError error={query.error} onRetry={() => void query.refetch()} />
       ) : query.data.domains.length === 0 ? (
-        <EmptyState scene="search" title={t("reports.noDomains.title")} body={t("reports.noDomains.body")} />
+        <EmptyState
+          art={<NyuScene name="search" />}
+          title={t("reports.noDomains.title")}
+          body={t("reports.noDomains.body")}
+        />
       ) : (
         query.data.domains.map((domain) => <DomainCard key={domain.name} domain={domain} days={days} />)
       )}

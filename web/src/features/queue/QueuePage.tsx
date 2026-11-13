@@ -1,10 +1,10 @@
-import { Button } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { RotateCw, Trash2 } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { PageHeader } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type QueuedMessage, type QueueRecipient } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -124,7 +124,7 @@ export function QueuePage() {
     <div className="flex flex-col gap-5">
       <PageHeader title={t("queue.title")} intro={t("queue.intro")} />
       {queue.data.length === 0 ? (
-        <EmptyState scene="inbox" title={t("queue.empty.title")} body={t("queue.empty.body")} />
+        <EmptyState art={<NyuScene name="inbox" />} title={t("queue.empty.title")} body={t("queue.empty.body")} />
       ) : (
         <ul className="flex flex-col gap-3">
           {queue.data.map((message) => (

@@ -1,8 +1,8 @@
-import { Button } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState } from "@uwusuite/design";
 import { Globe, Inbox, Plus, Truck } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import type { MoveInfo } from "@/lib/api";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -65,7 +65,7 @@ export function MovesPage() {
       {list.length === 0 ? (
         <Card>
           <EmptyState
-            scene="inbox"
+            art={<NyuScene name="inbox" />}
             title={t("moves.list.emptyTitle")}
             body={t("moves.list.emptyBody")}
             action={

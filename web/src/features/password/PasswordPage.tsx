@@ -1,10 +1,9 @@
-import { Button, IconButton, Field, TextInput } from "@uwusuite/design";
+import { Button, IconButton, Field, TextInput, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, needsSecondFactor, type LoginResult, type PasswordLinkInfo } from "@/lib/api";
@@ -57,7 +56,7 @@ export function PasswordPage({ token }: { token: string }) {
   if (invalid) {
     return wrapper(
       <EmptyState
-        scene="loadError"
+        art={<NyuScene name="loadError" />}
         title={t("password.invalid.title")}
         body={t("password.invalid.body")}
         action={

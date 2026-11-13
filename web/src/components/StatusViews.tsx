@@ -1,6 +1,6 @@
-import { Button } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState } from "@uwusuite/design";
 import { RotateCw } from "lucide-react";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { LogoSymbol } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { ApiError } from "@/lib/api";
@@ -28,7 +28,7 @@ export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => v
   const key = offline ? "errors.offline" : "errors.loadFailed";
   return (
     <EmptyState
-      scene={offline ? "offline" : "loadError"}
+      art={<NyuScene name={offline ? "offline" : "loadError"} />}
       title={t(`${key}.title`)}
       body={t(`${key}.body`)}
       action={

@@ -1,10 +1,10 @@
-import { Button } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type RefusedMail, type RefusedResend } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -133,7 +133,12 @@ export function RefusedCard() {
       ) : refused.isError ? (
         <LoadError error={refused.error} onRetry={() => void refused.refetch()} />
       ) : list.length === 0 ? (
-        <EmptyState compact scene="inbox" title={t("queue.refused.empty.title")} body={t("queue.refused.empty.body")} />
+        <EmptyState
+          compact
+          art={<NyuScene name="inbox" />}
+          title={t("queue.refused.empty.title")}
+          body={t("queue.refused.empty.body")}
+        />
       ) : (
         <RefusedList
           refused={list}

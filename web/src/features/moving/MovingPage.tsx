@@ -1,10 +1,10 @@
-import { Button, Field, TextInput } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, Field, TextInput, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CalendarDays, CheckCircle2, Pause, Play, RefreshCw, Truck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useT } from "@/i18n";
 import { ApiError, api, type MoveJob, type MovingView } from "@/lib/api";
@@ -344,7 +344,11 @@ export function MovingPage() {
       <PageHeader title={t("moving.title")} intro={t("moving.intro")} />
       {!view.data.hasMailbox ? (
         <Card>
-          <EmptyState scene="inbox" title={t("moving.noMailbox.title")} body={t("moving.noMailbox.body")} />
+          <EmptyState
+            art={<NyuScene name="inbox" />}
+            title={t("moving.noMailbox.title")}
+            body={t("moving.noMailbox.body")}
+          />
         </Card>
       ) : (
         <>

@@ -1,4 +1,4 @@
-import { Button } from "@uwusuite/design";
+import { Button, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AtSign,
@@ -17,7 +17,6 @@ import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { LogoSymbol, Wordmark } from "@/components/ui/Logo";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
@@ -144,7 +143,7 @@ export function OAuthConsentPage({ session }: { session: Session }) {
     return (
       <Frame>
         <EmptyState
-          scene="loadError"
+          art={<NyuScene name="loadError" />}
           title={t("oauth.invalidTitle")}
           body={t(`oauth.invalid.${refused}`)}
           action={

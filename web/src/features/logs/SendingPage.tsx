@@ -1,9 +1,9 @@
-import { Button } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LockOpen } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type AbuseReport, type SendingSuspension, type SendingSuspensions } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -62,7 +62,7 @@ function Suspensions() {
       {suspensions.length === 0 ? (
         <EmptyState
           compact
-          scene="emptyFolder"
+          art={<NyuScene name="emptyFolder" />}
           title={t("logs.sending.empty.title")}
           body={t("logs.sending.empty.body")}
         />

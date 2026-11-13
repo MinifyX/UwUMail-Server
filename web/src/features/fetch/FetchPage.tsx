@@ -1,4 +1,5 @@
-import { Button, IconButton, Field, Select, TextInput, Toggle } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, IconButton, Field, Select, TextInput, Toggle, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -19,7 +20,6 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import {
   api,
@@ -753,7 +753,7 @@ export function FetchPage() {
       <Card title={t("fetch.card.title")}>
         <div className="flex flex-col gap-4">
           {accounts.length === 0 ? (
-            <EmptyState scene="inbox" title={t("fetch.empty.title")} body={t("fetch.empty.body")} />
+            <EmptyState art={<NyuScene name="inbox" />} title={t("fetch.empty.title")} body={t("fetch.empty.body")} />
           ) : (
             <ul className="flex flex-col">
               {accounts.map((account) => (

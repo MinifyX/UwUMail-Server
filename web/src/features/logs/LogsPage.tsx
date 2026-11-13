@@ -1,8 +1,8 @@
-import { Button, Segmented, TextInput } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, Segmented, TextInput, EmptyState } from "@uwusuite/design";
 import clsx from "clsx";
 import { Pause, Play, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogCategory, type LogLine } from "@/lib/api";
@@ -109,7 +109,7 @@ export function LogsPage() {
       </div>
 
       {unavailable ? (
-        <EmptyState compact scene="loadError" title={t("logs.unavailable")} />
+        <EmptyState compact art={<NyuScene name="loadError" />} title={t("logs.unavailable")} />
       ) : (
         <div className="max-h-[calc(100svh-340px)] min-h-[320px] overflow-auto rounded-card border border-hairline bg-surface p-3 font-mono text-[12px] leading-5">
           {lines.length === 0 ? (

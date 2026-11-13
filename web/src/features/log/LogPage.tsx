@@ -1,11 +1,11 @@
-import { Button } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, EmptyState } from "@uwusuite/design";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { TFunction } from "i18next";
 import { ChevronDown, History } from "lucide-react";
 import clsx from "clsx";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type AuditRecord, type MaskedMode } from "@/lib/api";
 import { MASKED_MODES } from "@/features/domains/MaskedCards";
@@ -324,7 +324,12 @@ export function LogPage() {
   return (
     <div className="flex flex-col gap-5">
       {records.length === 0 ? (
-        <EmptyState scene="emptyFolder" title={t("log.empty.title")} body={t("log.empty.body")} compact />
+        <EmptyState
+          art={<NyuScene name="emptyFolder" />}
+          title={t("log.empty.title")}
+          body={t("log.empty.body")}
+          compact
+        />
       ) : (
         <>
           {days.map((day) => (

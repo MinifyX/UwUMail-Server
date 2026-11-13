@@ -1,9 +1,9 @@
-import { Button, Select, TextInput } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, Select, TextInput, EmptyState } from "@uwusuite/design";
 import clsx from "clsx";
 import { Search, UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus, Session } from "@/lib/api";
@@ -82,7 +82,7 @@ export function PeoplePage({ session }: { session: Session }) {
 
       {onlyMe ? (
         <EmptyState
-          scene="noAccount"
+          art={<NyuScene name="noAccount" />}
           title={t("people.empty.title")}
           body={t("people.empty.body")}
           action={
@@ -143,7 +143,12 @@ export function PeoplePage({ session }: { session: Session }) {
           </div>
 
           {visible.length === 0 ? (
-            <EmptyState compact scene="search" title={t("people.noResults.title")} body={t("people.noResults.body")} />
+            <EmptyState
+              compact
+              art={<NyuScene name="search" />}
+              title={t("people.noResults.title")}
+              body={t("people.noResults.body")}
+            />
           ) : table ? (
             <div className="overflow-x-auto rounded-card border border-hairline bg-surface">
               <table className="w-full min-w-[720px] text-left text-sm">

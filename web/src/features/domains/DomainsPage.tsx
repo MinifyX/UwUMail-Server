@@ -1,10 +1,10 @@
-import { Button, IconButton, Field, Segmented, TextInput } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, IconButton, Field, Segmented, TextInput, EmptyState } from "@uwusuite/design";
 import { Globe, Plus, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import type { DomainKind } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -128,7 +128,7 @@ export function DomainsPage() {
 
       {domains.data.length === 0 ? (
         <EmptyState
-          scene="noAccount"
+          art={<NyuScene name="noAccount" />}
           title={t("domains.empty.title")}
           body={t("domains.empty.body")}
           action={addButton}

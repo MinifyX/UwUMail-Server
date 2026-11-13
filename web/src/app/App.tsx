@@ -1,7 +1,7 @@
-import { Button, LABELS_DE, LABELS_EN, Toaster, useAppearance, UwuLabels } from "@uwusuite/design";
+import { NyuScene } from "@/components/nyu/scenes";
+import { Button, LABELS_DE, LABELS_EN, Toaster, useAppearance, UwuLabels, EmptyState } from "@uwusuite/design";
 import { useEffect, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { AccountHome } from "@/features/account/AccountHome";
 import { AccountAssistPage } from "@/features/assist/AccountAssistPage";
 import { CalendarsPage } from "@/features/calendars/CalendarsPage";
@@ -41,7 +41,7 @@ function NotFound() {
   const { t } = useT();
   return (
     <EmptyState
-      scene="search"
+      art={<NyuScene name="search" />}
       title={t("errors.notFound.title")}
       body={t("errors.notFound.body")}
       action={

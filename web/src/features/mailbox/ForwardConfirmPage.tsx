@@ -1,10 +1,9 @@
-import { Button } from "@uwusuite/design";
+import { Button, EmptyState } from "@uwusuite/design";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, type ForwardLinkInfo } from "@/lib/api";
@@ -44,7 +43,7 @@ export function ForwardConfirmPage({ token }: { token: string }) {
   if (answer.data) {
     return wrapper(
       <EmptyState
-        scene={answer.data.confirm ? "done" : "emptyFolder"}
+        art={<NyuScene name={answer.data.confirm ? "done" : "emptyFolder"} />}
         title={answer.data.confirm ? t("forwardConfirm.confirmedTitle") : t("forwardConfirm.declinedTitle")}
         body={
           answer.data.confirm
@@ -57,7 +56,11 @@ export function ForwardConfirmPage({ token }: { token: string }) {
   if (link.isPending) return <Loading fullPage />;
   if (link.error instanceof ApiError && ["linkInvalid", "notFound"].includes(link.error.code)) {
     return wrapper(
-      <EmptyState scene="loadError" title={t("forwardConfirm.invalidTitle")} body={t("forwardConfirm.invalidBody")} />,
+      <EmptyState
+        art={<NyuScene name="loadError" />}
+        title={t("forwardConfirm.invalidTitle")}
+        body={t("forwardConfirm.invalidBody")}
+      />,
     );
   }
   if (link.isError) return <LoadError error={link.error} onRetry={() => void link.refetch()} />;
