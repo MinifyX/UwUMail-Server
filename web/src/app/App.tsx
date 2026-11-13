@@ -1,8 +1,7 @@
-import { useAppearance, Button } from "@uwusuite/design";
+import { Button, LABELS_DE, LABELS_EN, Toaster, useAppearance, UwuLabels } from "@uwusuite/design";
 import { useEffect, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
 import { AccountAssistPage } from "@/features/assist/AccountAssistPage";
 import { CalendarsPage } from "@/features/calendars/CalendarsPage";
@@ -36,6 +35,7 @@ import type { Session } from "@/lib/api";
 import { matchPath, navigate, usePath } from "@/lib/router";
 import { useApplyBrand } from "@/lib/brand";
 import { usePrefs } from "@/state/prefs";
+import { toasts } from "@/state/toasts";
 
 function NotFound() {
   const { t } = useT();
@@ -162,10 +162,13 @@ export function App() {
   useAppearance({ theme, contrast, motion });
   useApplyLanguage();
   useApplyBrand();
+  const { t, i18n } = useT();
+  // The package's own words (the toast's close button and the like) in the portal's language.
+  const labels = { ...(i18n.language.startsWith("de") ? LABELS_DE : LABELS_EN), close: t("common.close") };
   return (
-    <>
+    <UwuLabels labels={labels}>
       <Routes />
-      <Toaster />
-    </>
+      <Toaster store={toasts} />
+    </UwuLabels>
   );
 }

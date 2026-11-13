@@ -1,4 +1,4 @@
-import { IconButton } from "@uwusuite/design";
+import { IconButton, Menu } from "@uwusuite/design";
 import clsx from "clsx";
 import {
   AtSign,
@@ -28,7 +28,6 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Wordmark } from "@/components/ui/Logo";
-import { Menu } from "@/components/ui/Menu";
 import { Tag } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import { toast } from "@/state/toasts";
@@ -241,30 +240,27 @@ function UserMenu({
   const { t } = useT();
   const logout = useLogout();
   const name = session.account.name || session.account.login;
-  const icon = (Icon: LucideIcon, text: string) => (
-    <span className="flex items-center gap-2">
-      <Icon className="size-4" aria-hidden />
-      {text}
-    </span>
-  );
   return (
     <Menu
       align="start"
-      className="w-full [&>[role=menu]]:top-auto [&>[role=menu]]:bottom-[calc(100%+6px)]"
+      side="above"
+      className="w-full"
       items={[
         // A real address, not a route: the webmail is its own app under /mail.
         ...(session.webmail
-          ? [{ label: icon(Inbox, t("nav.openMailbox")), onSelect: () => window.location.assign("/mail") }]
+          ? [{ icon: Inbox, label: t("nav.openMailbox"), onSelect: () => window.location.assign("/mail") }]
           : []),
         {
-          label: icon(Palette, t("userMenu.appearance")),
+          icon: Palette,
+          label: t("userMenu.appearance"),
           onSelect: () => {
             onNavigate();
             onAppearance();
           },
         },
         {
-          label: icon(LogOut, t("userMenu.logout")),
+          icon: LogOut,
+          label: t("userMenu.logout"),
           onSelect: () => logout.mutate(undefined, { onError: () => toast(t("userMenu.logoutFailed"), "error") }),
         },
       ]}
