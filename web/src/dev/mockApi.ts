@@ -35,6 +35,7 @@ import type {
   GroupInfo,
   GreylistHold,
   GreylistView,
+  UpdateStepKind,
   UpdatesView,
   SpamLimits,
   SpamLimitsView,
@@ -603,29 +604,7 @@ const mockOAuthClients: Record<string, string> = {
   "uwu-known": "K-9 Mail",
 };
 
-// The machine's helper: a job runs for a few seconds, printing as it goes, then is done.
-let hostJob: { verb: string; asked: number } | null = null;
-const JOB_LINES: Record<string, string[]> = {
-  "uwumail-update": [
-    "== fetching the newest update.sh",
-    "  UwUMail Server, update",
-    "  running now: 0.1.0",
-    "  compose.yaml brought up to date",
-    "  backing up first",
-    "  fetching the images",
-    "  starting the new version",
-    "  waiting for the server.....",
-    "  the machine's helper is up to date",
-    "  UwUMail is on 0.1.1 now (=^･ω･^=)",
-  ],
-  "helper-update": ["== fetching the newest helper", "  installing the helper", "  installing the units"],
-};
-
 function hostView(): HostView {
-  const elapsed = hostJob ? (Date.now() - hostJob.asked) / 1000 : 0;
-  const lines = hostJob ? (JOB_LINES[hostJob.verb] ?? ["== " + hostJob.verb]) : [];
-  const shown = Math.min(lines.length, Math.floor(elapsed / 0.6));
-  const state = !hostJob ? null : elapsed < 1 ? "waiting" : shown < lines.length ? "running" : "done";
   return {
     available: true,
     machine: {
@@ -642,14 +621,14 @@ function hostView(): HostView {
       digest: "sha256:0c1d2e",
       composeDir: "/opt/uwumail",
       checkedAt: now - 400,
-      helper: new URLSearchParams(window.location.search).get("helper") ?? "3",
+      helper: new URLSearchParams(window.location.search).get("helper") ?? "4",
       verbs:
         new URLSearchParams(window.location.search).get("helper") === "2"
           ? ["os-update", "reboot", "vpn-apply", "vpn-stop"]
           : ["os-update", "reboot", "uwumail-update", "helper-update", "vpn-apply", "vpn-stop", "vpn-remove"],
     },
-    job: hostJob && state ? { id: "18c0ffee", state, error: "", at: Math.floor(hostJob.asked / 1000) } : null,
-    log: lines.slice(0, shown).join("\n"),
+    job: null,
+    log: "",
     command: "",
   };
 }
@@ -675,10 +654,78 @@ const mockUpdates: UpdatesView = {
   },
   image: "ghcr.io/minifyx/uwumail-server:latest",
   serverCommand: "sudo bash update.sh",
-  gateway: { software: "uwumail-gateway 0.1.0" },
-  gatewayCommand:
-    "cd /tmp && curl -fsSLO https://github.com/example/releases/download/v0.1.1/uwumail-gateway-linux-amd64.tar.gz && sudo bash uwumail-gateway/install.sh uwumail-gateway/uwumail-gateway",
+  host: { available: false, machine: null, job: null, log: "", command: "" },
+  gateway: null,
+  gatewayVersion: null,
+  gatewayCommand: null,
+  plan: [],
+  possible: [],
+  run: null,
 };
+
+/** When the step at hand started; each takes a few seconds, so the run can be seen moving. */
+let mockStepAt = 0;
+/** `?fail` lets the server's step stop once at a compose file changed by hand. */
+let mockFailed = false;
+
+function startMockStep() {
+  const next = mockUpdates.run?.steps.find((step) => step.state === "pending");
+  if (next) {
+    next.state = "running";
+    next.log = "== " + next.kind + "\n";
+    mockStepAt = Date.now();
+  } else if (mockUpdates.run) mockUpdates.run.finishedAt = Math.floor(Date.now() / 1000);
+}
+
+function updatesView(): UpdatesView {
+  const host = hostView();
+  const gatewayNow = gatewayView();
+  const run = mockUpdates.run;
+  const step = run?.steps.find((candidate) => candidate.state === "running");
+  if (step && Date.now() - mockStepAt > 3000) {
+    if (step.kind === "server" && !mockFailed && window.location.search.includes("fail")) {
+      mockFailed = true;
+      step.state = "failed";
+      step.error = step.reason = "compose";
+      step.log += "  compose.yaml was changed by hand\n";
+    } else {
+      step.state = "done";
+      step.log += "  done\n";
+      startMockStep();
+    }
+  }
+  const done = (kind: UpdateStepKind) => Boolean(run?.steps.some((s) => s.kind === kind && s.state === "done"));
+  const system = gatewayNow.machine?.system;
+  const waits: Record<UpdateStepKind, boolean> = {
+    gatewaySystem: Boolean(system && system.updates > 0) && !done("gatewaySystem"),
+    gateway: false,
+    hostSystem: !done("hostSystem"),
+    helper: host.machine?.helper !== "4" && !done("helper"),
+    server: !done("server"),
+    gatewayReboot: false,
+    hostReboot: false,
+  };
+  if (host.machine && done("hostSystem")) host.machine = { ...host.machine, updates: 0, securityUpdates: 0 };
+  const connected = gatewayNow.software !== null;
+  return {
+    ...mockUpdates,
+    info: done("server") ? { ...mockUpdates.info, releases: [] } : mockUpdates.info,
+    host,
+    gateway: connected ? gatewayNow : null,
+    plan: STEP_KINDS.filter((kind) => waits[kind]),
+    possible: STEP_KINDS.filter((kind) => connected || !kind.startsWith("gateway")),
+  };
+}
+
+const STEP_KINDS: UpdateStepKind[] = [
+  "gatewaySystem",
+  "gateway",
+  "hostSystem",
+  "helper",
+  "server",
+  "gatewayReboot",
+  "hostReboot",
+];
 
 const mockBackups: BackupsView = {
   enabled: true,
@@ -2206,36 +2253,8 @@ let gatewayPairedAt = 0;
 /** Whether the pretend Cloudflare zone points at the gateway already. */
 let gatewayDns = false;
 
-let gatewayJobStartedAt = 0;
-
-/** Moves a job on the gateway's machine along, so the buttons can be seen doing something. */
-function stepGatewayJob() {
-  const job = gateway.machine?.job;
-  if (!gateway.machine || !job || job.state !== "running") return;
-  const since = Date.now() - gatewayJobStartedAt;
-  const machine = gateway.machine;
-  if (since > 3000 && !job.log) {
-    gateway = {
-      ...gateway,
-      machine: { ...machine, job: { ...job, log: "== apt-get update\nReading package lists…\n" } },
-    };
-    return;
-  }
-  if (since > 9000) {
-    gateway = {
-      ...gateway,
-      machine: {
-        ...machine,
-        system: machine.system && { ...machine.system, updates: 0, securityUpdates: 0 },
-        job: { ...job, state: "done", log: job.log + "\n== apt-get dist-upgrade\n12 upgraded, 0 newly installed.\n" },
-      },
-    };
-  }
-}
-
 function gatewayView(): GatewayView {
   const at = Math.floor(Date.now() / 1000);
-  stepGatewayJob();
   if (gateway.state === "connecting" && Date.now() - gatewayPairedAt > 4000) {
     gateway = {
       ...gateway,
@@ -3551,23 +3570,6 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     "POST",
-    /^\/api\/admin\/gateway\/jobs$/,
-    (body) => {
-      const verb = (body as { verb?: string }).verb ?? "os-update";
-      if (!gateway.machine) return [409, { code: "gatewayJobRefused", detail: "the gateway is away" }];
-      gatewayJobStartedAt = Date.now();
-      gateway = {
-        ...gateway,
-        machine: {
-          ...gateway.machine,
-          job: { id: "mock-" + verb, state: "running", error: "", at: Math.floor(Date.now() / 1000), log: "" },
-        },
-      };
-      return [200, gateway];
-    },
-  ],
-  [
-    "POST",
     /^\/api\/admin\/gateway$/,
     (body) => {
       const { code = "", password } = body as { code?: string; password?: string };
@@ -3837,16 +3839,6 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/admin\/host$/, () => [200, hostView()]],
-  [
-    "POST",
-    /^\/api\/admin\/host\/jobs$/,
-    (body) => {
-      const { verb } = body as { verb: string };
-      hostJob = { verb, asked: Date.now() };
-      log("host.job", verb);
-      return [200, hostView()];
-    },
-  ],
   ["GET", /^\/api\/admin\/spam\/senders$/, () => [200, sendersView("admin")]],
   ["POST", /^\/api\/admin\/spam\/senders$/, (body) => addSender("admin", body)],
   ["DELETE", /^\/api\/admin\/spam\/senders\/(\d+)$/, (_, [id]) => removeSender("admin", id)],
@@ -5312,13 +5304,51 @@ const routes: [string, RegExp, Handler][] = [
       return [204, null];
     },
   ],
-  ["GET", /^\/api\/admin\/updates$/, () => [200, mockUpdates]],
+  ["GET", /^\/api\/admin\/updates$/, () => [200, updatesView()]],
+  [
+    "POST",
+    /^\/api\/admin\/updates\/run$/,
+    (body) => {
+      const view = updatesView();
+      const steps = (body as { steps?: UpdateStepKind[] }).steps ?? view.plan;
+      if (view.run?.finishedAt === null || steps.length === 0) return problem(409, "updateRefused");
+      mockUpdates.run = {
+        startedAt: Math.floor(Date.now() / 1000),
+        finishedAt: null,
+        by: "lorin@uwu.example",
+        steps: STEP_KINDS.filter((kind) => steps.includes(kind)).map((kind) => ({
+          kind,
+          state: "pending",
+          error: "",
+          reason: "",
+          log: "",
+        })),
+      };
+      startMockStep();
+      log("updates.run", steps.join(" "));
+      return [200, updatesView()];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/updates\/run\/step$/,
+    (body) => {
+      const run = mockUpdates.run;
+      const failed = run?.steps.find((step) => step.state === "failed");
+      if (!run || !failed) return problem(409, "updateRefused");
+      const { action } = body as { action: string };
+      failed.state = action === "retry" ? "pending" : "skipped";
+      if (action === "stop") run.finishedAt = Math.floor(Date.now() / 1000);
+      else startMockStep();
+      return [200, updatesView()];
+    },
+  ],
   [
     "PUT",
     /^\/api\/admin\/updates$/,
     (body) => {
       mockUpdates.settings = body as UpdatesView["settings"];
-      return [200, mockUpdates];
+      return [200, updatesView()];
     },
   ],
   [
@@ -5326,7 +5356,7 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/updates\/check$/,
     () => {
       mockUpdates.info.checkedAt = Math.floor(Date.now() / 1000);
-      return [200, mockUpdates];
+      return [200, updatesView()];
     },
   ],
   [

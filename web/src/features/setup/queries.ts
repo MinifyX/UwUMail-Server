@@ -145,18 +145,6 @@ export function useGateway() {
   });
 }
 
-/** Asks the VPS the gateway runs on for its updates, a restart, or a newer gateway. */
-export function useGatewayJob() {
-  const changed = useGatewayChanged();
-  return useMutation({
-    mutationFn: ({ verb, password }: { verb: GatewayVerb; password?: string }) =>
-      api<GatewayView>("/api/admin/gateway/jobs", { method: "POST", body: { verb, password } }),
-    onSuccess: (view) => changed(view),
-  });
-}
-
-export type GatewayVerb = "os-update" | "reboot" | "gateway-update";
-
 /**
  * Points the server's host names at the gateway through Cloudflare. Without `apply` it only asks
  * what would change; `replace` confirms replacing addresses that point elsewhere.

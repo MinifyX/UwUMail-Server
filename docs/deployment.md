@@ -481,12 +481,35 @@ outside; that reply also proves that incoming mail reaches the server.
 | `0.1.0` | exactly this version |
 
 With the machine's helper (the installer sets it up; see
-[install.md](install.md)) *Server → Updates* has a button for it: after the
-password, the helper fetches `update.sh` from the newest release, checks its
-`sha256` and runs it here, and the page follows its output while the server is
-replaced. From the button it asks nothing: it does not offer the virus scanner
-(that is under *Spam filter*) and goes on without a backup when no backup server
-is set up. Without the helper, or with one from before 0.9.3, it is the command:
+[install.md](install.md)) everything is updated from *Server → Updates*, and
+nowhere else in the portal. *Update everything* takes what is waiting in one
+run, in this order, and each of them also has a button of its own:
+
+1. the system updates of the gateway's VPS,
+2. the gateway,
+3. the system updates of this machine,
+4. the helper,
+5. UwUMail Server itself, last, because it replaces the server that keeps the list.
+
+The run is kept in the database, so it goes on after the server's own
+replacement and the page follows it from any browser. Only one run at a time. A
+step that fails stops the run and shows its output; from there it is *Try
+again*, *Skip* or *Stop*. A restart is never part of *Update everything*: when
+the machine or the VPS wants one, the page says so and has a button that asks
+first.
+
+For the server step the helper fetches `update.sh` from the newest release,
+checks its `sha256` and runs it here with the channel chosen on the page. From
+the button it asks nothing: it does not offer the virus scanner (that is under
+*Spam filter*) and goes on without a backup when no backup server is set up.
+Where `compose.yaml` was changed by hand, `update.sh` stops with exit code 4 and
+the page asks the same question the script would: keep yours (`--keep-compose`)
+or take the new one (`--force`).
+
+A new major version of the operating system (`do-release-upgrade`) is only
+shown, never installed. Systems without `apt` get no system updates from the
+portal. Without the helper, or with one from before 0.9.3, the page shows the
+one command that is left:
 
 ```bash
 cd /opt/uwumail && sudo bash update.sh

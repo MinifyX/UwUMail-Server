@@ -131,7 +131,7 @@ pub async fn apply(State(web): State<Web>, Admin(session): Admin) -> ApiResult<J
     config.check().map_err(|message| ApiError::Rule("vpnInvalid", message))?;
     let request = json!({ "env": config.env(), "ovpn": config.ovpn() });
     host.hand_over("vpn.json", &request.to_string()).map_err(|message| ApiError::Rule("hostJobRefused", message))?;
-    let id = host.ask("vpn-apply").await.map_err(|message| ApiError::Rule("hostJobRefused", message))?;
+    let id = host.ask("vpn-apply", &[]).await.map_err(|message| ApiError::Rule("hostJobRefused", message))?;
     change_settings(&web, &session, proxy_change(json!(GLUETUN_PROXY))).await?;
     audit(&web, &session, "vpn.apply", &config.provider, json!({ "id": id })).await;
     Ok(Json(view(&web).await?))
@@ -148,7 +148,7 @@ pub async fn stop(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Js
     if helper_can(&web)
         && let Some(host) = web.host().cloned()
     {
-        id = Some(host.ask("vpn-stop").await.map_err(|message| ApiError::Rule("hostJobRefused", message))?);
+        id = Some(host.ask("vpn-stop", &[]).await.map_err(|message| ApiError::Rule("hostJobRefused", message))?);
     }
     audit(&web, &session, "vpn.stop", "", json!({ "id": id })).await;
     Ok(Json(view(&web).await?))
@@ -164,7 +164,7 @@ pub async fn remove(State(web): State<Web>, Admin(session): Admin) -> ApiResult<
     let verb = ["vpn-remove", "vpn-stop"].into_iter().find(|verb| helper_does(&web, verb));
     let mut id = None;
     if let (Some(verb), Some(host)) = (verb, web.host().cloned()) {
-        id = Some(host.ask(verb).await.map_err(|message| ApiError::Rule("hostJobRefused", message))?);
+        id = Some(host.ask(verb, &[]).await.map_err(|message| ApiError::Rule("hostJobRefused", message))?);
     }
     // Forgotten only once the helper took the job: a refused one leaves everything as it was.
     let provider = load(&web).await?.provider;

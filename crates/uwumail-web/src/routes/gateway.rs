@@ -33,46 +33,10 @@ async fn view(web: &Web) -> GatewayView {
 /// The version to offer, or `None` when the gateway already runs the newest one.
 ///
 /// The gateway calls itself `uwumail-gateway 0.2.2`; what comes after the space is its version.
-async fn newer_gateway(web: &Web, software: Option<&str>) -> Option<String> {
+pub(crate) async fn newer_gateway(web: &Web, software: Option<&str>) -> Option<String> {
     let newest = web.update_info().await.newest_release?;
     let running = software?.rsplit(' ').next()?.trim().to_owned();
     (running != newest).then_some(newest)
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Ask {
-    /// `os-update`, `reboot` or `gateway-update`.
-    verb: String,
-    #[serde(default)]
-    password: Option<String>,
-}
-
-/// Asks the VPS the gateway runs on for something. Each of these takes the gateway off the network
-/// for a while, and with it every way into this server from outside -- so each needs the password
-/// again, the same as pairing.
-pub async fn ask(State(web): State<Web>, Admin(session): Admin, Json(ask): Json<Ask>) -> ApiResult<Json<GatewayView>> {
-    let gateway = web.gateway().ok_or_else(|| ApiError::NotFound("the gateway".into()))?.clone();
-    if !matches!(ask.verb.as_str(), "os-update" | "reboot" | "gateway-update") {
-        return Err(ApiError::Invalid(format!("unknown job: {}", ask.verb)));
-    }
-    confirm_identity(&web, &session, ask.password.as_deref()).await?;
-    // The version is never taken from the request: it is the newest release the server itself
-    // found, or nothing. Whoever asks picks the button, not what gets installed.
-    let version = match ask.verb.as_str() {
-        "gateway-update" => Some(
-            newer_gateway(&web, gateway.view().software.as_deref())
-                .await
-                .ok_or_else(|| ApiError::Rule("gatewayJobRefused", "there is no newer gateway to install".into()))?,
-        ),
-        _ => None,
-    };
-    let id = gateway
-        .ask(&ask.verb, version.as_deref())
-        .await
-        .map_err(|message| ApiError::Rule("gatewayJobRefused", message))?;
-    audit(&web, &session, "gateway.job", &ask.verb, json!({ "id": id, "version": version })).await;
-    Ok(Json(view(&web).await))
 }
 
 #[derive(Deserialize)]

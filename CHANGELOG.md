@@ -3,6 +3,24 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.35.0
+
+- Updates, built anew: *Server → Updates* is the one place for all of them. *Update everything*
+  takes the system updates of the gateway's VPS, the gateway, the system updates of this machine,
+  the helper and the server in one run, in that order, and shows each step with its output. The
+  run is kept on the server, so it goes on through the server's own replacement and from any
+  browser. A step that fails stops the run: try again, skip it, or stop.
+- Nothing restarts unasked. When the machine or the VPS wants a restart the page says so, and the
+  button asks first.
+- A `compose.yaml` changed by hand no longer ends at the console: the page asks whether to keep it
+  or take the new one (`update.sh` ends with 4 for it). The server step always names the channel,
+  so a version pinned by an earlier rollback no longer holds it back.
+- A new major version of the operating system is shown, never installed.
+- The overview and the gateway's setup only say how things stand and point to the update page.
+  `/api/admin/host/jobs` and `/api/admin/gateway/jobs` are gone; it is `/api/admin/updates/run`.
+- The machine's helper is version 4 and comes along with this update. A machine or a gateway
+  without any helper still needs its one command once; the page shows it.
+
 ## 0.33.0
 
 - Motion from UwUSuite-Design 1.15.0, subtle and still under reduced motion: after signing in

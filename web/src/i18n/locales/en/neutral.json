@@ -1506,7 +1506,6 @@
     "title": "This machine",
     "noReport": "The helper on this machine has not said anything for a while. Is uwumail-host-machine.timer still running?",
     "unknownSystem": "Unknown system",
-    "checked": "last looked at {{at}}",
     "notApt": "This machine does not use apt. UwUMail cannot say what it needs -- that one stays yours.",
     "upToDate": "Nothing to do: the system is up to date.",
     "waiting_one": "{{count}} package is waiting, {{security}} of them security updates.",
@@ -1515,18 +1514,7 @@
     "notAlone": "More runs on this machine: {{others}}. An update restarts those too, and a restart takes them with it.",
     "cannotTell": "I cannot tell what else runs here. Better look for yourself before pressing the button.",
     "liability": "What happens here happens on your machine. I look first, as well as I can -- I cannot answer for it.",
-    "installUpdates": "Install updates",
-    "restart": "Restart",
-    "states": {
-      "running": "running ...",
-      "done": "done",
-      "failed": "failed",
-      "rolledBack": "rolled back",
-      "waiting": "waiting"
-    },
-    "helperNewer": "There is a new version of the helper on this machine. One click fetches it.",
-    "helperOld": "The helper on this machine (version {{version}}) cannot update itself yet. Run this once on the machine; after that everything happens here in the portal:",
-    "updateHelper": "Update helper"
+    "helperNewer": "There is a new version of the helper on this machine. One click fetches it."
   },
   "queue": {
     "title": "Queue",
@@ -3092,16 +3080,7 @@
       "forgotten": "Gateway forgotten.",
       "machine": {
         "title": "The VPS",
-        "installUpdates": "Install updates",
-        "updateGateway": "Update the gateway to {{version}}",
-        "restart": "Restart",
-        "hint": "The gateway last looked on {{time}}. While one of these runs the gateway is away for a moment — mail that arrives meanwhile is delivered again later by the sending server.",
-        "states": {
-          "running": "Running …",
-          "done": "Done.",
-          "failed": "It did not work.",
-          "refused": "It was refused."
-        }
+        "toUpdates": "Updates and restart: in the update centre"
       }
     },
     "restore": {
@@ -3129,8 +3108,7 @@
     }
   },
   "updates": {
-    "intro": "Which version is running, what is new, and what installs it.",
-    "open": "Open",
+    "intro": "Everything that can be updated, in one place: server, helper, this machine, the gateway and its VPS.",
     "running": "Running: version {{version}}",
     "runningEdge": "Running: edge, commit {{commit}} (version {{version}})",
     "notChecked": "Have not looked for updates yet.",
@@ -3140,24 +3118,74 @@
     "edgeBehind_one": "There is {{count}} new commit on main:",
     "edgeBehind_other": "There are {{count}} new commits on main:",
     "onGitHub": "on GitHub",
-    "serverCommand": "Server",
     "gatewayCommand": "Gateway (on the VPS)",
-    "gatewayRunning": "Gateway: {{software}}",
     "check": "Look for updates daily",
     "checkHint": "Asks GitHub once a day whether there is a new version.",
     "channel": "Channel",
     "stable": "Stable",
     "beta": "Beta",
     "checkNow": "Look now",
-    "version": {
-      "title": "Version"
-    },
-    "onTheMachine": "Updating happens on the machine, not from here — the script also brings a new compose.yaml along, which a container replacing itself never could.",
     "checkTitle": "Looking for updates",
-    "byButton": "The button installs the new version on this machine: a backup first, then the new compose.yaml and images. If the new version does not start, the old one keeps running. The server is unreachable for about a minute meanwhile.",
-    "installNow": "Update now",
     "reload": "Reload page",
-    "helperOld": "The helper on this machine is too old for the update button. Run this once on the machine -- it brings the helper up to date too, and from then on you update here with a click:"
+    "helperOld": "The helper on this machine is too old for the update button. Run this once on the machine -- it brings the helper up to date too, and from then on you update here with a click:",
+    "all": {
+      "title": "What is waiting",
+      "button": "Update everything",
+      "nothing": "All up to date. Nothing to do.",
+      "plan": "In order: {{steps}}. Nothing restarts unless you say so."
+    },
+    "one": "Update",
+    "restart": "Restart",
+    "steps": {
+      "gatewaySystem": "Gateway VPS: system updates",
+      "gateway": "Gateway",
+      "hostSystem": "This machine: system updates",
+      "helper": "Helper",
+      "server": "UwUMail Server",
+      "gatewayReboot": "Restart the gateway VPS",
+      "hostReboot": "Restart this machine"
+    },
+    "stepStates": {
+      "pending": "waiting",
+      "running": "running …",
+      "done": "done",
+      "failed": "failed",
+      "skipped": "skipped"
+    },
+    "run": {
+      "title": "Update run",
+      "started": "Started {{time}} by {{by}}.",
+      "finished": "Finished {{time}}.",
+      "failedHint": "This step did not work. The rest waits until you say how to go on.",
+      "retry": "Try again",
+      "skip": "Skip",
+      "stop": "Stop",
+      "composeKeep": "Keep my compose.yaml",
+      "composeReplace": "Replace it with the new one",
+      "reasons": {
+        "compose": "The compose.yaml on the machine was changed by hand and does not match the new version. How should it go on?",
+        "rolledBack": "The new version did not start. The old one keeps running.",
+        "timeout": "No answer in the expected time."
+      },
+      "away": "The server cannot be reached right now. During its own update that is normal – I keep asking.",
+      "log": "Output: {{step}}",
+      "reloadHint": "The new version brings a new portal."
+    },
+    "helperCurrent": "Version {{version}}, up to date.",
+    "gatewayMachine": "Gateway VPS",
+    "newRelease": "There is a new major version of the system: {{release}}. I do not install that one, it stays with you.",
+    "noHelper": "No helper is installed on this machine, so I cannot install anything from here. Run once on the machine:",
+    "gatewayNoHelper": "This gateway is from before its helper. Run once more on the VPS, after that everything works from here:",
+    "restartAsk": {
+      "hostReboot": {
+        "title": "Restart this machine?",
+        "body": "The server and everything else on this machine will be unreachable for a few minutes."
+      },
+      "gatewayReboot": {
+        "title": "Restart the gateway's VPS?",
+        "body": "While the VPS starts, no mail from outside arrives. Senders try again later."
+      }
+    }
   },
   "backups": {
     "intro": "Every night the server backs up mail, settings, calendars and contacts: to an SFTP server such as a NAS, to an S3 bucket, or into a folder such as a mounted disk. After the first time it only uploads what is new.",

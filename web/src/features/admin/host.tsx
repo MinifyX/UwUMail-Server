@@ -1,17 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
-import { useT } from "@/i18n";
+import { useQuery } from "@tanstack/react-query";
 import { api, type HostMachine, type HostView } from "@/lib/api";
-import { useErrorText } from "@/lib/errors";
-import { toast } from "@/state/toasts";
 
 /** The helper this portal was released with; an older one is offered an update. */
-export const HELPER_VERSION = 3;
+export const HELPER_VERSION = 4;
 
 export const hostKey = ["admin", "host"] as const;
-
-/** What the portal may ask the helper for from the machine and update pages. */
-export type HostVerb = "os-update" | "reboot" | "uwumail-update" | "helper-update";
 
 /** While a job runs, ask often enough that its output moves. */
 const BUSY_MS = 2000;
@@ -45,41 +38,8 @@ export function helperOutdated(machine: HostMachine | null | undefined): boolean
 
 /** What to run once on the machine, where there is no helper or one too old to update itself. */
 export function updateCommand(machine: HostMachine | null | undefined): string {
-  return `cd ${machine?.composeDir || "/opt/uwumail"} && sudo bash update.sh`;
-}
-
-/** Asks the helper for a job, after the password: every one of them can take the server away. */
-export function useAskHost(onAsked?: (verb: HostVerb) => void) {
-  const errorText = useErrorText();
-  const queryClient = useQueryClient();
-  const { confirmed, dialog } = usePasswordConfirmation();
-  const ask = useMutation({
-    mutationFn: (verb: HostVerb) =>
-      confirmed((password) => api<HostView>("/api/admin/host/jobs", { method: "POST", body: { verb, password } })),
-    onSuccess: (view, verb) => {
-      queryClient.setQueryData(hostKey, view);
-      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
-      onAsked?.(verb);
-    },
-    onError: (error) => {
-      if (!(error instanceof Cancelled)) toast(errorText(error), "error");
-    },
-  });
-  return { ask, dialog };
-}
-
-/** How the last job went, with what it printed. */
-export function JobBox({ view }: { view: HostView }) {
-  const { t } = useT();
-  const { job, log } = view;
-  if (!job) return null;
-  return (
-    <div className="rounded-control bg-canvas px-3 py-2">
-      <p className="text-[13px] font-semibold">
-        {t(`host.states.${job.state}`, { defaultValue: job.state })}
-        {job.error && <span className="ml-2 font-normal text-danger-ink">{job.error}</span>}
-      </p>
-      {log && <pre className="mt-2 max-h-64 overflow-auto font-mono text-[12px] whitespace-pre-wrap">{log}</pre>}
-    </div>
-  );
+  // machine.json is written where the container can write too: only a plain path goes into a
+  // command somebody pastes into a root shell.
+  const dir = machine?.composeDir ?? "";
+  return `cd ${/^\/[A-Za-z0-9._/-]+$/.test(dir) ? dir : "/opt/uwumail"} && sudo bash update.sh`;
 }

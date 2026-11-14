@@ -1506,7 +1506,6 @@
     "title": "Deze machine",
     "noReport": "De helper op deze machine heeft al een tijdje niets van zich laten horen. Draait uwumail-host-machine.timer nog?",
     "unknownSystem": "Onbekend systeem",
-    "checked": "laatst bekeken {{at}}",
     "notApt": "Deze machine gebruikt geen apt. UwUMail kan niet zeggen wat ze nodig heeft -- dat blijft jouw taak.",
     "upToDate": "Niets te doen: het systeem is up-to-date.",
     "waiting_one": "{{count}} pakket staat klaar, waarvan {{security}} beveiligingsupdates.",
@@ -1515,18 +1514,7 @@
     "notAlone": "Er draait meer op deze machine: {{others}}. Een update herstart die ook, en een herstart neemt ze mee.",
     "cannotTell": "Ik kan niet zien wat hier verder draait. Kijk liever zelf voordat je op de knop drukt.",
     "liability": "Wat hier gebeurt, gebeurt op jouw machine. Ik kijk eerst, zo goed als ik kan -- maar ik kan er niet voor instaan.",
-    "installUpdates": "Updates installeren",
-    "restart": "Herstarten",
-    "states": {
-      "running": "bezig ...",
-      "done": "klaar",
-      "failed": "mislukt",
-      "rolledBack": "teruggedraaid",
-      "waiting": "wachtend"
-    },
-    "helperNewer": "Er is een nieuwe versie van de helper op deze machine. Eén klik haalt hem op.",
-    "helperOld": "De helper op deze machine (versie {{version}}) kan zichzelf nog niet bijwerken. Voer dit één keer uit op de machine; daarna gebeurt alles hier in het portaal:",
-    "updateHelper": "Helper bijwerken"
+    "helperNewer": "Er is een nieuwe versie van de helper op deze machine. Eén klik haalt hem op."
   },
   "queue": {
     "title": "Wachtrij",
@@ -3092,16 +3080,7 @@
       "forgotten": "Gateway vergeten.",
       "machine": {
         "title": "De VPS",
-        "installUpdates": "Updates installeren",
-        "updateGateway": "Gateway bijwerken naar {{version}}",
-        "restart": "Herstarten",
-        "hint": "De gateway keek voor het laatst op {{time}}. Terwijl een van deze acties loopt, is de gateway even weg — mail die intussen binnenkomt, wordt later opnieuw afgeleverd door de verzendende server.",
-        "states": {
-          "running": "Bezig …",
-          "done": "Klaar.",
-          "failed": "Het is niet gelukt.",
-          "refused": "Het werd geweigerd."
-        }
+        "toUpdates": "Updates en herstart: in het updatecentrum"
       }
     },
     "restore": {
@@ -3129,8 +3108,7 @@
     }
   },
   "updates": {
-    "intro": "Welke versie draait, wat er nieuw is, en wat het installeert.",
-    "open": "Openen",
+    "intro": "Alles wat bijgewerkt kan worden, op één plek: server, helper, deze machine, de gateway en zijn VPS.",
     "running": "Actief: versie {{version}}",
     "runningEdge": "Actief: edge, commit {{commit}} (versie {{version}})",
     "notChecked": "Nog niet naar updates gezocht.",
@@ -3140,24 +3118,74 @@
     "edgeBehind_one": "Er is {{count}} nieuwe commit op main:",
     "edgeBehind_other": "Er zijn {{count}} nieuwe commits op main:",
     "onGitHub": "op GitHub",
-    "serverCommand": "Server",
     "gatewayCommand": "Gateway (op de VPS)",
-    "gatewayRunning": "Gateway: {{software}}",
     "check": "Dagelijks naar updates zoeken",
     "checkHint": "Vraagt GitHub één keer per dag of er een nieuwe versie is.",
     "channel": "Kanaal",
     "stable": "Stabiel",
     "beta": "Bèta",
     "checkNow": "Nu zoeken",
-    "version": {
-      "title": "Versie"
-    },
-    "onTheMachine": "Bijwerken gebeurt op de machine, niet vanaf hier — het script brengt ook een nieuwe compose.yaml mee, wat een container die zichzelf vervangt nooit zou kunnen.",
     "checkTitle": "Naar updates zoeken",
-    "byButton": "De knop installeert de nieuwe versie op deze machine: eerst een back-up, dan de nieuwe compose.yaml en images. Als de nieuwe versie niet start, blijft de oude draaien. De server is intussen ongeveer een minuut onbereikbaar.",
-    "installNow": "Nu bijwerken",
     "reload": "Pagina herladen",
-    "helperOld": "De helper op deze machine is te oud voor de updateknop. Voer dit één keer uit op de machine -- het werkt ook de helper bij, en vanaf dan werk je hier bij met een klik:"
+    "helperOld": "De helper op deze machine is te oud voor de updateknop. Voer dit één keer uit op de machine -- het werkt ook de helper bij, en vanaf dan werk je hier bij met een klik:",
+    "all": {
+      "title": "Wat er wacht",
+      "button": "Alles bijwerken",
+      "nothing": "Alles is actueel. Niets te doen.",
+      "plan": "Op volgorde: {{steps}}. Er start niets opnieuw zonder dat jij het zegt."
+    },
+    "one": "Bijwerken",
+    "restart": "Opnieuw starten",
+    "steps": {
+      "gatewaySystem": "Gateway-VPS: systeemupdates",
+      "gateway": "Gateway",
+      "hostSystem": "Deze machine: systeemupdates",
+      "helper": "Helper",
+      "server": "UwUMail Server",
+      "gatewayReboot": "Gateway-VPS opnieuw starten",
+      "hostReboot": "Deze machine opnieuw starten"
+    },
+    "stepStates": {
+      "pending": "wacht",
+      "running": "bezig …",
+      "done": "klaar",
+      "failed": "mislukt",
+      "skipped": "overgeslagen"
+    },
+    "run": {
+      "title": "Bijwerken",
+      "started": "Gestart {{time}} door {{by}}.",
+      "finished": "Afgerond {{time}}.",
+      "failedHint": "Deze stap is niet gelukt. De rest wacht tot jij zegt hoe het verdergaat.",
+      "retry": "Nog een keer",
+      "skip": "Overslaan",
+      "stop": "Stoppen",
+      "composeKeep": "Mijn compose.yaml houden",
+      "composeReplace": "Vervangen door de nieuwe",
+      "reasons": {
+        "compose": "De compose.yaml op de machine is met de hand gewijzigd en past niet bij de nieuwe versie. Hoe moet het verder?",
+        "rolledBack": "De nieuwe versie is niet gestart. De oude draait verder.",
+        "timeout": "Geen antwoord binnen de verwachte tijd."
+      },
+      "away": "De server is nu niet bereikbaar. Tijdens zijn eigen update is dat normaal – ik blijf vragen.",
+      "log": "Uitvoer: {{step}}",
+      "reloadHint": "De nieuwe versie brengt een nieuw portaal mee."
+    },
+    "helperCurrent": "Versie {{version}}, actueel.",
+    "gatewayMachine": "Gateway-VPS",
+    "newRelease": "Er is een nieuwe hoofdversie van het systeem: {{release}}. Die installeer ik niet, dat blijft bij jou.",
+    "noHelper": "Op deze machine is geen helper geïnstalleerd, dus ik kan van hieruit niets installeren. Eén keer op de machine uitvoeren:",
+    "gatewayNoHelper": "Deze gateway is van vóór zijn helper. Nog één keer op de VPS uitvoeren, daarna gaat alles van hieruit:",
+    "restartAsk": {
+      "hostReboot": {
+        "title": "Deze machine opnieuw starten?",
+        "body": "De server en al het andere op deze machine is een paar minuten niet bereikbaar."
+      },
+      "gatewayReboot": {
+        "title": "De VPS van de gateway opnieuw starten?",
+        "body": "Zolang de VPS start, komt er geen mail van buiten binnen. Afzenders proberen het later opnieuw."
+      }
+    }
   },
   "backups": {
     "intro": "Elke nacht maakt de server een back-up van mail, instellingen, agenda's en contacten: op een SFTP-server zoals een NAS, in een S3-bucket of in een map, bijvoorbeeld een gekoppelde schijf. Na de eerste keer uploadt hij alleen wat nieuw is.",

@@ -802,12 +802,14 @@ cd /opt/uwumail && sudo docker compose up -d
 
 What the container may ask the helper for is a verb from a fixed list: install
 the system's updates, restart the machine, bring UwUMail or the helper itself to
-the newest release (*Server → Updates*, *Server → Overview*), and start, stop or
+the newest release (*Server → Updates*), and start, stop or
 remove the VPN for pictures (*Server → Settings → VPN & proxy*, see
 [configuration.md](configuration.md#remote-pictures-through-a-vpn)). Never a
-command, never a path, never an address, and never a version: an update always
+command, never a path, never an address, and never a version number: an update
 fetches the newest release from GitHub, checks it against its `sha256`, and runs
-the same `update.sh` a person would. The VPN is the one job that takes data:
+the same `update.sh` a person would. With it go at most two words from fixed
+lists: the channel (`latest`, `beta` or `edge`) and, where `compose.yaml` was
+changed by hand, `keep` or `replace`. The VPN is the one job that takes data:
 gluetun's settings, which the helper checks against a fixed list of variables
 and writes to `.env.vpn` itself. The docker socket stays where it is: handing
 that to a container is handing it the machine.

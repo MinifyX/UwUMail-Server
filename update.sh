@@ -16,6 +16,9 @@
 #   --yes              ask nothing; every answer takes its default
 #   --help
 #
+# It ends with 3 when the new version did not come up and the old one runs again, and with 4 when
+# compose.yaml was changed by hand and nobody said what to do about it.
+#
 # What it never touches: your data, and a compose.yaml you edited yourself unless you say --force.
 # Of the .env it only ever changes what it says it changes. The whole story: docs/deployment.md.
 set -uo pipefail
@@ -336,7 +339,8 @@ elif fetch_checked compose.yaml "$stock"; then
 
 	CHOICE
     rm -f "$stock"
-    exit 1
+    # Its own code, so the portal can ask the same question with two buttons.
+    exit 4
   fi
 else
   warn "could not fetch the current compose.yaml; going on with the one that is here"

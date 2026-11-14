@@ -111,7 +111,8 @@ so it runs without questions too:
 sudo bash install.sh --hostname mail.example.com --email me@example.org --yes
 ```
 
-The next version, later on (or *Update now* under *Server → Updates*):
+The next version, later on (or *Update everything* under *Server → Updates*, which also takes the
+system's updates and the gateway):
 
 ```bash
 cd /opt/uwumail && sudo bash update.sh

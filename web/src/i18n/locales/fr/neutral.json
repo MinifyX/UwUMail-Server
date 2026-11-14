@@ -1535,7 +1535,6 @@
     "title": "Cette machine",
     "noReport": "L'assistant sur cette machine ne s'est pas manifesté depuis un moment. uwumail-host-machine.timer tourne-t-il encore ?",
     "unknownSystem": "Système inconnu",
-    "checked": "dernier coup d'œil {{at}}",
     "notApt": "Cette machine n'utilise pas apt. UwUMail ne peut pas dire ce dont elle a besoin — cela reste votre affaire.",
     "upToDate": "Rien à faire : le système est à jour.",
     "waiting_one": "{{count}} paquet est en attente, dont {{security}} mises à jour de sécurité.",
@@ -1545,18 +1544,7 @@
     "notAlone": "D'autres choses tournent sur cette machine : {{others}}. Une mise à jour les redémarre aussi, et un redémarrage les emporte avec lui.",
     "cannotTell": "Je ne peux pas dire ce qui tourne d'autre ici. Mieux vaut vérifier vous-même avant d'appuyer sur le bouton.",
     "liability": "Ce qui se passe ici se passe sur votre machine. Je vérifie d'abord, du mieux que je peux — je ne peux pas en répondre.",
-    "installUpdates": "Installer les mises à jour",
-    "restart": "Redémarrer",
-    "states": {
-      "running": "en cours ...",
-      "done": "terminé",
-      "failed": "échec",
-      "rolledBack": "annulé",
-      "waiting": "en attente"
-    },
-    "helperNewer": "Une nouvelle version de l'assistant est disponible pour cette machine. Un clic suffit pour la récupérer.",
-    "helperOld": "L'assistant sur cette machine (version {{version}}) ne peut pas encore se mettre à jour lui-même. Exécutez ceci une fois sur la machine ; ensuite, tout se passe ici dans le portail :",
-    "updateHelper": "Mettre à jour l'assistant"
+    "helperNewer": "Une nouvelle version de l'assistant est disponible pour cette machine. Un clic suffit pour la récupérer."
   },
   "queue": {
     "title": "File d'attente",
@@ -3147,16 +3135,7 @@
       "forgotten": "Passerelle oubliée.",
       "machine": {
         "title": "Le VPS",
-        "installUpdates": "Installer les mises à jour",
-        "updateGateway": "Mettre à jour la passerelle vers {{version}}",
-        "restart": "Redémarrer",
-        "hint": "La passerelle a vérifié pour la dernière fois le {{time}}. Pendant que l'une de ces actions tourne, la passerelle est absente un instant — le courrier qui arrive entre-temps est redistribué plus tard par le serveur d'envoi.",
-        "states": {
-          "running": "En cours …",
-          "done": "Terminé.",
-          "failed": "Cela n'a pas fonctionné.",
-          "refused": "Cela a été refusé."
-        }
+        "toUpdates": "Mises à jour et redémarrage : dans le centre de mises à jour"
       }
     },
     "restore": {
@@ -3184,8 +3163,7 @@
     }
   },
   "updates": {
-    "intro": "Quelle version tourne, ce qui est nouveau, et ce qui l'installe.",
-    "open": "Ouvrir",
+    "intro": "Tout ce qui peut être mis à jour, au même endroit : serveur, assistant, cette machine, la passerelle et son VPS.",
     "running": "En service : version {{version}}",
     "runningEdge": "En service : edge, commit {{commit}} (version {{version}})",
     "notChecked": "Pas encore cherché de mises à jour.",
@@ -3196,24 +3174,74 @@
     "edgeBehind_many": "Il y a {{count}} nouveaux commits sur main :",
     "edgeBehind_other": "Il y a {{count}} nouveaux commits sur main :",
     "onGitHub": "sur GitHub",
-    "serverCommand": "Serveur",
     "gatewayCommand": "Passerelle (sur le VPS)",
-    "gatewayRunning": "Passerelle : {{software}}",
     "check": "Chercher des mises à jour chaque jour",
     "checkHint": "Demande une fois par jour à GitHub s'il existe une nouvelle version.",
     "channel": "Canal",
     "stable": "Stable",
     "beta": "Bêta",
     "checkNow": "Chercher maintenant",
-    "version": {
-      "title": "Version"
-    },
-    "onTheMachine": "La mise à jour se fait sur la machine, pas d'ici — le script apporte aussi un nouveau compose.yaml, ce qu'un conteneur qui se remplace lui-même ne pourrait jamais faire.",
     "checkTitle": "Recherche de mises à jour",
-    "byButton": "Le bouton installe la nouvelle version sur cette machine : d'abord une sauvegarde, puis le nouveau compose.yaml et les images. Si la nouvelle version ne démarre pas, l'ancienne continue de tourner. Le serveur est injoignable pendant environ une minute.",
-    "installNow": "Mettre à jour maintenant",
     "reload": "Recharger la page",
-    "helperOld": "L'assistant sur cette machine est trop ancien pour le bouton de mise à jour. Exécutez ceci une fois sur la machine — cela met aussi l'assistant à jour, et ensuite vous mettez à jour ici d'un clic :"
+    "helperOld": "L'assistant sur cette machine est trop ancien pour le bouton de mise à jour. Exécutez ceci une fois sur la machine — cela met aussi l'assistant à jour, et ensuite vous mettez à jour ici d'un clic :",
+    "all": {
+      "title": "Ce qui attend",
+      "button": "Tout mettre à jour",
+      "nothing": "Tout est à jour. Rien à faire.",
+      "plan": "Dans l'ordre : {{steps}}. Rien ne redémarre sans que tu le dises."
+    },
+    "one": "Mettre à jour",
+    "restart": "Redémarrer",
+    "steps": {
+      "gatewaySystem": "VPS de la passerelle : mises à jour système",
+      "gateway": "Passerelle",
+      "hostSystem": "Cette machine : mises à jour système",
+      "helper": "Assistant",
+      "server": "UwUMail Server",
+      "gatewayReboot": "Redémarrer le VPS de la passerelle",
+      "hostReboot": "Redémarrer cette machine"
+    },
+    "stepStates": {
+      "pending": "en attente",
+      "running": "en cours …",
+      "done": "terminé",
+      "failed": "échoué",
+      "skipped": "ignoré"
+    },
+    "run": {
+      "title": "Mise à jour",
+      "started": "Lancée {{time}} par {{by}}.",
+      "finished": "Terminée {{time}}.",
+      "failedHint": "Cette étape n'a pas fonctionné. Le reste attend que tu dises comment continuer.",
+      "retry": "Réessayer",
+      "skip": "Ignorer",
+      "stop": "Arrêter",
+      "composeKeep": "Garder mon compose.yaml",
+      "composeReplace": "Le remplacer par le nouveau",
+      "reasons": {
+        "compose": "Le compose.yaml de la machine a été modifié à la main et ne correspond pas à la nouvelle version. Comment continuer ?",
+        "rolledBack": "La nouvelle version n'a pas démarré. L'ancienne continue de tourner.",
+        "timeout": "Pas de réponse dans le délai prévu."
+      },
+      "away": "Le serveur est injoignable pour l'instant. Pendant sa propre mise à jour, c'est normal – je continue de demander.",
+      "log": "Sortie : {{step}}",
+      "reloadHint": "La nouvelle version apporte un nouveau portail."
+    },
+    "helperCurrent": "Version {{version}}, à jour.",
+    "gatewayMachine": "VPS de la passerelle",
+    "newRelease": "Une nouvelle version majeure du système existe : {{release}}. Celle-là, je ne l'installe pas, elle reste à toi.",
+    "noHelper": "Aucun assistant n'est installé sur cette machine, je ne peux donc rien installer d'ici. À exécuter une fois sur la machine :",
+    "gatewayNoHelper": "Cette passerelle date d'avant son assistant. À exécuter encore une fois sur le VPS, ensuite tout se fait d'ici :",
+    "restartAsk": {
+      "hostReboot": {
+        "title": "Redémarrer cette machine ?",
+        "body": "Le serveur et tout le reste sur cette machine seront injoignables quelques minutes."
+      },
+      "gatewayReboot": {
+        "title": "Redémarrer le VPS de la passerelle ?",
+        "body": "Tant que le VPS démarre, aucun courrier de l'extérieur n'arrive. Les expéditeurs réessaient plus tard."
+      }
+    }
   },
   "backups": {
     "intro": "Chaque nuit, le serveur sauvegarde le courrier, les paramètres, les calendriers et les contacts : sur un serveur SFTP comme un NAS, dans un bucket S3 ou dans un dossier, par exemple un disque monté. Après la première fois, il n'envoie que ce qui est nouveau.",

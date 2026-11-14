@@ -124,7 +124,7 @@ impl HostBackend for HostBridge {
         HostView { available: true, machine, job, log, command: String::new() }
     }
 
-    fn ask<'a>(&'a self, verb: &'a str) -> HostFuture<'a> {
+    fn ask<'a>(&'a self, verb: &'a str, options: &'a [(&'static str, &'a str)]) -> HostFuture<'a> {
         Box::pin(async move {
             if !matches!(
                 verb,
@@ -138,8 +138,18 @@ impl HostBackend for HostBridge {
             {
                 return Err("something is already running on this machine".into());
             }
+            // The helper checks these again; nothing but a word from its own list gets through.
+            if let Some((key, value)) = options.iter().find(|option| {
+                verb != "uwumail-update"
+                    || !matches!(option, ("channel", "latest" | "beta" | "edge") | ("compose", "keep" | "replace"))
+            }) {
+                return Err(format!("this server does not ask for {key} {value}"));
+            }
             let id = job_id();
-            let line = serde_json::json!({ "id": id, "verb": verb, "at": unix_now() });
+            let mut line = serde_json::json!({ "id": id, "verb": verb, "at": unix_now() });
+            for (key, value) in options {
+                line[*key] = (*value).into();
+            }
             let path = self.dir.join("jobs.jsonl");
             let mut text = format!("{line}\n");
             if let Ok(waiting) = std::fs::read_to_string(&path) {
@@ -187,7 +197,7 @@ mod tests {
         let bridge = HostBridge { dir: dir.path().to_owned(), current: Mutex::new(None) };
         assert!(bridge.view().job.is_none());
 
-        let id = bridge.ask("vpn-stop").await.unwrap();
+        let id = bridge.ask("vpn-stop", &[]).await.unwrap();
         let job = bridge.view().job.unwrap();
         assert_eq!((job.id.as_str(), job.state.as_str()), (id.as_str(), "waiting"), "asked, not started");
         assert!((unix_now() - job.at).abs() < 5);
@@ -196,7 +206,16 @@ mod tests {
         let answer = serde_json::json!({ "id": id, "state": "done", "error": "", "at": unix_now() });
         std::fs::write(dir.path().join(format!("job-{id}.json")), answer.to_string()).unwrap();
         assert_eq!(bridge.view().job.unwrap().state, "done");
-        assert!(bridge.ask("reboot-everything").await.is_err(), "only known verbs");
+        assert!(bridge.ask("reboot-everything", &[]).await.is_err(), "only known verbs");
+        assert!(bridge.ask("uwumail-update", &[("channel", "latest; reboot")]).await.is_err(), "only known options");
+        assert!(bridge.ask("reboot", &[("channel", "beta")]).await.is_err(), "options are for the update alone");
+        bridge.ask("uwumail-update", &[("channel", "beta"), ("compose", "keep")]).await.unwrap();
+        let asked = std::fs::read_to_string(dir.path().join("jobs.jsonl")).unwrap();
+        let line: serde_json::Value = serde_json::from_str(asked.lines().last().unwrap()).unwrap();
+        assert_eq!(
+            (line["verb"].as_str(), line["channel"].as_str(), line["compose"].as_str()),
+            (Some("uwumail-update"), Some("beta"), Some("keep"))
+        );
     }
 
     #[test]

@@ -36,6 +36,7 @@ describe("the machine's helper", () => {
   it("names the directory UwUMail runs from in the command", () => {
     expect(updateCommand(machine({}))).toBe("cd /srv/mail && sudo bash update.sh");
     expect(updateCommand(null)).toBe("cd /opt/uwumail && sudo bash update.sh");
+    expect(updateCommand(machine({ composeDir: "/srv/mail; true" }))).toBe("cd /opt/uwumail && sudo bash update.sh");
   });
 
   it("counts a job as busy until the helper answered", () => {

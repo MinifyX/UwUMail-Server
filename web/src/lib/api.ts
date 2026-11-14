@@ -581,6 +581,8 @@ export interface HostMachine {
   securityUpdates: number;
   rebootRequired: boolean;
   rebootPackages: string[];
+  /** A newer version of the system itself. Shown, never installed from here. */
+  newRelease?: string | null;
   /** null means the helper could not tell, which is never shown as yes. */
   alone: boolean | null;
   others: string[];
@@ -824,7 +826,34 @@ export interface UpdateSettings {
   channel: UpdateChannel;
 }
 
-/** What runs here and what is newer. Installing it happens on the machine, with update.sh. */
+/** In the order a run takes them. Restarts are never part of "everything". */
+export type UpdateStepKind =
+  | "gatewaySystem"
+  | "gateway"
+  | "hostSystem"
+  | "helper"
+  | "server"
+  | "gatewayReboot"
+  | "hostReboot";
+
+export interface UpdateStep {
+  kind: UpdateStepKind;
+  state: "pending" | "running" | "done" | "failed" | "skipped";
+  error: string;
+  /** Why it failed, where there is more to offer than "again": compose, rolledBack, timeout. */
+  reason: string;
+  log: string;
+}
+
+/** One go through the steps; it stops at the first that fails until the admin answers. */
+export interface UpdateRun {
+  startedAt: number;
+  finishedAt: number | null;
+  by: string;
+  steps: UpdateStep[];
+}
+
+/** What runs here, what is newer, and the run that installs it. */
 export interface UpdatesView {
   build: { version: string; commit: string | null; release: boolean };
   settings: UpdateSettings;
@@ -838,8 +867,18 @@ export interface UpdatesView {
   image: string;
   /** What to run on the machine the server lives on. */
   serverCommand: string;
-  gateway: { software: string } | null;
+  host: HostView;
+  /** Only a gateway that is connected. */
+  gateway: GatewayView | null;
+  /** The gateway version there is to install, when the running one is older. */
+  gatewayVersion: string | null;
+  /** For a gateway without a helper: what to run on its VPS, once. */
   gatewayCommand: string | null;
+  /** What "everything" would do now. */
+  plan: UpdateStepKind[];
+  /** What can be asked for at all. */
+  possible: UpdateStepKind[];
+  run: UpdateRun | null;
 }
 
 export interface BackupReport {
