@@ -856,6 +856,8 @@ export interface BackupsView {
   hour: number;
   minute: number;
   retention: { daily: number; weekly: number; monthly: number };
+  /** Whether people may search their own mail in the backups. */
+  userSearch: boolean;
   encrypted: boolean;
   target: BackupTarget | null;
   status: {

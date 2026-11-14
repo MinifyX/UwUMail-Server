@@ -3223,7 +3223,9 @@
       "monthly": "Months to keep",
       "encrypted": "Encrypt",
       "encryptedHint": "Recommended: then nobody can read the mail on the backup server. To restore you need the recovery key.",
-      "encryptedFixed": "There are backups already, so this stays as it is."
+      "encryptedFixed": "There are backups already, so this stays as it is.",
+      "userSearch": "People may search the backups",
+      "userSearchHint": "Everyone can find their own deleted mail in the backups and take it back, in the webmail and the app. Only the headers are searched."
     },
     "snapshots": {
       "title": "Snapshots",

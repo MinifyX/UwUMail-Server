@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.34.0
+
+- People can search their own deleted mail in the backups and take it back themselves: by
+  subject, sender, recipient and date, across all snapshots at once, with a preview, into a
+  folder `Restored <date>` (docs/backups.md, docs/jmap-backups.md). The server keeps an index
+  of the snapshots' headers for that; the admin can switch it off under *Backups*.
+- New JMAP extension `urn:uwumail:jmap:backups` (`BackupEmail/query`, `/get`, `/restore`).
+
 ## 0.33.0
 
 - Motion from UwUSuite-Design 1.15.0, subtle and still under reduced motion: after signing in
