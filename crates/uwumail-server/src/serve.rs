@@ -172,6 +172,9 @@ pub async fn run(
     // day through the egress (docs/llm.md, "Costs").
     tasks.spawn(assist.clone().run_price_updater(shutdown_rx.clone()));
     let jmap = jmap.with_assist(assist.clone());
+    let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
+    // People find their own mail in the backups over JMAP (docs/jmap-backups.md).
+    let jmap = jmap.with_backups(backups.clone());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.
     let loki = uwumail_web::Loki::new();
@@ -266,7 +269,6 @@ pub async fn run(
     if let Some(bridge) = crate::host::HostBridge::find() {
         web.set_host(Arc::new(bridge));
     }
-    let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
     web.set_backups(backups.clone());
     // The one thing a restore needs that the backup service cannot have by itself: where the data
     // lives, and a way to stop the server once the snapshot is here. It cannot put the files in

@@ -99,7 +99,7 @@ const READ_TIME: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 /// How many folders, messages and keywords per message are read of one person at most: far more
 /// than anyone has, and a bound on the memory a damaged or hostile database can make it take.
 const MAX_FOLDERS: usize = 100_000;
-const MAX_MAILS: usize = 5_000_000;
+pub(crate) const MAX_MAILS: usize = 5_000_000;
 const MAX_KEYWORDS: usize = 100;
 /// How deep a folder path is followed.
 const MAX_DEPTH: usize = 100;
@@ -107,7 +107,7 @@ const MAX_DEPTH: usize = 100;
 const TABLES: &[&str] = &["accounts", "mailboxes", "emails", "email_mailboxes", "email_keywords"];
 
 /// A snapshot's database, open for reading only, and stopped when reading it takes too long.
-struct Snapshot {
+pub(crate) struct Snapshot {
     conn: Connection,
     /// Dropped when reading is done, which lets the watchdog go.
     _done: std::sync::mpsc::Sender<()>,
@@ -125,7 +125,7 @@ impl std::ops::Deref for Snapshot {
 /// anything (security-audit-0.16.0 PLAT-7): SQLite is told not to trust anything in it that could
 /// run code, no value may be longer than [`MAX_VALUE`], the tables read must be tables, and after
 /// [`READ_TIME`] every query is interrupted.
-fn open(path: &Path) -> Result<Snapshot, Error> {
+pub(crate) fn open(path: &Path) -> Result<Snapshot, Error> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn = Connection::open_with_flags(path, flags).map_err(|err| damaged(&err))?;
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;").map_err(|err| damaged(&err))?;
@@ -157,14 +157,14 @@ fn open(path: &Path) -> Result<Snapshot, Error> {
     Ok(snapshot)
 }
 
-fn too_many(what: &str) -> rusqlite::Error {
+pub(crate) fn too_many(what: &str) -> rusqlite::Error {
     rusqlite::Error::SqliteFailure(
         rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_TOOBIG),
         Some(format!("more {what} than a restore takes")),
     )
 }
 
-fn damaged(err: &rusqlite::Error) -> Error {
+pub(crate) fn damaged(err: &rusqlite::Error) -> Error {
     Error::Damaged(format!("the snapshot's database cannot be read: {err}"))
 }
 
@@ -325,7 +325,12 @@ pub fn restored_folder_name(snapshot_created_at: i64) -> String {
 }
 
 /// Finds or makes a folder by name below `parent`.
-async fn folder_below(store: &Store, account_id: i64, parent: Option<i64>, name: &str) -> Result<i64, Error> {
+pub(crate) async fn folder_below(
+    store: &Store,
+    account_id: i64,
+    parent: Option<i64>,
+    name: &str,
+) -> Result<i64, Error> {
     // Stored names are trimmed.
     let name = name.trim();
     let existing = store
@@ -341,7 +346,7 @@ async fn folder_below(store: &Store, account_id: i64, parent: Option<i64>, name:
 
 /// A message's content: from this server's own blobs while it still has them, else from the
 /// backup. Either way it must hash to what the snapshot says.
-async fn content_of(store: &Store, repo: &Repository, hash: &str) -> Result<Vec<u8>, Error> {
+pub(crate) async fn content_of(store: &Store, repo: &Repository, hash: &str) -> Result<Vec<u8>, Error> {
     let parsed = BlobHash::parse(hash).map_err(|_| Error::Damaged(format!("{hash} is not a mail's name")))?;
     if let Ok(content) = store.blob(&parsed).await
         && BlobHash::of(&content).as_str() == hash

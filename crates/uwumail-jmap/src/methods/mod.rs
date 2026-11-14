@@ -2,6 +2,7 @@
 
 mod address_book;
 pub mod assist;
+mod backup_email;
 mod birthdays;
 mod calendar;
 mod calendar_event;
@@ -37,8 +38,8 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    ASSIST, AVAILABILITY, BIRTHDAYS, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED, PROFILE,
-    SENDERS, SETTINGS, SIEVE, SIGNATURES, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, VERIFICATION, WEBMAIL,
+    ASSIST, AVAILABILITY, BACKUPS, BIRTHDAYS, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED,
+    PROFILE, SENDERS, SETTINGS, SIEVE, SIGNATURES, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, VERIFICATION, WEBMAIL,
     WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
@@ -67,6 +68,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     IMAGETEXT,
     BIRTHDAYS,
     ASSIST,
+    BACKUPS,
     SIGNATURES,
     VERIFICATION,
 ];
@@ -252,6 +254,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "VerificationCode" => VERIFICATION,
         "Birthdays" => BIRTHDAYS,
         "Assist" | "AssistProvider" | "AssistSettings" | "AssistLabel" => ASSIST,
+        "BackupEmail" => BACKUPS,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -402,6 +405,9 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "AssistLabel/apply" => single(assist::label_apply(ctx, &args).await?),
         "AssistLabel/suggest" => single(assist::label_suggest(ctx, &args).await?),
         "AssistLabel/checkOverlap" => single(assist::label_check_overlap(ctx, &args).await?),
+        "BackupEmail/query" => single(backup_email::query(ctx, &args).await?),
+        "BackupEmail/get" => single(backup_email::get(ctx, &args).await?),
+        "BackupEmail/restore" => single(backup_email::restore(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

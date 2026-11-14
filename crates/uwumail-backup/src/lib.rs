@@ -9,6 +9,7 @@
 
 mod folder;
 pub mod format;
+pub mod index;
 pub mod mailbox;
 pub mod retention;
 pub mod s3;
@@ -24,11 +25,12 @@ use serde::Serialize;
 use uwumail_store::{BlobHash, Store};
 
 pub use format::{Codec, Manifest, RepoConfig, RepoKey};
+pub use index::{Address, IndexedMail, Owner, Search};
 pub use mailbox::{MailboxProgress, MailboxRestoreReport, SnapshotFolder, SnapshotPerson};
 pub use retention::Retention;
 pub use service::{
     BackupSettings, BackupStatus, Backups, Fetching, LOCK_FILE, Look, MailboxRestore, MailboxRestoreDone, READY_FILE,
-    STAGING_DIR, Staged,
+    Restored, STAGING_DIR, Staged,
 };
 pub use sftp::{Login, SftpTarget};
 pub use storage::Storage;
@@ -254,7 +256,9 @@ fn other_files(data_dir: &Path) -> Vec<(String, PathBuf)> {
     found
 }
 
-/// Backs up the server into the repository and applies the retention rules.
+/// Backs up the server into the repository and applies the retention rules. With `index`, the
+/// snapshot's mail is also added to the index there (see [`index`]).
+#[allow(clippy::too_many_arguments)]
 pub async fn backup(
     store: &Store,
     repo: &Repository,
@@ -262,6 +266,7 @@ pub async fn backup(
     version: &str,
     retention: Retention,
     now: i64,
+    index: Option<&Path>,
 ) -> Result<BackupReport, Error> {
     let _pause = store.pause_blob_cleanup();
     let mut known = repo.object_ids().await?;
@@ -307,6 +312,18 @@ pub async fn backup(
     // The chunker stops once nobody listens; the plain copy goes whether the upload worked or not.
     drop(chunks);
     let chunked = chunker.await;
+    let name = format!("{now:012}-{}", random_suffix());
+    if let (Ok(()), Ok(()), Some(index)) = (&sent, &chunked, index) {
+        // A snapshot indexed here that is not written after all is forgotten by the next catch-up.
+        let (index, reading, indexed_name) = (index.to_owned(), copy.clone(), name.clone());
+        let added = tokio::task::spawn_blocking(move || index::add(&index, &reading, &indexed_name, now))
+            .await
+            .map_err(|err| Error::Storage(err.to_string()))
+            .and_then(|added| added);
+        if let Err(err) = added {
+            tracing::warn!(%err, "the snapshot could not be added to the search index");
+        }
+    }
     let _ = tokio::fs::remove_file(&copy).await;
     sent?;
     chunked.map_err(|err| Error::Storage(err.to_string()))?;
@@ -337,7 +354,6 @@ pub async fn backup(
         files.push(FileEntry { path, id, size: content.len() as u64 });
     }
 
-    let name = format!("{now:012}-{}", random_suffix());
     let manifest = Manifest {
         format: format::FORMAT,
         created_at: now,
