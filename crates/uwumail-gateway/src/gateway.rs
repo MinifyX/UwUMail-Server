@@ -33,6 +33,8 @@ const REPORT_EVERY: Duration = Duration::from_secs(5 * 60);
 /// While a task runs, someone is watching the portal and five minutes is a long time to stare at
 /// nothing.
 const REPORT_WHILE_BUSY: Duration = Duration::from_secs(3);
+/// How long after a job was asked for the fast pace holds, whatever the job's state says.
+const WATCH_AFTER_ASK: Duration = Duration::from_secs(2 * 60);
 /// How long the gateway gathers log lines before it sends them to the server.
 const LOG_BATCH_DELAY: Duration = Duration::from_secs(1);
 /// Refused tunnel attempts from one address before it has to wait for the window to pass.
@@ -484,6 +486,7 @@ async fn serve_server(
 async fn talk(shared: Arc<Shared>, remote: SocketAddr, send: SendStream, mut recv: RecvStream, wants_logs: bool) {
     // Status reports and log batches share the one stream, so they take turns at it.
     let send = tokio::sync::Mutex::new(send);
+    let job_asked = tokio::sync::Notify::new();
     let asked = async {
         // A message this version does not know is skipped, not fatal: a newer server keeps talking.
         while let Ok(message) = proto::read_known::<_, ServerMessage>(&mut recv).await {
@@ -504,12 +507,16 @@ async fn talk(shared: Arc<Shared>, remote: SocketAddr, send: SendStream, mut rec
                     // The machine checks all three again before anything happens; this only hands
                     // them over. Whether it worked comes back with the next status.
                     shared.machine.ask(&id, &verb, version.as_deref());
+                    job_asked.notify_one();
                 }
                 Some(ServerMessage::Unban { .. }) | None => {}
             }
         }
     };
     let reporting = async {
+        // A job just asked for is not "running" yet, and a restart never is: without this the
+        // portal learned how it went with the next heartbeat, minutes later.
+        let mut watched_until = Instant::now();
         loop {
             // Says again that this is where the tunnel is, so the note does not time out under a
             // connection that is very much in use. The trust is deliberately short-lived: the
@@ -520,11 +527,14 @@ async fn talk(shared: Arc<Shared>, remote: SocketAddr, send: SendStream, mut rec
             let status = shared.machine.status(software);
             // While something is being installed the portal is watching, so it is told every few
             // seconds instead of every few minutes. The rest of the time this is a quiet heartbeat.
-            let busy = status.job.as_ref().is_some_and(|job| job.state == "running");
+            let busy = status.job.as_ref().is_some_and(|job| job.state == "running") || Instant::now() < watched_until;
             if proto::write_message(&mut *send.lock().await, &GatewayMessage::Status(Box::new(status))).await.is_err() {
                 break;
             }
-            tokio::time::sleep(if busy { REPORT_WHILE_BUSY } else { REPORT_EVERY }).await;
+            tokio::select! {
+                () = tokio::time::sleep(if busy { REPORT_WHILE_BUSY } else { REPORT_EVERY }) => {}
+                () = job_asked.notified() => watched_until = Instant::now() + WATCH_AFTER_ASK,
+            }
         }
     };
     let logs = shared.logs.clone().filter(|_| wants_logs);

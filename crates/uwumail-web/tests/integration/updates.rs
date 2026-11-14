@@ -27,6 +27,11 @@ async fn a_run_takes_the_steps_in_order_and_stops_where_one_fails() {
     assert_eq!(view["possible"], json!(["hostSystem", "helper", "server", "hostReboot"]));
     assert!(view["run"].is_null());
 
+    // "By hand" is off until the admin says so, and settings saved before it existed still load.
+    assert_eq!(view["settings"]["manual"], false);
+    let (status, view) = call(&app, "PUT", path, Some(json!({ "check": true, "manual": true })), &auth).await;
+    assert_eq!((status, &view["settings"]["manual"]), (StatusCode::OK, &json!(true)));
+
     let (status, view) = call(&app, "POST", "/api/admin/updates/run", Some(json!({})), &auth).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(states(&view), [("hostSystem", "running"), ("helper", "pending")]);

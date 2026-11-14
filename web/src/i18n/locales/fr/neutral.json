@@ -3230,7 +3230,10 @@
     "helperCurrent": "Version {{version}}, à jour.",
     "gatewayMachine": "VPS de la passerelle",
     "newRelease": "Une nouvelle version majeure du système existe : {{release}}. Celle-là, je ne l'installe pas, elle reste à toi.",
-    "noHelper": "Aucun assistant n'est installé sur cette machine, je ne peux donc rien installer d'ici. À exécuter une fois sur la machine :",
+    "noHelper": "Aucun assistant n'est encore installé sur cette machine. Il installe les mises à jour et redémarre quand vous le demandez ici. À exécuter une fois sur la machine ; ensuite tout se fait depuis cette page. Si UwUMail n'est pas dans /opt/uwumail, adaptez le chemin dans la commande.",
+    "manualOn": "Continuer sans l'assistant",
+    "manual": "Tu fais les mises à jour à la main. Pour mettre à jour, exécute sur la machine :",
+    "manualOff": "Installer l'assistant quand même",
     "gatewayNoHelper": "Cette passerelle date d'avant son assistant. À exécuter encore une fois sur le VPS, ensuite tout se fait d'ici :",
     "restartAsk": {
       "hostReboot": {

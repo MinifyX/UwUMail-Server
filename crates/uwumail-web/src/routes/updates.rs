@@ -48,9 +48,14 @@ async fn view(web: &Web) -> ApiResult<Value> {
         "settings": settings,
         "info": info,
         "image": format!("{}:{}", image(), tag(build.release, settings.channel)),
-        // For a machine without a helper. update.sh updates itself, the compose file and the
-        // image, in that order.
-        "serverCommand": "sudo bash update.sh",
+        // For a machine without a helper: fetch it, check it, install it, and recreate the
+        // container once so it sees the directory the two share.
+        "helperCommand": concat!(
+            "cd /tmp && curl -fsSLO ", env!("CARGO_PKG_REPOSITORY"), "/releases/latest/download/uwumail-host.tar.gz",
+            " && curl -fsSLO ", env!("CARGO_PKG_REPOSITORY"), "/releases/latest/download/uwumail-host.tar.gz.sha256",
+            " && sha256sum -c uwumail-host.tar.gz.sha256 && tar -xzf uwumail-host.tar.gz",
+            " && sudo bash uwumail-host/install.sh --dir /opt/uwumail && cd /opt/uwumail && sudo docker compose up -d"
+        ),
         "host": web.host().map(|host| host.view()).unwrap_or_default(),
         "gateway": gateway,
         "gatewayVersion": gateway_version,
@@ -77,7 +82,7 @@ pub async fn save(
         &session,
         "updates.settings",
         "server",
-        json!({ "check": settings.check, "channel": settings.channel }),
+        json!({ "check": settings.check, "channel": settings.channel, "manual": settings.manual }),
     )
     .await;
     // Another channel sees other releases.

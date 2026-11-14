@@ -3174,7 +3174,10 @@
     "helperCurrent": "Version {{version}}, up to date.",
     "gatewayMachine": "Gateway VPS",
     "newRelease": "There is a new major version of the system: {{release}}. I do not install that one, it stays with you.",
-    "noHelper": "No helper is installed on this machine, so I cannot install anything from here. Run once on the machine:",
+    "noHelper": "No helper is installed on this machine yet. It installs updates and restarts when you say so here. Run this once on the machine; after that everything works from this page. If UwUMail is not in /opt/uwumail, change the path in the command.",
+    "manualOn": "Continue without the helper",
+    "manual": "You update by hand. To update, run on the machine:",
+    "manualOff": "Install the helper after all",
     "gatewayNoHelper": "This gateway is from before its helper. Run once more on the VPS, after that everything works from here:",
     "restartAsk": {
       "hostReboot": {

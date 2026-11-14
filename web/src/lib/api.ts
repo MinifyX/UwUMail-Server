@@ -824,6 +824,8 @@ export interface UpdateSettings {
   /** Ask GitHub at all. */
   check: boolean;
   channel: UpdateChannel;
+  /** Updates are run by hand: do not offer the helper. */
+  manual: boolean;
 }
 
 /** In the order a run takes them. Restarts are never part of "everything". */
@@ -860,7 +862,7 @@ export interface UpdatesView {
   };
   image: string;
   /** What to run on the machine the server lives on. */
-  serverCommand: string;
+  helperCommand: string;
   host: HostView;
   /** Only a gateway that is connected. */
   gateway: GatewayView | null;
