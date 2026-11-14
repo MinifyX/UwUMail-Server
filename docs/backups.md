@@ -171,6 +171,10 @@ adds its snapshot right away, from the copy of the database it makes anyway;
 snapshots from before, or after the index was lost, are read in the
 background once a backup is not running, newest first. Snapshots the
 retention deleted drop out of it. Switching the search off deletes the index.
+The index holds the subject, sender and recipients of deleted mail unencrypted, also when the
+backups are encrypted, for as long as the retention keeps them. Only the server can read the file
+(mode 0600), but backups of the whole volume or VM take it along. Turn the search off where that
+matters.
 
 A person only ever finds their own mail: the mail of their account, by its id
 and the moment it was made, never that of an account that had their address

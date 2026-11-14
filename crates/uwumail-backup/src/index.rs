@@ -107,10 +107,21 @@ fn open(path: &Path) -> Result<Connection, Error> {
     }
     let conn = Connection::open(path).map_err(|err| damaged(&err))?;
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0)).map_err(|err| damaged(&err))?;
-    if version != VERSION && version != 0 {
+    let conn = if version != VERSION && version != 0 {
         drop(conn);
         remove(path);
-        return open(path);
+        if path.exists() {
+            return Err(Error::Damaged("the old backup search index cannot be removed".into()));
+        }
+        Connection::open(path).map_err(|err| damaged(&err))?
+    } else {
+        conn
+    };
+    // The headers of deleted mail, unencrypted even when the backups are not: for the server only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     }
     conn.execute_batch(&format!(
         "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 10000;
@@ -118,6 +129,19 @@ fn open(path: &Path) -> Result<Connection, Error> {
     ))
     .map_err(|err| damaged(&err))?;
     Ok(conn)
+}
+
+/// Opens the index to search it, without writing, so a snapshot being added does not hold it up.
+/// `None` when there is none yet, or one a catch-up has still to make afresh.
+fn open_to_read(path: &Path) -> Result<Option<Connection>, Error> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let conn =
+        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|err| damaged(&err))?;
+    conn.busy_timeout(std::time::Duration::from_secs(10)).map_err(|err| damaged(&err))?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0)).map_err(|err| damaged(&err))?;
+    Ok((version == VERSION).then_some(conn))
 }
 
 /// Removes the index, e.g. when people may no longer search the backups.
@@ -251,10 +275,7 @@ fn mail_of(row: &rusqlite::Row<'_>) -> rusqlite::Result<IndexedMail> {
 
 /// The mail of `owner` in the snapshots that matches, newest first.
 pub fn search(index: &Path, owner: Owner, search: &Search) -> Result<Vec<IndexedMail>, Error> {
-    if !index.exists() {
-        return Ok(Vec::new());
-    }
-    let conn = open(index)?;
+    let Some(conn) = open_to_read(index)? else { return Ok(Vec::new()) };
     // shortcut: LIKE ignores case for ASCII letters only (not for "Ä" and "ä"); a real full-text
     // index if people miss mail because of it.
     let pattern = search.text.as_deref().map(str::trim).filter(|text| !text.is_empty()).map(like_pattern);
@@ -276,10 +297,7 @@ pub fn search(index: &Path, owner: Owner, search: &Search) -> Result<Vec<Indexed
 
 /// One mail of `owner` in the snapshots, by its id in the index.
 pub fn get(index: &Path, owner: Owner, id: i64) -> Result<Option<IndexedMail>, Error> {
-    if !index.exists() {
-        return Ok(None);
-    }
-    let conn = open(index)?;
+    let Some(conn) = open_to_read(index)? else { return Ok(None) };
     conn.query_row(
         &format!("SELECT {COLUMNS} FROM mails m WHERE m.id = ?1 AND m.account_id = ?2 AND m.account_created_at = ?3"),
         params![id, owner.account_id, owner.created_at],

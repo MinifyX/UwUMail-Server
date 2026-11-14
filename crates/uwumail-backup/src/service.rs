@@ -212,6 +212,10 @@ struct Inner {
     index_stale: AtomicBool,
     /// How many snapshots the index is catching up on, and how many of them are done.
     indexing: std::sync::Mutex<(u64, u64)>,
+    /// One person's reading or restoring from the backup server at a time: each holds up to a few
+    /// mails in memory and a connection to the backup server.
+    // shortcut: one for the whole server, not one per person; per account if people wait on each other.
+    user_reads: tokio::sync::Semaphore,
 }
 
 #[derive(Clone)]
@@ -234,6 +238,7 @@ impl Backups {
                 fetching: std::sync::Mutex::default(),
                 index_stale: AtomicBool::new(true),
                 indexing: std::sync::Mutex::default(),
+                user_reads: tokio::sync::Semaphore::new(1),
             }),
         }
     }
@@ -519,6 +524,30 @@ impl Backups {
         }
         let key = settings.key.as_deref().map(RepoKey::from_recovery_text).transpose()?;
         Repository::open(storage, key, now()).await
+    }
+
+    /// The repository the settings name, as it is: makes nothing on the backup server and saves no
+    /// settings. For what people and the search index read.
+    async fn open_existing(&self) -> Result<Repository, Error> {
+        let settings = self.settings().await?;
+        let target = settings.target.as_ref().ok_or_else(|| Error::Config("no backup server is set up".into()))?;
+        let storage = Storage::open(target).await?;
+        let key = match settings.key.as_deref().map(RepoKey::from_recovery_text).transpose() {
+            Ok(key) => key,
+            Err(err) => {
+                storage.close().await;
+                return Err(err);
+            }
+        };
+        Repository::open_existing(storage, key).await
+    }
+
+    /// Removes the search index when people may no longer search: a backup or a catch-up that ran
+    /// while it was turned off may have made it again.
+    async fn drop_index_if_off(&self) {
+        if self.settings().await.is_ok_and(|settings| !settings.user_search) {
+            crate::index::remove(&self.index_path());
+        }
     }
 
     /// The repository the settings name, for the command line. Close its storage when done.
@@ -948,21 +977,33 @@ impl Backups {
     /// Makes the search index hold exactly the snapshots on the backup server: forgets those gone,
     /// and fetches and reads the database of each that is missing, the newest first.
     pub async fn catch_up_index(&self) -> Result<(), Error> {
-        let _running = self.hold(|| "a backup or a restore is running".into())?;
-        let mut settings = self.settings().await?;
-        if !settings.user_search {
+        if !self.settings().await?.user_search {
             return Ok(());
         }
-        let repo = self.open(&mut settings).await?;
+        let repo = self.open_existing().await?;
         let index = self.index_path();
         let fetch = self.inner.store.data_dir().join(crate::index::FETCH_FILE);
         let caught_up = async {
             let names = repo.snapshots().await?;
             let (path, all) = (index.clone(), names.clone());
-            let indexed = blocking(move || crate::index::retain(&path, &all)).await?;
+            let indexed = {
+                let _running = self.hold(|| "a backup or a restore is running".into())?;
+                blocking(move || crate::index::retain(&path, &all)).await?
+            };
             let missing: Vec<String> = names.into_iter().rev().filter(|name| !indexed.contains(name)).collect();
             self.set_indexing(0, missing.len() as u64);
             for (done, name) in missing.into_iter().enumerate() {
+                // The lock for one snapshot at a time, and a due backup or turning the search off
+                // goes first: catching up after an update may take hours.
+                let settings = self.settings().await?;
+                if !settings.user_search || Self::due(&settings, &self.status().await, now()) {
+                    self.inner.index_stale.store(true, Ordering::SeqCst);
+                    break;
+                }
+                let Ok(_running) = self.hold(|| "a backup or a restore is running".into()) else {
+                    self.inner.index_stale.store(true, Ordering::SeqCst);
+                    break;
+                };
                 match crate::mailbox::fetch_database(&repo, &name, &fetch, &mut |_| {}).await {
                     Ok(manifest) => {
                         let (path, database, snapshot) = (index.clone(), fetch.clone(), name.clone());
@@ -984,6 +1025,7 @@ impl Backups {
         .await;
         repo.storage.close().await;
         crate::index::remove(&fetch);
+        self.drop_index_if_off().await;
         caught_up
     }
 
@@ -1010,16 +1052,20 @@ impl Backups {
         owner: Owner,
         ids: &[i64],
     ) -> Result<Vec<(i64, Option<(IndexedMail, Vec<u8>)>)>, Error> {
-        let mut settings = self.settings().await?;
-        let repo = self.open(&mut settings).await?;
+        let _turn = self.inner.user_reads.acquire().await.map_err(|err| Error::Storage(err.to_string()))?;
+        let repo = self.open_existing().await?;
         let read = async {
             let mut found = Vec::new();
             for &id in ids {
                 let content = match self.backup_mail(owner, id).await? {
-                    Some(mail) => {
-                        let content = crate::mailbox::content_of(&self.inner.store, &repo, &mail.blob_hash).await?;
-                        Some((mail, content))
-                    }
+                    // One mail that cannot be read is not there for the asker; the others still are.
+                    Some(mail) => match crate::mailbox::content_of(&self.inner.store, &repo, &mail.blob_hash).await {
+                        Ok(content) => Some((mail, content)),
+                        Err(err) => {
+                            tracing::warn!(%err, id, "a mail in the backups could not be read");
+                            None
+                        }
+                    },
                     None => None,
                 };
                 found.push((id, content));
@@ -1034,8 +1080,9 @@ impl Backups {
     /// Puts mails of `owner` from the backups back into their account, each into "Restored <date
     /// of the newest snapshot it is in>". A mail the account holds already stays as it is.
     pub async fn restore_mails(&self, owner: Owner, ids: &[i64]) -> Result<Vec<(i64, Restored)>, Error> {
-        let mut settings = self.settings().await?;
-        let repo = self.open(&mut settings).await?;
+        // Also keeps two restores of the same mails from storing each twice.
+        let _turn = self.inner.user_reads.acquire().await.map_err(|err| Error::Storage(err.to_string()))?;
+        let repo = self.open_existing().await?;
         let store = &self.inner.store;
         let mut done = Vec::new();
         let restoring = async {
@@ -1044,14 +1091,23 @@ impl Backups {
                     done.push((id, Restored::NotFound));
                     continue;
                 };
-                let hash = uwumail_store::BlobHash::parse(&mail.blob_hash)
-                    .map_err(|_| Error::Damaged(format!("{} is not a mail's name", mail.blob_hash)))?;
-                let message_id = mail.message_id.clone().filter(|id| !id.is_empty());
-                if store.holds_message(owner.account_id, message_id, hash).await? {
+                let Ok(hash) = uwumail_store::BlobHash::parse(&mail.blob_hash) else {
+                    done.push((id, Restored::NotFound));
+                    continue;
+                };
+                // By its bytes, not its Message-ID, which any sender can make the same as another's.
+                if store.holds_message(owner.account_id, None, hash).await? {
                     done.push((id, Restored::AlreadyThere));
                     continue;
                 }
-                let content = crate::mailbox::content_of(store, &repo, &mail.blob_hash).await?;
+                let content = match crate::mailbox::content_of(store, &repo, &mail.blob_hash).await {
+                    Ok(content) => content,
+                    Err(err) => {
+                        tracing::warn!(%err, id, "a mail in the backups could not be read");
+                        done.push((id, Restored::NotFound));
+                        continue;
+                    }
+                };
                 let newest = mail.snapshots.last().copied().unwrap_or(mail.received_at);
                 let folder = crate::mailbox::folder_below(
                     store,
@@ -1111,11 +1167,24 @@ impl Backups {
             };
             if asked || Self::due(&settings, &self.status().await, now()) {
                 let _ = self.run_now().await;
+                self.drop_index_if_off().await;
             } else if settings.user_search
                 && settings.target.is_some()
                 && self.inner.index_stale.swap(false, Ordering::SeqCst)
             {
-                match self.catch_up_index().await {
+                // Stopped, not waited for, at shutdown or when someone asks for a backup: what it
+                // did not get to it does after the next backup.
+                let caught_up = tokio::select! {
+                    caught_up = self.catch_up_index() => caught_up,
+                    _ = shutdown.changed() => return,
+                    _ = self.inner.wakeup.notified() => {
+                        self.inner.index_stale.store(true, Ordering::SeqCst);
+                        let _ = self.run_now().await;
+                        self.drop_index_if_off().await;
+                        continue;
+                    }
+                };
+                match caught_up {
                     Ok(()) => {}
                     // Tried again on the next round.
                     Err(Error::Busy(_)) => self.inner.index_stale.store(true, Ordering::SeqCst),

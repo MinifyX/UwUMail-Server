@@ -2,7 +2,7 @@
 //! it by its headers, `BackupEmail/get` shows it, `BackupEmail/restore` puts it back. Only ever the
 //! mail of the logged-in account itself, never that of a shared one.
 
-use mail_parser::{MessageParser, MimeHeaders};
+use mail_parser::MimeHeaders;
 use serde_json::{Map, Value, json};
 use uwumail_backup::{Backups, IndexedMail, Owner, Restored, Search};
 
@@ -114,7 +114,7 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 
 async fn in_mailbox(ctx: &Ctx<'_>, mail: &IndexedMail) -> MethodResult<bool> {
     let Ok(hash) = uwumail_store::BlobHash::parse(&mail.blob_hash) else { return Ok(false) };
-    Ok(ctx.jmap.store.holds_message(ctx.account.id, mail.message_id.clone(), hash).await?)
+    Ok(ctx.jmap.store.holds_message(ctx.account.id, None, hash).await?)
 }
 
 /// `BackupEmail/get`: the mails with their text and the attachments they have.
@@ -134,7 +134,8 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             continue;
         };
         let mut entry = summary(&mail);
-        let parsed = MessageParser::default().parse(&raw);
+        // Mail from before 0.16 may be nested deeper than is safe to parse: headers only, then.
+        let parsed = uwumail_store::mime_limits::parse_message(&raw);
         let text = parsed.as_ref().and_then(|m| m.body_text(0)).unwrap_or_default();
         entry["textBody"] = json!(text.chars().take(MAX_PREVIEW_CHARS).collect::<String>());
         entry["attachments"] = json!(
