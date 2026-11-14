@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 uwumail-assist.workspace = true
+uwumail-backup.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true
 uwumail-labels.workspace = true

@@ -3181,7 +3181,9 @@
       "monthly": "保留月数",
       "encrypted": "加密",
       "encryptedHint": "推荐：这样任何人都无法在备份服务器上读取邮件。恢复时需要恢复密钥。",
-      "encryptedFixed": "已有备份，因此此项保持不变。"
+      "encryptedFixed": "已有备份，因此此项保持不变。",
+      "userSearch": "用户可以搜索备份",
+      "userSearchHint": "每个人都可以在网页邮箱和应用中从备份里找回自己已删除的邮件。只搜索邮件头。"
     },
     "snapshots": {
       "title": "快照",

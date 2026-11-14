@@ -168,3 +168,81 @@ async fn one_mailbox_comes_back_next_to_what_is_there() {
     assert!(gone.error.contains("open it again"), "{}", gone.error);
     assert_eq!(gone.restored, 0);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn people_find_and_take_back_their_own_mail_from_the_backups() {
+    use uwumail_backup::{Owner, Restored, Search};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("data")).await.unwrap();
+    store.create_domain("example.org").await.unwrap();
+    let mini = person(&store, "mini@example.org").await;
+    let nyu = person(&store, "nyu@example.org").await;
+    let esim = deliver(&store, mini, MailboxTarget::Role(MailboxRole::Inbox), "Deine eSIM 50%", &["$seen"]).await;
+    deliver(&store, mini, MailboxTarget::Role(MailboxRole::Inbox), "Rechnung", &[]).await;
+    deliver(&store, nyu, MailboxTarget::Role(MailboxRole::Inbox), "Deine eSIM für Nyu", &[]).await;
+
+    std::fs::create_dir(dir.path().join("nas")).unwrap();
+    let backups = Backups::new(store.clone(), "mail.example.org", "0.1.0");
+    let settings = BackupSettings {
+        enabled: true,
+        target: Some(Target::Folder(FolderTarget { path: dir.path().join("nas").display().to_string() })),
+        ..Default::default()
+    };
+    assert!(settings.user_search, "on unless switched off");
+    backups.save_settings(&settings).await.unwrap();
+    backups.run_now().await.unwrap();
+    store.destroy_emails(mini, vec![esim]).await.unwrap();
+
+    let owner = |id: i64| {
+        let store = store.clone();
+        async move {
+            let account = store.account_by_id(id).await.unwrap().unwrap();
+            Owner { account_id: account.id, created_at: account.created_at }
+        }
+    };
+    let (mini_owner, nyu_owner) = (owner(mini).await, owner(nyu).await);
+    let search = |text: &str| Search { text: Some(text.into()), limit: 50, ..Default::default() };
+
+    // The backup put its snapshot in the index right away.
+    let found = backups.search_mail(mini_owner, search("esim 50%")).await.unwrap();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].subject, "Deine eSIM 50%");
+    assert_eq!(found[0].snapshots.len(), 1);
+    assert!(backups.search_mail(mini_owner, search("esim 5_%")).await.unwrap().is_empty(), "_ is no wildcard");
+    let everything = backups.search_mail(mini_owner, Search { limit: 50, ..Default::default() }).await.unwrap();
+    assert_eq!(everything.len(), 2, "only Mini's own mail: {everything:?}");
+
+    // Not Nyu's, and not the mail of an account that had the same id before.
+    let theirs = backups.search_mail(nyu_owner, search("esim")).await.unwrap();
+    assert_eq!(theirs.iter().map(|mail| mail.subject.as_str()).collect::<Vec<_>>(), ["Deine eSIM für Nyu"]);
+    assert!(backups.backup_mail(nyu_owner, found[0].id).await.unwrap().is_none());
+    let earlier = Owner { created_at: mini_owner.created_at - 1, ..mini_owner };
+    assert!(backups.search_mail(earlier, search("esim")).await.unwrap().is_empty());
+    assert_eq!(backups.restore_mails(nyu_owner, &[found[0].id]).await.unwrap(), [(found[0].id, Restored::NotFound)]);
+
+    let contents_of = backups.backup_mail_contents(mini_owner, &[found[0].id]).await.unwrap();
+    let (_, raw) = contents_of[0].1.as_ref().unwrap();
+    assert!(String::from_utf8_lossy(raw).contains("Subject: Deine eSIM 50%"));
+
+    // Back it comes, once.
+    let restored = backups.restore_mails(mini_owner, &[found[0].id]).await.unwrap();
+    assert!(matches!(restored[..], [(_, Restored::Into(_))]), "{restored:?}");
+    let after = contents(&store, mini).await;
+    assert!(after.iter().any(|(folder, subject, _)| folder.starts_with("Restored 20") && subject == "Deine eSIM 50%"));
+    assert_eq!(
+        backups.restore_mails(mini_owner, &[found[0].id]).await.unwrap(),
+        [(found[0].id, Restored::AlreadyThere)]
+    );
+    assert_eq!(contents(&store, nyu).await.len(), 1, "nobody else is touched");
+
+    // An index that is gone is made again from the backups.
+    std::fs::remove_file(dir.path().join("data").join(uwumail_backup::index::INDEX_FILE)).unwrap();
+    backups.catch_up_index().await.unwrap();
+    assert_eq!(backups.indexing(), (1, 1));
+    assert_eq!(backups.search_mail(mini_owner, search("eSIM")).await.unwrap().len(), 1);
+
+    // Switched off, the index goes.
+    backups.save_settings(&BackupSettings { user_search: false, ..settings }).await.unwrap();
+    assert!(!backups.user_search().await);
+    assert!(!dir.path().join("data").join(uwumail_backup::index::INDEX_FILE).exists());
+}

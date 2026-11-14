@@ -3251,7 +3251,9 @@
       "monthly": "Monate behalten",
       "encrypted": "Verschlüsseln",
       "encryptedHint": "Empfohlen: Auf dem Backup-Server kann dann niemand die Mails lesen. Zum Wiederherstellen brauchst du den Wiederherstellungsschlüssel.",
-      "encryptedFixed": "Es gibt schon Backups, deshalb bleibt diese Einstellung, wie sie ist."
+      "encryptedFixed": "Es gibt schon Backups, deshalb bleibt diese Einstellung, wie sie ist.",
+      "userSearch": "Nutzer dürfen in den Backups suchen",
+      "userSearchHint": "Jede Person kann ihre eigenen gelöschten Mails in den Backups finden und zurückholen, in Webmail und App. Nur die Kopfzeilen werden dafür durchsucht."
     },
     "snapshots": {
       "title": "Gesicherte Stände",

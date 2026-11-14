@@ -215,9 +215,10 @@ async fn backup_and_restore_through_s3() {
     let key = RepoKey::generate();
     let repo = Repository::open(Storage::open(&s3).await.unwrap(), Some(key.clone()), 1).await.unwrap();
     repo.storage.check_writable().await.unwrap();
-    let first = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000)
-        .await
-        .unwrap();
+    let first =
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000, None)
+            .await
+            .unwrap();
     assert!(first.uploaded > 0);
     assert_eq!(bucket.busy.load(Ordering::SeqCst), 0, "the busy answer was waited out");
     let keys: Vec<String> = bucket.objects.lock().unwrap().keys().cloned().collect();
@@ -226,9 +227,10 @@ async fn backup_and_restore_through_s3() {
     assert!(!keys.iter().any(|key| key.contains("uwumail-write-test")), "the test file is cleaned up");
 
     // A second backup finds what is there through paged listings and uploads only the new snapshot.
-    let second = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400)
-        .await
-        .unwrap();
+    let second =
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400, None)
+            .await
+            .unwrap();
     assert!(second.uploaded < first.uploaded / 2, "{} after {}", second.uploaded, first.uploaded);
     assert_eq!(repo.snapshots().await.unwrap(), vec![first.snapshot.clone(), second.snapshot.clone()]);
     assert!(uwumail_backup::check(&repo, &second.snapshot).await.unwrap().is_empty());

@@ -53,15 +53,17 @@ async fn backups_are_incremental_encrypted_and_restorable() {
     let repo_dir = dir.path().join("repo");
     let open = |key: Option<RepoKey>, now: i64| Repository::open(Storage::Local(repo_dir.clone()), key, now);
     let repo = open(Some(key.clone()), 1_000).await.unwrap();
-    let first = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000)
-        .await
-        .unwrap();
+    let first =
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000, None)
+            .await
+            .unwrap();
     assert!(first.uploaded > 0);
 
     deliver(&store, mini, "Elf").await;
-    let second = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400)
-        .await
-        .unwrap();
+    let second =
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400, None)
+            .await
+            .unwrap();
     assert!(second.uploaded * 3 < first.uploaded, "only what changed: {} after {}", second.uploaded, first.uploaded);
     assert_eq!(repo.snapshots().await.unwrap().len(), 2);
     assert!(uwumail_backup::check(&repo, &second.snapshot).await.unwrap().is_empty());
@@ -104,8 +106,9 @@ async fn unencrypted_backups_work_too() {
     deliver(&store, mini, "Eins").await;
     let repo = Repository::open(Storage::Local(dir.path().join("repo")), None, 0).await.unwrap();
     assert!(!repo.config.encrypted);
-    let report =
-        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5).await.unwrap();
+    let report = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5, None)
+        .await
+        .unwrap();
     let restored = dir.path().join("restored");
     uwumail_backup::restore(&repo, &report.snapshot, &restored).await.unwrap();
     assert!(Store::open(&restored).await.unwrap().account("mini@example.org").await.unwrap().is_some());
@@ -133,7 +136,7 @@ async fn a_backup_server_cannot_crash_a_backup_with_what_it_lists() {
     deliver(&store, mini, "Eins").await;
     let repo_dir = dir.path().join("repo");
     let repo = Repository::open(Storage::Local(repo_dir.clone()), Some(RepoKey::generate()), 0).await.unwrap();
-    uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5).await.unwrap();
+    uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5, None).await.unwrap();
 
     // A one-byte name, a name that is no id, a prefix that is no prefix and a snapshot that is none.
     for stray in ["data/ab/x", "data/ab/é", "data/z/zz", "snapshots/x"] {
@@ -142,7 +145,8 @@ async fn a_backup_server_cannot_crash_a_backup_with_what_it_lists() {
         std::fs::write(&path, b"not ours").unwrap();
     }
     let none = Retention { daily: 0, weekly: 0, monthly: 0 };
-    let report = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", none, 1_000_000).await.unwrap();
+    let report =
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", none, 1_000_000, None).await.unwrap();
     assert_eq!(repo.snapshots().await.unwrap(), vec![report.snapshot.clone()], "the stray snapshot is not one");
     assert!(repo_dir.join("data/ab/x").exists(), "what is not ours is left alone");
     assert!(matches!(repo.manifest("../uwumail-backup.json").await, Err(uwumail_backup::Error::Config(_))));
@@ -169,9 +173,10 @@ async fn a_backup_server_cannot_turn_encryption_off_or_swap_what_it_holds() {
     let repo_dir = dir.path().join("repo");
     let storage = || Storage::Local(repo_dir.clone());
     let repo = Repository::open(storage(), Some(key.clone()), 0).await.unwrap();
-    let first = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000)
-        .await
-        .unwrap();
+    let first =
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000, None)
+            .await
+            .unwrap();
 
     // "Not encrypted", says the config, to a server that has a key.
     let config = repo_dir.join("uwumail-backup.json");
@@ -203,9 +208,10 @@ async fn a_backup_server_cannot_turn_encryption_off_or_swap_what_it_holds() {
     assert!(restoring("genuine").await.is_ok());
 
     // An authentic manifest, under another snapshot's name.
-    let second = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400)
-        .await
-        .unwrap();
+    let second =
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400, None)
+            .await
+            .unwrap();
     let snapshots = repo_dir.join("snapshots");
     std::fs::copy(snapshots.join(&first.snapshot), snapshots.join(&second.snapshot)).unwrap();
     assert!(repo.manifest(&second.snapshot).await.is_err());
@@ -228,7 +234,7 @@ async fn symlinks_on_a_folder_target_never_reach_the_server_s_own_files() {
     let repo_dir = dir.path().join("repo");
     let storage = || Storage::Local(repo_dir.clone());
     let repo = Repository::open(storage(), Some(RepoKey::generate()), 0).await.unwrap();
-    uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5).await.unwrap();
+    uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5, None).await.unwrap();
 
     // A live blob, and its directory planted where the repository keeps objects with that prefix.
     let inbox = store.mailboxes(mini).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox)).unwrap();

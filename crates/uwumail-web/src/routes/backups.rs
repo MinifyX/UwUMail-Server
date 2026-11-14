@@ -85,6 +85,7 @@ async fn view(web: &Web) -> ApiResult<Value> {
         "hour": settings.hour,
         "minute": settings.minute,
         "retention": settings.retention,
+        "userSearch": settings.user_search,
         "encrypted": settings.key.is_some(),
         "target": target,
         "status": backups.status().await,
@@ -263,6 +264,9 @@ pub struct SettingsBody {
     #[serde(default)]
     minute: u8,
     retention: Retention,
+    /// Whether people may search their own mail in the backups; left out by an older app.
+    #[serde(default)]
+    user_search: Option<bool>,
     encrypted: bool,
     target: Option<TargetBody>,
 }
@@ -296,6 +300,7 @@ pub async fn save(
     settings.hour = body.hour;
     settings.minute = body.minute;
     settings.retention = body.retention;
+    settings.user_search = body.user_search.unwrap_or(settings.user_search);
     backups.save_settings(&settings).await.map_err(api_error)?;
 
     let details = json!({
@@ -303,6 +308,7 @@ pub async fn save(
         "kind": settings.target.as_ref().map(Target::kind),
         "target": settings.target.as_ref().map(Target::shown),
         "encrypted": settings.key.is_some(),
+        "userSearch": settings.user_search,
     });
     audit(&web, &session, "backup.settings", "server", details).await;
     let mut value = view(&web).await?;

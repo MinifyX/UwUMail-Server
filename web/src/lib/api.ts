@@ -828,13 +828,7 @@ export interface UpdateSettings {
 
 /** In the order a run takes them. Restarts are never part of "everything". */
 export type UpdateStepKind =
-  | "gatewaySystem"
-  | "gateway"
-  | "hostSystem"
-  | "helper"
-  | "server"
-  | "gatewayReboot"
-  | "hostReboot";
+  "gatewaySystem" | "gateway" | "hostSystem" | "helper" | "server" | "gatewayReboot" | "hostReboot";
 
 export interface UpdateStep {
   kind: UpdateStepKind;
@@ -895,6 +889,8 @@ export interface BackupsView {
   hour: number;
   minute: number;
   retention: { daily: number; weekly: number; monthly: number };
+  /** Whether people may search their own mail in the backups. */
+  userSearch: boolean;
   encrypted: boolean;
   target: BackupTarget | null;
   status: {

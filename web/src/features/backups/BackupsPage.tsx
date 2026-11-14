@@ -139,6 +139,7 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
   const [daily, setDaily] = useState(String(view.retention.daily));
   const [weekly, setWeekly] = useState(String(view.retention.weekly));
   const [monthly, setMonthly] = useState(String(view.retention.monthly));
+  const [userSearch, setUserSearch] = useState(view.userSearch);
 
   const save = useMutation({
     mutationFn: () =>
@@ -149,6 +150,7 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
           hour: Math.floor(utcTime(time) / 60),
           minute: utcTime(time) % 60,
           retention: { daily: Number(daily), weekly: Number(weekly), monthly: Number(monthly) },
+          userSearch,
           encrypted,
           target:
             kind === "s3"
@@ -494,6 +496,12 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
             description={
               view.status.lastSuccessAt ? t("backups.schedule.encryptedFixed") : t("backups.schedule.encryptedHint")
             }
+          />
+          <Toggle
+            checked={userSearch}
+            onChange={setUserSearch}
+            label={t("backups.schedule.userSearch")}
+            description={t("backups.schedule.userSearchHint")}
           />
         </div>
 

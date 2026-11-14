@@ -4674,6 +4674,7 @@ dependencies = [
  "tower",
  "tracing",
  "uwumail-assist",
+ "uwumail-backup",
  "uwumail-dav",
  "uwumail-labels",
  "uwumail-smtp",

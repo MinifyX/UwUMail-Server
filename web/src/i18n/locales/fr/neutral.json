@@ -3307,7 +3307,9 @@
       "monthly": "Mois à conserver",
       "encrypted": "Chiffrer",
       "encryptedHint": "Recommandé : ainsi, personne ne peut lire le courrier sur le serveur de sauvegarde. Pour restaurer, vous avez besoin de la clé de récupération.",
-      "encryptedFixed": "Il existe déjà des sauvegardes, cela reste donc tel quel."
+      "encryptedFixed": "Il existe déjà des sauvegardes, cela reste donc tel quel.",
+      "userSearch": "Les utilisateurs peuvent chercher dans les sauvegardes",
+      "userSearchHint": "Chacun peut retrouver ses propres messages supprimés dans les sauvegardes et les récupérer, dans le webmail et l'application. Seuls les en-têtes sont recherchés."
     },
     "snapshots": {
       "title": "Instantanés",

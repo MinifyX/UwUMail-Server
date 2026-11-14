@@ -732,6 +732,7 @@ const mockBackups: BackupsView = {
   hour: 1,
   minute: 30,
   retention: { daily: 7, weekly: 4, monthly: 6 },
+  userSearch: true,
   encrypted: true,
   target: {
     kind: "sftp",
@@ -5467,6 +5468,7 @@ const routes: [string, RegExp, Handler][] = [
         minute: number;
         encrypted: boolean;
         retention: BackupsView["retention"];
+        userSearch: boolean;
         target: Record<string, unknown> & { kind: BackupTarget["kind"] };
       };
       const newKey = next.encrypted && !mockBackups.encrypted;
@@ -5502,6 +5504,7 @@ const routes: [string, RegExp, Handler][] = [
         hour: next.hour,
         minute: next.minute,
         retention: next.retention,
+        userSearch: next.userSearch,
         encrypted: next.encrypted,
         target,
       });

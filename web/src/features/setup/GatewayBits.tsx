@@ -10,12 +10,7 @@ import { toast } from "@/state/toasts";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { CheckLines, SubHeading } from "./SetupBits";
 import { gatewayLines, reachabilityLines, recommendation } from "./reach";
-import {
-  useForgetGateway,
-  useGateway,
-  useGatewayCloudflare,
-  usePairGateway,
-} from "./queries";
+import { useForgetGateway, useGateway, useGatewayCloudflare, usePairGateway } from "./queries";
 
 export const GATEWAY_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/gateway.md";
 
