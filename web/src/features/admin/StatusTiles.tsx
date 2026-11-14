@@ -193,7 +193,7 @@ function ChangesTile() {
 /** One tile each for the tabs beside the overview, and for what changed last. */
 export function StatusTiles({ counts }: { counts: Overview["counts"] }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="uwu-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <MailFlowTile counts={counts} />
       <BackupsTile />
       <UpdatesTile />

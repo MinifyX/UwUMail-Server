@@ -1,4 +1,4 @@
-import { AvatarBlob, IconButton, Menu, Tag, ICONS, Icon, cx } from "@uwusuite/design";
+import { AvatarBlob, IconButton, Menu, NavIndicator, Tag, ICONS, Icon, cx } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollText, MailWarning, ShieldBan } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -374,6 +374,7 @@ export function PortalShell({ session, children }: { session: Session; children:
         </div>
       )}
       <nav aria-label={t("nav.label")} className={cx("flex flex-col", !inSheet && "flex-1 overflow-y-auto")}>
+        <NavIndicator />
         <NavGroups groups={groups} path={path} onNavigate={close} />
       </nav>
       <div className="mt-auto pt-3">
@@ -388,6 +389,7 @@ export function PortalShell({ session, children }: { session: Session; children:
         <Link
           to={mode === "server" ? "/admin" : "/account"}
           className="mb-4 self-start rounded-full px-2.5"
+          data-uwu-reveal-origin
           aria-label={t("nav.home")}
         >
           <Wordmark className="text-lg" />
@@ -396,8 +398,9 @@ export function PortalShell({ session, children }: { session: Session; children:
       </aside>
 
       <main
+        key={path}
         className={cx(
-          "mx-auto w-full max-w-[1080px] px-4 min-[700px]:py-8 sm:px-6 lg:px-10",
+          "uwu-page mx-auto w-full max-w-[1080px] px-4 min-[700px]:py-8 sm:px-6 lg:px-10",
           // On the phone: below the status bar and above the tab bar.
           "max-[699px]:pt-[max(16px,env(safe-area-inset-top))] max-[699px]:pb-[calc(88px+env(safe-area-inset-bottom))]",
           "max-[699px]:pr-[max(16px,env(safe-area-inset-right))] max-[699px]:pl-[max(16px,env(safe-area-inset-left))]",
