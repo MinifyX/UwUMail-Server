@@ -220,10 +220,12 @@ its log to Grafana Loki, they go along with the label `source=gateway` (see
 server is away the gateway keeps its last 1000 lines and hands them over when it
 is back. `journalctl -u uwumail-gateway` still has all of it.
 
-Underneath are the buttons for the VPS itself: install its updates, fetch a
-newer gateway, restart it. They are there when `install.sh` hardened the machine,
-because that is what puts the privileged helper beside the gateway; without one
-the portal shows the SSH command to copy instead, the way it always did.
+The buttons for the VPS itself — install its updates, fetch a newer gateway,
+restart it — are under *Server → Updates*, where *Update everything* takes the
+VPS and the gateway first and the server last (see
+[deployment.md](deployment.md#updates)). They are there when `install.sh`
+hardened the machine, because that is what puts the privileged helper beside
+the gateway; without one that page shows the SSH command to copy once.
 
 What crosses the tunnel for one of those is a single word — `os-update`,
 `reboot` or `gateway-update` — and, for the last one, a version number that has

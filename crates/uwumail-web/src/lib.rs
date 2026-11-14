@@ -26,6 +26,7 @@ pub mod profile_signing;
 mod routes;
 mod session;
 pub mod settings;
+mod update_run;
 mod updates;
 pub mod vpn;
 mod webauthn;
@@ -84,6 +85,8 @@ struct Inner {
     last_health_check: Mutex<Option<i64>>,
     /// Held while an admin-requested check runs, so clicks do not pile up.
     health_check: tokio::sync::Mutex<()>,
+    /// Held while the update run is looked after, so two looks never start a step twice.
+    update_turn: tokio::sync::Mutex<()>,
     login: login::LoginState,
     /// The one-time code of the setup assistant while the server has no admin.
     setup_code: Mutex<Option<String>>,
@@ -157,6 +160,7 @@ impl Web {
                 reports: Mutex::default(),
                 last_health_check: Mutex::default(),
                 health_check: tokio::sync::Mutex::default(),
+                update_turn: tokio::sync::Mutex::default(),
                 login: login::LoginState::default(),
                 setup_code: Mutex::default(),
                 server_check: Mutex::default(),
@@ -417,6 +421,10 @@ impl Web {
         let _ = self.inner.host.set(host);
     }
 
+    pub(crate) fn update_turn(&self) -> &tokio::sync::Mutex<()> {
+        &self.inner.update_turn
+    }
+
     pub(crate) fn host(&self) -> Option<&Arc<dyn host::HostBackend>> {
         self.inner.host.get()
     }
@@ -458,12 +466,10 @@ impl Web {
             .route("/api/admin/setup/check", get(routes::setup::last_check).post(routes::setup::run_check))
             .route("/api/admin/setup/reachability", post(routes::gateway::reachability))
             .route("/api/admin/host", get(routes::host::show))
-            .route("/api/admin/host/jobs", post(routes::host::ask))
             .route(
                 "/api/admin/gateway",
                 get(routes::gateway::show).post(routes::gateway::pair).delete(routes::gateway::forget),
             )
-            .route("/api/admin/gateway/jobs", post(routes::gateway::ask))
             .route("/api/admin/gateway/cloudflare", post(routes::gateway::cloudflare))
             .route("/api/admin/setup/test-mail", post(routes::setup::send_test_mail))
             .route("/api/admin/setup/test-mail/{id}", get(routes::setup::test_mail_status))
@@ -678,6 +684,8 @@ impl Web {
             .route("/api/admin/health/check", post(routes::admin::check_health))
             .route("/api/admin/updates", get(routes::updates::show).put(routes::updates::save))
             .route("/api/admin/updates/check", post(routes::updates::check))
+            .route("/api/admin/updates/run", post(routes::updates::start))
+            .route("/api/admin/updates/run/step", post(routes::updates::step))
             .route("/api/admin/backups", get(routes::backups::show).put(routes::backups::save))
             .route("/api/admin/backups/test", post(routes::backups::test))
             .route("/api/admin/backups/forget-host-key", post(routes::backups::forget_host_key))

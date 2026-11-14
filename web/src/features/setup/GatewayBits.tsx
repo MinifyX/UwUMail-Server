@@ -5,18 +5,12 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import type { CloudflareResult, GatewayHostChange, GatewayView, Reachability } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
+import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { CheckLines, SubHeading } from "./SetupBits";
 import { gatewayLines, reachabilityLines, recommendation } from "./reach";
-import {
-  useForgetGateway,
-  useGateway,
-  useGatewayCloudflare,
-  useGatewayJob,
-  usePairGateway,
-  type GatewayVerb,
-} from "./queries";
+import { useForgetGateway, useGateway, useGatewayCloudflare, usePairGateway } from "./queries";
 
 export const GATEWAY_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/gateway.md";
 
@@ -27,75 +21,16 @@ const RECOMMENDATION_TONE = {
   unknown: "bg-canvas text-muted",
 } as const;
 
-/**
- * The buttons for the machine the gateway runs on, when a helper over there can carry them out.
- *
- * Without one this is absent and the check lines above keep showing the commands to copy, which is
- * what a gateway installed before this could do. The VPS belongs to the gateway alone, so unlike
- * the mail server's own machine there is no warning here about what else might be running.
- */
+/** Updates and restarts of the gateway's VPS live in the update centre; here is only the way there. */
 function GatewayMachineActions({ view }: { view: GatewayView }) {
-  const { t, i18n } = useT();
-  const errorText = useErrorText();
-  const job = useGatewayJob();
-  const { confirmed, dialog } = usePasswordConfirmation();
-
-  const machine = view.machine;
-  if (!view.canInstall || !machine) return null;
-  const running = machine.job?.state === "running";
-  const updates = machine.system?.updates ?? 0;
-
-  const ask = (verb: GatewayVerb) => {
-    void (async () => {
-      try {
-        await confirmed((password) => job.mutateAsync({ verb, password }));
-      } catch (failure) {
-        if (!(failure instanceof Cancelled)) toast(errorText(failure), "error");
-      }
-    })();
-  };
-
+  const { t } = useT();
+  if (!view.canInstall || !view.machine) return null;
   return (
-    <div className="flex flex-col gap-3 border-t border-hairline pt-4">
+    <div className="flex flex-col gap-2 border-t border-hairline pt-4">
       <SubHeading icon={ICONS.server}>{t("setup.gateway.machine.title")}</SubHeading>
-      {machine.job && (
-        <div className="rounded-control bg-canvas px-3 py-2">
-          <p className="text-[13px] font-semibold">
-            {t("setup.gateway.machine.states." + machine.job.state, { defaultValue: machine.job.state })}
-            {machine.job.error && <span className="ml-2 font-normal text-danger-ink">{machine.job.error}</span>}
-          </p>
-          {machine.job.log && (
-            <pre className="mt-2 max-h-56 overflow-auto font-mono text-[12px] whitespace-pre-wrap">
-              {machine.job.log}
-            </pre>
-          )}
-        </div>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" icon={ICONS.refresh} disabled={running || updates === 0} onClick={() => ask("os-update")}>
-          {t("setup.gateway.machine.installUpdates")}
-        </Button>
-        {view.softwareVersion && (
-          <Button
-            size="sm"
-            variant="primary"
-            icon={ICONS.download}
-            disabled={running}
-            onClick={() => ask("gateway-update")}
-          >
-            {t("setup.gateway.machine.updateGateway", { version: view.softwareVersion })}
-          </Button>
-        )}
-        <Button size="sm" variant="danger" icon={ICONS.reset} disabled={running} onClick={() => ask("reboot")}>
-          {t("setup.gateway.machine.restart")}
-        </Button>
-      </div>
-      <p className="text-[12px] text-muted">
-        {t("setup.gateway.machine.hint", {
-          time: machine.checkedAt ? new Date(machine.checkedAt * 1000).toLocaleString(i18n.language) : "",
-        })}
-      </p>
-      {dialog}
+      <Link to="/admin/updates" className="self-start text-[13px] text-pink-ink hover:underline">
+        {t("setup.gateway.machine.toUpdates")}
+      </Link>
     </div>
   );
 }

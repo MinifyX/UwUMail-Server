@@ -1506,7 +1506,6 @@
     "title": "Diese Maschine",
     "noReport": "Der Helfer auf dieser Maschine hat sich lange nicht gemeldet. Läuft uwumail-host-machine.timer noch?",
     "unknownSystem": "Unbekanntes System",
-    "checked": "zuletzt angesehen {{at}}",
     "notApt": "Diese Maschine benutzt kein apt. Was sie an Updates braucht, kann UwUMail hier nicht sagen – das bleibt deine Baustelle.",
     "upToDate": "Nichts zu tun: das System ist aktuell.",
     "waiting_one": "{{count}} Paket wartet, davon {{security}} Sicherheitsupdates.",
@@ -1515,18 +1514,7 @@
     "notAlone": "Auf dieser Maschine läuft noch mehr: {{others}}. Ein Update startet die mit neu, ein Neustart nimmt sie mit.",
     "cannotTell": "Ich kann nicht feststellen, was hier sonst noch läuft. Sieh besser selbst nach, bevor du den Knopf drückst.",
     "liability": "Was hier passiert, passiert auf deiner Maschine. Ich schaue vorher hin, so gut ich kann – haften kann ich dafür nicht.",
-    "installUpdates": "Updates installieren",
-    "restart": "Neu starten",
-    "states": {
-      "running": "läuft gerade …",
-      "done": "fertig",
-      "failed": "fehlgeschlagen",
-      "rolledBack": "zurückgerollt",
-      "waiting": "wartet"
-    },
-    "helperNewer": "Für den Helfer auf dieser Maschine gibt es eine neue Version. Ein Knopfdruck holt sie.",
-    "helperOld": "Der Helfer auf dieser Maschine (Version {{version}}) kann sich noch nicht selbst aktualisieren. Einmal noch auf der Maschine ausführen, danach geht alles hier im Portal:",
-    "updateHelper": "Helfer aktualisieren"
+    "helperNewer": "Für den Helfer auf dieser Maschine gibt es eine neue Version. Ein Knopfdruck holt sie."
   },
   "queue": {
     "title": "Warteschlange",
@@ -3092,16 +3080,7 @@
       "forgotten": "Gateway vergessen.",
       "machine": {
         "title": "Der VPS",
-        "installUpdates": "Updates installieren",
-        "updateGateway": "Gateway auf {{version}} aktualisieren",
-        "restart": "Neu starten",
-        "hint": "Das Gateway hat zuletzt am {{time}} nachgesehen. Während eine dieser Sachen läuft, ist das Gateway kurz weg — Mail wird in der Zeit vom sendenden Server später noch einmal zugestellt.",
-        "states": {
-          "running": "Läuft gerade …",
-          "done": "Fertig.",
-          "failed": "Hat nicht geklappt.",
-          "refused": "Wurde abgelehnt."
-        }
+        "toUpdates": "Updates und Neustart: in der Update-Zentrale"
       }
     },
     "restore": {
@@ -3129,8 +3108,7 @@
     }
   },
   "updates": {
-    "intro": "Welche Version läuft, was es Neues gibt, und womit du es einspielst.",
-    "open": "Öffnen",
+    "intro": "Alles, was sich aktualisieren lässt, an einem Ort: Server, Helfer, diese Maschine, das Gateway und sein VPS.",
     "running": "Läuft: Version {{version}}",
     "runningEdge": "Läuft: edge, Commit {{commit}} (Version {{version}})",
     "notChecked": "Noch nicht nach Updates gesehen.",
@@ -3140,24 +3118,74 @@
     "edgeBehind_one": "Auf main gibt es {{count}} neuen Commit:",
     "edgeBehind_other": "Auf main gibt es {{count}} neue Commits:",
     "onGitHub": "auf GitHub",
-    "serverCommand": "Server",
     "gatewayCommand": "Gateway (auf dem VPS)",
-    "gatewayRunning": "Gateway: {{software}}",
     "check": "Täglich nach Updates sehen",
     "checkHint": "Fragt einmal am Tag bei GitHub nach, ob es eine neue Version gibt.",
     "channel": "Kanal",
     "stable": "Stabil",
     "beta": "Beta",
     "checkNow": "Jetzt nachsehen",
-    "version": {
-      "title": "Version"
-    },
-    "onTheMachine": "Aktualisiert wird auf der Maschine, nicht von hier aus — das Skript bringt auch eine neue compose.yaml mit, was ein Container, der sich selbst ersetzt, nicht könnte.",
     "checkTitle": "Nachsehen",
-    "byButton": "Der Knopf spielt die neue Version auf dieser Maschine ein: vorher ein Backup, dann neue compose.yaml und Images. Startet die neue Version nicht, läuft die alte weiter. Der Server ist dabei etwa eine Minute nicht erreichbar.",
-    "installNow": "Jetzt aktualisieren",
     "reload": "Seite neu laden",
-    "helperOld": "Der Helfer auf dieser Maschine ist zu alt für den Update-Knopf. Einmal noch auf der Maschine ausführen – das bringt auch den Helfer auf den neuesten Stand, danach aktualisierst du hier per Knopf:"
+    "helperOld": "Der Helfer auf dieser Maschine ist zu alt für den Update-Knopf. Einmal noch auf der Maschine ausführen – das bringt auch den Helfer auf den neuesten Stand, danach aktualisierst du hier per Knopf:",
+    "all": {
+      "title": "Was ansteht",
+      "button": "Alles aktualisieren",
+      "nothing": "Alles aktuell. Nichts zu tun.",
+      "plan": "Der Reihe nach: {{steps}}. Neu gestartet wird nichts, ohne dass du es sagst."
+    },
+    "one": "Aktualisieren",
+    "restart": "Neu starten",
+    "steps": {
+      "gatewaySystem": "Gateway-VPS: Systemupdates",
+      "gateway": "Gateway",
+      "hostSystem": "Diese Maschine: Systemupdates",
+      "helper": "Helfer",
+      "server": "UwUMail Server",
+      "gatewayReboot": "Gateway-VPS neu starten",
+      "hostReboot": "Diese Maschine neu starten"
+    },
+    "stepStates": {
+      "pending": "wartet",
+      "running": "läuft …",
+      "done": "fertig",
+      "failed": "fehlgeschlagen",
+      "skipped": "übersprungen"
+    },
+    "run": {
+      "title": "Aktualisierung",
+      "started": "Gestartet {{time}} von {{by}}.",
+      "finished": "Abgeschlossen {{time}}.",
+      "failedHint": "Dieser Schritt hat nicht geklappt. Der Rest wartet, bis du sagst, wie es weitergeht.",
+      "retry": "Noch einmal",
+      "skip": "Überspringen",
+      "stop": "Abbrechen",
+      "composeKeep": "Meine compose.yaml behalten",
+      "composeReplace": "Durch die neue ersetzen",
+      "reasons": {
+        "compose": "Die compose.yaml auf der Maschine wurde von Hand geändert und passt nicht zur neuen Version. Wie soll es weitergehen?",
+        "rolledBack": "Die neue Version ist nicht gestartet. Die alte läuft weiter.",
+        "timeout": "Keine Antwort in der erwarteten Zeit."
+      },
+      "away": "Der Server ist gerade nicht erreichbar. Während seines eigenen Updates ist das normal – ich frage weiter.",
+      "log": "Ausgabe: {{step}}",
+      "reloadHint": "Die neue Version bringt ein neues Portal mit."
+    },
+    "helperCurrent": "Version {{version}}, aktuell.",
+    "gatewayMachine": "Gateway-VPS",
+    "newRelease": "Für das System gibt es eine neue Hauptversion: {{release}}. Die spiele ich nicht ein, das bleibt bei dir.",
+    "noHelper": "Auf dieser Maschine ist kein Helfer installiert, also kann ich hier nichts einspielen. Einmal auf der Maschine ausführen:",
+    "gatewayNoHelper": "Dieses Gateway stammt aus der Zeit vor seinem Helfer. Einmal noch auf dem VPS ausführen, danach geht alles von hier:",
+    "restartAsk": {
+      "hostReboot": {
+        "title": "Diese Maschine neu starten?",
+        "body": "Der Server und alles andere auf dieser Maschine ist dabei einige Minuten nicht erreichbar."
+      },
+      "gatewayReboot": {
+        "title": "Den VPS des Gateways neu starten?",
+        "body": "Solange der VPS startet, kommt keine Mail von außen an. Absender versuchen es später noch einmal."
+      }
+    }
   },
   "backups": {
     "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht: auf einen SFTP-Server wie ein NAS, in einen S3-Bucket oder in einen Ordner, etwa eine eingehängte Platte. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",

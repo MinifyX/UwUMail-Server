@@ -12,7 +12,7 @@ use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 
 /// The helper this server was released with. An older one is offered an update in the portal.
-pub const HELPER_VERSION: u32 = 3;
+pub const HELPER_VERSION: u32 = 4;
 
 /// What the helper wrote down about the machine.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -27,6 +27,8 @@ pub struct HostMachine {
     pub reboot_required: bool,
     /// What asked for the restart.
     pub reboot_packages: Vec<String>,
+    /// A newer version of the system itself, which the portal shows and never installs.
+    pub new_release: Option<String>,
     /// Whether UwUMail has this machine to itself. `None` means the helper could not tell, which is
     /// not the same as yes and is never shown as yes.
     pub alone: Option<bool>,
@@ -102,7 +104,10 @@ pub trait HostBackend: Send + Sync + 'static {
     /// Asks for one of the helper's verbs: `os-update`, `reboot`, `uwumail-update`, `helper-update`,
     /// `vpn-apply`, `vpn-stop` or `vpn-remove`. Returns the id of the job, to follow it with
     /// [`HostBackend::view`].
-    fn ask<'a>(&'a self, verb: &'a str) -> HostFuture<'a>;
+    ///
+    /// `options` go along with `uwumail-update` only, and only from a fixed list too: `channel`
+    /// (`latest`, `beta` or `edge`) and `compose` (`keep` or `replace`).
+    fn ask<'a>(&'a self, verb: &'a str, options: &'a [(&'static str, &'a str)]) -> HostFuture<'a>;
     /// Puts a file into the shared directory for the next job to read, e.g. `vpn.json`.
     fn hand_over(&self, name: &'static str, contents: &str) -> Result<(), String> {
         let _ = (name, contents);

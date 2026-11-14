@@ -203,7 +203,7 @@ cmd_machine() {
   # Only when it is not there. The installer decides who this belongs to, and re-creating it here
   # with a mode of our own would quietly undo that on the next tick.
   [ -d "$bridge" ] || install -d -m 0770 "$bridge"
-  local kind name updates security reboot packages alone others image digest counts
+  local kind name updates security reboot packages alone others image digest counts release
   kind=$(os_kind)
   name=$(os_name)
   updates=0
@@ -218,6 +218,7 @@ cmd_machine() {
   [[ "$security" =~ ^[0-9]+$ ]] || security=0
   reboot=false
   [ -f /var/run/reboot-required ] && reboot=true
+  release=$(timeout 30 do-release-upgrade -c 2>/dev/null | sed -n 's/^New release \x27\([A-Za-z0-9. ]*\)\x27 available.*/\1/p' | head -1)
   packages=""
   [ -f /var/run/reboot-required.pkgs ] && packages=$(sort -u /var/run/reboot-required.pkgs | tr '\n' ' ')
   look_around
@@ -234,11 +235,11 @@ cmd_machine() {
   jq -n \
     --argjson vpn "$vpn" --arg verbs "$verbs" \
     --arg kind "$kind" --arg name "$name" --argjson updates "$updates" --argjson security "$security" \
-    --argjson reboot "$reboot" --arg packages "$packages" --argjson alone "$alone" --arg others "$others" \
+    --argjson reboot "$reboot" --arg packages "$packages" --arg release "$release" --argjson alone "$alone" --arg others "$others" \
     --arg image "$image" --arg digest "$digest" --arg dir "$COMPOSE_DIR" \
     --argjson at "$(date +%s)" --arg helper "$(helper_version)" \
     '{kind: $kind, name: $name, updates: $updates, securityUpdates: $security,
-      rebootRequired: $reboot, rebootPackages: ($packages | split(" ") | map(select(. != ""))),
+      rebootRequired: $reboot, newRelease: (if $release == "" then null else $release end), rebootPackages: ($packages | split(" ") | map(select(. != ""))),
       alone: $alone, others: ($others | split(" ") | map(select(. != ""))),
       image: $image, digest: $digest, composeDir: $dir, checkedAt: $at, helper: $helper,
       verbs: ($verbs | split(" ")), vpn: $vpn}' 2>/dev/null |
@@ -246,7 +247,7 @@ cmd_machine() {
 }
 
 helper_version() {
-  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-3}"
+  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-4}"
 }
 
 # ── the VPN for the pictures ──────────────────────────────────────────────────────────────────
@@ -547,20 +548,31 @@ fetch_checked() {
 # compose.yaml, images, and back to the old version when the new one does not come up. It recreates
 # the container that asked, which is why the answer is a file. update.sh brings this helper up to
 # date on its way out.
+# The image tag to follow and what to do with a compose.yaml changed by hand come along with the
+# job, each one a word from a list checked in cmd_task. Naming the tag every time is what lets go
+# of the version a rollback pinned in .env.
 do_uwumail_update() {
-  local id="$1" work result
+  local id="$1" channel="${2:-}" compose="${3:-}" work result
+  local -a options=()
+  [ -n "$channel" ] && options+=(--version "$channel")
+  case "$compose" in
+    keep) options+=(--keep-compose) ;;
+    replace) options+=(--force) ;;
+  esac
   work=$(mktemp -d)
   {
     printf '== fetching the newest update.sh\n'
     fetch_checked update.sh "$work/update.sh" &&
       install -m 0755 "$work/update.sh" "$COMPOSE_DIR/update.sh" &&
-      bash "$COMPOSE_DIR/update.sh" --dir "$COMPOSE_DIR" --no-self-update --no-antivirus --yes
+      bash "$COMPOSE_DIR/update.sh" --dir "$COMPOSE_DIR" --no-self-update --no-antivirus --yes "${options[@]}"
   } 2>&1 | job_log "$id"
   result=${PIPESTATUS[0]}
   rm -rf -- "$work"
   case "$result" in
     0) job_state "$id" "done" ;;
     3) job_state "$id" rolledBack "the new version did not come up, so the one from before runs again" ;;
+    # compose.yaml was changed by hand and update.sh will not decide; the portal asks.
+    4) job_state "$id" failed "compose" ;;
     *) job_state "$id" failed "the update stopped; its log is below" ;;
   esac
 }
@@ -613,7 +625,7 @@ job_log() {
 # Carries out one job with its log open on descriptor 3: made fresh with noclobber, so a name
 # re-planted after the rm makes the job fail rather than write through it.
 run_job() {
-  local id="$1" verb="$2"
+  local id="$1" verb="$2" channel="${3:-}" compose="${4:-}"
   local log="$bridge/job-$id.log" started=false
   rm -f -- "$log"
   set -C
@@ -626,7 +638,7 @@ run_job() {
       vpn-apply) do_vpn_apply "$id" ;;
       vpn-stop) do_vpn_stop "$id" ;;
       vpn-remove) do_vpn_remove "$id" ;;
-      uwumail-update) do_uwumail_update "$id" ;;
+      uwumail-update) do_uwumail_update "$id" "$channel" "$compose" ;;
       helper-update) do_helper_update "$id" ;;
     esac
   } 3>"$log"
@@ -685,16 +697,29 @@ cmd_task() {
   local waiting="$jobs_file.now"
   mv -fT "$jobs_file" "$waiting" 2>/dev/null || return 0
 
-  local line id verb asked now
+  local line id verb asked now channel compose
   now=$(date +%s)
   while IFS= read -r line; do
     id=$(printf '%s' "$line" | jq -r '.id // empty' 2>/dev/null)
     verb=$(printf '%s' "$line" | jq -r '.verb // empty' 2>/dev/null)
     asked=$(printf '%s' "$line" | jq -r '.at // 0' 2>/dev/null)
+    channel=$(printf '%s' "$line" | jq -r '.channel // empty' 2>/dev/null)
+    compose=$(printf '%s' "$line" | jq -r '.compose // empty' 2>/dev/null)
     # An id names a file, so it may be nothing but letters and digits.
     [[ "$id" =~ ^[A-Za-z0-9]{4,40}$ ]] || continue
     case " $verbs " in *" $verb "*) ;; *)
       job_state "$id" failed "this helper does not do $verb"
+      continue
+      ;;
+    esac
+    # Options are words from a list as well, never text to pass on.
+    case "$channel" in "" | latest | beta | edge) ;; *)
+      job_state "$id" failed "this helper does not know the channel"
+      continue
+      ;;
+    esac
+    case "$compose" in "" | keep | replace) ;; *)
+      job_state "$id" failed "this helper does not know what to do with compose.yaml"
       continue
       ;;
     esac
@@ -707,7 +732,7 @@ cmd_task() {
 
     say "carrying out $verb (job $id)"
     job_state "$id" running
-    run_job "$id" "$verb"
+    run_job "$id" "$verb" "$channel" "$compose"
   done <"$waiting"
   rm -f "$waiting"
 

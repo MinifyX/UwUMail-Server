@@ -1470,7 +1470,6 @@
     "title": "这台机器",
     "noReport": "这台机器上的助手程序已经有一段时间没有反馈了。uwumail-host-machine.timer 还在运行吗？",
     "unknownSystem": "未知系统",
-    "checked": "上次查看：{{at}}",
     "notApt": "这台机器不使用 apt。UwUMail 无法判断它需要什么——这部分仍由你负责。",
     "upToDate": "无需操作：系统已是最新。",
     "waiting_other": "有 {{count}} 个软件包等待更新，其中 {{security}} 个是安全更新。",
@@ -1478,18 +1477,7 @@
     "notAlone": "这台机器上还运行着其他内容：{{others}}。更新也会重启它们，重启机器也会让它们一起重启。",
     "cannotTell": "我无法判断这里还运行着什么。按下按钮之前，最好自己先看一下。",
     "liability": "这里发生的一切都发生在你的机器上。我会尽力先检查一遍——但我无法为此负责。",
-    "installUpdates": "安装更新",
-    "restart": "重启",
-    "states": {
-      "running": "正在运行…",
-      "done": "完成",
-      "failed": "失败",
-      "rolledBack": "已回滚",
-      "waiting": "等待中"
-    },
-    "helperNewer": "这台机器上的助手程序有新版本。点一下即可获取。",
-    "helperOld": "这台机器上的助手程序（版本 {{version}}）还不能自我更新。请在机器上运行一次以下命令；之后一切都可以在门户中完成：",
-    "updateHelper": "更新助手程序"
+    "helperNewer": "这台机器上的助手程序有新版本。点一下即可获取。"
   },
   "queue": {
     "title": "队列",
@@ -3023,16 +3011,7 @@
       "forgotten": "网关已移除。",
       "machine": {
         "title": "VPS",
-        "installUpdates": "安装更新",
-        "updateGateway": "将网关更新到 {{version}}",
-        "restart": "重启",
-        "hint": "网关上次检查于 {{time}}。其中任一操作运行时，网关会短暂离线——期间到达的邮件会由发信服务器稍后重新投递。",
-        "states": {
-          "running": "正在运行…",
-          "done": "完成。",
-          "failed": "没有成功。",
-          "refused": "被拒绝了。"
-        }
+        "toUpdates": "更新与重启：在更新中心"
       }
     },
     "restore": {
@@ -3060,8 +3039,7 @@
     }
   },
   "updates": {
-    "intro": "正在运行的版本、新内容，以及如何安装。",
-    "open": "打开",
+    "intro": "所有可以更新的东西都在这里：服务器、助手、这台机器、网关及其 VPS。",
     "running": "正在运行：版本 {{version}}",
     "runningEdge": "正在运行：edge，提交 {{commit}}（版本 {{version}}）",
     "notChecked": "尚未检查更新。",
@@ -3070,24 +3048,74 @@
     "checkFailed": "检查失败：{{error}}",
     "edgeBehind_other": "main 上有 {{count}} 个新提交：",
     "onGitHub": "在 GitHub 上",
-    "serverCommand": "服务器",
     "gatewayCommand": "网关（在 VPS 上）",
-    "gatewayRunning": "网关：{{software}}",
     "check": "每天检查更新",
     "checkHint": "每天向 GitHub 询问一次是否有新版本。",
     "channel": "渠道",
     "stable": "稳定版",
     "beta": "测试版",
     "checkNow": "立即检查",
-    "version": {
-      "title": "版本"
-    },
-    "onTheMachine": "更新在机器上进行，而不是从这里——脚本还会带来新的 compose.yaml，而容器自我替换是做不到这一点的。",
     "checkTitle": "检查更新",
-    "byButton": "此按钮会在这台机器上安装新版本：先进行备份，然后安装新的 compose.yaml 和镜像。如果新版本无法启动，旧版本会继续运行。在此期间，服务器大约会有一分钟无法访问。",
-    "installNow": "立即更新",
     "reload": "重新加载页面",
-    "helperOld": "这台机器上的助手程序太旧，无法使用更新按钮。请在机器上运行一次以下命令——它也会把助手程序更新到最新，之后你就可以在这里一键更新了："
+    "helperOld": "这台机器上的助手程序太旧，无法使用更新按钮。请在机器上运行一次以下命令——它也会把助手程序更新到最新，之后你就可以在这里一键更新了：",
+    "all": {
+      "title": "待处理",
+      "button": "全部更新",
+      "nothing": "全部是最新的。无事可做。",
+      "plan": "依次进行：{{steps}}。没有你的吩咐，什么都不会重启。"
+    },
+    "one": "更新",
+    "restart": "重启",
+    "steps": {
+      "gatewaySystem": "网关 VPS：系统更新",
+      "gateway": "网关",
+      "hostSystem": "这台机器：系统更新",
+      "helper": "助手",
+      "server": "UwUMail Server",
+      "gatewayReboot": "重启网关 VPS",
+      "hostReboot": "重启这台机器"
+    },
+    "stepStates": {
+      "pending": "等待中",
+      "running": "进行中…",
+      "done": "完成",
+      "failed": "失败",
+      "skipped": "已跳过"
+    },
+    "run": {
+      "title": "更新过程",
+      "started": "{{time}} 由 {{by}} 启动。",
+      "finished": "{{time}} 完成。",
+      "failedHint": "这一步没有成功。其余步骤会等你决定如何继续。",
+      "retry": "再试一次",
+      "skip": "跳过",
+      "stop": "中止",
+      "composeKeep": "保留我的 compose.yaml",
+      "composeReplace": "换成新的",
+      "reasons": {
+        "compose": "机器上的 compose.yaml 被手动改过，与新版本不一致。要怎么继续？",
+        "rolledBack": "新版本没有启动。旧版本继续运行。",
+        "timeout": "在预期时间内没有回应。"
+      },
+      "away": "现在连不上服务器。在它自己更新期间这是正常的，我会继续询问。",
+      "log": "输出：{{step}}",
+      "reloadHint": "新版本带来了新的门户。"
+    },
+    "helperCurrent": "版本 {{version}}，已是最新。",
+    "gatewayMachine": "网关 VPS",
+    "newRelease": "系统有新的大版本：{{release}}。这个我不会安装，由你决定。",
+    "noHelper": "这台机器上没有安装助手，所以我无法从这里安装任何东西。请在机器上执行一次：",
+    "gatewayNoHelper": "这个网关早于它的助手。请在 VPS 上再执行一次，之后一切都可以在这里完成：",
+    "restartAsk": {
+      "hostReboot": {
+        "title": "重启这台机器？",
+        "body": "服务器以及这台机器上的其他一切会有几分钟无法访问。"
+      },
+      "gatewayReboot": {
+        "title": "重启网关的 VPS？",
+        "body": "VPS 启动期间，外部邮件无法送达。发件方稍后会重试。"
+      }
+    }
   },
   "backups": {
     "intro": "每天晚上，服务器会备份邮件、设置、日历和通讯录：备份到 SFTP 服务器（例如 NAS）、S3 存储桶，或一个文件夹（例如挂载的磁盘）。首次备份之后，只会上传新增的内容。",

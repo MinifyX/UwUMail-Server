@@ -1,9 +1,8 @@
 //! Knowing when there is something newer: once a day the server asks GitHub for the releases of its
 //! channel (stable or beta), or, for an `edge` build of `main`, which commits came since.
 //!
-//! Updating itself happens on the machine, with `update.sh`. The portal only ever says what is
-//! there and what changed -- a mail server that can replace itself from a web page is one more way
-//! in, and the script does the job better anyway: it can also bring a new compose file.
+//! Installing is another matter: the server never replaces itself. It asks the helper on the
+//! machine, one fixed word at a time, and `update_run` keeps the order (see there).
 
 use std::cmp::Ordering;
 use std::time::Duration;
@@ -52,6 +51,15 @@ pub enum Channel {
     #[default]
     Stable,
     Beta,
+}
+
+/// The image tag a server on this channel follows.
+pub(crate) fn tag(release: bool, channel: Channel) -> &'static str {
+    match (release, channel) {
+        (false, _) => "edge",
+        (true, Channel::Stable) => "latest",
+        (true, Channel::Beta) => "beta",
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -114,7 +122,7 @@ fn version_key(version: &str) -> Option<(Vec<u64>, Option<Vec<String>>)> {
     Some((numbers, pre))
 }
 
-fn compare_versions(a: &str, b: &str) -> Ordering {
+pub(crate) fn compare_versions(a: &str, b: &str) -> Ordering {
     let (Some((a_core, a_pre)), Some((b_core, b_pre))) = (version_key(a), version_key(b)) else {
         return Ordering::Equal;
     };
@@ -276,14 +284,15 @@ impl Web {
         info
     }
 
-    /// Asks once a day whether there is something newer.
+    /// Asks once a day whether there is something newer, and looks after an update run.
     pub async fn run_updates(self, mut shutdown: watch::Receiver<bool>) {
-        loop {
+        for tick in 1u64.. {
             tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(60)) => {}
+                _ = tokio::time::sleep(Duration::from_secs(3)) => {}
                 _ = shutdown.changed() => return,
             }
-            if self.update_settings().await.check {
+            self.advance_update_run().await;
+            if tick % 20 == 0 && self.update_settings().await.check {
                 let last = self.update_info().await.checked_at.unwrap_or(0);
                 if unix_now() - last >= CHECK_INTERVAL {
                     self.check_updates().await;
@@ -327,6 +336,13 @@ mod tests {
         assert_eq!(beta.iter().map(|release| release.version.as_str()).collect::<Vec<_>>(), ["0.2.0-beta.1", "0.1.1"]);
         assert!(newer_releases(list(), "0.2.0", Channel::Beta).is_empty());
         assert_eq!(stable[0].name, "v0.1.1");
+    }
+
+    #[test]
+    fn each_build_follows_its_tag() {
+        assert_eq!(tag(false, Channel::Stable), "edge");
+        assert_eq!(tag(true, Channel::Stable), "latest");
+        assert_eq!(tag(true, Channel::Beta), "beta");
     }
 
     #[test]

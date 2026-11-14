@@ -246,6 +246,23 @@ fail2ban-client() {
   check "host: a release file that does not match its checksum is refused" refused_bad
   update_from_github() { [ "$releases" = "https://github.com/MinifyX/UwUMail-Server/releases/latest/download" ]; }
   check "host: new versions come from the project's releases, nowhere else" update_from_github
+  # What the portal sends along with an update is a word from a list, and a flag comes of it. The
+  # stand-in update.sh notes what it was called with and stops the way a changed compose.yaml does.
+  real_fetch_checked=$(declare -f fetch_checked)
+  calls="$work/calls" # the helper's functions have a $work and an $asked of their own
+  fetch_checked() { printf 'echo "$*" >>"%s"\nexit 4\n' "$calls" >"$2"; }
+  now=$(date +%s)
+  printf '{"id":"upd1","verb":"uwumail-update","at":%s,"channel":"beta","compose":"keep"}\n' "$now" >"$jobs_file"
+  printf '{"id":"upd2","verb":"uwumail-update","at":%s,"channel":"beta --force"}\n' "$now" >>"$jobs_file"
+  printf '{"id":"upd3","verb":"uwumail-update","at":%s,"compose":"delete"}\n' "$now" >>"$jobs_file"
+  cmd_task >/dev/null 2>&1
+  options_passed() {
+    [ "$(wc -l <"$calls")" = 1 ] && grep -q -- '--yes --version beta --keep-compose$' "$calls" &&
+      [ "$(jq -r .error "$bridge/job-upd1.json")" = compose ] &&
+      [ "$(jq -r .state "$bridge/job-upd2.json")$(jq -r .state "$bridge/job-upd3.json")" = failedfailed ]
+  }
+  check "host: an update takes its channel and compose choice from a list, and says when compose.yaml is in the way" options_passed
+  eval "$real_fetch_checked"
   unset -f compose fetch
 
   losing_every_race
