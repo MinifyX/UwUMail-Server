@@ -3,6 +3,16 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.33.0
+
+- Motion from UwUSuite-Design 1.15.0, subtle and still under reduced motion: after signing in
+  the portal opens out of the logo once, the active menu entry slides as one pill, pages fade
+  in, the overview's tiles come in one after the other and their numbers count up.
+- Webmail 0.29.0: the same motion (opening out of the logo after loading, sliding pill in the
+  rail, mail, calendar and contacts fade in), and Enter no longer fires while a Japanese,
+  Chinese or Korean word is still being composed.
+- The portal's assistant settings also wait for an IME composition before Enter.
+
 ## 0.32.0
 
 - Deleting an account now also drops the mail it still had waiting in the outgoing queue,
