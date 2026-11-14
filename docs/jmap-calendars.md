@@ -200,6 +200,7 @@ Instance ids never show up in `/changes`; only the stored event does.
 | `myRights` | everything `true` for one's own calendars; `mayDelete` is `false` for the only own calendar. A subscribed calendar ([calendar-import.md](calendar-import.md)) has `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate` and `mayRSVP` `false`: only its feed changes its events. For shared ones see above |
 | `uwuSharedBy` | the owner of a calendar shared with the account, else `null` |
 | `uwuBirthdays` | `true` for the birthdays calendar made from the contacts ([birthdays.md](birthdays.md)): read-only like a subscribed calendar, never the default, `mayDelete` `false`, and its events carry `uwuBirthday` |
+| `uwuBuiltin` | `"holidays"` or `"weeks"` for the calendars the server makes from the settings `holidays` and `weekNumbers` ([holidays.md](holidays.md)), else `null`: read-only like a subscribed calendar, never the default, `mayDelete` `false`; name and colour can be changed |
 
 For a calendar shared with the account, `name`, `color`, `sortOrder`,
 `isVisible`, `timeZone`, `includeInAvailability` and the default alerts are

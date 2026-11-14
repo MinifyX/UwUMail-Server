@@ -4080,7 +4080,9 @@
       "end": "End subscription",
       "endKeep": "Keep entries",
       "endDelete": "Delete calendar",
-      "endedToast": "Subscription to {{name}} ended"
+      "endedToast": "Subscription to {{name}} ended",
+      "catalog": "From the catalogue",
+      "catalogOwn": "Own address"
     },
     "remote": {
       "button": "Move from another provider",
@@ -4107,6 +4109,20 @@
         "outlook": "Outlook.com has no CalDAV or CardDAV. Export your calendar as an .ics file and your contacts as a file there, and import them here.",
         "appPassword": "This provider wants an app password, made in its settings."
       }
+    },
+    "builtin": {
+      "title": "Holidays and week numbers",
+      "intro": "The server makes these calendars itself and works them out without the internet. They are read-only, never count as busy and never ring. You can change their name and colour.",
+      "holidays": "Holidays",
+      "none": "Off",
+      "region": "State or canton",
+      "wholeCountry": "Nationwide holidays only",
+      "approximate": "Cantonal holidays are an approximation: municipalities and labour law differ.",
+      "weekNumbers": "Week numbers",
+      "weekNumbersHint": "Each week as an all-day entry “Week n” from Monday to Sunday.",
+      "save": "Save",
+      "savedToast": "Saved",
+      "readOnly": "Comes from your settings under “Holidays and week numbers” and cannot be edited."
     }
   },
   "maskedDomains": {

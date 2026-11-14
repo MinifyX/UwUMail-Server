@@ -41,6 +41,7 @@ mod forwarding;
 mod greylist_hold;
 mod groups;
 mod held;
+pub mod holidays;
 pub mod ical;
 mod identity_grants;
 mod imap;

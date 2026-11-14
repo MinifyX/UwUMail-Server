@@ -11,6 +11,7 @@ mod calendars;
 mod common;
 mod conformance;
 mod contacts;
+mod holidays;
 mod image_text;
 mod limits;
 mod masked_email;

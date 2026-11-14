@@ -3995,7 +3995,9 @@
       "end": "購読をやめる",
       "endKeep": "項目を残す",
       "endDelete": "カレンダーを削除",
-      "endedToast": "{{name}} の購読をやめました"
+      "endedToast": "{{name}} の購読をやめました",
+      "catalog": "カタログから",
+      "catalogOwn": "自分のアドレス"
     },
     "remote": {
       "button": "他のプロバイダーから移行",
@@ -4022,6 +4024,20 @@
         "outlook": "Outlook.com にはCalDAVもCardDAVもありません。そちらでカレンダーを .ics ファイルに、連絡先をファイルに書き出し、ここで読み込んでください。",
         "appPassword": "このプロバイダーは、設定で作成するアプリパスワードを必要とします。"
       }
+    },
+    "builtin": {
+      "title": "祝日と週番号",
+      "intro": "これらのカレンダーはサーバーがインターネットなしで自動的に作成します。読み取り専用で、予定ありにはならず、通知もしません。名前と色は変更できます。",
+      "holidays": "祝日",
+      "none": "オフ",
+      "region": "州またはカントン",
+      "wholeCountry": "全国の祝日のみ",
+      "approximate": "カントンの祝日は概算です。自治体や労働法によって異なります。",
+      "weekNumbers": "週番号",
+      "weekNumbersHint": "毎週、月曜から日曜までの終日予定「第n週」として表示します。",
+      "save": "保存",
+      "savedToast": "保存しました",
+      "readOnly": "「祝日と週番号」の設定から作られるため、編集できません。"
     }
   },
   "maskedDomains": {

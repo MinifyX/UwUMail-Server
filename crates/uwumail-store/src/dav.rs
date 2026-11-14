@@ -79,13 +79,16 @@ pub struct DavCollection {
     pub subscribed: bool,
     /// The birthdays calendar (migration 0056): filled from the owner's address books alone.
     pub birthdays: bool,
+    /// A built-in calendar (migration 0091, docs/holidays.md): `holidays` or `weeks`, written by
+    /// the server from the settings alone.
+    pub builtin: Option<String>,
 }
 
 impl DavCollection {
     /// Whether something else fills its entries, a feed or the address books: CalDAV and JMAP
     /// only read them.
     pub fn filled(&self) -> bool {
-        self.subscribed || self.birthdays
+        self.subscribed || self.birthdays || self.builtin.is_some()
     }
 }
 
@@ -199,7 +202,7 @@ pub fn dav_etag(content: &str) -> String {
 }
 
 /// The number of columns [`COLLECTION_COLUMNS`] reads, for queries that select more behind them.
-pub(crate) const COLLECTION_COLUMN_COUNT: usize = 16;
+pub(crate) const COLLECTION_COLUMN_COUNT: usize = 17;
 
 /// Refuses writes into a subscribed calendar, whose entries are the feed's, and into the birthdays
 /// calendar, whose entries are the address books'.
@@ -208,6 +211,12 @@ pub(crate) fn check_entries_writable(collection: &DavCollection) -> Result<()> {
         return Err(StoreError::Rule {
             code: "readOnly",
             message: "the birthdays calendar is made from your contacts; change a birthday in the contact".into(),
+        });
+    }
+    if collection.builtin.is_some() {
+        return Err(StoreError::Rule {
+            code: "readOnly",
+            message: "this calendar is made by the server from your settings and cannot be changed".into(),
         });
     }
     if collection.subscribed {
@@ -223,7 +232,8 @@ pub(crate) const COLLECTION_COLUMNS: &str = "c.id, c.account_id, c.kind, c.slug,
      c.sort_order, c.components, c.timezone, c.change, (SELECT count(*) FROM dav_resources r WHERE r.collection_id = c.id), \
      c.is_visible, c.is_default, \
      EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id), \
-     EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id)";
+     EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id), \
+     (SELECT g.kind FROM builtin_calendars g WHERE g.collection_id = c.id)";
 
 pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCollection> {
     Ok(DavCollection {
@@ -243,6 +253,7 @@ pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCol
         is_default: row.get(13)?,
         subscribed: row.get(14)?,
         birthdays: row.get(15)?,
+        builtin: row.get(16)?,
     })
 }
 
@@ -577,6 +588,7 @@ pub(crate) fn ensure_default(tx: &Transaction<'_>, log: &mut ChangeLog, account_
             "SELECT id FROM dav_collections c WHERE account_id = ?1 AND kind = ?2
                  AND NOT EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)
                  AND NOT EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id)
+                 AND NOT EXISTS (SELECT 1 FROM builtin_calendars g WHERE g.collection_id = c.id)
              ORDER BY sort_order, id LIMIT 1",
             params![account_id, kind.as_str()],
             |row| row.get(0),
@@ -775,7 +787,8 @@ impl Store {
                 // The birthdays calendar is no calendar of one's own: the first one is still made.
                 let exists: bool = tx.query_row(
                     "SELECT EXISTS (SELECT 1 FROM dav_collections c WHERE account_id = ?1 AND kind = ?2
-                         AND NOT EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id))",
+                         AND NOT EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id)
+                         AND NOT EXISTS (SELECT 1 FROM builtin_calendars g WHERE g.collection_id = c.id))",
                     params![account_id, kind.as_str()],
                     |row| row.get(0),
                 )?;
@@ -784,6 +797,7 @@ impl Store {
                 }
                 if kind == DavKind::Calendar {
                     crate::birthdays::follow_language(tx, &mut log, account_id)?;
+                    crate::holidays::refresh(tx, &mut log, account_id)?;
                 }
                 let mut stmt = tx.prepare(&format!(
                     "SELECT {COLLECTION_COLUMNS} FROM dav_collections c WHERE c.account_id = ?1 AND c.kind = ?2

@@ -4080,7 +4080,9 @@
       "end": "Abonnement beëindigen",
       "endKeep": "Items behouden",
       "endDelete": "Agenda verwijderen",
-      "endedToast": "Abonnement op {{name}} beëindigd"
+      "endedToast": "Abonnement op {{name}} beëindigd",
+      "catalog": "Uit de catalogus",
+      "catalogOwn": "Eigen adres"
     },
     "remote": {
       "button": "Verhuizen van een andere provider",
@@ -4107,6 +4109,20 @@
         "outlook": "Outlook.com heeft geen CalDAV of CardDAV. Exporteer daar je agenda als .ics-bestand en je contacten als bestand en importeer ze hier.",
         "appPassword": "Deze provider wil een app-wachtwoord, dat je in zijn instellingen maakt."
       }
+    },
+    "builtin": {
+      "title": "Feestdagen en weeknummers",
+      "intro": "De server maakt deze agenda’s zelf en rekent ze uit zonder internet. Ze zijn alleen-lezen, tellen nooit als bezet en geven nooit een melding. Naam en kleur kun je wijzigen.",
+      "holidays": "Feestdagen",
+      "none": "Uit",
+      "region": "Deelstaat of kanton",
+      "wholeCountry": "Alleen landelijke feestdagen",
+      "approximate": "Kantonale feestdagen zijn een benadering: gemeenten en arbeidsrecht wijken af.",
+      "weekNumbers": "Weeknummers",
+      "weekNumbersHint": "Elke week als hele-dag-item „Week n” van maandag tot zondag.",
+      "save": "Opslaan",
+      "savedToast": "Opgeslagen",
+      "readOnly": "Komt uit je instellingen bij „Feestdagen en weeknummers” en is niet te bewerken."
     }
   },
   "maskedDomains": {

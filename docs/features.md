@@ -46,6 +46,9 @@ has room for, with links to the guides.
   anniversaries in the address books, with the age on JMAP, reminders per
   contact, and birthday events from other calendars moved into the contacts
   ([birthdays.md](birthdays.md)).
+- **Holidays and week numbers.** Built-in calendars with the public holidays of
+  Germany (all 16 states), Austria and Switzerland, and ISO week numbers,
+  worked out on the server without any feed ([holidays.md](holidays.md)).
 - **Bring your calendars along.** Import `.ics` and `.vcf` files, subscribe to
   calendars by their iCal address (Google's secret address too), or move
   everything over from iCloud, WEB.DE, GMX, Posteo and other CalDAV/CardDAV

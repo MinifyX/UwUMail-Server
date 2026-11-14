@@ -4151,7 +4151,9 @@
       "end": "Mettre fin à l'abonnement",
       "endKeep": "Garder les entrées",
       "endDelete": "Supprimer l'agenda",
-      "endedToast": "Abonnement à {{name}} terminé"
+      "endedToast": "Abonnement à {{name}} terminé",
+      "catalog": "Depuis le catalogue",
+      "catalogOwn": "Adresse personnelle"
     },
     "remote": {
       "button": "Transférer depuis un autre fournisseur",
@@ -4178,6 +4180,20 @@
         "outlook": "Outlook.com n'a ni CalDAV ni CardDAV. Exportez-y votre agenda en fichier .ics et vos contacts en fichier, puis importez-les ici.",
         "appPassword": "Ce fournisseur demande un mot de passe d'application, créé dans ses paramètres."
       }
+    },
+    "builtin": {
+      "title": "Jours fériés et numéros de semaine",
+      "intro": "Le serveur crée ces calendriers lui-même et les calcule sans Internet. Ils sont en lecture seule, ne comptent jamais comme occupé et ne sonnent jamais. Tu peux changer leur nom et leur couleur.",
+      "holidays": "Jours fériés",
+      "none": "Désactivé",
+      "region": "Land ou canton",
+      "wholeCountry": "Jours fériés nationaux uniquement",
+      "approximate": "Les jours fériés cantonaux sont une approximation : communes et droit du travail varient.",
+      "weekNumbers": "Numéros de semaine",
+      "weekNumbersHint": "Chaque semaine comme événement d’une journée entière « Semaine n » du lundi au dimanche.",
+      "save": "Enregistrer",
+      "savedToast": "Enregistré",
+      "readOnly": "Vient de tes réglages « Jours fériés et numéros de semaine » et ne peut pas être modifié."
     }
   },
   "maskedDomains": {

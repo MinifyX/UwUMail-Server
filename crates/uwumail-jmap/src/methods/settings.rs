@@ -132,6 +132,7 @@ fn validate_removal(key: &str) -> Result<(), SettingProblem> {
         "nyu.animations" => json!("on"),
         "accounts.order" => json!([]),
         "notify.quietHours" => json!({ "enabled": false, "from": "22:00", "to": "07:00", "days": [] }),
+        "holidays" => json!({ "country": "DE", "region": null }),
         _ if key.starts_with("senderAppearance:") => json!("light"),
         _ if key.starts_with("signature:") => {
             json!({ "email": "", "name": "", "html": "", "forNew": false, "forReplies": false })
