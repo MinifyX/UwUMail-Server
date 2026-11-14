@@ -178,6 +178,7 @@ export function ChipInput({
     setText("");
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === "Enter" || event.key === ",") {
       event.preventDefault();
       add(text);
