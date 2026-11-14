@@ -263,10 +263,11 @@ export function AccountHome({ session }: { session: Session }) {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="uwu-stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           icon={ICONS.alias}
-          value={t("account.tiles.addresses", { count: data.addresses.length })}
+          value={data.addresses.length}
+          format={(count) => t("account.tiles.addresses", { count })}
           label={
             maskedActive === undefined
               ? t("account.tiles.addressesNote")
@@ -276,7 +277,8 @@ export function AccountHome({ session }: { session: Session }) {
         <StatTile
           icon={ICONS.drive}
           tone={share > 0.9 ? "danger" : share > 0.75 ? "warning" : "normal"}
-          value={formatBytes(data.usedBytes, language)}
+          value={data.usedBytes}
+          format={(n) => formatBytes(n, language)}
           label={
             data.quotaBytes > 0
               ? t("account.tiles.storageOf", { quota: formatBytes(data.quotaBytes, language) })
@@ -304,7 +306,7 @@ export function AccountHome({ session }: { session: Session }) {
         <StatTile icon={ICONS.calendar} value={formatDate(data.createdAt, language)} label={t("account.tiles.since")} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
+      <div className="uwu-stagger grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <NextCard security={security.data} />
         <StatusCard lines={lines} />
       </div>

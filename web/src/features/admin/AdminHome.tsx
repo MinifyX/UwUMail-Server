@@ -72,7 +72,7 @@ function FullHome() {
       <StatusTiles counts={counts} />
       <AlertsCard />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="uwu-stagger grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatTile
           icon={ICONS.people}
           label={t("admin.cards.accounts")}
@@ -89,7 +89,12 @@ function FullHome() {
           value={counts.queuedMessages}
           tone={counts.deferredRecipients > 0 ? "warning" : "normal"}
         />
-        <StatTile icon={ICONS.drive} label={t("admin.cards.storage")} value={formatBytes(counts.usedBytes, language)} />
+        <StatTile
+          icon={ICONS.drive}
+          label={t("admin.cards.storage")}
+          value={counts.usedBytes}
+          format={(n) => formatBytes(n, language)}
+        />
         <StatTile icon={ICONS.securityCheck} label={t("admin.cards.admins")} value={counts.admins} />
       </div>
 

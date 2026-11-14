@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
-    "@uwusuite/design": "https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.14.0/uwusuite-design-1.14.0.tgz",
+    "@uwusuite/design": "https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.15.0/uwusuite-design-1.15.0.tgz",
     "i18next": "^26.4.2",
     "lucide-react": "^1.45.0",
     "react": "^19.3.0",

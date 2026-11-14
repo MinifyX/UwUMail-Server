@@ -1,6 +1,15 @@
 import { NyuScene } from "@/components/nyu/scenes";
-import { Button, LABELS_DE, LABELS_EN, Toaster, useAppearance, UwuLabels, EmptyState } from "@uwusuite/design";
-import { useEffect, type ReactNode } from "react";
+import {
+  Button,
+  LABELS_DE,
+  LABELS_EN,
+  revealFrom,
+  Toaster,
+  useAppearance,
+  UwuLabels,
+  EmptyState,
+} from "@uwusuite/design";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { AccountHome } from "@/features/account/AccountHome";
 import { AccountAssistPage } from "@/features/assist/AccountAssistPage";
@@ -120,6 +129,13 @@ function Portal({ session }: { session: Session }) {
   useEffect(() => {
     if (entry) navigate("/account", { replace: true });
   }, [entry]);
+
+  // Once per start or login: the portal comes out of the logo (hidden on a phone: from the middle).
+  useLayoutEffect(() => {
+    const root = document.getElementById("root");
+    const logo = document.querySelector("[data-uwu-reveal-origin]");
+    if (root) revealFrom(root, logo?.getClientRects().length ? logo : root);
+  }, []);
 
   return <PortalShell session={session}>{page(entry ? "/account" : path, session)}</PortalShell>;
 }
