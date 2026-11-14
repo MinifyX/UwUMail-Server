@@ -10,6 +10,8 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   folder `Restored <date>` (docs/backups.md, docs/jmap-backups.md). The server keeps an index
   of the snapshots' headers for that; the admin can switch it off under *Backups*.
 - New JMAP extension `urn:uwumail:jmap:backups` (`BackupEmail/query`, `/get`, `/restore`).
+- Webmail 0.30.0: *Search the backups* in the trash, with preview and restore of several mails
+  at once; links in mails no longer open embedded parts.
 
 ## 0.33.0
 
