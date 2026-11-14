@@ -1,4 +1,4 @@
-import { Button, Field, Segmented, TextInput, Toggle, Card, ICONS, Icon, cx } from "@uwusuite/design";
+import { Button, Field, Segmented, TextInput, Toggle, Card, ICONS, Icon, cx, motionAllowed } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, FileUp } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
@@ -331,7 +331,9 @@ function DmarcSection({ view }: { view: BimiView }) {
           variant="ghost"
           icon={ArrowUp}
           className="self-start"
-          onClick={() => document.getElementById(DNS_CARD_ID)?.scrollIntoView({ behavior: "smooth" })}
+          onClick={() =>
+            document.getElementById(DNS_CARD_ID)?.scrollIntoView({ behavior: motionAllowed() ? "smooth" : "auto" })
+          }
         >
           {t("bimi.dmarc.showDns")}
         </Button>

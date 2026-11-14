@@ -8,6 +8,7 @@ import {
   ProgressBar,
   StatTile,
   StatusDot,
+  motionAllowed,
 } from "@uwusuite/design";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
@@ -208,7 +209,11 @@ function NextCard({ security }: { security: SecurityView | undefined }) {
           icon={ICONS.devices}
           title={t("account.next.device.title")}
           text={t("account.next.device.text")}
-          onClick={() => document.getElementById("apps")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          onClick={() =>
+            document
+              .getElementById("apps")
+              ?.scrollIntoView({ behavior: motionAllowed() ? "smooth" : "auto", block: "start" })
+          }
         />
       </div>
     </Card>
