@@ -3,6 +3,7 @@
 
 mod api;
 mod assist;
+mod backups;
 mod birthdays;
 mod calendar_features;
 mod calendar_sharing;

@@ -157,6 +157,32 @@ docker compose exec uwumail uwumail-server backup restore-mailbox \
 without `--folder` every folder comes back. A folder brings the folders inside
 it along.
 
+## People search their own mail
+
+Everyone can look for mail they deleted in the backups and take it back
+themselves, in the webmail and the UwUMail app, without asking the admin.
+*Backups → People may search the backups* switches it off; it is on by
+default.
+
+Only the headers are searched: the subject, the senders, the recipients and
+the date. For that the server keeps an index of the mail in every snapshot in
+`cache/backup-index.db` in the data directory (not backed up itself). A backup
+adds its snapshot right away, from the copy of the database it makes anyway;
+snapshots from before, or after the index was lost, are read in the
+background once a backup is not running, newest first. Snapshots the
+retention deleted drop out of it. Switching the search off deletes the index.
+The index holds the subject, sender and recipients of deleted mail unencrypted, also when the
+backups are encrypted, for as long as the retention keeps them. Only the server can read the file
+(mode 0600), but backups of the whole volume or VM take it along. Turn the search off where that
+matters.
+
+A person only ever finds their own mail: the mail of their account, by its id
+and the moment it was made, never that of an account that had their address
+before. A shared mailbox's mail is found by the shared mailbox itself, not by
+the people it is shared with. Mail taken back goes into `Restored <date>`; mail
+the mailbox still has is left out. The protocol is in
+[jmap-backups.md](jmap-backups.md).
+
 ## Restoring the whole server
 
 There are three ways in, and they differ only in where you are standing.

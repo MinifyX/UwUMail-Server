@@ -119,6 +119,8 @@ pub(crate) struct Inner {
     pub reminders: calendar_alerts::ReminderLimits,
     /// The AI assistant (docs/jmap-assist.md), when the server has one.
     pub assist: Option<uwumail_assist::Assist>,
+    /// The backups, for people to find their own mail in them (docs/jmap-backups.md).
+    pub backups: Option<uwumail_backup::Backups>,
     /// The event streams and WebSockets open per account.
     pub push_connections: push::Connections,
 }
@@ -165,6 +167,7 @@ impl Jmap {
                 unsubscribe_transport: None,
                 reminders: Default::default(),
                 assist: None,
+                backups: None,
                 push_connections: Default::default(),
             }),
         }
@@ -249,6 +252,14 @@ impl Jmap {
         let inner =
             Arc::into_inner(self.inner).expect("the assistant is set before anything else holds the JMAP service");
         Jmap { inner: Arc::new(Inner { assist: Some(assist), ..inner }) }
+    }
+
+    /// Lets people search their own mail in the backups (`urn:uwumail:jmap:backups`). Called
+    /// before the router is built.
+    pub fn with_backups(self, backups: uwumail_backup::Backups) -> Jmap {
+        let inner =
+            Arc::into_inner(self.inner).expect("the backups are set before anything else holds the JMAP service");
+        Jmap { inner: Arc::new(Inner { backups: Some(backups), ..inner }) }
     }
 
     /// The API and uploads read their bodies themselves, after the login and up to

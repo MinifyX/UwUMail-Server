@@ -54,8 +54,9 @@ async fn backup_and_restore_over_sftp() {
     assert!(host_key.starts_with("SHA256:"), "{host_key}");
     let key = RepoKey::generate();
     let repo = Repository::open(Storage::Sftp(Box::new(first)), Some(key.clone()), 1).await.unwrap();
-    let report =
-        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000).await.unwrap();
+    let report = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000, None)
+        .await
+        .unwrap();
     assert!(uwumail_backup::check(&repo, &report.snapshot).await.unwrap().is_empty());
     repo.storage.close().await;
 

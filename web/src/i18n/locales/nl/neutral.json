@@ -3223,7 +3223,9 @@
       "monthly": "Maanden bewaren",
       "encrypted": "Versleutelen",
       "encryptedHint": "Aanbevolen: dan kan niemand de mail op de back-upserver lezen. Om te herstellen heb je de herstelsleutel nodig.",
-      "encryptedFixed": "Er zijn al back-ups, dus dit blijft zoals het is."
+      "encryptedFixed": "Er zijn al back-ups, dus dit blijft zoals het is.",
+      "userSearch": "Gebruikers mogen in de back-ups zoeken",
+      "userSearchHint": "Iedereen kan zijn eigen verwijderde mail in de back-ups vinden en terugzetten, in de webmail en de app. Alleen de kopregels worden doorzocht."
     },
     "snapshots": {
       "title": "Snapshots",

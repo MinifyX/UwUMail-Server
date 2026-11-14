@@ -61,6 +61,8 @@ pub const PROFILE: &str = "urn:uwumail:jmap:profile";
 pub const BIRTHDAYS: &str = "urn:uwumail:jmap:birthdays";
 /// Our own extension: the AI assistant, whose models are asked by the server (docs/jmap-assist.md).
 pub const ASSIST: &str = "urn:uwumail:jmap:assist";
+/// Our own extension: a person's own mail in the server's backups (docs/jmap-backups.md).
+pub const BACKUPS: &str = "urn:uwumail:jmap:backups";
 /// Our own extension: signatures per domain and the domains' company signatures
 /// (`SignatureSettings/get`, `SignatureSettings/set`, docs/jmap-signatures.md).
 pub const SIGNATURES: &str = "urn:uwumail:jmap:signatures";
@@ -380,8 +382,9 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             }
             let picture_state = if may_be_public { "-p1" } else { "-p0" };
             let assist_state = add_assist(&jmap, &mut document, &account, &base).await;
+            let backups_state = add_backups(&jmap, &mut document, &account).await;
             document["state"] = json!(format!(
-                "{}{}{internal_state}{masked_state}{picture_state}{assist_state}",
+                "{}{}{internal_state}{masked_state}{picture_state}{assist_state}{backups_state}",
                 session_state(&account),
                 crate::sharing::state_suffix(&shared)
             ));
@@ -418,6 +421,20 @@ async fn add_assist(jmap: &Jmap, document: &mut Value, account: &Account, base: 
         capability.foreign_mail,
     ];
     format!("-ai{}", bits.iter().map(|on| if *on { '1' } else { '0' }).collect::<String>())
+}
+
+/// Searching one's own mail in the backups, for the person's own account only, while the admin
+/// allows it and backups are set up.
+async fn add_backups(jmap: &Jmap, document: &mut Value, account: &Account) -> &'static str {
+    let Some(backups) = &jmap.inner.backups else { return "" };
+    if !backups.user_search().await {
+        return "";
+    }
+    let account_id = ids::account(account.id);
+    document["capabilities"][BACKUPS] = json!({});
+    document["accounts"][&account_id]["accountCapabilities"][BACKUPS] = json!({});
+    document["primaryAccounts"][BACKUPS] = json!(account_id);
+    "-k"
 }
 
 #[cfg(test)]
