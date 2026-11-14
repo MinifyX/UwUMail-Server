@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.35.1
+
+- Webmail 0.30.1: notes stay while the pointer or focus is on them, and form fields get their hint
+  and error linked by the design package itself.
+- Admin app on UwUSuite-Design 1.16.0: hints and errors of fields are announced by screen readers,
+  dialogs start on their first control, menus close with Tab and return focus, and toasts stay
+  while hovered or focused.
+
 ## 0.35.0
 
 - Updates, built anew: *Server → Updates* is the one place for all of them. *Update everything*
