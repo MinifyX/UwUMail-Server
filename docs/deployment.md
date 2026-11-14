@@ -508,8 +508,11 @@ or take the new one (`--force`).
 
 A new major version of the operating system (`do-release-upgrade`) is only
 shown, never installed. Systems without `apt` get no system updates from the
-portal. Without the helper, or with one from before 0.9.3, the page shows the
-one command that is left:
+portal. Without the helper, the page shows the command that installs it (the
+same steps as in [install.md](install.md)). *Continue without the helper* puts
+that hint away for good; the page then shows only the command to run by hand,
+and *Install the helper after all* brings the hint back. That command is also
+what is left with a helper from before 0.9.3:
 
 ```bash
 cd /opt/uwumail && sudo bash update.sh

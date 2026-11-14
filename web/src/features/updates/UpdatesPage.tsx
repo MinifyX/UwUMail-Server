@@ -255,6 +255,14 @@ function ComponentsCard({ view, control }: { view: UpdatesView; control: RunCont
     onError: (error) => toast(errorText(error), "error"),
   });
 
+  // Not everybody wants a root helper: the choice is kept, so the page asks only once.
+  const manual = useMutation({
+    mutationFn: (manual: boolean) =>
+      api<UpdatesView>("/api/admin/updates", { method: "PUT", body: { ...view.settings, manual } }),
+    onSuccess: (next) => queryClient.setQueryData(updatesKey, next),
+    onError: (error) => toast(errorText(error), "error"),
+  });
+
   const { build, info, host, gateway } = view;
   const machine = host.machine;
   const system = gateway?.machine?.system;
@@ -315,10 +323,35 @@ function ComponentsCard({ view, control }: { view: UpdatesView; control: RunCont
           <News view={view} />
           {serverNews && act("server", t("updates.one"))}
           {!host.available ? (
-            <>
-              <p className="text-[13px] text-muted">{t("updates.noHelper")}</p>
-              <Command label={t("updates.steps.server")} command={view.serverCommand} />
-            </>
+            view.settings.manual ? (
+              <>
+                <p className="text-[13px] text-muted">{t("updates.manual")}</p>
+                <Command label={t("updates.steps.server")} command={updateCommand(null)} />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="self-start"
+                  disabled={manual.isPending}
+                  onClick={() => manual.mutate(false)}
+                >
+                  {t("updates.manualOff")}
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-[13px] text-muted">{t("updates.noHelper")}</p>
+                <Command label={t("updates.steps.helper")} command={view.helperCommand} />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="self-start"
+                  disabled={manual.isPending}
+                  onClick={() => manual.mutate(true)}
+                >
+                  {t("updates.manualOn")}
+                </Button>
+              </>
+            )
           ) : (
             machine &&
             !helperCan(machine, "uwumail-update") && (

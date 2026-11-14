@@ -12,7 +12,7 @@ use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 
 /// The helper this server was released with. An older one is offered an update in the portal.
-pub const HELPER_VERSION: u32 = 4;
+pub const HELPER_VERSION: u32 = 5;
 
 /// What the helper wrote down about the machine.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

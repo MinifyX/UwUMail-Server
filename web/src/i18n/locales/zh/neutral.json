@@ -3104,7 +3104,10 @@
     "helperCurrent": "版本 {{version}}，已是最新。",
     "gatewayMachine": "网关 VPS",
     "newRelease": "系统有新的大版本：{{release}}。这个我不会安装，由你决定。",
-    "noHelper": "这台机器上没有安装助手，所以我无法从这里安装任何东西。请在机器上执行一次：",
+    "noHelper": "这台机器上还没有安装助手。助手会在你在这里下达指令时安装更新并重启。请在机器上执行一次，之后一切都可以在此页面完成。如果 UwUMail 不在 /opt/uwumail，请修改命令中的路径。",
+    "manualOn": "不安装助手继续",
+    "manual": "你手动更新。更新时在机器上执行：",
+    "manualOff": "还是安装助手",
     "gatewayNoHelper": "这个网关早于它的助手。请在 VPS 上再执行一次，之后一切都可以在这里完成：",
     "restartAsk": {
       "hostReboot": {

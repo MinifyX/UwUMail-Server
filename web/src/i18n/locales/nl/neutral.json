@@ -3174,7 +3174,10 @@
     "helperCurrent": "Versie {{version}}, actueel.",
     "gatewayMachine": "Gateway-VPS",
     "newRelease": "Er is een nieuwe hoofdversie van het systeem: {{release}}. Die installeer ik niet, dat blijft bij jou.",
-    "noHelper": "Op deze machine is geen helper geïnstalleerd, dus ik kan van hieruit niets installeren. Eén keer op de machine uitvoeren:",
+    "noHelper": "Op deze machine is nog geen helper geïnstalleerd. Die installeert updates en herstart wanneer je dat hier zegt. Voer dit één keer op de machine uit; daarna gaat alles vanaf deze pagina. Staat UwUMail niet in /opt/uwumail, pas dan het pad in het commando aan.",
+    "manualOn": "Doorgaan zonder helper",
+    "manual": "Je werkt met de hand bij. Voer voor een update op de machine uit:",
+    "manualOff": "Helper toch installeren",
     "gatewayNoHelper": "Deze gateway is van vóór zijn helper. Nog één keer op de VPS uitvoeren, daarna gaat alles van hieruit:",
     "restartAsk": {
       "hostReboot": {

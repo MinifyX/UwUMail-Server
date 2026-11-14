@@ -3,6 +3,19 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.35.2
+
+- Updates: a machine without a helper is shown the one command that installs it (fetched, checked,
+  installed, container recreated once), not `update.sh`, which never installed one.
+- Updates: "Continue without the helper" puts the hint away for good. The page then only shows the
+  command to run by hand, with a way back to installing the helper.
+- Restart from the portal (machine and gateway, helper 5): the restart is scheduled in the
+  foreground and what `shutdown` says is kept. Where logind does not take it, a systemd timer
+  restarts the machine instead; if neither works the job fails with the reason, instead of looking
+  done while nothing happens.
+- Gateway: after a job was asked for it reports every few seconds for two minutes, so the portal
+  learns how a restart went right away, not with the next five-minute heartbeat.
+
 ## 0.35.1
 
 - Webmail 0.30.1: notes stay while the pointer or focus is on them, and form fields get their hint

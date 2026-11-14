@@ -247,7 +247,7 @@ cmd_machine() {
 }
 
 helper_version() {
-  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-4}"
+  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-5}"
 }
 
 # ── the VPN for the pictures ──────────────────────────────────────────────────────────────────
@@ -684,12 +684,18 @@ do_os_update() {
 }
 
 do_reboot() {
-  local id="$1"
-  job_state "$id" "done"
-  printf 'the machine restarts in a minute\n' | job_log "$id"
-  say "restarting on request from the portal"
-  # A minute, so the answer to the request still gets out and mail in flight has a moment.
-  shutdown -r +1 "UwUMail: update" >/dev/null 2>&1 &
+  local id="$1" said
+  # In the foreground and with what it says kept: a restart that did not get scheduled used to
+  # look done in the portal. Where logind did not take it, systemd itself gets a timer for it.
+  if { said=$(shutdown -r +1 "UwUMail: update" 2>&1) && [ -e /run/systemd/shutdown/scheduled ]; } ||
+    said="$said"$'\n'$(systemd-run --quiet --on-active=1min systemctl start reboot.target 2>&1); then
+    printf 'the machine restarts in a minute\n%s\n' "$said" | job_log "$id"
+    job_state "$id" "done"
+    say "restarting on request from the portal"
+  else
+    printf '%s\n' "$said" | job_log "$id"
+    job_state "$id" failed "the machine did not take the restart"
+  fi
 }
 
 cmd_task() {

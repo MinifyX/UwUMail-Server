@@ -605,6 +605,9 @@ const mockOAuthClients: Record<string, string> = {
 };
 
 function hostView(): HostView {
+  // ?helper=none shows the page of a machine that has no helper.
+  if (new URLSearchParams(window.location.search).get("helper") === "none")
+    return { available: false, machine: null, job: null, log: "", command: "" };
   return {
     available: true,
     machine: {
@@ -621,7 +624,7 @@ function hostView(): HostView {
       digest: "sha256:0c1d2e",
       composeDir: "/opt/uwumail",
       checkedAt: now - 400,
-      helper: new URLSearchParams(window.location.search).get("helper") ?? "4",
+      helper: new URLSearchParams(window.location.search).get("helper") ?? "5",
       verbs:
         new URLSearchParams(window.location.search).get("helper") === "2"
           ? ["os-update", "reboot", "vpn-apply", "vpn-stop"]
@@ -635,7 +638,7 @@ function hostView(): HostView {
 
 const mockUpdates: UpdatesView = {
   build: { version: "0.1.0", commit: "3eedf6a1c0ffee", release: true },
-  settings: { check: true, channel: "stable" },
+  settings: { check: true, channel: "stable", manual: false },
   info: {
     checkedAt: Math.floor(Date.now() / 1000) - 3 * 3600,
     error: null,
@@ -653,7 +656,8 @@ const mockUpdates: UpdatesView = {
     commits: [],
   },
   image: "ghcr.io/minifyx/uwumail-server:latest",
-  serverCommand: "sudo bash update.sh",
+  helperCommand:
+    "cd /tmp && curl -fsSLO https://example.com/uwumail-host.tar.gz && sudo bash uwumail-host/install.sh --dir /opt/uwumail && cd /opt/uwumail && sudo docker compose up -d",
   host: { available: false, machine: null, job: null, log: "", command: "" },
   gateway: null,
   gatewayVersion: null,
@@ -700,7 +704,7 @@ function updatesView(): UpdatesView {
     gatewaySystem: Boolean(system && system.updates > 0) && !done("gatewaySystem"),
     gateway: false,
     hostSystem: !done("hostSystem"),
-    helper: host.machine?.helper !== "4" && !done("helper"),
+    helper: host.machine?.helper !== "5" && !done("helper"),
     server: !done("server"),
     gatewayReboot: false,
     hostReboot: false,

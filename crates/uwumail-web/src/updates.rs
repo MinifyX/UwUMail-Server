@@ -68,11 +68,13 @@ pub struct UpdateSettings {
     /// Ask GitHub at all. Off means the server never talks to it.
     pub check: bool,
     pub channel: Channel,
+    /// The admin chose to run updates by hand: the page stops offering the helper.
+    pub manual: bool,
 }
 
 impl Default for UpdateSettings {
     fn default() -> Self {
-        UpdateSettings { check: true, channel: Channel::Stable }
+        UpdateSettings { check: true, channel: Channel::Stable, manual: false }
     }
 }
 
