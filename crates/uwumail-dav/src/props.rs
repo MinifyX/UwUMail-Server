@@ -6,7 +6,7 @@ use uwumail_store::{
 };
 
 use crate::objects;
-use crate::xml::{self, APPLE, CALDAV, CALSERVER, CARDDAV, DAV, Element};
+use crate::xml::{self, APPLE, CALDAV, CALSERVER, CARDDAV, DAV, Element, UWUMAIL};
 use crate::{INBOX, OUTBOX, collection_href, home_href, kind_segment, principal_href};
 
 pub enum Requested {
@@ -313,6 +313,13 @@ impl Target {
             }
             (APPLE, "calendar-color", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
                 xml::escape(v.collection.color.as_deref()?)
+            }
+            // A built-in calendar, so that a move from this server to another UwUMail makes it
+            // there from the setting instead of copying its events (docs/holidays.md).
+            (UWUMAIL, "builtin", Target::Collection(v)) if v.access.is_owner() => {
+                let kind = v.collection.builtin.as_deref()?;
+                let region = v.collection.builtin_region.as_deref().unwrap_or_default();
+                xml::escape(format!("{kind} {region}").trim_end())
             }
             (APPLE, "calendar-order", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
                 v.collection.sort_order.to_string()

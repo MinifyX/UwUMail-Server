@@ -17,7 +17,7 @@ use crate::dav::{
     ChangeLog, DavCollection, DavKind, NewDavCollection, delete_collection, insert_collection, own_collection,
 };
 use crate::itip::{Component, Property};
-use crate::{Result, Store};
+use crate::{Result, Store, StoreError};
 
 const HOLIDAYS: &str = "holidays";
 const WEEKS: &str = "weeks";
@@ -545,6 +545,50 @@ pub(crate) fn refresh(tx: &Transaction<'_>, log: &mut ChangeLog, account_id: i64
 }
 
 impl Store {
+    /// Makes a built-in calendar a move brought from another UwUMail server (`holidays <region>`
+    /// or `weeks`, from CalDAV) by turning on its setting, with the name and colour it had there.
+    /// One the account has already stays as it is, so later rounds of the move change nothing.
+    pub async fn take_over_builtin_calendar(
+        &self,
+        account_id: i64,
+        builtin: &str,
+        name: String,
+        color: Option<String>,
+    ) -> Result<()> {
+        let (kind, area) = builtin.split_once(' ').unwrap_or((builtin, ""));
+        let (kind, key, value) = match kind {
+            HOLIDAYS => {
+                let (country, region) = match area.split_once('-') {
+                    Some((country, _)) => (country, Value::from(area)),
+                    None => (area, Value::Null),
+                };
+                (HOLIDAYS, "holidays", serde_json::json!({ "country": country, "region": region }))
+            }
+            WEEKS => (WEEKS, "weekNumbers", Value::Bool(true)),
+            _ => return Err(StoreError::Invalid(format!("{builtin} is not a built-in calendar"))),
+        };
+        // Came from another server: checked like a setting written here.
+        if kind == HOLIDAYS {
+            area_of(&value).map_err(StoreError::Invalid)?;
+        }
+        if self.read(move |conn| row_of(conn, account_id, kind)).await?.is_some() {
+            return Ok(());
+        }
+        let change = crate::SettingsChange::Patch(vec![(key.to_owned(), Some(value))]);
+        self.update_user_settings(account_id, change, None).await?;
+        let Some(row) = self.read(move |conn| row_of(conn, account_id, kind)).await? else {
+            return Ok(());
+        };
+        let name = crate::dav_import::shorten(&name, 255);
+        let update = crate::DavCollectionUpdate {
+            display_name: (!name.trim().is_empty()).then_some(name),
+            color: color.as_deref().and_then(crate::dav_import::dav_color).map(Some),
+            ..Default::default()
+        };
+        self.dav_update_collection(account_id, row.collection_id, update).await?;
+        Ok(())
+    }
+
     /// Writes the next years into the built-in calendars once the year turned (the hourly job).
     /// Returns how many accounts' calendars it wrote.
     pub async fn roll_builtin_calendars(&self) -> Result<usize> {

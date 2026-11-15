@@ -139,7 +139,7 @@ pub struct DavMirrorReport {
     pub entries: usize,
 }
 
-fn shorten(value: &str, max: usize) -> String {
+pub(crate) fn shorten(value: &str, max: usize) -> String {
     let value = value.trim();
     match value.char_indices().nth(max) {
         Some((cut, _)) => format!("{}…", &value[..cut]),

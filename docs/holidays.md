@@ -18,6 +18,13 @@ over JMAP `UserSettings`.
   events. Turning it on again makes a new one.
 - They span the previous year and the next three. The hourly cleanup moves the
   span on at the turn of the year.
+- A backup holds them with the rest of the database, settings included, so a
+  restore brings them back as they were.
+- CalDAV shows the owner `<builtin xmlns="urn:uwumail:dav">` on them
+  (`holidays DE-NW`, `weeks`). A move from another UwUMail server
+  ([moving.md](moving.md)) reads it and turns the setting on here instead of
+  copying the events, keeping the calendar's name and colour. A calendar of
+  that kind the account already has stays as it is.
 
 ## Settings
 

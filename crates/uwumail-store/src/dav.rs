@@ -82,6 +82,8 @@ pub struct DavCollection {
     /// A built-in calendar (migration 0091, docs/holidays.md): `holidays` or `weeks`, written by
     /// the server from the settings alone.
     pub builtin: Option<String>,
+    /// The holidays' region (or country) of a built-in calendar, `""` for the week numbers.
+    pub builtin_region: Option<String>,
 }
 
 impl DavCollection {
@@ -202,7 +204,7 @@ pub fn dav_etag(content: &str) -> String {
 }
 
 /// The number of columns [`COLLECTION_COLUMNS`] reads, for queries that select more behind them.
-pub(crate) const COLLECTION_COLUMN_COUNT: usize = 17;
+pub(crate) const COLLECTION_COLUMN_COUNT: usize = 18;
 
 /// Refuses writes into a subscribed calendar, whose entries are the feed's, and into the birthdays
 /// calendar, whose entries are the address books'.
@@ -233,7 +235,8 @@ pub(crate) const COLLECTION_COLUMNS: &str = "c.id, c.account_id, c.kind, c.slug,
      c.is_visible, c.is_default, \
      EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id), \
      EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id), \
-     (SELECT g.kind FROM builtin_calendars g WHERE g.collection_id = c.id)";
+     (SELECT g.kind FROM builtin_calendars g WHERE g.collection_id = c.id), \
+     (SELECT g.region FROM builtin_calendars g WHERE g.collection_id = c.id)";
 
 pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCollection> {
     Ok(DavCollection {
@@ -254,6 +257,7 @@ pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCol
         subscribed: row.get(14)?,
         birthdays: row.get(15)?,
         builtin: row.get(16)?,
+        builtin_region: row.get(17)?,
     })
 }
 

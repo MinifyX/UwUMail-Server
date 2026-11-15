@@ -294,6 +294,8 @@ struct Kept {
     description: String,
     #[serde(default)]
     color: Option<String>,
+    #[serde(default)]
+    builtin: Option<String>,
 }
 
 impl Kept {
@@ -304,6 +306,7 @@ impl Kept {
             name: found.name.clone(),
             description: found.description.clone(),
             color: found.color.clone(),
+            builtin: found.builtin.clone(),
         }
     }
 
@@ -322,6 +325,7 @@ impl Kept {
             description: self.description.clone(),
             color: self.color.clone(),
             components: Vec::new(),
+            builtin: self.builtin.clone(),
         })
     }
 }
@@ -402,6 +406,15 @@ async fn pull_dav(
     let mut budget = client::MAX_IMPORT_BYTES;
     let (mut contacts, mut events, mut error) = (0, 0, String::new());
     for collection in &collections {
+        // Another UwUMail's holidays or week numbers: made here from the setting, not copied.
+        if let Some(builtin) = collection.builtin.as_deref().filter(|_| collection.kind == DavKind::Calendar) {
+            let (name, color) = (collection.name.clone(), collection.color.clone());
+            if let Err(err) = store.take_over_builtin_calendar(mailbox.account_id, builtin, name, color).await {
+                tracing::warn!(%err, mailbox = %mailbox.address, "making a moved built-in calendar failed");
+                error = "failed".to_owned();
+            }
+            continue;
+        }
         let texts = match client::fetch_collection(&mut remote.fork(), collection, &mut budget).await {
             Ok(texts) => texts,
             Err(err) => {
