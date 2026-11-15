@@ -78,13 +78,57 @@ pub fn links_in(text: &str, links: &mut Vec<String>) {
         if start < scanned || !(rest.starts_with("https://") || rest.starts_with("http://")) {
             continue;
         }
-        let end = rest.find(|c: char| c.is_whitespace() || "\"'<>()[]{}\\`".contains(c)).unwrap_or(rest.len());
+        let end = rest.find(|c: char| c.is_whitespace() || STOPS.contains(c)).unwrap_or(rest.len());
         scanned = start + end;
-        let link = rest[..end].trim_end_matches(['.', ',', ';', ':', '!', '?']).replace("&amp;", "&");
+        // Entities decoded as a browser would, then cut again where a decoded quote or space ends it.
+        let link = decode_entities(&rest[..end]);
+        let link = &link
+            [..link.find(|c: char| c.is_whitespace() || c.is_control() || STOPS.contains(c)).unwrap_or(link.len())];
+        let link = link.trim_end_matches(['.', ',', ';', ':', '!', '?']).to_owned();
         if link.chars().count() <= MAX_LINK_CHARS && link.len() > "https://".len() && !links.contains(&link) {
             links.push(link);
         }
     }
+}
+
+/// Characters that end a link.
+const STOPS: &str = "\"'<>()[]{}\\`";
+
+/// `&amp;`, `&quot;`, `&apos;`, `&lt;`, `&gt;` and numeric entities decoded; others kept as written.
+fn decode_entities(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let entity = rest[1..].find(';').filter(|end| *end <= 10).map(|end| &rest[1..=end]);
+        let decoded = entity.and_then(|name| match name {
+            "amp" => Some('&'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            _ => name
+                .strip_prefix("#x")
+                .or_else(|| name.strip_prefix("#X"))
+                .map(|hex| u32::from_str_radix(hex, 16))
+                .or_else(|| name.strip_prefix('#').map(str::parse))
+                .and_then(Result::ok)
+                .and_then(char::from_u32),
+        });
+        match (entity, decoded) {
+            (Some(name), Some(c)) => {
+                out.push(c);
+                rest = &rest[name.len() + 2..];
+            }
+            _ => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `text` up to its first `max` characters.

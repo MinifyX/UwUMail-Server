@@ -9,7 +9,9 @@ use crate::common::{Reply, chat, rig};
 
 fn mail(n: u32, subject: &str, body: &str) -> String {
     format!(
-        "From: DHL Paket <noreply@dhl.example>\nTo: Mia <mia@example.org>\nSubject: {subject}\n\
+        "Received: from dhl.example\n\tby mx.example.org (UwUMail) with ESMTPS id {n}\n\
+Authentication-Results: mx.example.org; dkim=pass header.d=dhl.example; dmarc=pass header.from=dhl.example\n\
+From: DHL Paket <noreply@dhl.example>\nTo: Mia <mia@example.org>\nSubject: {subject}\n\
 Message-ID: <parcel-{n}@dhl.example>\nContent-Type: text/plain; charset=utf-8\n\n{body}\n"
     )
 }

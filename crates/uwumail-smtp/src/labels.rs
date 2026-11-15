@@ -180,16 +180,26 @@ pub(crate) fn for_sieve(message: &[u8], labeled: &Labeled) -> Vec<u8> {
 /// Notes the parcel a delivered message tells of (docs/jmap-shipments.md), with the same time
 /// budget as the labels and never in the way of the mail: on a timeout or error it is only logged.
 /// Only what the rules are sure of (confidence 0.8) counts; links in the mail are never opened.
-pub(crate) async fn shipment(ctx: &Context, account_id: i64, email_ids: &[i64], message: &[u8], parsed: &Parsed) {
+pub(crate) async fn shipment(
+    ctx: &Context,
+    account_id: i64,
+    email_ids: &[i64],
+    message: &[u8],
+    parsed: &Parsed,
+    sender: &SenderTrust,
+) {
     let Some(&email_id) = email_ids.first() else { return };
     let work = async {
         if !ctx.store.shipments_enabled(account_id).await? {
             return Ok(false);
         }
         let parsed = parsed.get(message).await?;
+        let authenticated = sender.vouches_for(&parsed.0.from);
         let found = tokio::task::spawn_blocking(move || {
             let (mail, _) = &*parsed;
-            uwumail_labels::shipment(mail)
+            let mut mail = mail.clone();
+            mail.from_trusted = authenticated;
+            uwumail_labels::shipment(&mail)
                 .filter(|facts| facts.confidence >= 0.8)
                 .map(|facts| (facts, mail.subject.clone()))
         })
@@ -199,7 +209,7 @@ pub(crate) async fn shipment(ctx: &Context, account_id: i64, email_ids: &[i64], 
         let received_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs() as i64);
-        ctx.store.record_shipment_mail(account_id, email_id, received_at, subject, facts).await
+        ctx.store.record_shipment_mail(account_id, email_id, received_at, subject, facts, authenticated).await
     };
     match tokio::time::timeout(TIMEOUT, work).await {
         Ok(Ok(_)) => {}

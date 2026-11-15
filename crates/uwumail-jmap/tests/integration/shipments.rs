@@ -35,7 +35,7 @@ async fn deliver(server: &Server, raw: &str) -> String {
     let facts = shipment(&mail).expect("a shipment");
     let number = email[1..].parse().unwrap();
     let account = server.id(MINI).await;
-    server.store.record_shipment_mail(account, number, 1_794_679_380, mail.subject.clone(), facts).await.unwrap();
+    server.store.record_shipment_mail(account, number, 1_794_679_380, mail.subject.clone(), facts, true).await.unwrap();
     email
 }
 
@@ -141,6 +141,9 @@ async fn a_shipping_mail_becomes_a_shipment_apps_can_follow() {
     let set = call(&server, "Shipment/set", bad).await;
     assert_eq!(set["notUpdated"][&id]["type"], "invalidProperties");
     assert_eq!(set["notUpdated"]["s999999"]["type"], "notFound");
+    let ahead = json!({ "accountId": account, "update": { &id: { "addEvents": [{ "at": "2099-01-01T00:00:00Z", "status": "delivered" }] } } });
+    let set = call(&server, "Shipment/set", ahead).await;
+    assert_eq!(set["notUpdated"][&id]["type"], "invalidProperties", "{set}");
     let long = "x".repeat(501);
     let set = call(
         &server,
@@ -272,7 +275,13 @@ async fn whoever_may_read_the_mailbox_sees_its_shipments() {
     deliver(&server, SHIPPED).await;
     let private = SHIPPED.replace("00340434161234567890", "JJD000390007777777777").replace("shipped-1", "shipped-2");
     let moved = deliver(&server, &private).await;
-    let update = json!({ moved.clone(): { "mailboxIds": { format!("m{archive}"): true } } });
+    // A second mail about the inbox's parcel, moved to the archive too.
+    let again = SHIPPED.replace("shipped-1", "shipped-3").replace("kommt bald", "ist unterwegs");
+    let again = deliver(&server, &again).await;
+    let update = json!({
+        moved.clone(): { "mailboxIds": { format!("m{archive}"): true } },
+        again.clone(): { "mailboxIds": { format!("m{archive}"): true } },
+    });
     server.api_using(MINI, &MAIL, json!([["Email/set", { "accountId": account, "update": update }, "0"]])).await;
     let own =
         call(&server, "Shipment/get", json!({ "accountId": account, "ids": null, "properties": ["number"] })).await;
@@ -293,6 +302,9 @@ async fn whoever_may_read_the_mailbox_sees_its_shipments() {
     let list = seen["list"].as_array().unwrap();
     assert_eq!(list.len(), 1, "{seen}");
     assert_eq!(list[0]["number"], "00340434161234567890");
+    assert_eq!(list[0]["emailIds"].as_array().unwrap().len(), 1, "not the archived mail: {seen}");
+    assert!(!list[0]["emailIds"].as_array().unwrap().contains(&json!(again)));
+    assert!(!seen.to_string().contains("ist unterwegs"), "nor its subject: {seen}");
     let parcel = list[0]["id"].as_str().unwrap().to_owned();
     let hidden = own["list"].as_array().unwrap().iter().find(|s| s["id"] != parcel).unwrap()["id"].clone();
     let found = nyu_call("Shipment/get", json!({ "accountId": account, "ids": [parcel, hidden] })).await;

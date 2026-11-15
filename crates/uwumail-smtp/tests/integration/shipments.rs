@@ -25,6 +25,11 @@ async fn a_shipping_mail_is_followed_unless_switched_off() {
     let a = start("a.test", &["mini"], &[]).await;
     let store = a.smtp.store();
     let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    // security-audit-0.36.0 S-5: shipments trust authenticated mail, so the sender's SPF passes.
+    a.smtp.dns_cache().pin_txt("dhl.example", "v=spf1 ip4:127.0.0.1 -all").unwrap();
+    for name in ["_dmarc.dhl.example", "relay.local"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
 
     hand_in(&a, &dhl_mail("00340434161234567890")).await;
     let inbox = a.wait_for_inbox("mini@a.test", 1).await;

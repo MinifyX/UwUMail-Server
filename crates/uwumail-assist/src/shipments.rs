@@ -11,6 +11,7 @@ use tokio::sync::watch;
 use uwumail_labels::{Carrier, DateWindow, Day, MAX_NUMBERS, Mail, ShipmentFacts, ShipmentStatus};
 use uwumail_store::{Account, EmailRecord, ShipmentRescanJob};
 
+use crate::features::{authentication, delivered_headers};
 use crate::mail::MailText;
 use crate::{Assist, AssistError, Result, llm, prompts};
 
@@ -119,7 +120,14 @@ impl Assist {
             return Ok(());
         };
         self.store()
-            .record_shipment_from_model(account.id, record.id, record.received_at, mail.subject.clone(), facts)
+            .record_shipment_from_model(
+                account.id,
+                record.id,
+                record.received_at,
+                mail.subject.clone(),
+                facts,
+                mail.from_trusted,
+            )
             .await?;
         Ok(())
     }
@@ -128,15 +136,27 @@ impl Assist {
     async fn shipment_one(&self, account_id: i64, record: EmailRecord) -> bool {
         let Ok(raw) = self.store().blob(&record.blob).await else { return false };
         // A mail the sender wrote is parsed off the async runtime (security review SPAM-4).
+        let hostname = self.hostname().to_owned();
         let found = tokio::task::spawn_blocking(move || {
-            let mail = Mail::parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
-            uwumail_labels::shipment(&mail).filter(|facts| facts.confidence >= 0.8).map(|facts| (facts, mail.subject))
+            let mut mail = Mail::parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
+            // As at delivery: only our own Authentication-Results, aligned with the From domain.
+            let headers = MailText::read(&record, &raw, 0).headers;
+            let auth = authentication(delivered_headers(&record, &headers), Some(&hostname), &record.from);
+            mail.from_trusted = crate::spam::authentic(&auth);
+            let authenticated = mail.from_trusted;
+            uwumail_labels::shipment(&mail)
+                .filter(|facts| facts.confidence >= 0.8)
+                .map(|facts| (facts, mail.subject, authenticated, record))
         })
         .await
         .ok()
         .flatten();
-        let Some((facts, subject)) = found else { return false };
-        match self.store().record_shipment_mail(account_id, record.id, record.received_at, subject, facts).await {
+        let Some((facts, subject, authenticated, record)) = found else { return false };
+        match self
+            .store()
+            .record_shipment_mail(account_id, record.id, record.received_at, subject, facts, authenticated)
+            .await
+        {
             Ok(changed) => changed,
             Err(err) => {
                 tracing::warn!(account = account_id, email = record.id, %err, "noting a parcel failed");
@@ -182,7 +202,12 @@ fn from_model(answer: &Value, mail: &Mail) -> Option<ShipmentFacts> {
         from: time("expectedFrom"),
         to: time("expectedTo"),
     });
-    let merchant = answer["merchant"].as_str().map(str::trim).filter(|name| !name.is_empty() && name.len() <= 100);
+    // A shop name only when the mail names it, so a mail cannot make the model vouch for another shop.
+    let named = format!("{}\n{}\n{}\n{}", mail.from_name, mail.from, mail.subject, mail.text).to_lowercase();
+    let merchant = answer["merchant"]
+        .as_str()
+        .map(str::trim)
+        .filter(|name| !name.is_empty() && name.len() <= 100 && named.contains(&name.to_lowercase()));
     Some(ShipmentFacts {
         carrier: answer["carrier"].as_str().and_then(Carrier::from_id),
         numbers,
@@ -206,7 +231,7 @@ mod tests {
     fn only_numbers_the_mail_has_count() {
         let mail = Mail {
             subject: "Ihre Bestellung 4711-0815".into(),
-            text: "Sendungsnummer: ZZ1234567890 – Lieferung am 2026-11-20 zwischen 10:00 und 12:00".into(),
+            text: "Sendungsnummer: ZZ1234567890 – Lieferung am 2026-11-20 zwischen 10:00 und 12:00. Dein Laden".into(),
             ..Mail::default()
         };
         let answer = json!({
@@ -220,6 +245,9 @@ mod tests {
         assert_eq!(facts.status, Some(ShipmentStatus::Shipped));
         assert_eq!(facts.carrier, Some(Carrier::Hermes));
         assert_eq!(facts.expected.unwrap().from, Some((10, 0)));
+        assert_eq!(facts.merchant.as_deref(), Some("Laden"));
+        let elsewhere = json!({ "numbers": ["ZZ1234567890"], "merchant": "Großbank", "confidence": 0.9 });
+        assert_eq!(from_model(&elsewhere, &mail).unwrap().merchant, None, "a shop the mail does not name");
 
         let made_up = json!({ "carrier": null, "numbers": ["QQ9999999999"], "status": null, "expectedDate": null,
             "expectedFrom": null, "expectedTo": null, "merchant": null, "orderRef": "A-1", "confidence": 0.95 });
