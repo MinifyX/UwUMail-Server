@@ -3,6 +3,18 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.37.0
+
+- Parcels can be switched off for the whole server: the admin setting `shipments.enabled`
+  (*Settings → Apps & webmail*, or `[shipments] enabled` in the config file) takes effect at once. Off hides
+  parcels in the portal, the webmail and the apps: no detection, no rescans, `Shipment/*` answers
+  `accountNotSupportedByMethod`, and `urn:uwumail:jmap:shipments` is left out of the JMAP session.
+  Stored parcels are kept and come back when it is switched on again. The account switch still
+  works on top and still deletes (docs/jmap-shipments.md).
+- Host access: `install.sh` adds the `/host` volume line to a `compose.override.yaml` you wrote
+  yourself, marked `# uwumail-host`, checks the result with `docker compose config` and puts the
+  file back if that fails. `--remove` takes out only those lines.
+
 ## 0.36.0
 
 - Parcels: shipping mail (DHL, Deutsche Post, Hermes, DPD, GLS, UPS, FedEx, Amazon and others) becomes a
