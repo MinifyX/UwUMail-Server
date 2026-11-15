@@ -217,6 +217,19 @@ cmd_tick() {
   keep_the_trusted_out_of_jails
   free_the_trusted
   carry_out_bans
+  report_after_boot
+}
+
+# The daily report's timer waits up to two hours at random, after a boot as well, and until then
+# the portal kept saying a restart was due that had already happened. A report from before this
+# boot is asked for again here; once it is written this does nothing.
+report_after_boot() {
+  local boot written
+  boot=$(awk '/^btime / {print $2}' /proc/stat 2>/dev/null)
+  written=$(stat -c %Y -- "$report_file" 2>/dev/null) || written=0
+  [[ "$boot" =~ ^[0-9]+$ ]] && [ "$written" -lt "$boot" ] &&
+    systemctl start --no-block uwumail-gateway-machine.service >/dev/null 2>&1
+  return 0
 }
 
 # How many updates wait, and whether any of them is a security update. Ubuntu ships apt-check for

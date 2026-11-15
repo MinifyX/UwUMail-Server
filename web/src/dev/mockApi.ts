@@ -173,6 +173,7 @@ const session = (): Session => ({
   // Installed before any feature with a "New" tag, so they all show.
   server: { hostname: "mail.uwu.example", version: "0.1.0", installedVersion: "0.0.0", brand: brand() },
   webmail: true,
+  features: { shipments: true },
 });
 
 const address = (value: string, kind: "primary" | "alias" = "primary") => ({
@@ -624,7 +625,7 @@ function hostView(): HostView {
       digest: "sha256:0c1d2e",
       composeDir: "/opt/uwumail",
       checkedAt: now - 400,
-      helper: new URLSearchParams(window.location.search).get("helper") ?? "5",
+      helper: new URLSearchParams(window.location.search).get("helper") ?? "6",
       verbs:
         new URLSearchParams(window.location.search).get("helper") === "2"
           ? ["os-update", "reboot", "vpn-apply", "vpn-stop"]
@@ -704,7 +705,7 @@ function updatesView(): UpdatesView {
     gatewaySystem: Boolean(system && system.updates > 0) && !done("gatewaySystem"),
     gateway: false,
     hostSystem: !done("hostSystem"),
-    helper: host.machine?.helper !== "5" && !done("helper"),
+    helper: host.machine?.helper !== "6" && !done("helper"),
     server: !done("server"),
     gatewayReboot: false,
     hostReboot: false,
@@ -1172,6 +1173,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "egress.image_cache_mb": { value: 1024, source: "default" },
   "egress.assist": { value: false, source: "default" },
   "reports.send_tls_reports": { value: true, source: "default" },
+  "shipments.enabled": { value: true, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
   "log.loki.url": { value: null, source: "default" },

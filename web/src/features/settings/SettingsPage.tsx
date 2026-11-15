@@ -507,6 +507,21 @@ export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
               />
             )}
           </Section>
+          <Section
+            title={t("settings.shipments.title")}
+            intro={t("settings.shipments.intro")}
+            view={view}
+            keys={["shipments.enabled"]}
+          >
+            {(form) => (
+              <ToggleField
+                form={form}
+                settingKey="shipments.enabled"
+                label={t("settings.shipments.enabled")}
+                hint={t("settings.shipments.enabledHint")}
+              />
+            )}
+          </Section>
         </div>
       )}
     </div>

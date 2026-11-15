@@ -1856,6 +1856,12 @@
       "enabled": "Offer the webmail",
       "enabledHint": "Everyone signed in to the portal can open their mailbox here. Each account has its own switch under People; mail programs are not affected either way."
     },
+    "shipments": {
+      "title": "Parcels",
+      "intro": "Shipments the server finds in shipping mail, with their status and delivery day.",
+      "enabled": "Detect parcels",
+      "enabledHint": "Off switches parcel detection off for everyone and hides parcels in the portal, the webmail and the app. Stored parcels are kept and come back when it is switched on again. Each account also has its own switch."
+    },
     "egress": {
       "fallback": "While the VPN or proxy is away",
       "fallbackOptions": {

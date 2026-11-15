@@ -101,6 +101,8 @@ export interface Session {
   server: { hostname: string; version: string; installedVersion: string; brand: Brand };
   /** Whether this person has a mailbox in the browser under /mail. */
   webmail: boolean;
+  /** What the admin allows on the whole server; the person's own switches are in `preferences`. */
+  features: { shipments: boolean };
 }
 
 export interface Profile {

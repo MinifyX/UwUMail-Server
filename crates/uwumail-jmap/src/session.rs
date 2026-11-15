@@ -387,8 +387,12 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             let picture_state = if may_be_public { "-p1" } else { "-p0" };
             let assist_state = add_assist(&jmap, &mut document, &account, &base).await;
             let backups_state = add_backups(&jmap, &mut document, &account).await;
+            let switches = shipment_switches(&jmap.inner.store, account.id, &shared).await;
+            let all: Vec<i64> = std::iter::once(account.id).chain(shared.iter().map(|(owner, _, _)| *owner)).collect();
+            keep_shipments(&mut document, account.id, &all, switches.as_deref());
+            let shipments_state = shipments_state(switches.as_deref());
             document["state"] = json!(format!(
-                "{}{}{internal_state}{masked_state}{picture_state}{assist_state}{backups_state}",
+                "{}{}{internal_state}{masked_state}{shipments_state}{picture_state}{assist_state}{backups_state}",
                 session_state(&account),
                 crate::sharing::state_suffix(&shared)
             ));
@@ -425,6 +429,62 @@ async fn add_assist(jmap: &Jmap, document: &mut Value, account: &Account, base: 
         capability.foreign_mail,
     ];
     format!("-ai{}", bits.iter().map(|on| if *on { '1' } else { '0' }).collect::<String>())
+}
+
+/// Whether parcels are on for the account and the accounts shared with it, in that order; `None`
+/// when the admin switched them off for the whole server.
+pub async fn shipment_switches(
+    store: &uwumail_store::Store,
+    me: i64,
+    shared: &[(i64, String, bool)],
+) -> Option<Vec<(i64, bool)>> {
+    if !store.shipments_allowed() {
+        return None;
+    }
+    let mut switches = Vec::with_capacity(shared.len() + 1);
+    for id in std::iter::once(me).chain(shared.iter().map(|(owner, _, _)| *owner)) {
+        let on = store.shipments_enabled(id).await.unwrap_or_else(|err| {
+            tracing::warn!(%err, account = id, "reading whether shipments are on failed");
+            false
+        });
+        switches.push((id, on));
+    }
+    Some(switches)
+}
+
+/// The part of the session state that moves with the parcel switches.
+pub fn shipments_state(switches: Option<&[(i64, bool)]>) -> String {
+    match switches {
+        None => "-sh-".into(),
+        Some(switches) => {
+            format!("-sh{}", switches.iter().map(|(_, on)| if *on { '1' } else { '0' }).collect::<String>())
+        }
+    }
+}
+
+/// Takes parcels out where they are switched off (docs/jmap-shipments.md, "Switching off"): off on
+/// the server, out of the whole session; off for an account, out of that account but still among
+/// the server's capabilities, so a client knows it can be switched on through UserSettings.
+fn keep_shipments(document: &mut Value, me: i64, all: &[i64], switches: Option<&[(i64, bool)]>) {
+    let off: Vec<i64> = match switches {
+        None => {
+            if let Some(capabilities) = document["capabilities"].as_object_mut() {
+                capabilities.remove(SHIPMENTS);
+            }
+            all.to_vec()
+        }
+        Some(switches) => switches.iter().filter(|(_, on)| !on).map(|(id, _)| *id).collect(),
+    };
+    for id in &off {
+        if let Some(capabilities) = document["accounts"][ids::account(*id)]["accountCapabilities"].as_object_mut() {
+            capabilities.remove(SHIPMENTS);
+        }
+    }
+    if off.contains(&me)
+        && let Some(primary) = document["primaryAccounts"].as_object_mut()
+    {
+        primary.remove(SHIPMENTS);
+    }
 }
 
 /// Searching one's own mail in the backups, for the person's own account only, while the admin

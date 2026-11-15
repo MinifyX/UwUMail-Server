@@ -3,6 +3,30 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.37.0
+
+- Parcels can be switched off for the whole server: the admin setting `shipments.enabled`
+  (*Settings → Apps & webmail*, or `[shipments] enabled` in the config file) takes effect at once. Off hides
+  parcels in the portal, the webmail and the apps: no detection, no rescans, `Shipment/*` answers
+  `accountNotSupportedByMethod`, and `urn:uwumail:jmap:shipments` is left out of the JMAP session.
+  Stored parcels are kept and come back when it is switched on again. The account switch still
+  works on top and still deletes (docs/jmap-shipments.md).
+- JMAP session: with parcels off for an account, `urn:uwumail:jmap:shipments` stays in the top-level
+  `capabilities` (it can be switched on) but leaves that account's `accountCapabilities` and
+  `primaryAccounts`; `Shipment/*` then answers `accountNotSupportedByMethod` instead of `forbidden`.
+  Apps and Home Assistant should look at the account capability.
+- Gateway: after a restart its machine reports again within two minutes. The daily report waited
+  up to two hours at random after a boot too, and until then the portal kept asking for a restart
+  that had already happened. Reaches the gateway with its next update.
+- Host access: the portal sees what the machine's helper writes again. The shared directory was
+  missing setgid, so `machine.json` and the job states were unreadable for the container and the
+  portal said the helper had not reported. Run `install.sh` once (helper version 6).
+- Webmail 0.32.0: parcel detection switch in *Settings → Mail*; with it off, or off on the server,
+  the Pakete view and the parcel chips are gone.
+- Host access: `install.sh` adds the `/host` volume line to a `compose.override.yaml` you wrote
+  yourself, marked `# uwumail-host`, checks the result with `docker compose config` and puts the
+  file back if that fails. `--remove` takes out only those lines.
+
 ## 0.36.0
 
 - Parcels: shipping mail (DHL, Deutsche Post, Hermes, DPD, GLS, UPS, FedEx, Amazon and others) becomes a

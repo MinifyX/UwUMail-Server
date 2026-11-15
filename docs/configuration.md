@@ -37,7 +37,7 @@ Check a configuration with `uwumail-server check-config`.
 
 ## Settings in the admin panel
 
-Admins can change sending, receiving, mail-app, tone and branding settings under
+Admins can change sending, receiving, mail-app, parcel, tone and branding settings under
 *Einstellungen* / *Settings* in the web portal ([branding.md](branding.md) explains the logo,
 name, colour and languages), and the spam filter under
 *Spamfilter* / *Spam filter*. The server checks them and
@@ -473,6 +473,11 @@ languages = "deu+eng"  # Tesseract's languages; their data has to be installed
 # Daily TLS reports (RFC 8460) to the domains mail went to, see docs/tls-reports.md.
 [reports]
 send_tls_reports = true
+
+# Parcels found in shipping mail (Shipment/*), see docs/jmap-shipments.md.
+# false switches them off for everyone; stored ones are kept, not deleted.
+[shipments]
+enabled = true
 
 [tone]
 language = "de"        # de | en | fr | nl | ja | zh

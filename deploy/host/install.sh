@@ -42,6 +42,11 @@ while [ $# -gt 0 ]; do
       ;;
     --service)
       service="${2:-uwumail}"
+      # It ends up in a YAML file root writes, so only what a compose service name can be.
+      if ! [[ "$service" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        echo "not a service name: $service" >&2
+        exit 2
+      fi
       shift 2
       ;;
     --check)
@@ -137,6 +142,12 @@ if $remove; then
         [ "$(sha256sum "$leftover" | cut -d' ' -f1)" = "$(grep -F " $leftover" "$written" | cut -d' ' -f1)" ]; then
         rm -f "$leftover"
         step "removed $leftover; run: cd $found && docker compose up -d"
+      elif [ ! -L "$leftover" ] && grep -q '# uwumail-host$' "$leftover" &&
+        cleaned=$(mktemp) && awk -f "$here/remove-mount.awk" "$leftover" >"$cleaned"; then
+        # Their file: only the lines install.sh added go, the ones it marked. cat keeps its owner and mode.
+        cat "$cleaned" >"$leftover"
+        rm -f "$cleaned"
+        step "took the /host line out of $leftover; run: cd $found && docker compose up -d"
       else
         step "left $leftover alone, you changed it; remove the /host line yourself"
       fi
@@ -172,7 +183,7 @@ if $check; then
     note "compose|not wired up|$compose_dir"
   fi
   if [ -d "$bridge" ]; then
-    note "shared directory|$(stat -c '%a %u:%g' "$bridge" 2>/dev/null)|should be 770 0:10001"
+    note "shared directory|$(stat -c '%a %u:%g' "$bridge" 2>/dev/null)|should be 2770 0:10001"
   else
     note "shared directory|missing|$bridge"
   fi
@@ -214,7 +225,9 @@ step "making the shared directory"
 install -d -m 0755 "$state"
 install -d -m 0770 "$bridge"
 if chown 0:10001 "$bridge" 2>/dev/null; then
-  chmod 0770 "$bridge"
+  # setgid: what the helper writes in here (as root, 0640) comes out in group 10001, which is what
+  # lets the container read machine.json and the job states at all.
+  chmod 2770 "$bridge"
 else
   warn "could not give $bridge to the container's user (10001); the portal will not be able to write there"
 fi
@@ -266,10 +279,35 @@ theirs=false
 if [ -f "$override" ] && ! grep -qF " $override" "$written" 2>/dev/null; then
   theirs=true
 fi
-if $theirs; then
-  # Their file, their business. Say what to add and leave it alone.
-  warn "$override is yours, so it was left as it is. Add these lines to it and run docker compose up -d:"
+tell_them() {
+  warn "$override is yours and $1, so it was left as it is. Add these lines under services.$service and run docker compose up -d:"
   printf '\n      volumes:\n        - %s:/host\n\n' "$bridge" >&2
+}
+if $theirs && grep -qE "^[[:space:]]*-[[:space:]]*['\"]?$bridge:/host" "$override"; then
+  step "$override already has the line"
+elif $theirs && [ -L "$override" ]; then
+  tell_them "is a link to somewhere else"
+elif $theirs && ! command -v docker >/dev/null 2>&1; then
+  tell_them "without docker there is no checking a change to it"
+elif $theirs; then
+  # Their file, so only one marked line goes in, and only if docker compose still reads the result
+  # and sees the mount in it. Otherwise their file stays exactly as it was. The copy may hold
+  # secrets, so it goes where only root can read it, made fresh by this run.
+  merged=$(mktemp)
+  backup=$(mktemp "$state/override-before.XXXXXX")
+  if ! cat "$override" >"$backup"; then
+    tell_them "could not be copied first"
+  elif awk -v svc="$service" -v entry="$bridge:/host" -f "$here/add-mount.awk" "$override" "$override" >"$merged" &&
+    [ -s "$merged" ] && cat "$merged" >"$override" &&
+    (cd "$compose_dir" && docker compose config --format json 2>/dev/null) |
+    jq -e --arg s "$service" '[.services[$s].volumes[]? | select(.target == "/host")] | length > 0' >/dev/null; then
+    step "added the /host line to your $override (the old version is in $backup)"
+  else
+    cmp -s "$backup" "$override" || cat "$backup" >"$override"
+    rm -f "$backup"
+    tell_them "could not be changed safely"
+  fi
+  rm -f "$merged"
 else
   place "$tmp" "$override" 0644
 fi

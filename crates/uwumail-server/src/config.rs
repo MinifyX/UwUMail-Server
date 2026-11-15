@@ -42,6 +42,22 @@ pub struct Config {
     pub auth: uwumail_web::AuthConfig,
     /// Fetched mailboxes: the clients for signing in at Microsoft and Google (docs/fetch.md).
     pub fetch: FetchConfig,
+    /// Parcels found in mail, for the whole server (docs/jmap-shipments.md).
+    pub shipments: ShipmentsConfig,
+}
+
+/// `[shipments]` in the configuration.
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ShipmentsConfig {
+    /// Off: no parcels are found, served or shown for anyone; the ones stored stay for later.
+    pub enabled: bool,
+}
+
+impl Default for ShipmentsConfig {
+    fn default() -> Self {
+        ShipmentsConfig { enabled: true }
+    }
 }
 
 /// `[fetch]` in the configuration.
@@ -72,6 +88,7 @@ impl Default for Config {
             metrics: uwumail_web::MetricsConfig::default(),
             auth: uwumail_web::AuthConfig::default(),
             fetch: FetchConfig::default(),
+            shipments: ShipmentsConfig::default(),
         }
     }
 }

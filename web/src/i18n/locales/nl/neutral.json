@@ -1856,6 +1856,12 @@
       "enabled": "Webmail aanbieden",
       "enabledHint": "Iedereen die op het portaal is ingelogd, kan hier zijn mailbox openen. Elk account heeft een eigen schakelaar onder Personen; mailprogramma's merken er hoe dan ook niets van."
     },
+    "shipments": {
+      "title": "Pakketten",
+      "intro": "Zendingen die de server in verzendmails vindt, met hun status en bezorgdag.",
+      "enabled": "Pakketten herkennen",
+      "enabledHint": "Uit zet pakketherkenning voor iedereen uit en verbergt pakketten in het portaal, de webmail en de app. Opgeslagen pakketten blijven bewaard en komen terug als het weer aan gaat. Elk account heeft daarnaast een eigen schakelaar."
+    },
     "egress": {
       "fallback": "Terwijl de VPN of proxy weg is",
       "fallbackOptions": {

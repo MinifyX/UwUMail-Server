@@ -247,7 +247,7 @@ cmd_machine() {
 }
 
 helper_version() {
-  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-5}"
+  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-6}"
 }
 
 # ── the VPN for the pictures ──────────────────────────────────────────────────────────────────

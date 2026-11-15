@@ -44,6 +44,10 @@ impl Assist {
 
     /// Reads one batch of every look back waiting; whether there was any.
     pub async fn shipment_rescan_round(&self, shutdown: &watch::Receiver<bool>) -> bool {
+        // Switched off on the server: the looks back wait until it is on again.
+        if !self.store().shipments_allowed() {
+            return false;
+        }
         let jobs = match self.store().shipment_rescan_jobs().await {
             Ok(jobs) => jobs,
             Err(err) => {

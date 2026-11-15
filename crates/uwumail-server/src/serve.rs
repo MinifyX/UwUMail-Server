@@ -65,6 +65,8 @@ pub async fn run(
             config
         }
     };
+    // The admin panel switches it over while the server runs (settings.rs).
+    store.set_shipments_allowed(config.shipments.enabled);
 
     let certs = Arc::new(CertStore::default());
     tls::load_initial(&config, &certs).await.context("loading the TLS certificate")?;
