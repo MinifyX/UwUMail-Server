@@ -137,6 +137,10 @@ if $remove; then
         [ "$(sha256sum "$leftover" | cut -d' ' -f1)" = "$(grep -F " $leftover" "$written" | cut -d' ' -f1)" ]; then
         rm -f "$leftover"
         step "removed $leftover; run: cd $found && docker compose up -d"
+      elif grep -q '# uwumail-host$' "$leftover"; then
+        # Their file: only the lines install.sh added go, the ones it marked.
+        sed -i '/# uwumail-host$/d' "$leftover"
+        step "took the /host line out of $leftover; run: cd $found && docker compose up -d"
       else
         step "left $leftover alone, you changed it; remove the /host line yourself"
       fi
@@ -266,10 +270,25 @@ theirs=false
 if [ -f "$override" ] && ! grep -qF " $override" "$written" 2>/dev/null; then
   theirs=true
 fi
-if $theirs; then
-  # Their file, their business. Say what to add and leave it alone.
-  warn "$override is yours, so it was left as it is. Add these lines to it and run docker compose up -d:"
-  printf '\n      volumes:\n        - %s:/host\n\n' "$bridge" >&2
+if $theirs && grep -qF "$bridge:/host" "$override"; then
+  step "$override already has the line"
+elif $theirs; then
+  # Their file, so only one marked line goes in, and only if docker compose still reads the result
+  # and sees the mount in it. Otherwise their file stays exactly as it was.
+  merged=$(mktemp)
+  backup="$override.before-uwumail-host"
+  if awk -v svc="$service" -v entry="$bridge:/host" -f "$here/add-mount.awk" "$override" "$override" >"$merged" &&
+    [ -s "$merged" ] && cp -p "$override" "$backup" && cat "$merged" >"$override" &&
+    { ! command -v docker >/dev/null 2>&1 ||
+      (cd "$compose_dir" && docker compose config --format json 2>/dev/null) |
+      jq -e --arg s "$service" '[.services[$s].volumes[]? | select(.target == "/host")] | length > 0' >/dev/null; }; then
+    step "added the /host line to your $override (it was saved as $backup)"
+  else
+    [ -f "$backup" ] && cat "$backup" >"$override" && rm -f "$backup"
+    warn "$override is yours and could not be changed safely, so it was left as it is. Add these lines under services.$service and run docker compose up -d:"
+    printf '\n      volumes:\n        - %s:/host\n\n' "$bridge" >&2
+  fi
+  rm -f "$merged"
 else
   place "$tmp" "$override" 0644
 fi
