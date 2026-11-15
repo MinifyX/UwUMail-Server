@@ -91,6 +91,17 @@ fail2ban-client() {
   cmd_machine
   check "gateway: machine.json is not chmodded through a symlink" canary_intact
 
+  # After a boot the report is asked for at once instead of up to two hours later.
+  systemctl() { printf '%s\n' "$*" >>"$work/systemctl"; }
+  rm -f -- "$report_file"; printf "{}" >"$report_file"; touch -d @1 "$report_file"
+  report_after_boot
+  check "gateway: a report from before the boot is asked for again" grep -q uwumail-gateway-machine "$work/systemctl"
+  rm -f "$work/systemctl"
+  touch "$report_file"
+  report_after_boot
+  check "gateway: a report from this boot is left alone" test ! -e "$work/systemctl"
+  unset -f systemctl
+
   # A job whose log is swapped for a symlink while it runs, and one planted before it starts.
   do_reboot() {
     printf 'first\n' | job_log "$1"
