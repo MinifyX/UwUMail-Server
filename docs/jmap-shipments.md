@@ -34,7 +34,8 @@ share with the person (a shared mailbox such as `info@`, a shared folder) shows
 its shipments to whoever may read the mail they came from: `Shipment/get`,
 `/changes`, `/query` and `/queryChanges` with the shared account's `accountId`
 see a shipment when one of its mails lies in a mailbox the person may read
-(`r`). A shipment someone added by hand goes by the inbox. `Shipment/set`
+(`r`), and then only the events and `emailIds` of mails they may read, plus the
+events apps added. A shipment someone added by hand goes by the inbox. `Shipment/set`
 needs the right to change that mail (`w`): without it `create`, `update` and
 `destroy` answer `forbidden`, and a shipment the person cannot see is
 `notFound`. `Shipment/rescan` works only on the person's own account
@@ -73,7 +74,7 @@ seen only by the owner.
 | --- | --- |
 | `carrier` | `dhl`, `deutschePost`, `dpd`, `hermes`, `gls`, `ups`, `amazonLogistics`, `fedex` or `other` |
 | `number` | the tracking number, upper case without spaces; `null` while only the order is known |
-| `trackingUrl` | the carrier's link from the mail, else its tracking page for the number; `null` without either. Never opened by the server |
+| `trackingUrl` | the carrier's own tracking page for the number; for a shipment without a number, a link from the mail on that carrier's own domain; `null` otherwise. Never opened by the server |
 | `title` | the person's own name for the parcel, at most 200 characters |
 | `merchant`, `orderRef` | the shop and its order number, as the mail names them |
 | `status` | `ordered`, `shipped`, `inTransit`, `outForDelivery`, `delivered`, `readyForPickup`, `deliveryFailed`, `returned` or `cancelled` |
@@ -98,14 +99,20 @@ seen only by the owner.
   `outForDelivery` → `delivered`. `deliveryFailed`, `returned` and `cancelled`
   may come at any time, `readyForPickup` may still become `delivered`, and after
   `deliveryFailed` a new attempt may follow. An event older than the current
-  status never changes it.
+  status never changes it. Mail that is not authenticated (no SPF/DKIM pass
+  for the sender's domain) may add news and fill in what is missing, but cannot
+  end a shipment that is already known (`delivered`, `returned`, `cancelled`).
 - The same event twice (same mail, or same `at`, `status` and source) is
   dropped, as is any past 200 per shipment. An account keeps at most 2000
-  shipments.
+  shipments; when it is full, a new one replaces the oldest that is done or has
+  had no news for 7 days, and is skipped only when there is none.
 - Delivered, returned and cancelled shipments go 30 days after their status,
   others 60 days after their last news.
 - A day without a year or a relative day ("morgen") is read in the person's
   time zone from the date the mail arrived.
+- An event dated after now counts as now for the status and for pruning.
+- When a mail is deleted, the `text` of its events (the subject) is cleared;
+  the status and time stay.
 
 ### The model
 
@@ -157,8 +164,8 @@ the most recently updated come first.
   `statusAt`, `created` and `updated`.
 - **update** takes `title`, `hidden` and **`addEvents`**: a list of at most 200
   events with `at` (a UTC date, required), `status` (required), `text` (at most
-  500 characters) and `location` (at most 200). Other keys are
-  `invalidProperties`. The server sets `source: "client"` and `clientName` from
+  500 characters) and `location` (at most 200). Other keys, and an `at` more
+  than a year ahead, are `invalidProperties`. The server sets `source: "client"` and `clientName` from
   the name of the app password or OAuth app the request came with. The rules
   above apply, so writing back the full carrier history again and again is
   harmless.

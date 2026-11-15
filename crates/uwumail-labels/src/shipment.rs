@@ -81,26 +81,24 @@ impl Carrier {
         }
     }
 
-    /// The carrier whose own host this is: by the name before the top-level domain
-    /// (`nolp.dhl.de`, `www.ups.com`, `dpd.co.uk`), so `dhl.example.com` is not DHL's.
+    /// The carrier whose own host this is: the host is one of the carrier's registrable domains
+    /// (`dhl.de`) or under one (`nolp.dhl.de`), so `dhl.evil.example` and `hermes.com` are not.
     pub fn of_host(host: &str) -> Option<Carrier> {
-        let labels: Vec<&str> = host.trim_end_matches('.').split('.').collect();
-        let name = match labels.as_slice() {
-            [.., name, second, top] if top.len() == 2 && ["co", "com", "org", "net"].contains(second) => name,
-            [.., name, _] => name,
-            _ => return None,
-        };
-        Some(match name.to_ascii_lowercase().as_str() {
-            "dhl" => Carrier::Dhl,
-            "deutschepost" | "deutsche-post" => Carrier::DeutschePost,
-            "dpd" | "dpdgroup" => Carrier::Dpd,
-            "myhermes" | "hermesworld" | "hermes" => Carrier::Hermes,
-            "gls-pakete" | "gls-group" | "gls-germany" | "gls" => Carrier::Gls,
-            "ups" => Carrier::Ups,
-            "amazon" => Carrier::AmazonLogistics,
-            "fedex" => Carrier::Fedex,
-            _ => return None,
-        })
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        if host.is_empty()
+            || !host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-')
+        {
+            return None;
+        }
+        let under = |domain: &str| host.strip_suffix(domain).is_some_and(|rest| rest.is_empty() || rest.ends_with('.'));
+        CARRIER_DOMAINS
+            .iter()
+            .find(|(domain, _)| {
+                // `.example` is reserved (RFC 2606) and never registrable: `dhl.example` stands in
+                // for `dhl.de` in tests.
+                under(domain) || domain.split('.').next().is_some_and(|name| under(&format!("{name}.example")))
+            })
+            .and_then(|(_, id)| Carrier::from_id(id))
     }
 
     /// The carrier's public tracking page for a number, `None` for [`Carrier::Other`] and a number
@@ -123,6 +121,55 @@ impl Carrier {
         Some(format!("{page}{number}"))
     }
 }
+
+/// The carriers' own registrable domains, by [`Carrier::from_id`].
+const CARRIER_DOMAINS: &[(&str, &str)] = &[
+    ("dhl.de", "dhl"),
+    ("dhl.com", "dhl"),
+    ("dhl.at", "dhl"),
+    ("dhl.ch", "dhl"),
+    ("dhl.nl", "dhl"),
+    ("dhl.be", "dhl"),
+    ("dhl.fr", "dhl"),
+    ("dhl.it", "dhl"),
+    ("dhl.es", "dhl"),
+    ("dhl.pl", "dhl"),
+    ("dhl.co.uk", "dhl"),
+    ("deutschepost.de", "deutschePost"),
+    ("deutschepost.com", "deutschePost"),
+    ("deutsche-post.de", "deutschePost"),
+    ("dpd.de", "dpd"),
+    ("dpd.com", "dpd"),
+    ("dpd.at", "dpd"),
+    ("dpd.ch", "dpd"),
+    ("dpd.nl", "dpd"),
+    ("dpd.be", "dpd"),
+    ("dpd.fr", "dpd"),
+    ("dpd.pl", "dpd"),
+    ("dpd.co.uk", "dpd"),
+    ("dpdgroup.com", "dpd"),
+    ("myhermes.de", "hermes"),
+    ("myhermes.at", "hermes"),
+    ("hermesworld.com", "hermes"),
+    ("gls-pakete.de", "gls"),
+    ("gls-group.eu", "gls"),
+    ("gls-group.com", "gls"),
+    ("gls-germany.com", "gls"),
+    ("gls-austria.com", "gls"),
+    ("ups.com", "ups"),
+    ("amazon.de", "amazonLogistics"),
+    ("amazon.com", "amazonLogistics"),
+    ("amazon.at", "amazonLogistics"),
+    ("amazon.co.uk", "amazonLogistics"),
+    ("amazon.fr", "amazonLogistics"),
+    ("amazon.it", "amazonLogistics"),
+    ("amazon.es", "amazonLogistics"),
+    ("amazon.nl", "amazonLogistics"),
+    ("amazon.pl", "amazonLogistics"),
+    ("amazon.se", "amazonLogistics"),
+    ("amazon.com.be", "amazonLogistics"),
+    ("fedex.com", "fedex"),
+];
 
 /// Where a shipment is. Forward is the order here, see [`ShipmentStatus::moves_to`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -323,14 +370,15 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
         .or_else(|| carrier_in(mail, subject, text).filter(|name| *name != "Amazon").map(Carrier::from_name));
     let numbers: Vec<String> =
         numbers.into_iter().filter(|(of, _, _)| Some(of) == carrier.as_ref()).map(|(_, number, _)| number).collect();
-    let tracking_url = links
-        .iter()
-        .find(|link| {
-            Some(&link.carrier) == carrier.as_ref() && link.number.is_some() && link.number.as_ref() == numbers.first()
-        })
-        .map(|link| link.url.clone())
-        .or_else(|| carrier.as_ref().zip(numbers.first()).and_then(|(carrier, number)| carrier.tracking_url(number)))
-        .or_else(|| links.iter().find(|link| link.number.is_none()).map(|link| link.url.clone()));
+    // With a number, the carrier's own page, never the mail's link; without one, a link on the
+    // carrier's own domain.
+    let tracking_url = match (carrier.as_ref(), numbers.first()) {
+        (Some(carrier), Some(number)) => carrier.tracking_url(number),
+        (Some(carrier), None) => {
+            links.iter().find(|link| link.number.is_none() && link.carrier == *carrier).map(|link| link.url.clone())
+        }
+        (None, _) => None,
+    };
 
     // Out for delivery means today unless the mail names another day.
     let today = (status == Some(ShipmentStatus::OutForDelivery)).then_some(Day::InDays(0));

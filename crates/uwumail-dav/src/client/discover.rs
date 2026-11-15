@@ -44,7 +44,7 @@ const HOME_PROPS: &str =
     "<d:current-user-principal/><d:resourcetype/><c:calendar-home-set/><card:addressbook-home-set/>";
 const COLLECTION_PROPS: &str = "<d:resourcetype/><d:displayname/><c:supported-calendar-component-set/>\
 <c:calendar-description/><card:addressbook-description/><ical:calendar-color/>\
-<u:builtin xmlns:u=\"urn:uwumail:dav\"/>";
+<u:builtin xmlns:u=\"urn:uwumail:dav\"/><u:server xmlns:u=\"urn:uwumail:dav\"/>";
 
 fn home_set(kind: DavKind) -> (&'static str, &'static str) {
     match kind {
@@ -106,6 +106,13 @@ async fn home(remote: &mut Remote<'_>, start: &str, kind: DavKind) -> Result<Opt
 fn collections(found: &Multistatus, kind: DavKind) -> Vec<RemoteCollection> {
     let mut list = Vec::new();
     let site = super::site_of(&found.url);
+    // `builtin` counts only from UwUMail, which marks the home itself with a live property that
+    // nobody sharing a calendar can set; another server may keep `builtin` as a dead property.
+    let home = found.url.path().trim_end_matches('/');
+    let from_uwumail = found
+        .entries
+        .iter()
+        .any(|entry| entry.href.path().trim_end_matches('/') == home && entry.text(UWUMAIL, "server").is_some());
     for entry in &found.entries {
         // A collection on another site would take the login there when it is fetched.
         if super::site_of(&entry.href) != site {
@@ -151,7 +158,7 @@ fn collections(found: &Multistatus, kind: DavKind) -> Vec<RemoteCollection> {
             description: entry.text(description_prop.0, description_prop.1).unwrap_or_default(),
             color: entry.text(APPLE, "calendar-color"),
             components,
-            builtin: entry.text(UWUMAIL, "builtin"),
+            builtin: entry.text(UWUMAIL, "builtin").filter(|_| from_uwumail),
         });
     }
     list
@@ -272,6 +279,34 @@ DTSTART:20261001T100000Z\r\nSUMMARY:{summary}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n
         store.dav_put(leni, books[0].id, card, DavPrecondition::default()).await.unwrap();
         let router = dav.router().layer(axum::Extension(ClientInfo { https: true, ..ClientInfo::default() }));
         (RouterTransport::new(router), store, dir)
+    }
+
+    #[tokio::test]
+    async fn builtin_counts_only_from_uwumail() {
+        let (transport, store, _dir) = provider().await;
+        let leni = store.account("leni@example.org").await.unwrap().unwrap().id;
+        store.take_over_builtin_calendar(leni, "weeks", "Kalenderwochen".into(), None).await.unwrap();
+        let mut remote = Remote::with_login(&transport, "leni@example.org", "katzenpfote-123");
+        let found = discover(&mut remote, None, "leni@example.org", Some("dav.example.org"), &[DavKind::Calendar])
+            .await
+            .unwrap();
+        assert!(found.collections.iter().any(|c| c.builtin.as_deref() == Some("weeks")), "{found:?}");
+
+        // The same answer without the home's marker, as another server keeping a dead property.
+        let body = r#"<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:u="urn:uwumail:dav">
+<d:response><d:href>/cal/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>
+<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+<d:response><d:href>/cal/wk/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><c:calendar/></d:resourcetype>
+<u:builtin>weeks</u:builtin></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+</d:multistatus>"#;
+        let reply = super::super::Reply {
+            url: Url::parse("https://dav.example.org/cal/").unwrap(),
+            answer: super::super::Answer { status: 207, headers: Default::default(), body: body.into() },
+        };
+        let listed = super::super::multistatus(reply).unwrap().unwrap();
+        let calendars = collections(&listed, DavKind::Calendar);
+        assert_eq!(calendars.len(), 1);
+        assert_eq!(calendars[0].builtin, None);
     }
 
     #[tokio::test]

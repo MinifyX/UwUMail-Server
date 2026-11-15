@@ -29,9 +29,8 @@ fn dhl_by_status() {
     assert_eq!(facts.expected, Some(DateWindow { day: on(16, 11, 2026), from: None, to: None }));
     assert_eq!(
         facts.tracking_url.as_deref(),
-        Some(
-            "https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567890&lang=de"
-        )
+        Some("https://www.dhl.de/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567890"),
+        "the carrier's own page, not the mail's link"
     );
     assert_eq!(facts.merchant, None, "a carrier is no shop");
     assert!(facts.confidence >= 0.9);
@@ -138,7 +137,7 @@ fn ups_in_english_and_german() {
     assert_eq!(facts.numbers, ["1Z999AA10123456784"]);
     assert_eq!(facts.status, Some(ShipmentStatus::OutForDelivery));
     assert_eq!(facts.expected, Some(DateWindow { day: Day::InDays(0), from: Some((14, 0)), to: Some((18, 0)) }));
-    assert_eq!(facts.tracking_url.as_deref(), Some("https://www.ups.example/track?tracknum=1Z999AA10123456784"));
+    assert_eq!(facts.tracking_url.as_deref(), Some("https://www.ups.com/track?tracknum=1Z999AA10123456784"));
 
     let access_point = message(
         &["From: UPS <mcinfo@ups.example>", "Subject: Ihr Paket ist abholbereit"],
@@ -288,6 +287,37 @@ fn no_shipment() {
         <a href="https://dhl.evil.example/?piececode=00340434161234567896">Sendung</a>"#,
     );
     assert_eq!(shipment(&lookalike), None);
+}
+
+#[test]
+fn carrier_hosts_are_exact() {
+    for host in ["dhl.de", "nolp.dhl.de", "www.ups.com", "dpd.co.uk", "tracking.dpd.de", "www.myhermes.de", "DHL.DE."] {
+        assert!(Carrier::of_host(host).is_some(), "{host}");
+    }
+    for host in [
+        "dhl.evil.example",
+        "dhl.co.evil.example",
+        "evildhl.de",
+        "dhl.de.evil.example",
+        "hermes.com",
+        "dhl.xyz.invalid",
+        "amazon.evil.test",
+        "dhl.de%2eevil.example",
+        "dhl.de&",
+        "",
+    ] {
+        assert_eq!(Carrier::of_host(host), None, "{host}");
+    }
+
+    // An entity-encoded `@` does not hide the real host; a number-less link must be the carrier's.
+    let encoded = html_message(
+        &["From: Paketdienst <info@paket.example>", "Subject: Ihre DHL Sendung wurde versandt"],
+        r#"<a href="https://www.dhl.de&#64;evil.example/?piececode=00340434161234567897">Sendung</a>"#,
+    );
+    assert_eq!(shipment(&encoded), None);
+    let mut links = Vec::new();
+    uwumail_labels::links_in("<a href=\"https://a.example/?x=1&#34;onclick=y&amp;z=2\">", &mut links);
+    assert_eq!(links, ["https://a.example/?x=1"]);
 }
 
 #[test]

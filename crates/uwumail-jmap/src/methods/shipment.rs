@@ -58,6 +58,13 @@ pub(crate) async fn allowed(ctx: &Ctx<'_>, shipments: Vec<Shipment>, needed: &st
             }
             mails.iter().filter_map(|mail| mailboxes.get(mail)).flatten().any(|mailbox| view.may(*mailbox, needed))
         })
+        .map(|mut shipment| {
+            // Only the events (and so the mail ids) of mail the caller may read, and the apps' own.
+            let readable =
+                |mail: &i64| mailboxes.get(mail).is_some_and(|boxes| boxes.iter().any(|b| view.may(*b, "r")));
+            shipment.events.retain(|event| event.email_id.is_none_or(|mail| readable(&mail)));
+            shipment
+        })
         .collect())
 }
 
@@ -306,6 +313,9 @@ fn text<'v>(object: &'v Map<String, Value>, property: &'static str) -> Result<Op
     }
 }
 
+/// How far ahead an event's `at` may be; the store counts one ahead of now as now.
+const MAX_AHEAD_SECS: i64 = 365 * 86_400;
+
 fn events(value: &Value) -> Result<Vec<NewShipmentEvent>, SetError> {
     let invalid = |message: &str| SetError::invalid_properties(&["addEvents"], message.to_owned());
     let list = value.as_array().ok_or_else(|| invalid("addEvents is a list"))?;
@@ -320,6 +330,9 @@ fn events(value: &Value) -> Result<Vec<NewShipmentEvent>, SetError> {
         }
         let at =
             event.get("at").and_then(Value::as_str).and_then(dates::parse).ok_or_else(|| invalid("at is a date"))?;
+        if at > chrono::Utc::now().timestamp() + MAX_AHEAD_SECS {
+            return Err(invalid("at is more than a year ahead"));
+        }
         let status = event
             .get("status")
             .and_then(Value::as_str)

@@ -21,6 +21,8 @@ pub const SHIPMENT_STALE_SECS: i64 = 60 * 86_400;
 pub const SHIPMENT_MAX_EVENTS: i64 = 200;
 /// Shipments one account may have.
 const MAX_PER_ACCOUNT: i64 = 2000;
+/// At the limit, a shipment without news this long gives way to a new one.
+const ROOM_STALE_SECS: i64 = 7 * 86_400;
 /// A look back reaches this far at most, in days.
 pub const SHIPMENT_RESCAN_MAX_DAYS: i64 = 90;
 /// What a look back reaches when the person switches shipments on.
@@ -313,11 +315,13 @@ fn add_event(tx: &Connection, id: i64, event: &ShipmentEvent) -> Result<bool> {
             Ok((row.get(0)?, row.get(1)?))
         })?;
     let current = status_of(&status)?;
-    if event.at >= status_at && current.moves_to(event.status) {
-        let delivered = (event.status == ShipmentStatus::Delivered).then_some(event.at);
+    // An event ahead of now counts as now, so it cannot hold the status against later news.
+    let at = event.at.min(now());
+    if at >= status_at && current.moves_to(event.status) {
+        let delivered = (event.status == ShipmentStatus::Delivered).then_some(at);
         tx.execute(
             "UPDATE shipments SET status = ?2, status_at = ?3, delivered_at = coalesce(?4, delivered_at) WHERE id = ?1",
-            params![id, event.status.id(), event.at, delivered],
+            params![id, event.status.id(), at, delivered],
         )?;
     }
     tx.execute("UPDATE shipments SET updated_at = ?2 WHERE id = ?1", params![id, now()])?;
@@ -326,6 +330,28 @@ fn add_event(tx: &Connection, id: i64, event: &ShipmentEvent) -> Result<bool> {
 
 fn count(tx: &Connection, account_id: i64) -> Result<i64> {
     Ok(tx.query_row("SELECT count(*) FROM shipments WHERE account_id = ?1", [account_id], |row| row.get(0))?)
+}
+
+/// Whether a shipment from mail fits: at [`MAX_PER_ACCOUNT`] the oldest done shipment, or else
+/// the oldest without news for [`ROOM_STALE_SECS`], makes room, so a flood of mail cannot keep
+/// new parcels out until pruning.
+fn room(tx: &Transaction<'_>, account_id: i64) -> Result<bool> {
+    if count(tx, account_id)? < MAX_PER_ACCOUNT {
+        return Ok(true);
+    }
+    let oldest: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM shipments WHERE account_id = ?1
+               AND (status IN ('delivered', 'returned', 'cancelled') OR updated_at < ?2)
+             ORDER BY status IN ('delivered', 'returned', 'cancelled') DESC, updated_at, id LIMIT 1",
+            params![account_id, now() - ROOM_STALE_SECS],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match oldest {
+        Some(id) => destroy(tx, account_id, id).map(|_| true),
+        None => Ok(false),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -352,6 +378,7 @@ fn insert(
 }
 
 /// Puts what one mail tells into the account's shipments. Returns the last modseq it used, if any.
+#[allow(clippy::too_many_arguments)]
 fn record_mail(
     tx: &Transaction<'_>,
     account_id: i64,
@@ -360,6 +387,7 @@ fn record_mail(
     subject: &str,
     facts: &ShipmentFacts,
     source: &str,
+    authenticated: bool,
 ) -> Result<Option<i64>> {
     if !enabled(tx, account_id)? {
         return Ok(None);
@@ -423,7 +451,7 @@ fn record_mail(
             targets.push((id, false));
             continue;
         }
-        if count(tx, account_id)? >= MAX_PER_ACCOUNT {
+        if !room(tx, account_id)? {
             break;
         }
         let tracking = carrier_tracking(facts, number, numbers.len());
@@ -441,7 +469,7 @@ fn record_mail(
         )?;
         targets.push((id, true));
     }
-    if numbers.is_empty() && targets.is_empty() && count(tx, account_id)? < MAX_PER_ACCOUNT {
+    if numbers.is_empty() && targets.is_empty() && room(tx, account_id)? {
         let id = insert(
             tx,
             account_id,
@@ -465,6 +493,10 @@ fn record_mail(
     let pickup = facts.pickup.as_ref().map(|pickup| pickup_of(pickup, received_at, tz));
     let mut last = None;
     for (id, created) in targets {
+        // Whoever knows a number could forge its end; only mail that proves its sender says so.
+        if !created && !authenticated && status.is_done() {
+            continue;
+        }
         let added = add_event(tx, id, &event)?;
         if !added && !created {
             continue;
@@ -500,10 +532,11 @@ fn record_mail(
     Ok(last)
 }
 
-/// The link to follow a shipment: the one in the mail when it names one shipment, else the carrier's.
+/// The link to follow a shipment: the carrier's own page, else the mail's (which `shipment` only
+/// takes from the carrier's own domain) when it names one shipment.
 fn carrier_tracking(facts: &ShipmentFacts, number: &str, numbers: usize) -> Option<String> {
     let own = facts.carrier.as_ref().and_then(|carrier| carrier.tracking_url(number));
-    if numbers > 1 { own } else { facts.tracking_url.clone().or(own) }
+    own.or_else(|| facts.tracking_url.clone().filter(|_| numbers == 1))
 }
 
 fn load(conn: &Connection, account_id: i64, ids: Option<&[i64]>) -> Result<Vec<Shipment>> {
@@ -562,7 +595,8 @@ impl Store {
     }
 
     /// Puts what a mail tells about a shipment into the account's shipments, unless the person
-    /// switched them off. `subject` becomes the event's text.
+    /// switched them off. `subject` becomes the event's text. Mail whose sender is not
+    /// `authenticated` may add shipments but not mark a known one delivered, returned or cancelled.
     pub async fn record_shipment_mail(
         &self,
         account_id: i64,
@@ -570,8 +604,9 @@ impl Store {
         received_at: i64,
         subject: String,
         facts: ShipmentFacts,
+        authenticated: bool,
     ) -> Result<bool> {
-        self.record_shipment(account_id, email_id, received_at, subject, facts, "mail").await
+        self.record_shipment(account_id, email_id, received_at, subject, facts, "mail", authenticated).await
     }
 
     /// [`Store::record_shipment_mail`] for what the model read in a mail the rules could not:
@@ -583,10 +618,12 @@ impl Store {
         received_at: i64,
         subject: String,
         facts: ShipmentFacts,
+        authenticated: bool,
     ) -> Result<bool> {
-        self.record_shipment(account_id, email_id, received_at, subject, facts, "ai").await
+        self.record_shipment(account_id, email_id, received_at, subject, facts, "ai", authenticated).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn record_shipment(
         &self,
         account_id: i64,
@@ -595,9 +632,13 @@ impl Store {
         subject: String,
         facts: ShipmentFacts,
         source: &'static str,
+        authenticated: bool,
     ) -> Result<bool> {
-        let modseq =
-            self.write(move |tx| record_mail(tx, account_id, email_id, received_at, &subject, &facts, source)).await?;
+        let modseq = self
+            .write(move |tx| {
+                record_mail(tx, account_id, email_id, received_at, &subject, &facts, source, authenticated)
+            })
+            .await?;
         if let Some(modseq) = modseq {
             self.notify_change(account_id, modseq);
         }
@@ -767,12 +808,12 @@ impl Store {
                     let mut stmt = tx.prepare(
                         "SELECT s.id, s.account_id FROM shipments s
                          WHERE (s.status IN ('delivered', 'returned', 'cancelled') AND s.status_at < ?1)
-                            OR coalesce((SELECT max(e.at) FROM shipment_events e WHERE e.shipment_id = s.id),
+                            OR coalesce((SELECT max(e.at) FROM shipment_events e
+                                         WHERE e.shipment_id = s.id AND e.at <= ?3),
                                         s.updated_at) < ?2",
                     )?;
-                    let rows = stmt.query_map(params![now - SHIPMENT_DONE_SECS, now - SHIPMENT_STALE_SECS], |row| {
-                        Ok((row.get(0)?, row.get(1)?))
-                    })?;
+                    let limits = params![now - SHIPMENT_DONE_SECS, now - SHIPMENT_STALE_SECS, now];
+                    let rows = stmt.query_map(limits, |row| Ok((row.get(0)?, row.get(1)?)))?;
                     rows.collect::<rusqlite::Result<_>>()?
                 };
                 let mut gone = Vec::with_capacity(stale.len());
@@ -958,13 +999,13 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         let order = mail(&store, account).await;
         assert!(
             store
-                .record_shipment_mail(account, order, t, "Bestellung".into(), facts(&[], None, Some("A-1")))
+                .record_shipment_mail(account, order, t, "Bestellung".into(), facts(&[], None, Some("A-1")), true)
                 .await
                 .unwrap()
         );
         let shipped = mail(&store, account).await;
         let two = facts(&["00340434000000000001", "00340434000000000002"], None, Some("A-1"));
-        store.record_shipment_mail(account, shipped, t + 60, "Versandt".into(), two.clone()).await.unwrap();
+        store.record_shipment_mail(account, shipped, t + 60, "Versandt".into(), two.clone(), true).await.unwrap();
         let all = store.shipments(account, None).await.unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].id, all.iter().map(|s| s.id).min().unwrap());
@@ -974,16 +1015,16 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert!(all[0].tracking_url.as_deref().unwrap().contains("00340434000000000001"));
 
         // The same mail again changes nothing.
-        assert!(!store.record_shipment_mail(account, shipped, t + 60, "Versandt".into(), two).await.unwrap());
+        assert!(!store.record_shipment_mail(account, shipped, t + 60, "Versandt".into(), two, true).await.unwrap());
 
         // Out for delivery today between 10:15 and 12:15, then an older "in transit" mail.
         let today = mail(&store, account).await;
         let mut out = facts(&["00340434000000000001"], Some(ShipmentStatus::OutForDelivery), None);
         out.expected = Some(DateWindow { day: Day::InDays(0), from: Some((10, 15)), to: Some((12, 15)) });
-        store.record_shipment_mail(account, today, t + 3600, "Heute".into(), out).await.unwrap();
+        store.record_shipment_mail(account, today, t + 3600, "Heute".into(), out, true).await.unwrap();
         let late = mail(&store, account).await;
         let transit = facts(&["00340434000000000001"], Some(ShipmentStatus::InTransit), None);
-        store.record_shipment_mail(account, late, t + 1800, "Unterwegs".into(), transit).await.unwrap();
+        store.record_shipment_mail(account, late, t + 1800, "Unterwegs".into(), transit, true).await.unwrap();
         let first = &store.shipments(account, Some(vec![all[0].id])).await.unwrap()[0];
         assert_eq!(first.status, ShipmentStatus::OutForDelivery);
         assert_eq!(first.events.len(), 4);
@@ -993,7 +1034,7 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
 
         // An app reports the delivery; its text is limited and too many events are refused.
         let delivered = NewShipmentEvent {
-            at: t + 7200,
+            at: t + 5400,
             status: ShipmentStatus::Delivered,
             text: Some("Zugestellt".into()),
             location: Some("Musterstadt".into()),
@@ -1002,7 +1043,7 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         store.update_shipment(account, first.id, update, Some("Home Assistant".into())).await.unwrap();
         let first = &store.shipments(account, Some(vec![first.id])).await.unwrap()[0];
         assert_eq!(first.status, ShipmentStatus::Delivered);
-        assert_eq!(first.delivered_at, Some(t + 7200));
+        assert_eq!(first.delivered_at, Some(t + 5400));
         assert_eq!(first.events.last().unwrap().client_name.as_deref(), Some("Home Assistant"));
         let long = NewShipmentEvent { text: Some("x".repeat(501)), ..delivered.clone() };
         let update = ShipmentUpdate { add_events: vec![long], ..Default::default() };
@@ -1029,7 +1070,7 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert!(store.destroy_shipment(account, id).await.is_err());
         let email = mail(&store, account).await;
         let found = facts(&["00340434000000000001"], None, None);
-        assert!(!store.record_shipment_mail(account, email, now(), "Versandt".into(), found).await.unwrap());
+        assert!(!store.record_shipment_mail(account, email, now(), "Versandt".into(), found, true).await.unwrap());
 
         let mut on = Map::new();
         on.insert("shipments".into(), json!("on"));
@@ -1048,12 +1089,77 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         let old = now() - SHIPMENT_DONE_SECS - 60;
         let email = mail(&store, account).await;
         let done = facts(&["00340434000000000001"], Some(ShipmentStatus::Delivered), None);
-        store.record_shipment_mail(account, email, old, "Zugestellt".into(), done).await.unwrap();
+        store.record_shipment_mail(account, email, old, "Zugestellt".into(), done, true).await.unwrap();
         let fresh = facts(&["00340434000000000002"], None, None);
-        store.record_shipment_mail(account, email, now(), "Versandt".into(), fresh).await.unwrap();
+        store.record_shipment_mail(account, email, now(), "Versandt".into(), fresh, true).await.unwrap();
         assert_eq!(store.prune_shipments().await.unwrap(), 1);
         let left = store.shipments(account, None).await.unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].number.as_deref(), Some("00340434000000000002"));
+    }
+
+    #[tokio::test]
+    async fn forged_ends_future_times_and_deleted_mail() {
+        let (store, _dir, account) = setup().await;
+        let number = "00340434000000000001";
+        let email = mail(&store, account).await;
+        store
+            .record_shipment_mail(account, email, now() - 60, "Versandt".into(), facts(&[number], None, None), true)
+            .await
+            .unwrap();
+        // Unauthenticated mail cannot mark the parcel delivered.
+        let forged = mail(&store, account).await;
+        let done = facts(&[number], Some(ShipmentStatus::Delivered), None);
+        assert!(!store.record_shipment_mail(account, forged, now(), "Zugestellt".into(), done, false).await.unwrap());
+        let shipment = &store.shipments(account, None).await.unwrap()[0];
+        assert_eq!(shipment.status, ShipmentStatus::Shipped);
+        assert_eq!(shipment.events.len(), 1);
+
+        // An event far ahead counts as now: later news still moves the status.
+        let ahead = NewShipmentEvent {
+            at: now() + 300 * 86_400,
+            status: ShipmentStatus::InTransit,
+            text: None,
+            location: None,
+        };
+        let update = ShipmentUpdate { add_events: vec![ahead], ..Default::default() };
+        store.update_shipment(account, shipment.id, update, None).await.unwrap();
+        let later = mail(&store, account).await;
+        let out = facts(&[number], Some(ShipmentStatus::OutForDelivery), None);
+        store.record_shipment_mail(account, later, now() + 5, "Heute".into(), out, true).await.unwrap();
+        let shipment = &store.shipments(account, None).await.unwrap()[0];
+        assert_eq!(shipment.status, ShipmentStatus::OutForDelivery);
+
+        // Deleting the mail takes its subject out of the event.
+        store.destroy_emails(account, vec![email]).await.unwrap();
+        let shipment = &store.shipments(account, None).await.unwrap()[0];
+        let first = shipment.events.iter().find(|event| event.status == ShipmentStatus::Shipped).unwrap();
+        assert_eq!((first.text.as_deref(), first.email_id), (None, None));
+        assert!(shipment.events.iter().any(|event| event.text.as_deref() == Some("Heute")));
+    }
+
+    #[tokio::test]
+    async fn a_full_account_makes_room_for_new_parcels() {
+        let (store, _dir, account) = setup().await;
+        let stale = now() - 8 * 86_400;
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?2)
+                     INSERT INTO shipments (account_id, carrier, number, status, status_at, created_at, updated_at)
+                     SELECT ?1, 'dhl', 'X' || i, 'shipped', ?3, ?3, ?3 + i FROM n",
+                    params![account, MAX_PER_ACCOUNT, stale],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let email = mail(&store, account).await;
+        let new = facts(&["00340434000000000009"], None, None);
+        assert!(store.record_shipment_mail(account, email, now(), "Versandt".into(), new, true).await.unwrap());
+        let all = store.shipments(account, None).await.unwrap();
+        assert_eq!(all.len() as i64, MAX_PER_ACCOUNT);
+        assert!(all.iter().all(|s| s.number.as_deref() != Some("X1")), "the oldest gave way");
+        assert!(all.iter().any(|s| s.number.as_deref() == Some("00340434000000000009")));
     }
 }
