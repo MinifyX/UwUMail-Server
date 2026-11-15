@@ -454,6 +454,12 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
             Ok(retired) => tracing::info!(retired, "deleted pending masked addresses that never got mail"),
             Err(err) => tracing::warn!(%err, "cleaning up pending masked addresses failed"),
         }
+        // Once the year turns, the holiday and week-number calendars get the next year.
+        match store.roll_builtin_calendars().await {
+            Ok(0) => {}
+            Ok(accounts) => tracing::info!(accounts, "wrote the next year into the built-in calendars"),
+            Err(err) => tracing::warn!(%err, "writing the built-in calendars failed"),
+        }
         match store.purge_reports(uwumail_store::REPORT_RETENTION_SECS).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "removed old DMARC and TLS reports"),

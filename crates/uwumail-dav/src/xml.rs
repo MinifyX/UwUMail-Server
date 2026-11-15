@@ -10,6 +10,8 @@ pub const CALDAV: &str = "urn:ietf:params:xml:ns:caldav";
 pub const CARDDAV: &str = "urn:ietf:params:xml:ns:carddav";
 pub const CALSERVER: &str = "http://calendarserver.org/ns/";
 pub const APPLE: &str = "http://apple.com/ns/ical/";
+/// Ours: what only another UwUMail server reads, such as which calendars it makes itself.
+pub const UWUMAIL: &str = "urn:uwumail:dav";
 
 /// Request bodies bigger than this are refused; multiget lists of real clients stay far below.
 pub const MAX_BODY: usize = 2 * 1024 * 1024;

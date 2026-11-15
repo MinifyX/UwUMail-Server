@@ -567,3 +567,49 @@ async fn one_message_in_two_folders_is_one_email_in_both_and_nothing_is_lost() {
     let summary = new.move_by_id(started.id).await.unwrap().unwrap().summary;
     assert_eq!((summary.messages_skipped, summary.messages_known), (4, 4));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn built_in_calendars_are_made_from_the_setting_with_their_name_and_colour() {
+    use serde_json::json;
+    use uwumail_store::{DavCollectionUpdate, SettingsChange};
+
+    let dir = tempfile::tempdir().unwrap();
+    let old = Store::open(&dir.path().join("old")).await.unwrap();
+    let old_mini = person(&old, "mini@example.org", Some(PASSWORD), 0).await;
+    let settings = vec![
+        ("holidays".to_owned(), Some(json!({ "country": "DE", "region": "DE-NW" }))),
+        ("weekNumbers".to_owned(), Some(json!(true))),
+    ];
+    old.update_user_settings(old_mini, SettingsChange::Patch(settings), None).await.unwrap();
+    let calendars =
+        old.dav_collections(old_mini, DavKind::Calendar, NewDavCollection::default_calendar("Privat")).await.unwrap();
+    let holidays = calendars.iter().find(|c| c.builtin.as_deref() == Some("holidays")).unwrap();
+    let renamed = DavCollectionUpdate {
+        display_name: Some("Frei in NRW".into()),
+        color: Some(Some("#00AA00FF".into())),
+        ..Default::default()
+    };
+    old.dav_update_collection(old_mini, holidays.id, renamed).await.unwrap();
+    let (detour, _stop) = old_imap(&old).await;
+    let env = env(&old, detour);
+
+    let new = Store::open(&dir.path().join("new")).await.unwrap();
+    let mini = person(&new, "mini@example.org", None, 0).await;
+    new.create_move(new_move(MoveKind::Mailbox), vec![mailbox(mini, "mini@example.org", PASSWORD)]).await.unwrap();
+    let done = take_turn(&new, &env).await;
+    assert_eq!((done.state, done.dav_error.as_str()), (MoveMailboxState::Synced, ""), "{done:?}");
+
+    let here = new.dav_collections(mini, DavKind::Calendar, NewDavCollection::default_calendar("Kalender")).await;
+    let here = here.unwrap();
+    let holidays: Vec<_> = here.iter().filter(|c| c.display_name == "Frei in NRW").collect();
+    assert_eq!(holidays.len(), 1, "made once, not copied besides: {here:?}");
+    let holidays = holidays[0];
+    assert_eq!(holidays.builtin.as_deref(), Some("holidays"));
+    assert_eq!(holidays.builtin_region.as_deref(), Some("DE-NW"));
+    assert_eq!(holidays.color.as_deref(), Some("#00AA00FF"));
+    assert!(holidays.resources > 0, "filled from the setting");
+    assert_eq!(here.iter().filter(|c| c.builtin.as_deref() == Some("weeks")).count(), 1, "{here:?}");
+    assert_eq!(here.iter().filter(|c| c.builtin.is_none() && c.resources > 0).count(), 0, "{here:?}");
+    let settings = new.user_settings(mini).await.unwrap();
+    assert_eq!(settings.values.get("holidays"), Some(&json!({ "country": "DE", "region": "DE-NW" })));
+}

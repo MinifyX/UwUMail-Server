@@ -10,7 +10,7 @@ use uwumail_store::DavKind;
 
 use super::providers::provider_of;
 use super::{Multistatus, Remote, RemoteError};
-use crate::xml::{APPLE, CALDAV, CALSERVER, CARDDAV, DAV};
+use crate::xml::{APPLE, CALDAV, CALSERVER, CARDDAV, DAV, UWUMAIL};
 
 /// A calendar or address book found at the other provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -24,6 +24,9 @@ pub struct RemoteCollection {
     pub color: Option<String>,
     /// For calendars: what they hold (`VEVENT`, `VTODO`); empty when the server does not say.
     pub components: Vec<String>,
+    /// A calendar another UwUMail server makes itself: `holidays <region>` or `weeks`.
+    #[serde(skip)]
+    pub builtin: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -40,7 +43,8 @@ pub const MAX_COLLECTIONS: usize = 100;
 const HOME_PROPS: &str =
     "<d:current-user-principal/><d:resourcetype/><c:calendar-home-set/><card:addressbook-home-set/>";
 const COLLECTION_PROPS: &str = "<d:resourcetype/><d:displayname/><c:supported-calendar-component-set/>\
-<c:calendar-description/><card:addressbook-description/><ical:calendar-color/>";
+<c:calendar-description/><card:addressbook-description/><ical:calendar-color/>\
+<u:builtin xmlns:u=\"urn:uwumail:dav\"/>";
 
 fn home_set(kind: DavKind) -> (&'static str, &'static str) {
     match kind {
@@ -147,6 +151,7 @@ fn collections(found: &Multistatus, kind: DavKind) -> Vec<RemoteCollection> {
             description: entry.text(description_prop.0, description_prop.1).unwrap_or_default(),
             color: entry.text(APPLE, "calendar-color"),
             components,
+            builtin: entry.text(UWUMAIL, "builtin"),
         });
     }
     list

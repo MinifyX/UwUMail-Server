@@ -1914,6 +1914,8 @@ export interface OwnCollection {
   entries: number;
   shares: { accountId: number; address: string; name: string; rights: ShareRights }[];
   isDefault: boolean;
+  /** Set for a calendar the server makes from the settings (docs/holidays.md): read-only everywhere. */
+  builtin: "holidays" | "weeks" | null;
   /** Set for a calendar filled from a subscribed feed: read-only everywhere. */
   subscription: CalendarSubscription | null;
 }
@@ -2006,7 +2008,21 @@ export interface CalendarsView {
   contacts: boolean;
   own: OwnCollection[];
   shared: SharedCollection[];
+  /** The settings behind the built-in calendars; `holidays` null is off. */
+  builtin: { holidays: HolidaySetting | null; weekNumbers: boolean };
   limits: { uploadBytes: number; subscriptions: number; minIntervalSecs: number };
+}
+
+export interface HolidaySetting {
+  country: string;
+  region: string | null;
+}
+
+/** `GET /api/account/calendars/catalog`: what the holiday calendar knows and feeds to subscribe to. */
+export interface CalendarCatalog {
+  countries: { code: string; names: { de: string; en: string } }[];
+  regions: { code: string; name: string }[];
+  subscriptions: { id: string; name: string; region: string | null; url: string; license: string; checked: string }[];
 }
 
 export interface StorageView {

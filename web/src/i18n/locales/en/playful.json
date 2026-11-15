@@ -191,7 +191,10 @@
   },
   "calendars": {
     "intro": "Share your calendars and address books with people here on the server, or bring them over from elsewhere, and nobody misses a date again (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
-    "sharedEmpty": "Nobody has shared anything with you yet (・ω・)"
+    "sharedEmpty": "Nobody has shared anything with you yet (・ω・)",
+    "builtin": {
+      "intro": "The server works out holidays and week numbers all by itself, no internet needed. Look but don't touch: they never block time and never ring. Name and colour are yours to change ✨"
+    }
   },
   "pictures": {
     "own": {

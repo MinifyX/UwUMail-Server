@@ -1,4 +1,4 @@
-import { Button, Field, Select, TextInput, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
+import { Button, Field, Select, TextInput, Toggle, Card, ICONS, Icon as SuiteIcon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/Page";
 import { useT } from "@/i18n";
 import {
   api,
+  type CalendarCatalog,
   type CalendarSubscription,
   type CalendarsView,
   type OwnCollection,
@@ -15,7 +16,7 @@ import {
 import { useErrorText } from "@/lib/errors";
 import { formatRelative } from "@/lib/format";
 import { toast } from "@/state/toasts";
-import { calendarsKey, ImportCard, INTERVALS } from "./ImportDialogs";
+import { calendarsKey, catalogKey, ImportCard, INTERVALS } from "./ImportDialogs";
 
 const RIGHTS: ShareRights[] = ["read", "write", "all"];
 
@@ -187,6 +188,7 @@ function OwnCard({ collection }: { collection: OwnCollection }) {
       }
     >
       <div className="flex flex-col gap-4">
+        {collection.builtin && <p className="text-[13px] text-muted">{t("calendars.builtin.readOnly")}</p>}
         {collection.subscription && <SubscriptionInfo collection={collection} subscription={collection.subscription} />}
         {collection.shares.length === 0 ? (
           <p className="text-sm text-muted">{t("calendars.notShared")}</p>
@@ -275,6 +277,95 @@ function OwnCard({ collection }: { collection: OwnCollection }) {
   );
 }
 
+/** The holiday and week-number calendars the server makes itself (docs/holidays.md). */
+function BuiltinCard({ view }: { view: CalendarsView }) {
+  const { t, i18n } = useT();
+  const errorText = useErrorText();
+  const queryClient = useQueryClient();
+  const catalog = useQuery({
+    queryKey: catalogKey,
+    queryFn: () => api<CalendarCatalog>("/api/account/calendars/catalog"),
+    staleTime: Infinity,
+  });
+  const [country, setCountry] = useState(view.builtin.holidays?.country ?? "");
+  const [region, setRegion] = useState(view.builtin.holidays?.region ?? "");
+  const [weeks, setWeeks] = useState(view.builtin.weekNumbers);
+  const save = useMutation({
+    mutationFn: () =>
+      api<CalendarsView>("/api/account/calendars/builtin", {
+        method: "PUT",
+        body: { holidays: country ? { country, region: region || null } : null, weekNumbers: weeks },
+      }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(calendarsKey, next);
+      toast(t("calendars.builtin.savedToast"), "success");
+    },
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    save.mutate();
+  };
+  const language = i18n.language.startsWith("de") ? "de" : "en";
+  const regions = catalog.data?.regions.filter((item) => item.code.startsWith(`${country}-`)) ?? [];
+
+  return (
+    <Card title={t("calendars.builtin.title")}>
+      <form className="flex flex-col gap-4" onSubmit={submit}>
+        <p className="text-sm text-muted">{t("calendars.builtin.intro")}</p>
+        <Field label={t("calendars.builtin.holidays")}>
+          {(id) => (
+            <Select
+              id={id}
+              name="country"
+              value={country}
+              onChange={(event) => {
+                setCountry(event.target.value);
+                setRegion("");
+              }}
+            >
+              <option value="">{t("calendars.builtin.none")}</option>
+              {catalog.data?.countries.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.names[language]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        {regions.length > 0 && (
+          <Field
+            label={t("calendars.builtin.region")}
+            hint={country === "CH" ? t("calendars.builtin.approximate") : undefined}
+          >
+            {(id) => (
+              <Select id={id} name="region" value={region} onChange={(event) => setRegion(event.target.value)}>
+                <option value="">{t("calendars.builtin.wholeCountry")}</option>
+                {regions.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
+        <Toggle
+          checked={weeks}
+          onChange={setWeeks}
+          label={t("calendars.builtin.weekNumbers")}
+          description={t("calendars.builtin.weekNumbersHint")}
+        />
+        {save.isError && <p className="text-[13px] text-danger-ink">{errorText(save.error)}</p>}
+        <div>
+          <Button type="submit" variant="primary" busy={save.isPending}>
+            {t("calendars.builtin.save")}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 function SharedWithMe({ shared }: { shared: SharedCollection[] }) {
   const { t } = useT();
   const errorText = useErrorText();
@@ -351,6 +442,7 @@ export function CalendarsPage() {
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
           <ImportCard view={data} />
+          {data.calendars && <BuiltinCard view={data} />}
           {data.own.map((collection) => (
             <OwnCard key={collection.id} collection={collection} />
           ))}

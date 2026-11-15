@@ -4086,7 +4086,9 @@
       "end": "Abo beenden",
       "endKeep": "Einträge behalten",
       "endDelete": "Kalender löschen",
-      "endedToast": "Abo von {{name}} beendet"
+      "endedToast": "Abo von {{name}} beendet",
+      "catalog": "Aus dem Katalog",
+      "catalogOwn": "Eigene Adresse"
     },
     "remote": {
       "button": "Von anderem Anbieter umziehen",
@@ -4113,6 +4115,20 @@
         "outlook": "Outlook.com hat kein CalDAV oder CardDAV. Exportiere dort deinen Kalender als .ics-Datei und deine Kontakte als Datei und importiere sie hier.",
         "appPassword": "Dieser Anbieter möchte ein App-Passwort, das du in seinen Einstellungen erstellst."
       }
+    },
+    "builtin": {
+      "title": "Feiertage und Kalenderwochen",
+      "intro": "Der Server legt diese Kalender selbst an und rechnet sie ohne Internet aus. Sie sind nur lesbar, zählen nicht als belegt und klingeln nie. Name und Farbe kannst du ändern.",
+      "holidays": "Feiertage",
+      "none": "Aus",
+      "region": "Bundesland oder Kanton",
+      "wholeCountry": "Nur landesweite Feiertage",
+      "approximate": "Kantonale Feiertage sind eine Näherung: Gemeinden und Arbeitsrecht weichen ab.",
+      "weekNumbers": "Kalenderwochen",
+      "weekNumbersHint": "Jede Woche als ganztägiger Eintrag „KW n“ von Montag bis Sonntag.",
+      "save": "Speichern",
+      "savedToast": "Gespeichert",
+      "readOnly": "Kommt aus deinen Einstellungen unter „Feiertage und Kalenderwochen“ und lässt sich nicht bearbeiten."
     }
   },
   "maskedDomains": {

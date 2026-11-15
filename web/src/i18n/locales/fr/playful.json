@@ -193,7 +193,10 @@
   },
   "calendars": {
     "intro": "Partage tes agendas et carnets d'adresses avec les gens de ce serveur ou ramène-les d'ailleurs, et plus personne ne rate un rendez-vous (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
-    "sharedEmpty": "Personne n'a encore rien partagé avec toi (・ω・)"
+    "sharedEmpty": "Personne n'a encore rien partagé avec toi (・ω・)",
+    "builtin": {
+      "intro": "Le serveur calcule tout seul les jours fériés et les semaines, sans Internet. À regarder seulement : ils ne bloquent rien et ne sonnent jamais. Nom et couleur, c’est toi qui choisis ✨"
+    }
   },
   "pictures": {
     "own": {

@@ -51,7 +51,8 @@ The long version of every point is in [docs/features.md](docs/features.md):
   [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web home.
 - **Mail, calendars, contacts.** JMAP, IMAP and SMTP, CalDAV and CardDAV, JMAP
   Calendars and Contacts, [Sieve rules](docs/sieve.md); invitations, free/busy
-  and a [birthdays calendar](docs/birthdays.md) with ages.
+  a [birthdays calendar](docs/birthdays.md) with ages, and built-in
+  [holiday and week-number calendars](docs/holidays.md).
 - **Sharing.** Shared folders, calendars and address books,
   [groups and shared mailboxes](docs/groups.md) like `info@` and `support@`, and
   [masked addresses](docs/jmap-masked-email.md), also on domains of their own.

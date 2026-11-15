@@ -8,8 +8,8 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{Value, json};
-use uwumail_store::{DavKind, NewDavCollection, ShareRights};
+use serde_json::{Map, Value, json};
+use uwumail_store::{DavKind, NewDavCollection, SettingsChange, ShareRights};
 
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
@@ -40,6 +40,7 @@ pub(crate) async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>>
     let shares = store.dav_shares(account, None).await?;
     let subscriptions =
         if session.account.protocols.caldav { store.calendar_subscriptions(account).await? } else { Vec::new() };
+    let settings = store.user_settings(account).await?.values;
     let mut own = Vec::new();
     let mut shared = Vec::new();
     for kind in kinds(session) {
@@ -68,6 +69,7 @@ pub(crate) async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>>
                 "entries": collection.resources,
                 "shares": with,
                 "isDefault": collection.is_default,
+                "builtin": collection.builtin,
                 "subscription": subscriptions.iter().find(|sub| sub.collection_id == collection.id),
             }));
         }
@@ -89,6 +91,10 @@ pub(crate) async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>>
         "contacts": session.account.protocols.carddav,
         "own": own,
         "shared": shared,
+        "builtin": {
+            "holidays": settings.get("holidays").cloned().unwrap_or(Value::Null),
+            "weekNumbers": settings.get("weekNumbers").and_then(Value::as_bool).unwrap_or(false),
+        },
         "limits": {
             "uploadBytes": crate::routes::calendar_import::MAX_UPLOAD_BYTES,
             "subscriptions": uwumail_store::MAX_CALENDAR_SUBSCRIPTIONS,
@@ -140,4 +146,41 @@ pub async fn unshare(
 pub async fn leave(State(web): State<Web>, session: Session, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
     web.store().dav_unshare(session.account.id, id, session.account.id).await?;
     view(&web, &session).await
+}
+
+/// Turns the built-in holiday and week-number calendars on or off (docs/holidays.md). The body
+/// holds `holidays` and/or `weekNumbers` as the JMAP `UserSettings` keys of the same name; `null`
+/// turns one off.
+pub async fn builtin(
+    State(web): State<Web>,
+    session: Session,
+    Json(body): Json<Map<String, Value>>,
+) -> ApiResult<Json<Value>> {
+    if !session.account.protocols.caldav {
+        return Err(ApiError::Rule("davOff", "calendars are switched off for this account".into()));
+    }
+    let mut writes = Vec::new();
+    for (key, value) in body {
+        if !matches!(key.as_str(), "holidays" | "weekNumbers") {
+            return Err(ApiError::Invalid(format!("unknown key {key}")));
+        }
+        writes.push((key, (!value.is_null()).then_some(value)));
+    }
+    web.store().update_user_settings(session.account.id, SettingsChange::Patch(writes), None).await?;
+    view(&web, &session).await
+}
+
+/// The calendar feeds offered to subscribe to, shipped with the release, and the countries and
+/// regions the holiday calendar knows. Also read by the webmail.
+const CATALOG: &str = include_str!("../calendar_catalog.json");
+
+pub async fn catalog(_session: Session) -> ApiResult<Json<Value>> {
+    let shipped: Value = serde_json::from_str(CATALOG).map_err(|_| ApiError::Internal)?;
+    let countries: Vec<Value> = uwumail_store::holidays::COUNTRIES
+        .iter()
+        .map(|(code, de, en)| json!({ "code": code, "names": { "de": de, "en": en } }))
+        .collect();
+    let regions: Vec<Value> =
+        uwumail_store::holidays::REGIONS.iter().map(|(code, name)| json!({ "code": code, "name": name })).collect();
+    Ok(Json(json!({ "countries": countries, "regions": regions, "subscriptions": shipped["sources"] })))
 }
