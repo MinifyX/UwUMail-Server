@@ -236,6 +236,16 @@ impl Mail {
         } else {
             text
         };
+        // A text part that only holds a placeholder („alternative Text“): the HTML part tells more.
+        let text = if text.trim().chars().count() < 64
+            && let Some(html) = message.body_html(0)
+            && let converted = mail_parser::decoders::html::html_to_text(&html)
+            && converted.trim().len() > text.trim().len()
+        {
+            converted
+        } else {
+            text
+        };
         let content_type = |part: &mail_parser::MessagePart<'_>| {
             part.content_type()
                 .map(|ct| format!("{}/{}", ct.ctype(), ct.subtype().unwrap_or_default()).to_ascii_lowercase())

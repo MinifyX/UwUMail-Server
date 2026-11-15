@@ -94,7 +94,10 @@ seen only by the owner.
 - The same number of the same carrier (or of any carrier when the mail names
   none) is the same shipment. An order confirmation without a number becomes
   the shipment once the shipping mail with the same order number or from the
-  same shop arrives.
+  same shop arrives. A shop name that starts the other one counts as the same
+  shop („Apple“ and „Apple Store“). Without a number the shop's own tracker is
+  kept as `trackingUrl` (Amazon delivering itself); the carrier's page replaces
+  it once a number comes. Tickets for events are no shipments.
 - **The status only moves forward**: `ordered` → `shipped` → `inTransit` →
   `outForDelivery` → `delivered`. `deliveryFailed`, `returned` and `cancelled`
   may come at any time, `readyForPickup` may still become `delivered`, and after

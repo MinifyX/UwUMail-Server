@@ -190,6 +190,52 @@ fn amazon() {
 }
 
 #[test]
+fn amazon_delivering_itself_keeps_its_tracker() {
+    let mail = html_message(
+        &["From: Amazon.de <versandbestaetigung@amazon.example>", "Subject: Versendet: „Wasserkocher“"],
+        r#"<p>Dein Paket wurde versendet!</p><p>Ankunft heute 18h – 22h</p><p>Bestellnr. 302-1234567-1234567</p>
+        <a href="https://www.amazon.example/progress-tracker/package?orderId=302-1234567-1234567&amp;shipmentId=Ab1">Lieferung verfolgen</a>"#,
+    );
+    let facts = found(&mail);
+    assert_eq!(facts.status, Some(ShipmentStatus::Shipped));
+    assert_eq!(facts.carrier, None);
+    assert!(facts.numbers.is_empty());
+    assert!(facts.tracking_url.as_deref().unwrap().starts_with("https://www.amazon.example/progress-tracker/package?"));
+    let expected = facts.expected.unwrap();
+    assert_eq!((expected.day, expected.from, expected.to), (Day::InDays(0), Some((18, 0)), Some((22, 0))));
+}
+
+#[test]
+fn a_shop_writing_in_the_plural() {
+    let mail = message(
+        &["From: Beispiel Store <shipping@orders.shop.example>", "Subject: Versandbenachrichtigung W1234567890"],
+        "Deine Artikel wurden versendet.\nBestellnummer W1234567890",
+    );
+    let facts = found(&mail);
+    assert_eq!(facts.status, Some(ShipmentStatus::Shipped));
+    assert_eq!(facts.order_ref.as_deref(), Some("W1234567890"));
+}
+
+#[test]
+fn tickets_are_no_parcels() {
+    // The text part only says it is the text part; the HTML part has the ticket.
+    let raw = "From: Support Kartenshop <help@karten.example>\r\nSubject: Ihre Bestellung #1234567 - Beispielcon 2027\r\n\
+        MIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=b\r\n\r\n\
+        --b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nalternative Text\r\n\
+        --b\r\nContent-Type: text/html; charset=utf-8\r\n\r\n\
+        <p>Vielen Dank für Ihre Bestellung #1234567.</p><p>Ihre print@home Tickets zeigen Sie beim Einlass vor.</p>\r\n\
+        --b--\r\n";
+    let mail = Mail::parse(raw.as_bytes());
+    assert!(mail.text.contains("Einlass"), "the HTML part stands in for the placeholder");
+    assert_eq!(uwumail_labels::shipment(&mail), None);
+    let invoice = message(
+        &["From: Support Kartenshop <help@karten.example>", "Subject: Invoice for ticket order #1234567"],
+        "Order #1234567",
+    );
+    assert_eq!(uwumail_labels::shipment(&invoice), None);
+}
+
+#[test]
 fn shopify_themes() {
     // Dawn: a button to the carrier.
     let dawn = html_message(

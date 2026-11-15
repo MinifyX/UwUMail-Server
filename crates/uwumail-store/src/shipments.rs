@@ -412,11 +412,15 @@ fn record_mail(
         email_id: Some(email_id),
         client_name: None,
     };
+    // The same shop may sign as „Apple“ and as „Apple Store“: one name starting the other counts.
     let order_of = |tx: &Connection, number_is_null: bool| -> Result<Vec<i64>> {
         let Some(order_ref) = &order_ref else { return Ok(Vec::new()) };
         let mut stmt = tx.prepare_cached(
             "SELECT id FROM shipments WHERE account_id = ?1 AND order_ref = ?2
-               AND (?3 IS NULL OR merchant IS NULL OR merchant = ?3) AND (?4 = 0 OR number IS NULL)
+               AND (?3 IS NULL OR merchant IS NULL OR merchant = ?3
+                    OR substr(?3, 1, length(merchant) + 1) = merchant || ' '
+                    OR substr(merchant, 1, length(?3) + 1) = ?3 || ' ')
+               AND (?4 = 0 OR number IS NULL)
              ORDER BY id",
         )?;
         let rows = stmt.query_map(params![account_id, order_ref, merchant, number_is_null], |row| row.get(0))?;
@@ -444,9 +448,11 @@ fn record_mail(
         }
         // Rules 2 and 3: the order confirmation becomes the shipment once its number comes.
         if let Some(id) = order_of(tx, true)?.into_iter().next() {
+            // The carrier's page replaces the shop's link the order had.
             tx.execute(
-                "UPDATE shipments SET number = ?2, carrier = coalesce(?3, carrier) WHERE id = ?1",
-                params![id, number, carrier],
+                "UPDATE shipments SET number = ?2, carrier = coalesce(?3, carrier), tracking_url = coalesce(?4, tracking_url)
+                 WHERE id = ?1",
+                params![id, number, carrier, carrier_tracking(facts, number, numbers.len())],
             )?;
             targets.push((id, false));
             continue;
@@ -475,7 +481,7 @@ fn record_mail(
             account_id,
             carrier.unwrap_or("other"),
             None,
-            None,
+            facts.tracking_url.as_deref(),
             merchant.as_deref(),
             order_ref.as_deref(),
             status,
@@ -503,7 +509,11 @@ fn record_mail(
         }
         let number: Option<String> =
             tx.query_row("SELECT number FROM shipments WHERE id = ?1", [id], |row| row.get(0))?;
-        let tracking = number.as_deref().and_then(|number| carrier_tracking(facts, number, numbers.len()));
+        let tracking = match number.as_deref() {
+            Some(number) => carrier_tracking(facts, number, numbers.len()),
+            // Without a number, only the shop's own tracker (Amazon delivering itself).
+            None => facts.tracking_url.clone(),
+        };
         // What the newest mail says wins; an older one only fills in what is missing.
         let newest: bool =
             tx.query_row("SELECT status_at <= ?2 FROM shipments WHERE id = ?1", params![id, received_at], |row| {
@@ -1067,6 +1077,41 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert!(store.update_shipment(account, first.id, update, None).await.is_err());
         let many = ShipmentUpdate { add_events: vec![delivered; 201], ..Default::default() };
         assert!(store.update_shipment(account, first.id, many, None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn one_shop_under_two_names_and_its_own_tracker() {
+        let (store, _dir, account) = setup().await;
+        let t = 1_794_699_000;
+        let link = "https://www.amazon.example/progress-tracker/package?orderId=A-2";
+        // „Apple“ confirms the order, „Apple Store“ ships it: one shipment. „Applesauce“ is another shop.
+        let mut order = facts(&[], None, Some("A-2"));
+        order.merchant = Some("Beispiel".into());
+        let first = mail(&store, account).await;
+        store.record_shipment_mail(account, first, t, "Bestellung".into(), order.clone(), true).await.unwrap();
+        let mut shipped = facts(&[], Some(ShipmentStatus::Shipped), Some("A-2"));
+        shipped.merchant = Some("Beispiel Store".into());
+        shipped.tracking_url = Some(link.into());
+        let second = mail(&store, account).await;
+        store.record_shipment_mail(account, second, t + 60, "Versendet".into(), shipped, true).await.unwrap();
+        let mut other = order;
+        other.merchant = Some("Beispielsaft".into());
+        let third = mail(&store, account).await;
+        store.record_shipment_mail(account, third, t + 120, "Bestellung".into(), other, true).await.unwrap();
+        let all = store.shipments(account, None).await.unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].email_ids(), vec![first, second]);
+        assert_eq!(all[0].status, ShipmentStatus::Shipped);
+        assert_eq!(all[0].tracking_url.as_deref(), Some(link));
+
+        // Once the number comes, the carrier's page replaces the shop's.
+        let numbered = mail(&store, account).await;
+        let mut dhl = facts(&["00340434000000000003"], None, Some("A-2"));
+        dhl.merchant = Some("Beispiel".into());
+        store.record_shipment_mail(account, numbered, t + 180, "Versandt".into(), dhl, true).await.unwrap();
+        let first = &store.shipments(account, Some(vec![all[0].id])).await.unwrap()[0];
+        assert_eq!(first.number.as_deref(), Some("00340434000000000003"));
+        assert!(first.tracking_url.as_deref().unwrap().contains("00340434000000000003"));
     }
 
     #[tokio::test]

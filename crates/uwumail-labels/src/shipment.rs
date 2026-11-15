@@ -348,7 +348,7 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
     let mut confidence;
     if numbers.is_empty() {
         // An order confirmation or a shop's shipping notice without a number: by shop and order.
-        if order_ref.is_none() || facts.mass_mail() || !order_subject {
+        if order_ref.is_none() || facts.mass_mail() || !order_subject || is_ticket(mail, subject, text) {
             return None;
         }
         confidence = 0.8;
@@ -377,7 +377,11 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
         (Some(carrier), None) => {
             links.iter().find(|link| link.number.is_none() && link.carrier == *carrier).map(|link| link.url.clone())
         }
-        (None, _) => None,
+        // Amazon delivering itself: its own progress tracker is all there is to follow.
+        (None, _) => links
+            .iter()
+            .find(|link| link.number.is_none() && link.carrier == Carrier::AmazonLogistics)
+            .map(|link| link.url.clone()),
     };
 
     // Out for delivery means today unless the mail names another day.
@@ -399,6 +403,27 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
         pickup,
         confidence,
     })
+}
+
+/// A ticket for an event: an order with a number but nothing that ever travels.
+const TICKET_WORDS: &[&str] = &[
+    "print@home",
+    "e-ticket",
+    "eintrittskarte",
+    "einlass",
+    "deine tickets",
+    "ihre tickets",
+    "your tickets",
+    "mobile ticket",
+];
+
+/// Whether `mail` (subject and text folded) sells a ticket rather than ships something.
+fn is_ticket(mail: &Mail, subject: &str, text: &str) -> bool {
+    has_word(subject, "ticket")
+        || subject.contains("ticketbestellung")
+        || fold(&mail.from_name).contains("ticket")
+        || mail.from_domain().to_ascii_lowercase().contains("ticket")
+        || find_any(text, TICKET_WORDS).is_some()
 }
 
 /// Words of a status, the most telling first: a mail about a failed delivery also tells what was
@@ -534,6 +559,11 @@ const STATUS_WORDS: &[(ShipmentStatus, &[&str])] = &[
             "wurde versendet",
             "ist versandt",
             "wurde verschickt",
+            "wurden versandt",
+            "wurden versendet",
+            "wurden verschickt",
+            "sind unterwegs",
+            "sind auf dem weg",
             "versandbestätigung",
             "versendet:",
             "verschickt:",
@@ -599,6 +629,7 @@ const EXPECTED_WORDS: &[&str] = &[
     "liefertermin",
     "lieferdatum",
     "zustelltag",
+    "ankunft",
     "zeitfenster",
     "wird am",
     "kommt am",
