@@ -226,6 +226,12 @@
       "fetchOk_one": "1 fetched account running",
       "fetchOk_other": "{{count}} fetched accounts running",
       "fetchFailed": "Fetched account {{address}}: last fetch failed"
+    },
+    "shipments": {
+      "title": "Parcels",
+      "label": "Track parcels from shipping mail",
+      "description": "Finds tracking numbers and delivery status in mail from shops and carriers, so webmail and connected apps can show your parcels. Switching this off deletes every stored parcel.",
+      "saved": "Saved"
     }
   },
   "admin": {

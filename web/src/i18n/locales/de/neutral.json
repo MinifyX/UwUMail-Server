@@ -226,6 +226,12 @@
       "fetchOk_one": "1 Abrufkonto läuft",
       "fetchOk_other": "{{count}} Abrufkonten laufen",
       "fetchFailed": "Abrufkonto {{address}}: letzter Abruf fehlgeschlagen"
+    },
+    "shipments": {
+      "title": "Pakete",
+      "label": "Pakete aus Versandmails verfolgen",
+      "description": "Erkennt Sendungsnummern und Lieferstatus in Mails von Shops und Paketdiensten, damit die Webmail und verbundene Apps deine Pakete zeigen. Ausschalten löscht alle gespeicherten Pakete.",
+      "saved": "Gespeichert"
     }
   },
   "admin": {

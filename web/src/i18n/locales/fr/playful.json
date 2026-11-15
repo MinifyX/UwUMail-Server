@@ -18,7 +18,10 @@
   },
   "account": {
     "greeting": "Coucou {{name}} !",
-    "intro": "Tout ce qui concerne votre boîte mail, juste ici (｡･ω･｡)"
+    "intro": "Tout ce qui concerne votre boîte mail, juste ici (｡･ω･｡)",
+    "shipments": {
+      "label": "Je garde un œil sur tes colis (ﾉ◕ヮ◕)ﾉ"
+    }
   },
   "moving": {
     "intro": "Emballez votre ancienne boîte et ramenez tout à la maison : chaque dossier, chaque marque, chaque date. Le serveur porte les cartons en arrière-plan (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",

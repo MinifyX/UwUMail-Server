@@ -563,22 +563,35 @@ const EDITORIAL_WORDS: &[&str] = &[
 /// A tracking number that names its carrier by itself, as a word of folded text: carrier and the
 /// number in capitals.
 fn own_tracking(text: &str) -> Option<(&'static str, String)> {
-    for (_, word) in words(text) {
-        let digits_after = |prefix: &str, lengths: std::ops::RangeInclusive<usize>| {
-            word.strip_prefix(prefix)
-                .is_some_and(|rest| lengths.contains(&rest.len()) && rest.bytes().all(|b| b.is_ascii_digit()))
-        };
-        if word.len() == 18 && word.starts_with("1z") && word.bytes().all(|b| b.is_ascii_alphanumeric()) {
-            return Some(("UPS", word.to_ascii_uppercase()));
-        }
-        if digits_after("tba", 12..=12) {
-            return Some(("Amazon", word.to_ascii_uppercase()));
-        }
-        if digits_after("jjd", 18..=20) || digits_after("00340434", 12..=12) {
-            return Some(("DHL", word.to_ascii_uppercase()));
-        }
-    }
-    None
+    words(text).find_map(|(_, word)| own_number(word))
+}
+
+/// Whether one word of folded text is a tracking number that names its carrier: UPS `1Z…`, Amazon
+/// `TBA…`, DHL `JJD…` or `00340434…`, Deutsche Post `RR…DE` (also `RT`, `LX`, `CA`) and Hermes
+/// `H` with 19 digits.
+pub(crate) fn own_number(word: &str) -> Option<(&'static str, String)> {
+    let digits_after = |prefix: &str, lengths: std::ops::RangeInclusive<usize>| {
+        word.strip_prefix(prefix)
+            .is_some_and(|rest| lengths.contains(&rest.len()) && rest.bytes().all(|b| b.is_ascii_digit()))
+    };
+    let carrier = if word.len() == 18 && word.starts_with("1z") && word.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        "UPS"
+    } else if digits_after("tba", 12..=12) {
+        "Amazon"
+    } else if digits_after("jjd", 18..=20) || digits_after("00340434", 12..=12) {
+        "DHL"
+    } else if word.len() == 13
+        && ["rr", "rt", "lx", "ca"].iter().any(|prefix| word.starts_with(prefix))
+        && word.ends_with("de")
+        && word.as_bytes()[2..11].iter().all(u8::is_ascii_digit)
+    {
+        "Deutsche Post"
+    } else if digits_after("h", 19..=19) {
+        "Hermes"
+    } else {
+        return None;
+    };
+    Some((carrier, word.to_ascii_uppercase()))
 }
 
 /// The first carrier a mail names: in folded subject and text, the From domain, or `UPS` in
@@ -587,8 +600,11 @@ pub(crate) fn carrier_in(mail: &Mail, subject: &str, text: &str) -> Option<&'sta
     let named = |word: &str| has_word(subject, word) || has_word(text, word);
     let domain_labels: Vec<&str> = mail.from_domain().split('.').collect();
     let from = |prefix: &str| domain_labels.iter().any(|label| label.starts_with(prefix));
-    if named("dhl") || text.contains("deutsche post") || subject.contains("deutsche post") || from("dhl") {
+    if named("dhl") || from("dhl") {
         return Some("DHL");
+    }
+    if text.contains("deutsche post") || subject.contains("deutsche post") || from("deutschepost") {
+        return Some("Deutsche Post");
     }
     if named("dpd") || from("dpd") {
         return Some("DPD");
@@ -604,6 +620,9 @@ pub(crate) fn carrier_in(mail: &Mail, subject: &str, text: &str) -> Option<&'sta
         || domain_labels.contains(&"ups")
     {
         return Some("UPS");
+    }
+    if named("fedex") || from("fedex") {
+        return Some("FedEx");
     }
     if named("amazon") || from("amazon") {
         return Some("Amazon");

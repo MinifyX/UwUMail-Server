@@ -2258,6 +2258,7 @@ pub(crate) async fn receive(
                 if !junk && kept {
                     labels::log(&ctx, account_id, &email_ids, &labeled).await;
                     queue_for_labels(&ctx, account_id, &email_ids).await;
+                    labels::shipment(&ctx, account_id, &email_ids, &message, &label_mail).await;
                 }
                 // The code, for the notification and autofill. Never in the way of the delivery
                 // either: past the limit or failing, the mail is simply one without a code.

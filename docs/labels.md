@@ -200,6 +200,35 @@ exactly these mails).
 "code" }` (account), `{ "known", "freemail" }` (personal), `{ "colleague", "known" }` (work),
 `{ "words" }` (advertising).
 
+## Shipments
+
+Besides the `shipping` label, `uwumail_labels::shipment` reads the parcel a mail tells of, for
+[shipments](jmap-shipments.md). It is pure like the rest of the crate: no I/O, links are only
+parsed, never opened. What it finds:
+
+- **Numbers** (at most 10, of one carrier): first those in carrier links (a known carrier host with
+  the number in a query key such as `piececode`, `tracknum`, `match` or a path word such as
+  `tracking`; redirect links that name their target are unwrapped up to three levels), 0.95; then numbers
+  that name their carrier (UPS `1Z…`, Amazon `TBA…`, DHL `JJD…`/`00340434…`, Deutsche Post
+  `RR…DE`, Hermes `H` + 19 digits), 0.9; then digits next to a named carrier, as for the
+  `shipping` label, 0.85.
+- **Without a number**, an order confirmation counts (0.8) only with an order number and an order or
+  shipping word in the subject, and not as a mass mail.
+- **Status** from status words, the most telling first (a failed delivery also says it was out for
+  delivery). *Out for delivery* means today unless the mail names another day.
+- **Expected day and window** from a few words after `voraussichtlich`, `expected`, `zustellung
+  am` …: a date, `heute`/`morgen` and their English words, and one or two times (`10:15 und
+  12:15`, `9 uhr`, `2 pm`). The store turns them into dates with the mail's date and Europe/Berlin.
+- **Merchant and order number**: Amazon by its domain and `123-1234567-1234567`, else the sender's
+  name (not a carrier's) and the number after `Bestellnummer`, `order number` …
+- **Pickup** for *ready for pickup* and *delivery failed*: Packstation, post office, parcel shop
+  or access point, with the last day.
+
+Never a shipment: a mass mail with two sales words (free shipping), a return label still to be
+sent, an invoice that names the parcel only in its small print. Everything loses 0.1 when nothing
+vouches for the sender; the server keeps only what reaches 0.8. Texts are cut by characters, never
+by bytes, and the windows looked at are short, so no input makes the matching slow.
+
 ## Learned senders
 
 For each label and From address the server counts how often the person gave a mail from that

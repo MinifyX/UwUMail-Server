@@ -185,6 +185,7 @@ impl Store {
                     .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
                 let mut preferences: Map<String, Value> = serde_json::from_str(&raw).unwrap_or_default();
                 let synced = changes.keys().any(|key| is_mirrored_preference(key));
+                let shipments_were_on = crate::shipments::enabled(tx, account_id)?;
                 for (key, value) in changes {
                     if value.is_null() {
                         preferences.remove(&key);
@@ -197,6 +198,7 @@ impl Store {
                     return Err(StoreError::Invalid("preferences are too large".into()));
                 }
                 tx.execute("UPDATE accounts SET preferences = ?1 WHERE id = ?2", params![encoded, account_id])?;
+                crate::shipments::follow_setting(tx, account_id, shipments_were_on)?;
                 let settings_modseq = if synced { Some(bump_settings_state(tx, account_id)?) } else { None };
                 Ok((preferences, settings_modseq))
             })

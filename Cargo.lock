@@ -4796,6 +4796,7 @@ dependencies = [
  "bcrypt",
  "calcard",
  "chrono",
+ "chrono-tz",
  "data-encoding",
  "getrandom 0.4.3",
  "hex",

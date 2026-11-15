@@ -18,7 +18,10 @@
   },
   "account": {
     "greeting": "Hi {{name}}!",
-    "intro": "Everything about your mailbox, right here (｡･ω･｡)"
+    "intro": "Everything about your mailbox, right here (｡･ω･｡)",
+    "shipments": {
+      "label": "I'll keep an eye on your parcels (ﾉ◕ヮ◕)ﾉ"
+    }
   },
   "moving": {
     "intro": "Pack up your old mailbox and bring everything home: every folder, every flag, every date. The server carries the boxes in the background (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",

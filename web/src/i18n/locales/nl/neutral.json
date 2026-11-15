@@ -226,6 +226,12 @@
       "fetchOk_one": "1 ophaalaccount loopt",
       "fetchOk_other": "{{count}} ophaalaccounts lopen",
       "fetchFailed": "Ophaalaccount {{address}}: laatste keer ophalen mislukt"
+    },
+    "shipments": {
+      "title": "Pakketten",
+      "label": "Pakketten volgen uit verzendmails",
+      "description": "Herkent trackingnummers en bezorgstatus in mails van winkels en vervoerders, zodat de webmail en gekoppelde apps je pakketten tonen. Uitschakelen verwijdert alle opgeslagen pakketten.",
+      "saved": "Opgeslagen"
     }
   },
   "admin": {

@@ -18,7 +18,10 @@
   },
   "account": {
     "greeting": "Hoi {{name}}!",
-    "intro": "Alles over je mailbox, gewoon hier (｡･ω･｡)"
+    "intro": "Alles over je mailbox, gewoon hier (｡･ω･｡)",
+    "shipments": {
+      "label": "Ik let op je pakketten (ﾉ◕ヮ◕)ﾉ"
+    }
   },
   "moving": {
     "intro": "Pak je oude mailbox in en breng alles naar huis: elke map, elke markering, elke datum. De server sjouwt de dozen op de achtergrond (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",

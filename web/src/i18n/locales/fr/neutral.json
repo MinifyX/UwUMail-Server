@@ -226,6 +226,12 @@
       "fetchOk_one": "1 compte relevé fonctionne",
       "fetchOk_other": "{{count}} comptes relevés fonctionnent",
       "fetchFailed": "Compte relevé {{address}} : la dernière relève a échoué"
+    },
+    "shipments": {
+      "title": "Colis",
+      "label": "Suivre les colis à partir des e-mails d’expédition",
+      "description": "Repère les numéros de suivi et l’état de livraison dans les e-mails des boutiques et des transporteurs, pour que le webmail et les applications connectées affichent tes colis. Désactiver supprime tous les colis enregistrés.",
+      "saved": "Enregistré"
     }
   },
   "admin": {
