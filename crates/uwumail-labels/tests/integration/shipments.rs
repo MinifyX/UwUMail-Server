@@ -375,6 +375,7 @@ fn status_moves_forward() {
     assert!(!OutForDelivery.moves_to(Shipped));
     assert!(Delivered.moves_to(Returned));
     assert!(DeliveryFailed.moves_to(OutForDelivery), "tried again");
+    assert!(DeliveryFailed.moves_to(Delivered), "delivered on the next try");
     assert!(ReadyForPickup.moves_to(Delivered), "picked up");
     assert!(!Cancelled.moves_to(Shipped));
     for status in ShipmentStatus::ALL {

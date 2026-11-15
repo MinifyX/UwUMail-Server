@@ -223,8 +223,8 @@ impl ShipmentStatus {
     }
 
     /// Whether a shipment at `self` takes `next` as its status: only forward, except that a failed
-    /// delivery, a return and a cancellation always count, a failed delivery is tried again, and a
-    /// shipment ready for pickup is then picked up (delivered).
+    /// delivery, a return and a cancellation always count, a failed delivery is tried again (and then
+    /// delivered), and a shipment ready for pickup is then picked up (delivered).
     pub fn moves_to(self, next: ShipmentStatus) -> bool {
         next != self
             && (next > self
@@ -232,7 +232,7 @@ impl ShipmentStatus {
                     next,
                     ShipmentStatus::DeliveryFailed | ShipmentStatus::Returned | ShipmentStatus::Cancelled
                 )
-                || (self == ShipmentStatus::DeliveryFailed && !next.is_done() && next != ShipmentStatus::Ordered)
+                || (self == ShipmentStatus::DeliveryFailed && next != ShipmentStatus::Ordered)
                 || (self == ShipmentStatus::ReadyForPickup && next == ShipmentStatus::Delivered))
     }
 }
