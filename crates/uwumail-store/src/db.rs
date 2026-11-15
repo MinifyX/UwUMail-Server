@@ -100,6 +100,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0091_builtin_calendars.sql"),
     include_str!("migrations/0092_shipments.sql"),
     include_str!("migrations/0093_shipment_events_forget_mail.sql"),
+    include_str!("migrations/0094_shipments_reread.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -286,6 +287,57 @@ mod tests {
         migrate(&mut conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());
         assert_eq!(get_setting(&conn, "installed_version").unwrap().as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn orders_only_mail_made_are_read_again_after_0_37_0() {
+        const RELEASED_0_37_0: usize = 93;
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_37_0].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        // 1 and 2: orders only mail made; 3 has a number, 4 a name, 5 an app's event.
+        conn.execute_batch(
+            "DELETE FROM shipment_rescans;
+             INSERT INTO accounts (id, login, created_at, modseq) VALUES (1, 'mini@example.org', 0, 10);
+             INSERT INTO shipments (id, account_id, carrier, number, merchant, order_ref, status, status_at, title,
+                                    created_at, updated_at)
+                 VALUES (1, 1, 'other', NULL, 'Apple', 'W1', 'ordered', 500, NULL, 0, 0),
+                        (2, 1, 'other', NULL, 'Tickets', '42', 'ordered', 900, NULL, 0, 0),
+                        (3, 1, 'dhl', '00340434000000000001', NULL, NULL, 'shipped', 0, NULL, 0, 0),
+                        (4, 1, 'other', NULL, 'Shop', 'A', 'ordered', 0, 'Lampe', 0, 0),
+                        (5, 1, 'other', NULL, 'Shop', 'B', 'ordered', 0, NULL, 0, 0);
+             INSERT INTO shipment_events (shipment_id, at, status, source)
+                 VALUES (1, 500, 'ordered', 'mail'), (2, 900, 'ordered', 'mail'), (3, 100, 'shipped', 'mail'),
+                        (4, 100, 'ordered', 'mail'), (5, 100, 'ordered', 'mail'), (5, 200, 'shipped', 'client');",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let ids: Vec<i64> = conn
+            .prepare("SELECT id FROM shipments ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(ids, vec![3, 4, 5]);
+        let destroyed: Vec<(i64, i64)> = conn
+            .prepare("SELECT modseq, object_id FROM changes WHERE kind = 'Shipment' AND change = 'destroyed' ORDER BY modseq")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(destroyed, vec![(11, 1), (12, 2)]);
+        let modseq: i64 = conn.query_row("SELECT modseq FROM accounts WHERE id = 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(modseq, 12);
+        let rescan: (i64, i64) = conn
+            .query_row("SELECT since, after_id FROM shipment_rescans WHERE account_id = 1", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(rescan, (500, 0));
     }
 
     #[test]

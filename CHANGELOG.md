@@ -3,6 +3,20 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.37.1
+
+- Parcels: a shop that signs as „Apple“ for the order and „Apple Store“ for shipping is one shop,
+  so both mails make one parcel. Shipping mails in the plural („Deine Artikel wurden versendet“)
+  now move it to *Versendet*.
+- Parcels: tickets for events (print@home, e-tickets, ticket shops) are no parcels any more. When a
+  mail's text part only holds a placeholder, its HTML part is read instead.
+- Parcels: Amazon delivering itself names no carrier and no number; its own tracker becomes the
+  „Sendung verfolgen“ link, and „Ankunft heute 18h – 22h“ becomes the expected window. Carrier and
+  number are still taken when the mail names them, and the carrier's page then replaces the link.
+- Update: parcels without a number that only mail made (no name given, not hidden, nothing from an
+  app) are removed once and their mail is read again with these rules (migration 0094). Apps learn
+  of it through `Shipment/changes`.
+
 ## 0.37.0
 
 - Parcels can be switched off for the whole server: the admin setting `shipments.enabled`
