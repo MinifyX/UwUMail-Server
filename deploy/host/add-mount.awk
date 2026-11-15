@@ -10,19 +10,24 @@
 # docker compose config before it replaces anything.
 function indent(line) { match(line, /^ */); return RLENGTH }
 function content(line) { return line !~ /^[ \t]*(#.*)?$/ }
+function key(line) { sub(/^ +/, "", line); sub(/:.*/, "", line); return line }
 
 FNR == 1 { pass++ }
 
 pass == 1 {
   if ($0 ~ /^services:[ \t]*(#.*)?$/) { in_services = 1; next }
   if (in_services && content($0) && indent($0) == 0) in_services = 0
-  if (!svc_line && in_services && $0 ~ ("^ +" svc ":[ \t]*(#.*)?$")) {
+  # Only a direct child of services: counts, and its name is compared as a string, not a pattern.
+  if (in_services && content($0) && !level) level = indent($0)
+  if (!svc_line && in_services && indent($0) == level && key($0) == svc && $0 ~ /:[ \t]*(#.*)?$/) {
     svc_line = FNR; svc_indent = indent($0); next
   }
   if (svc_line && !svc_done && content($0)) {
     if (indent($0) <= svc_indent) { svc_done = 1; next }
     if (!child) child = indent($0)
     if (indent($0) == child && $0 ~ /^ *volumes:[ \t]*(#.*)?$/) { vol_line = FNR; next }
+    # volumes: [a, b] on one line: adding a second key would be a duplicate, so give up.
+    if (indent($0) == child && $0 ~ /^ *volumes:/) flow = 1
     if (vol_line && FNR > vol_line && (indent($0) < child || (indent($0) == child && $0 !~ /^ *- /))) vol_closed = 1
     if (vol_line && !vol_closed && !item && $0 ~ /^ *- /) item = indent($0)
   }
@@ -30,7 +35,7 @@ pass == 1 {
 }
 
 pass == 2 && FNR == 1 {
-  if (!svc_line) exit 1
+  if (!svc_line || flow) exit 1
   if (!child) child = svc_indent + 2
   if (!item) item = child + 2
   pad_child = sprintf("%" child "s", ""); pad_item = sprintf("%" item "s", "")

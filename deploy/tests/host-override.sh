@@ -34,7 +34,7 @@ check() {
       fi
     fi
     # What --remove does with a file that is theirs.
-    sed '/# uwumail-host$/d' "$file.new" >"$file.back"
+    awk -f "$(dirname "$awk_file")/remove-mount.awk" "$file.new" >"$file.back"
     if ! cmp -s "$file.back" "$work/$name"; then
       printf 'FAILED  %s (%s): --remove does not give the file back\n' "$name" "$awk_bin"
       failed=1
@@ -81,6 +81,34 @@ if awk -v svc=uwumail -v entry="$entry" -f "$awk_file" "$work/flow" "$work/flow"
   failed=1
 else
   printf 'ok      flow style gives up\n'
+fi
+
+# A service of that name deeper down, or a regex in the name, is not the one.
+printf 'services:\n  other:\n    labels:\n      uwumail:\n' >"$work/deeper"
+printf 'services:\n  uwumailx:\n    image: busybox\n' >"$work/pattern"
+printf 'services:\n  uwumail:\n    volumes: [./a:/a]\n' >"$work/inline"
+for name in deeper inline; do
+  if awk -v svc=uwumail -v entry="$entry" -f "$awk_file" "$work/$name" "$work/$name" >/dev/null; then
+    printf 'FAILED  %s: should give up\n' "$name"
+    failed=1
+  else
+    printf 'ok      %s gives up\n' "$name"
+  fi
+done
+if awk -v svc=uwumai. -v entry="$entry" -f "$awk_file" "$work/pattern" "$work/pattern" >/dev/null; then
+  printf 'FAILED  service name taken as a pattern\n'
+  failed=1
+else
+  printf 'ok      service name is a string\n'
+fi
+
+# They put an item of their own under the volumes: key install.sh added: --remove keeps the key.
+printf 'services:\n  uwumail:\n    volumes:  # uwumail-host\n      - %s  # uwumail-host\n      - ./a:/a\n' "$entry" >"$work/grown"
+if [ "$(awk -f "$(dirname "$awk_file")/remove-mount.awk" "$work/grown")" = "$(printf 'services:\n  uwumail:\n    volumes:\n      - ./a:/a')" ]; then
+  printf 'ok      --remove keeps their items\n'
+else
+  printf 'FAILED  --remove orphaned their items\n'
+  failed=1
 fi
 
 exit "$failed"
