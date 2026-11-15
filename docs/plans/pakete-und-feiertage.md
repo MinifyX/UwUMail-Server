@@ -258,12 +258,12 @@ aktualisieren, Security-Review über den Diff und `docs/security-audit-0.36.0.md
 
 Abschluss-Kriterien:
 
-- [ ] Alle Tests grün (`cargo test`, Clippy `-D warnings`, `--locked`), Smoke-Test mit `dev/seed.sh` + Beispiel-Versandmails
-- [ ] Pro Carrier aus Teil 1 mindestens eine Test-Mail je Status, Shopify und Amazon dabei
-- [ ] Push: Neue Versandmail führt in einer offenen EventSource zu einer `Shipment`-State-Änderung
-- [ ] Rückblick über 14 Tage legt die erwarteten Pakete an, ein zweiter Lauf ändert nichts
-- [ ] Feiertage NRW, BY und SN für 2026 und 2027 stimmen mit amtlicher Liste überein, KW 53 (2026) richtig
-- [ ] Labels-Crate in `UwUMail-Client` neu kopiert (eigener PR dort)
+- [x] Alle Tests grün (`cargo test`, Clippy `-D warnings`, `--locked`), Smoke-Test mit `dev/seed.sh` + Beispiel-Versandmails
+- [x] Pro Carrier aus Teil 1 mindestens eine Test-Mail je Status, Shopify und Amazon dabei
+- [x] Push: Neue Versandmail führt in einer offenen EventSource zu einer `Shipment`-State-Änderung
+- [x] Rückblick über 14 Tage legt die erwarteten Pakete an, ein zweiter Lauf ändert nichts
+- [x] Feiertage NRW, BY und SN für 2026 und 2027 stimmen mit amtlicher Liste überein, KW 53 (2026) richtig
+- [x] Labels-Crate in `UwUMail-Client` neu kopiert (UwUMail-Client PR #48)
 
 ---
 
