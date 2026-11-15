@@ -161,6 +161,8 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("fetch.oauth.microsoft_client_id", SettingKind::Text),
     spec("fetch.oauth.google_client_id", SettingKind::Text),
     spec("fetch.oauth.google_client_secret", SettingKind::Secret),
+    // Parcels found in mail, for everyone (docs/jmap-shipments.md, "Switching off").
+    spec("shipments.enabled", SettingKind::Bool),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

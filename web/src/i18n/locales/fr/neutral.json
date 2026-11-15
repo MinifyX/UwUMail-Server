@@ -1888,6 +1888,12 @@
       "enabled": "Proposer le webmail",
       "enabledHint": "Toute personne connectée au portail peut ouvrir sa boîte mail ici. Chaque compte a son propre interrupteur sous Personnes ; les logiciels de messagerie ne sont pas concernés dans un cas comme dans l'autre."
     },
+    "shipments": {
+      "title": "Colis",
+      "intro": "Les envois que le serveur trouve dans les e-mails d’expédition, avec leur statut et leur jour de livraison.",
+      "enabled": "Détecter les colis",
+      "enabledHint": "Désactivé, la détection des colis est coupée pour tout le monde et les colis sont masqués dans le portail, le webmail et l’app. Les colis enregistrés sont conservés et reviennent à la réactivation. Chaque compte a aussi son propre interrupteur."
+    },
     "egress": {
       "fallback": "Tant que le VPN ou le proxy est absent",
       "fallbackOptions": {

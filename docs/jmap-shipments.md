@@ -197,6 +197,43 @@ shipments on starts one over 14 days.
 Each person decides with the setting `shipments` (on unless switched off), in
 the portal under *My account* and as `values/shipments` (`true`/`false`) in
 [`UserSettings`](jmap-settings.md). Off means: nothing is read, nothing is
-stored, and **every stored shipment is deleted**. While off, `Shipment/query`
-and `get` find nothing, and `Shipment/set` create and `Shipment/rescan` answer
-`forbidden`.
+stored, and **every stored shipment is deleted**. While off, the account
+loses the capability in the session and every `Shipment/*` call answers
+`accountNotSupportedByMethod`.
+
+### For the whole server
+
+An admin switches parcels off for everyone with the setting
+`shipments.enabled` (on by default) under *Settings → Apps & webmail* in the portal, or
+in the config file:
+
+```toml
+[shipments]
+enabled = false
+```
+
+It takes effect at once. The switch that counts for an account is: the server
+setting is on **and** the account has not switched `shipments` off. Detection,
+rescans, the `Shipment/*` methods, push and shared views all follow it.
+
+Switching the server off does **not** delete stored shipments; they are hidden
+and come back as they were when it is switched on again, without a rescan.
+Mail that arrives while it is off is not looked at later. Rescans asked for
+before wait until it is on again. `values/shipments` in `UserSettings` can
+still be written while the server is off.
+
+The session follows the effective switch:
+
+| Server | Account | `capabilities` | the account's `accountCapabilities` | `primaryAccounts` |
+|---|---|---|---|---|
+| off | either | missing | missing | missing |
+| on | off | present | missing | missing |
+| on | on | present | present | present |
+
+A shared account carries the capability only while its owner's switch is on.
+The session `state` (and `sessionState` in every response) changes whenever
+either switch changes. A `Shipment/*` call for an account without the
+capability is answered with `accountNotSupportedByMethod`.
+
+The portal learns the server setting from `features.shipments` in
+`/api/session` and hides the *Parcels* card while it is `false`.

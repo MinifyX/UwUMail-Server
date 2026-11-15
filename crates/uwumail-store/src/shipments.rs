@@ -579,9 +579,23 @@ fn rescan_of(conn: &Connection, account_id: i64) -> Result<Option<ShipmentRescan
 }
 
 impl Store {
-    /// Whether shipments are switched on for an account.
+    /// Whether shipments are switched on for an account: on the server and by the person.
     pub async fn shipments_enabled(&self, account_id: i64) -> Result<bool> {
+        if !self.shipments_allowed() {
+            return Ok(false);
+        }
         self.read(move |conn| enabled(conn, account_id)).await
+    }
+
+    /// Whether the admin allows shipments on this server. Off hides them everywhere but keeps
+    /// what is stored, so switching on again brings them back.
+    pub fn shipments_allowed(&self) -> bool {
+        self.inner.shipments_allowed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The admin's switch for shipments on the whole server (`shipments.enabled`).
+    pub fn set_shipments_allowed(&self, allowed: bool) {
+        self.inner.shipments_allowed.store(allowed, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The time zone an account's shipment days and times are in.
@@ -634,6 +648,9 @@ impl Store {
         source: &'static str,
         authenticated: bool,
     ) -> Result<bool> {
+        if !self.shipments_allowed() {
+            return Ok(false);
+        }
         let modseq = self
             .write(move |tx| {
                 record_mail(tx, account_id, email_id, received_at, &subject, &facts, source, authenticated)

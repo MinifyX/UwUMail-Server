@@ -339,6 +339,9 @@ pub(crate) async fn type_states(
         if (shared && !SHARED_TYPES.contains(&kind.as_str())) || !wanted(kind) {
             continue;
         }
+        if kind == "Shipment" && !store.shipments_enabled(account_id).await.unwrap_or(false) {
+            continue;
+        }
         // UserSettings and ProfilePicture have a state of their own (they do not move with mail),
         // so the client can tell whether it already has it.
         let state = if kind == "UserSettings" {

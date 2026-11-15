@@ -173,6 +173,7 @@ const session = (): Session => ({
   // Installed before any feature with a "New" tag, so they all show.
   server: { hostname: "mail.uwu.example", version: "0.1.0", installedVersion: "0.0.0", brand: brand() },
   webmail: true,
+  features: { shipments: true },
 });
 
 const address = (value: string, kind: "primary" | "alias" = "primary") => ({
@@ -1172,6 +1173,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "egress.image_cache_mb": { value: 1024, source: "default" },
   "egress.assist": { value: false, source: "default" },
   "reports.send_tls_reports": { value: true, source: "default" },
+  "shipments.enabled": { value: true, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
   "log.loki.url": { value: null, source: "default" },

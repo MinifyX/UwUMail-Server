@@ -227,17 +227,59 @@ async fn a_shipping_mail_becomes_a_shipment_apps_can_follow() {
     let off = json!({ "accountId": account, "update": { "singleton": { "values/shipments": false } } });
     let responses = server.api_using(MINI, &USING, json!([["UserSettings/set", off, "0"]])).await;
     assert!(responses[0][1]["updated"].is_object(), "{responses:?}");
+    // The account no longer carries the capability, so every Shipment call is turned away.
+    for (name, arguments) in [
+        ("Shipment/get", json!({ "accountId": account, "ids": null })),
+        (
+            "Shipment/set",
+            json!({ "accountId": account, "create": { "a": { "carrier": "dhl", "number": "00340434161234567891" } } }),
+        ),
+        ("Shipment/rescan", json!({ "accountId": account })),
+    ] {
+        let responses = server.api_using(MINI, &USING, json!([[name, arguments, "0"]])).await;
+        assert_eq!(responses[0][1]["type"], "accountNotSupportedByMethod", "{name}: {responses:?}");
+    }
+    let session = server.session_of(MINI).await;
+    assert_eq!(session["capabilities"][SHIPMENTS], json!({}), "the server still offers it");
+    assert!(session["accounts"][&account]["accountCapabilities"].get(SHIPMENTS).is_none());
+    assert!(session["primaryAccounts"].get(SHIPMENTS).is_none());
+    assert!(server.store.shipments(server.id(MINI).await, None).await.unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_admin_switch_hides_shipments_without_deleting_them() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    deliver(&server, SHIPPED).await;
+    let on = server.session_of(MINI).await;
+
+    server.store.set_shipments_allowed(false);
+    let off = server.session_of(MINI).await;
+    assert!(!off.to_string().contains(SHIPMENTS), "{off}");
+    assert_ne!(off["state"], on["state"]);
+    let responses =
+        server.api_using(MINI, &USING, json!([["Shipment/get", { "accountId": account, "ids": null }, "0"]])).await;
+    assert_eq!(responses[0][1]["type"], "accountNotSupportedByMethod", "{responses:?}");
+    // The account setting can still be written while the server is off.
+    let write = json!({ "accountId": account, "update": { "singleton": { "values/shipments": true } } });
+    let responses = server.api_using(MINI, &USING, json!([["UserSettings/set", write, "0"]])).await;
+    assert!(responses[0][1]["updated"].is_object(), "{responses:?}");
+    // Nothing new is recorded while off.
+    let mail = Mail::parse(SHIPPED.replace('\n', "\r\n").as_bytes());
+    let id = server.id(MINI).await;
+    let recorded = server
+        .store
+        .record_shipment_mail(id, 1, 1_794_679_380, mail.subject.clone(), shipment(&mail).unwrap(), true)
+        .await
+        .unwrap();
+    assert!(!recorded);
+
+    server.store.set_shipments_allowed(true);
+    let back = server.session_of(MINI).await;
+    assert_eq!(back["state"], on["state"]);
+    assert_eq!(back["primaryAccounts"][SHIPMENTS], json!(account));
     let got = call(&server, "Shipment/get", json!({ "accountId": account, "ids": null })).await;
-    assert_eq!(got["list"], json!([]));
-    let set = call(
-        &server,
-        "Shipment/set",
-        json!({ "accountId": account, "create": { "a": { "carrier": "dhl", "number": "00340434161234567891" } } }),
-    )
-    .await;
-    assert_eq!(set["notCreated"]["a"]["type"], "forbidden");
-    let rescan = server.api_using(MINI, &USING, json!([["Shipment/rescan", { "accountId": account }, "0"]])).await;
-    assert_eq!(rescan[0][1]["type"], "forbidden");
+    assert_eq!(got["list"].as_array().unwrap().len(), 1, "kept while off: {got}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

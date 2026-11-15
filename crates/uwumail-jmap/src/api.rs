@@ -163,8 +163,19 @@ pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, R
         if masked_only { Vec::new() } else { crate::sharing::shared_accounts(&jmap.inner.store, ctx.account.id).await };
     // So does where the account may make masked addresses.
     let masked = session::masked_state(&jmap.inner.store).await;
-    let state =
-        format!("{}{}{internal}{masked}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
+    // And whether parcels are on (docs/jmap-shipments.md, "Switching off").
+    let shipments = if masked_only {
+        String::new()
+    } else {
+        session::shipments_state(
+            session::shipment_switches(&jmap.inner.store, ctx.account.id, &shared).await.as_deref(),
+        )
+    };
+    let state = format!(
+        "{}{}{internal}{masked}{shipments}",
+        session::session_state(&ctx.account),
+        crate::sharing::state_suffix(&shared)
+    );
     response.insert("sessionState".into(), json!(state));
     Ok(Value::Object(response))
 }

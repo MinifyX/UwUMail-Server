@@ -268,6 +268,10 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     if name != "Core/echo" && !name.starts_with("PushSubscription/") {
         ctx.check_account(&args)?;
     }
+    // Parcels switched off, by the admin or for the account: as if the account had none.
+    if capability == SHIPMENTS && !ctx.jmap.store.shipments_enabled(ctx.account.id).await? {
+        return Err(MethodError::new("accountNotSupportedByMethod", "shipments are switched off for this account"));
+    }
     let can = query_changes::can_calculate(name);
     let outputs = call(ctx, name, args).await?;
     // Every /query says whether its /queryChanges can answer.

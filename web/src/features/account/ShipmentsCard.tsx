@@ -9,6 +9,12 @@ import { toast } from "@/state/toasts";
 
 /** Whether the server follows parcels from shipping mail. On unless switched off; off also deletes them. */
 export function ShipmentsCard() {
+  // Switched off for the whole server by the admin: nothing to show.
+  if (useSession().data?.features?.shipments === false) return null;
+  return <ShipmentsSwitch />;
+}
+
+function ShipmentsSwitch() {
   const { t } = useT();
   const errorText = useErrorText();
   const queryClient = useQueryClient();

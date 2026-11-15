@@ -343,6 +343,8 @@ struct Inner {
     hashing: password::Gate,
     /// Moves on after every committed write that changed who shares mail with whom.
     sharing_generation: std::sync::atomic::AtomicU64,
+    /// The admin's switch for parcels on the whole server (`shipments.enabled`, docs/jmap-shipments.md).
+    shipments_allowed: std::sync::atomic::AtomicBool,
 }
 
 impl Store {
@@ -377,6 +379,7 @@ impl Store {
                 auth_limiter: Arc::default(),
                 hashing: password::Gate::new(),
                 sharing_generation: Default::default(),
+                shipments_allowed: std::sync::atomic::AtomicBool::new(true),
             }),
         };
         store.restore_blocks().await?;

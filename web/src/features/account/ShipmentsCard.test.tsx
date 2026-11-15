@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.fn();
 let preferences: Record<string, unknown> = {};
+let features = { shipments: true };
 vi.mock("@/lib/api", () => ({ api: (...args: unknown[]) => api(...args) }));
-vi.mock("@/features/session/session", () => ({ useSession: () => ({ data: { preferences } }) }));
+vi.mock("@/features/session/session", () => ({ useSession: () => ({ data: { preferences, features } }) }));
 vi.mock("@/lib/errors", () => ({ useErrorText: () => (error: unknown) => String(error) }));
 vi.mock("@/i18n", () => ({ useT: () => ({ t: (key: string) => key, i18n: { language: "en" } }) }));
 
@@ -24,6 +25,7 @@ beforeEach(() => {
   api.mockReset();
   api.mockImplementation(() => Promise.resolve({}));
   preferences = {};
+  features = { shipments: true };
 });
 afterEach(cleanup);
 
@@ -57,5 +59,11 @@ describe("ShipmentsCard", () => {
     preferences = { shipments: "off" };
     show();
     expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("is gone when the admin switched parcels off for the server", () => {
+    features = { shipments: false };
+    show();
+    expect(screen.queryByRole("switch")).toBeNull();
   });
 });

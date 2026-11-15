@@ -46,6 +46,7 @@ pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<
         "metrics": config.metrics,
         "auth": config.auth,
         "fetch": config.fetch,
+        "shipments": config.shipments,
     });
     Ok(SETTINGS
         .iter()
@@ -84,6 +85,7 @@ impl SettingsBackend for ServerSettings {
         self.metrics.configure(&config.metrics)?;
         self.external.configure(config.auth);
         self.smtp.provider_oauth().configure(config.fetch.oauth);
+        self.smtp.store().set_shipments_allowed(config.shipments.enabled);
         tracing::info!("settings from the admin panel are in effect");
         Ok(())
     }
