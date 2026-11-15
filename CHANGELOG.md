@@ -18,6 +18,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - Gateway: after a restart its machine reports again within two minutes. The daily report waited
   up to two hours at random after a boot too, and until then the portal kept asking for a restart
   that had already happened. Reaches the gateway with its next update.
+- Host access: the portal sees what the machine's helper writes again. The shared directory was
+  missing setgid, so `machine.json` and the job states were unreadable for the container and the
+  portal said the helper had not reported. Run `install.sh` once (helper version 6).
 - Webmail 0.32.0: parcel detection switch in *Settings → Mail*; with it off, or off on the server,
   the Pakete view and the parcel chips are gone.
 - Host access: `install.sh` adds the `/host` volume line to a `compose.override.yaml` you wrote

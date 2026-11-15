@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type HostMachine, type HostView } from "@/lib/api";
 
 /** The helper this portal was released with; an older one is offered an update. */
-export const HELPER_VERSION = 5;
+export const HELPER_VERSION = 6;
 
 export const hostKey = ["admin", "host"] as const;
 

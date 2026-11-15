@@ -183,7 +183,7 @@ if $check; then
     note "compose|not wired up|$compose_dir"
   fi
   if [ -d "$bridge" ]; then
-    note "shared directory|$(stat -c '%a %u:%g' "$bridge" 2>/dev/null)|should be 770 0:10001"
+    note "shared directory|$(stat -c '%a %u:%g' "$bridge" 2>/dev/null)|should be 2770 0:10001"
   else
     note "shared directory|missing|$bridge"
   fi
@@ -225,7 +225,9 @@ step "making the shared directory"
 install -d -m 0755 "$state"
 install -d -m 0770 "$bridge"
 if chown 0:10001 "$bridge" 2>/dev/null; then
-  chmod 0770 "$bridge"
+  # setgid: what the helper writes in here (as root, 0640) comes out in group 10001, which is what
+  # lets the container read machine.json and the job states at all.
+  chmod 2770 "$bridge"
 else
   warn "could not give $bridge to the container's user (10001); the portal will not be able to write there"
 fi

@@ -625,7 +625,7 @@ function hostView(): HostView {
       digest: "sha256:0c1d2e",
       composeDir: "/opt/uwumail",
       checkedAt: now - 400,
-      helper: new URLSearchParams(window.location.search).get("helper") ?? "5",
+      helper: new URLSearchParams(window.location.search).get("helper") ?? "6",
       verbs:
         new URLSearchParams(window.location.search).get("helper") === "2"
           ? ["os-update", "reboot", "vpn-apply", "vpn-stop"]
@@ -705,7 +705,7 @@ function updatesView(): UpdatesView {
     gatewaySystem: Boolean(system && system.updates > 0) && !done("gatewaySystem"),
     gateway: false,
     hostSystem: !done("hostSystem"),
-    helper: host.machine?.helper !== "5" && !done("helper"),
+    helper: host.machine?.helper !== "6" && !done("helper"),
     server: !done("server"),
     gatewayReboot: false,
     hostReboot: false,
