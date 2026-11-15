@@ -220,6 +220,15 @@
       "secondFactorOff": "双重验证登录已关闭",
       "fetchOk_other": "{{count}} 个收取账户正在运行",
       "fetchFailed": "收取账户 {{address}}：上次收取失败"
+    },
+    "shipments": {
+      "title": "包裹",
+      "label": "根据发货邮件跟踪包裹",
+      "description": "在商店和快递公司的邮件中识别运单号和配送状态，让网页邮箱和已连接的应用显示你的包裹。关闭后会删除所有已保存的包裹。",
+      "saved": "已保存",
+      "confirmTitle": "不再跟踪包裹？",
+      "confirmText": "所有已保存的包裹都会被删除。重新开启后，只会读取新邮件和最近几天的邮件。",
+      "confirmOff": "关闭并删除"
     }
   },
   "admin": {
@@ -3995,7 +4004,9 @@
       "end": "结束订阅",
       "endKeep": "保留条目",
       "endDelete": "删除日历",
-      "endedToast": "已结束订阅 {{name}}"
+      "endedToast": "已结束订阅 {{name}}",
+      "catalog": "从目录中选择",
+      "catalogOwn": "自己的地址"
     },
     "remote": {
       "button": "从其他服务商迁移",
@@ -4022,6 +4033,20 @@
         "outlook": "Outlook.com 没有 CalDAV 或 CardDAV。请在那边把日历导出为 .ics 文件、把通讯录导出为文件，然后在这里导入。",
         "appPassword": "该服务商需要在其设置中创建的应用密码。"
       }
+    },
+    "builtin": {
+      "title": "节假日和周数",
+      "intro": "这些日历由服务器自行创建并离线计算。它们只读，不会显示为忙碌，也不会提醒。你可以修改名称和颜色。",
+      "holidays": "节假日",
+      "none": "关闭",
+      "region": "州或州郡",
+      "wholeCountry": "仅全国性节假日",
+      "approximate": "州郡节假日为近似值：各地和劳动法规定可能不同。",
+      "weekNumbers": "周数",
+      "weekNumbersHint": "每周显示为从周一到周日的全天事件“第 n 周”。",
+      "save": "保存",
+      "savedToast": "已保存",
+      "readOnly": "来自“节假日和周数”设置，无法编辑。"
     }
   },
   "maskedDomains": {

@@ -1,0 +1,22 @@
+{
+  "about": "Calendar feeds the portal and the webmail offer under 'Subscribe to a calendar' (docs/holidays.md). Only sources whose licence allows linking and whose address was fetched and checked go in, each with its licence and the day it was checked. Holidays themselves are built in and need no feed.",
+  "entry": "{ \"id\": short stable name, \"name\": shown name, \"region\": ISO 3166-2 code or null, \"url\": https feed, \"license\": licence name and link, \"checked\": YYYY-MM-DD }",
+  "sources": [],
+  "rejected": [
+    {
+      "name": "mehr-schulferien.de",
+      "checked": "2026-11-14",
+      "why": "iCal feeds work, but the imprint allows private, non-commercial use only and reserves all rights."
+    },
+    {
+      "name": "OpenHolidays API (openholidaysapi.org)",
+      "checked": "2026-11-14",
+      "why": "Data is ODbL, but iCal needs a validFrom/validTo range of at most 1095 days, so there is no lasting feed address, and it answers only an exact 'Accept: text/calendar'."
+    },
+    {
+      "name": "schulferien.org",
+      "checked": "2026-11-14",
+      "why": "One file per year and no licence stated."
+    }
+  ]
+}

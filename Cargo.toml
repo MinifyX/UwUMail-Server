@@ -17,7 +17,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.35.2"
+version = "0.36.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/MinifyX/UwUMail-Server"
@@ -143,9 +143,10 @@ tracing = "0.1"
 url = "2"
 webpki-roots = "1"
 x509-parser = "0.18"
-# The file names inside zip attachments for spam checks; no compression needed to read them. The same
-# version and features mail-auth uses for reports.
-zip = { version = "8.5", default-features = false }
+# The file names inside zip attachments for spam checks; no compression needed to read them. mail-auth
+# 0.13 still pulls zip 8 for its "report" feature (DMARC/TLS-RPT/ARF parsing, which we use); 0.14 dropped
+# that module, so it stays until we parse reports ourselves.
+zip = { version = "9.5", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Test-only helpers

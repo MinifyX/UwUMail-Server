@@ -97,6 +97,9 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0088_verification_rescanned.sql"),
     include_str!("migrations/0089_queue_lease.sql"),
     include_str!("migrations/0090_drop_duplicate_mailbox_index.sql"),
+    include_str!("migrations/0091_builtin_calendars.sql"),
+    include_str!("migrations/0092_shipments.sql"),
+    include_str!("migrations/0093_shipment_events_forget_mail.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

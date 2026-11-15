@@ -12,6 +12,7 @@ argon2.workspace = true
 bcrypt.workspace = true
 calcard.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 aws-lc-rs.workspace = true
 data-encoding.workspace = true
 hex.workspace = true

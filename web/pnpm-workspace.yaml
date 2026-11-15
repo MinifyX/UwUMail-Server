@@ -3,3 +3,8 @@
 # the lockfile, so the registry has nothing to say about it.
 minimumReleaseAgeExclude:
   - "@uwusuite/design"
+
+# typescript-eslint still asks for minimatch 10, which has a denial-of-service advisory fixed in 11.0.1;
+# 11 keeps the API it uses. Drop this once typescript-estree moves to 11.
+overrides:
+  minimatch: "^11.0.8"

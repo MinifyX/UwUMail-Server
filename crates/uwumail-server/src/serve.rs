@@ -168,6 +168,9 @@ pub async fn run(
     // Once after an update: codes in the mail of the last day that this version finds and the last
     // one missed (docs/verification-codes.md).
     tasks.spawn(assist.clone().run_verification_rescan(shutdown_rx.clone()));
+    // Looks back through earlier mail for parcels when a person asks or switches them on
+    // (docs/jmap-shipments.md).
+    tasks.spawn(assist.clone().run_shipment_rescan(shutdown_rx.clone()));
     // What models cost: LiteLLM's and OpenRouter's price lists and the ECB's exchange rates, once a
     // day through the egress (docs/llm.md, "Costs").
     tasks.spawn(assist.clone().run_price_updater(shutdown_rx.clone()));
@@ -451,6 +454,12 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
             Ok(retired) => tracing::info!(retired, "deleted pending masked addresses that never got mail"),
             Err(err) => tracing::warn!(%err, "cleaning up pending masked addresses failed"),
         }
+        // Once the year turns, the holiday and week-number calendars get the next year.
+        match store.roll_builtin_calendars().await {
+            Ok(0) => {}
+            Ok(accounts) => tracing::info!(accounts, "wrote the next year into the built-in calendars"),
+            Err(err) => tracing::warn!(%err, "writing the built-in calendars failed"),
+        }
         match store.purge_reports(uwumail_store::REPORT_RETENTION_SECS).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "removed old DMARC and TLS reports"),
@@ -489,6 +498,11 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "forgot rare and old Bayes filter entries"),
             Err(err) => tracing::warn!(%err, "cleaning up the Bayes filter failed"),
+        }
+        match store.prune_shipments().await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "removed delivered and forgotten parcels"),
+            Err(err) => tracing::warn!(%err, "cleaning up parcels failed"),
         }
         match store.prune_changes(uwumail_store::CHANGES_RETENTION_SECS).await {
             Ok(0) => {}

@@ -1,10 +1,11 @@
 import { Button, Field, Segmented, Select, TextInput, Toggle, Card, ICONS, Dialog } from "@uwusuite/design";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CloudDownload, FileUp } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useT } from "@/i18n";
 import {
   api,
+  type CalendarCatalog,
   type CalendarsView,
   type ImportProblem,
   type ImportReport,
@@ -19,6 +20,7 @@ import { formatBytes } from "@/lib/format";
 import { toast } from "@/state/toasts";
 
 export const calendarsKey = ["account", "calendars"] as const;
+export const catalogKey = ["account", "calendars", "catalog"] as const;
 
 type Kind = OwnCollection["kind"];
 
@@ -202,6 +204,12 @@ function SubscribeDialog({ onClose }: { onClose: () => void }) {
   const [interval, setInterval] = useState<number>(3600);
   const [keepAlarms, setKeepAlarms] = useState(false);
   const [once, setOnce] = useState(false);
+  const catalog = useQuery({
+    queryKey: catalogKey,
+    queryFn: () => api<CalendarCatalog>("/api/account/calendars/catalog"),
+    staleTime: Infinity,
+  });
+  const offered = catalog.data?.subscriptions ?? [];
   const subscribe = useMutation<ImportResult | SubscribeResult>({
     mutationFn: () =>
       once
@@ -230,6 +238,28 @@ function SubscribeDialog({ onClose }: { onClose: () => void }) {
   return (
     <form className="flex flex-col gap-4 p-5" onSubmit={submit}>
       <p className="text-sm text-muted">{t("calendars.subscribe.intro")}</p>
+      {offered.length > 0 && (
+        <Field label={t("calendars.subscribe.catalog")}>
+          {(id) => (
+            <Select
+              id={id}
+              value={offered.find((item) => item.url === url)?.id ?? ""}
+              onChange={(event) => {
+                const item = offered.find((entry) => entry.id === event.target.value);
+                setUrl(item?.url ?? "");
+                setName(item?.name ?? "");
+              }}
+            >
+              <option value="">{t("calendars.subscribe.catalogOwn")}</option>
+              {offered.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
       <Field label={t("calendars.subscribe.url")} hint={t("calendars.subscribe.urlHint")}>
         {(id) => (
           <TextInput

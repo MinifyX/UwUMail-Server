@@ -1,0 +1,73 @@
+import { Button, Card, Dialog, Toggle } from "@uwusuite/design";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useSession } from "@/features/session/session";
+import { useT } from "@/i18n";
+import { api } from "@/lib/api";
+import { useErrorText } from "@/lib/errors";
+import { toast } from "@/state/toasts";
+
+/** Whether the server follows parcels from shipping mail. On unless switched off; off also deletes them. */
+export function ShipmentsCard() {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const queryClient = useQueryClient();
+  const stored = useSession().data?.preferences.shipments !== "off";
+  const [pending, setPending] = useState<boolean | null>(null);
+  // Switching off deletes the parcels, so it is asked first.
+  const [asking, setAsking] = useState(false);
+  const save = useMutation({
+    mutationFn: (on: boolean) =>
+      api<Record<string, unknown>>("/api/account/preferences", {
+        method: "PATCH",
+        body: { shipments: on ? "on" : "off" },
+      }),
+    onMutate: (on) => setPending(on),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["session"] });
+      setPending(null);
+      toast(t("account.shipments.saved"), "success");
+    },
+    onError: (error) => {
+      setPending(null);
+      toast(errorText(error), "error");
+    },
+  });
+
+  return (
+    <Card title={t("account.shipments.title")}>
+      <Toggle
+        checked={pending ?? stored}
+        disabled={save.isPending}
+        onChange={(on) => (on ? save.mutate(true) : setAsking(true))}
+        label={t("account.shipments.label")}
+        description={t("account.shipments.description")}
+      />
+      <Dialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        width="sm"
+        tone="warning"
+        title={t("account.shipments.confirmTitle")}
+        footer={
+          <>
+            <Button autoFocus onClick={() => setAsking(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setAsking(false);
+                save.mutate(false);
+              }}
+            >
+              {t("account.shipments.confirmOff")}
+            </Button>
+          </>
+        }
+      >
+        <p className="px-6 pb-2 text-sm text-muted">{t("account.shipments.confirmText")}</p>
+      </Dialog>
+    </Card>
+  );
+}

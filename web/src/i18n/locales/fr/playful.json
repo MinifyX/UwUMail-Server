@@ -18,7 +18,10 @@
   },
   "account": {
     "greeting": "Coucou {{name}} !",
-    "intro": "Tout ce qui concerne votre boîte mail, juste ici (｡･ω･｡)"
+    "intro": "Tout ce qui concerne votre boîte mail, juste ici (｡･ω･｡)",
+    "shipments": {
+      "label": "Je garde un œil sur tes colis (ﾉ◕ヮ◕)ﾉ"
+    }
   },
   "moving": {
     "intro": "Emballez votre ancienne boîte et ramenez tout à la maison : chaque dossier, chaque marque, chaque date. Le serveur porte les cartons en arrière-plan (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
@@ -190,7 +193,10 @@
   },
   "calendars": {
     "intro": "Partage tes agendas et carnets d'adresses avec les gens de ce serveur ou ramène-les d'ailleurs, et plus personne ne rate un rendez-vous (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
-    "sharedEmpty": "Personne n'a encore rien partagé avec toi (・ω・)"
+    "sharedEmpty": "Personne n'a encore rien partagé avec toi (・ω・)",
+    "builtin": {
+      "intro": "Le serveur calcule tout seul les jours fériés et les semaines, sans Internet. À regarder seulement : ils ne bloquent rien et ne sonnent jamais. Nom et couleur, c’est toi qui choisis ✨"
+    }
   },
   "pictures": {
     "own": {

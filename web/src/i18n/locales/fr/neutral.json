@@ -226,6 +226,15 @@
       "fetchOk_one": "1 compte relevé fonctionne",
       "fetchOk_other": "{{count}} comptes relevés fonctionnent",
       "fetchFailed": "Compte relevé {{address}} : la dernière relève a échoué"
+    },
+    "shipments": {
+      "title": "Colis",
+      "label": "Suivre les colis à partir des e-mails d’expédition",
+      "description": "Repère les numéros de suivi et l’état de livraison dans les e-mails des boutiques et des transporteurs, pour que le webmail et les applications connectées affichent tes colis. Désactiver supprime tous les colis enregistrés.",
+      "saved": "Enregistré",
+      "confirmTitle": "Ne plus suivre les colis ?",
+      "confirmText": "Tous les colis enregistrés seront supprimés. Si vous le réactivez, seuls les nouveaux e-mails et ceux des derniers jours seront lus.",
+      "confirmOff": "Désactiver et supprimer"
     }
   },
   "admin": {
@@ -4151,7 +4160,9 @@
       "end": "Mettre fin à l'abonnement",
       "endKeep": "Garder les entrées",
       "endDelete": "Supprimer l'agenda",
-      "endedToast": "Abonnement à {{name}} terminé"
+      "endedToast": "Abonnement à {{name}} terminé",
+      "catalog": "Depuis le catalogue",
+      "catalogOwn": "Adresse personnelle"
     },
     "remote": {
       "button": "Transférer depuis un autre fournisseur",
@@ -4178,6 +4189,20 @@
         "outlook": "Outlook.com n'a ni CalDAV ni CardDAV. Exportez-y votre agenda en fichier .ics et vos contacts en fichier, puis importez-les ici.",
         "appPassword": "Ce fournisseur demande un mot de passe d'application, créé dans ses paramètres."
       }
+    },
+    "builtin": {
+      "title": "Jours fériés et numéros de semaine",
+      "intro": "Le serveur crée ces calendriers lui-même et les calcule sans Internet. Ils sont en lecture seule, ne comptent jamais comme occupé et ne sonnent jamais. Tu peux changer leur nom et leur couleur.",
+      "holidays": "Jours fériés",
+      "none": "Désactivé",
+      "region": "Land ou canton",
+      "wholeCountry": "Jours fériés nationaux uniquement",
+      "approximate": "Les jours fériés cantonaux sont une approximation : communes et droit du travail varient.",
+      "weekNumbers": "Numéros de semaine",
+      "weekNumbersHint": "Chaque semaine comme événement d’une journée entière « Semaine n » du lundi au dimanche.",
+      "save": "Enregistrer",
+      "savedToast": "Enregistré",
+      "readOnly": "Vient de tes réglages « Jours fériés et numéros de semaine » et ne peut pas être modifié."
     }
   },
   "maskedDomains": {

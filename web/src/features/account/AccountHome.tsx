@@ -29,6 +29,7 @@ import { formatBytes, formatDate } from "@/lib/format";
 import { Link } from "@/lib/router";
 import { PictureCard } from "@/features/pictures/PictureCard";
 import { AppleProfile } from "./AppleProfile";
+import { ShipmentsCard } from "./ShipmentsCard";
 /** How many addresses the card shows before somebody asks for the rest. */
 const SHOWN_ADDRESSES = 3;
 
@@ -335,6 +336,8 @@ export function AccountHome({ session }: { session: Session }) {
             }
           />
         </Card>
+
+        <ShipmentsCard />
 
         <PictureCard
           endpoint="/api/account/picture"

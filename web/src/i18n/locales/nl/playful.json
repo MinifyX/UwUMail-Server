@@ -18,7 +18,10 @@
   },
   "account": {
     "greeting": "Hoi {{name}}!",
-    "intro": "Alles over je mailbox, gewoon hier (｡･ω･｡)"
+    "intro": "Alles over je mailbox, gewoon hier (｡･ω･｡)",
+    "shipments": {
+      "label": "Ik let op je pakketten (ﾉ◕ヮ◕)ﾉ"
+    }
   },
   "moving": {
     "intro": "Pak je oude mailbox in en breng alles naar huis: elke map, elke markering, elke datum. De server sjouwt de dozen op de achtergrond (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
@@ -188,7 +191,10 @@
   },
   "calendars": {
     "intro": "Deel je agenda's en adresboeken met mensen hier op de server of haal ze van elders, dan mist niemand meer een afspraak (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
-    "sharedEmpty": "Nog niemand heeft iets met je gedeeld (・ω・)"
+    "sharedEmpty": "Nog niemand heeft iets met je gedeeld (・ω・)",
+    "builtin": {
+      "intro": "De server rekent feestdagen en weeknummers helemaal zelf uit, zonder internet. Alleen om te kijken: ze blokkeren niets en piepen nooit. Naam en kleur mag je kiezen ✨"
+    }
   },
   "pictures": {
     "own": {

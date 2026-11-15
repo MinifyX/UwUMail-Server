@@ -2015,6 +2015,7 @@ const mockCalendars: CalendarsView = {
       entries: 42,
       shares: [{ accountId: 3, address: "nyu@example.org", name: "Nyu", rights: "read" }],
       isDefault: true,
+      builtin: null,
       subscription: null,
     },
     {
@@ -2025,6 +2026,7 @@ const mockCalendars: CalendarsView = {
       entries: 7,
       shares: [],
       isDefault: false,
+      builtin: null,
       subscription: null,
     },
     {
@@ -2035,6 +2037,7 @@ const mockCalendars: CalendarsView = {
       entries: 12,
       shares: [],
       isDefault: false,
+      builtin: null,
       subscription: {
         id: 1,
         collectionId: 4,
@@ -2059,6 +2062,7 @@ const mockCalendars: CalendarsView = {
       entries: 118,
       shares: [],
       isDefault: true,
+      builtin: null,
       subscription: null,
     },
   ],
@@ -2073,6 +2077,7 @@ const mockCalendars: CalendarsView = {
       rights: "write",
     },
   ],
+  builtin: { holidays: null, weekNumbers: false },
   limits: { uploadBytes: 20 * 1024 * 1024, subscriptions: 20, minIntervalSecs: 900 },
 };
 
@@ -2089,6 +2094,7 @@ function mockImport(kind: "calendar" | "addressbook", name: string, target?: num
     entries: 0,
     shares: [],
     isDefault: false,
+    builtin: null,
     subscription: null,
   };
   if (!existing) mockCalendars.own.push(collection);
@@ -4400,6 +4406,34 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["GET", /^\/api\/account\/calendars$/, () => [200, mockCalendars]],
   [
+    "GET",
+    /^\/api\/account\/calendars\/catalog$/,
+    () => [
+      200,
+      {
+        countries: [
+          { code: "DE", names: { de: "Deutschland", en: "Germany" } },
+          { code: "AT", names: { de: "Österreich", en: "Austria" } },
+          { code: "CH", names: { de: "Schweiz", en: "Switzerland" } },
+        ],
+        regions: [
+          { code: "DE-BY", name: "Bayern" },
+          { code: "DE-NW", name: "Nordrhein-Westfalen" },
+          { code: "CH-ZH", name: "Zürich" },
+        ],
+        subscriptions: [],
+      },
+    ],
+  ],
+  [
+    "PUT",
+    /^\/api\/account\/calendars\/builtin$/,
+    (body) => {
+      Object.assign(mockCalendars.builtin, body as object);
+      return [200, mockCalendars];
+    },
+  ],
+  [
     "PUT",
     /^\/api\/account\/calendars\/(\d+)\/shares$/,
     (body, [id]) => {
@@ -4466,6 +4500,7 @@ const routes: [string, RegExp, Handler][] = [
         entries: 8,
         shares: [],
         isDefault: false,
+        builtin: null,
         subscription: {
           id,
           collectionId: id,

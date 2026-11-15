@@ -694,6 +694,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "constant_time_eq"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2277,7 +2286,7 @@ dependencies = [
  "serde",
  "serde_json",
  "similar",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -4448,6 +4457,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4528,7 +4543,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-assist"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4557,7 +4572,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-backup"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -4588,7 +4603,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-dav"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4614,7 +4629,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-gateway"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4631,7 +4646,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-imap"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "base64 0.23.1",
  "mail-parser",
@@ -4649,7 +4664,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-jmap"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "ammonia",
  "aws-lc-rs",
@@ -4684,7 +4699,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-labels"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "mail-parser",
  "serde",
@@ -4693,7 +4708,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-server"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4734,7 +4749,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-smtp"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -4784,18 +4799,19 @@ dependencies = [
  "uwumail-tunnel",
  "webpki-roots",
  "x509-parser",
- "zip",
+ "zip 9.5.1",
 ]
 
 [[package]]
 name = "uwumail-store"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
  "bcrypt",
  "calcard",
  "chrono",
+ "chrono-tz",
  "data-encoding",
  "getrandom 0.4.3",
  "hex",
@@ -4818,7 +4834,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-tnef"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "encoding_rs",
  "uwumail-tnef",
@@ -4826,7 +4842,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-tunnel"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -4846,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-web"
-version = "0.35.2"
+version = "0.36.0"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -5389,6 +5405,20 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "zerotrie"
@@ -5433,7 +5463,25 @@ dependencies = [
  "flate2",
  "indexmap",
  "memchr",
- "typed-path",
+ "typed-path 0.12.3",
+]
+
+[[package]]
+name = "zip"
+version = "9.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3476fd497ac8af5b1ec7b51acab7bef380f7e8dd8e0487595bafd839417a302"
+dependencies = [
+ "constant_time_eq",
+ "crc32fast",
+ "getrandom 0.4.3",
+ "indexmap",
+ "libc",
+ "memchr",
+ "nix",
+ "typed-path 0.13.0",
+ "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

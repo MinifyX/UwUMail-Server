@@ -601,11 +601,11 @@ pub fn birthday_event(content: &str) -> Option<BirthdayEvent> {
 
 /// One event of the birthdays calendar as it should be.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Derived {
-    name: String,
-    uid: String,
+pub(crate) struct Derived {
+    pub(crate) name: String,
+    pub(crate) uid: String,
     /// Without its DTSTAMP, which is added when it is written.
-    body: Component,
+    pub(crate) body: Component,
 }
 
 fn date_value(year: i32, month: u32, day: u32) -> String {
@@ -723,14 +723,17 @@ fn unstamped(content: &str) -> Option<Component> {
 }
 
 fn start_and_end(body: &Component) -> (Option<i64>, Option<i64>) {
-    let start = body
-        .main_event()
-        .and_then(|event| event.value("DTSTART"))
-        .and_then(|value| chrono::NaiveDate::parse_from_str(value.trim(), "%Y%m%d").ok())
-        .and_then(|date| date.and_hms_opt(0, 0, 0))
-        .map(|at| at.and_utc().timestamp());
-    // A yearly series never ends.
-    (start, None)
+    let event = body.main_event();
+    let day = |name: &str| {
+        event
+            .and_then(|event| event.value(name))
+            .and_then(|value| chrono::NaiveDate::parse_from_str(value.trim(), "%Y%m%d").ok())
+            .and_then(|date| date.and_hms_opt(0, 0, 0))
+            .map(|at| at.and_utc().timestamp())
+    };
+    // A yearly series never ends; the single days of the built-in calendars do.
+    let end = if event.is_some_and(|event| event.value("RRULE").is_some()) { None } else { day("DTEND") };
+    (day("DTSTART"), end)
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -750,7 +753,7 @@ fn calendar_of(conn: &Connection, account_id: i64) -> Result<Option<(DavCollecti
 }
 
 /// The language the person chose, or the server's.
-fn language_of(conn: &Connection, account_id: i64) -> Result<BirthdayLanguage> {
+pub(crate) fn language_of(conn: &Connection, account_id: i64) -> Result<BirthdayLanguage> {
     let preferences: Option<String> =
         conn.query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0)).optional()?;
     let chosen = preferences
@@ -823,7 +826,7 @@ fn sync_card(
     result
 }
 
-fn write_card_events(
+pub(crate) fn write_card_events(
     tx: &Transaction<'_>,
     log: &mut ChangeLog,
     calendar: &DavCollection,
@@ -986,8 +989,15 @@ pub(crate) fn follow_language(tx: &Transaction<'_>, log: &mut ChangeLog, account
     Ok(())
 }
 
-/// Refuses deleting the birthdays calendar: it can be hidden, and follows the address books.
+/// Refuses deleting the birthdays calendar: it can be hidden, and follows the address books. A
+/// built-in calendar goes when its setting is turned off.
 pub(crate) fn check_deletable(collection: &DavCollection) -> Result<()> {
+    if collection.builtin.is_some() {
+        return Err(StoreError::Rule {
+            code: "forbidden",
+            message: "this calendar comes from your settings; turn it off there or hide it".into(),
+        });
+    }
     if collection.birthdays {
         return Err(StoreError::Rule {
             code: "forbidden",

@@ -142,6 +142,8 @@ is handed to the others.
 | `signature:<id>` | `{ "email", "name", "html", "forNew", "forReplies" }`, see below; `<id>` is 1 to 64 of `A-Z a-z 0-9 _ -` |
 | `verificationHeuristics` | `true` or `false`: also recognise codes in mail without a signed `Verification-Info` header; the server applies it ([verification-codes.md](verification-codes.md)). Not set: on |
 | `verificationCleanup` | `"off"`, `"immediately"`, `"24h"` or `"7d"`: how long after its code expired a mail moves from the Inbox to the Trash; the server applies it. Not set: `"24h"` |
+| `holidays` | `{ "country", "region" }` or `null`: the built-in holiday calendar, made and deleted by the server in the same write ([holidays.md](holidays.md)) |
+| `weekNumbers` | `true` or `false`: the built-in week-number calendar ([holidays.md](holidays.md)) |
 | `compose.attachmentReminder` | `true` or `false`: warn before sending when the text mentions an attachment and there is none. Not set: on |
 | `accounts.order` | the person's accounts in the order they sorted them: a list of at most 200 different lower-case addresses. Not set: the default order |
 | `unified.hidden:<address>` | `true`: this account's mail stays out of the unified views (inbox, unread, flagged, drafts, sent) and their badges; `<address>` as for `senderAppearance` |

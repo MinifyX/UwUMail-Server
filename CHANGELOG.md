@@ -3,6 +3,25 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.36.0
+
+- Parcels: shipping mail (DHL, Deutsche Post, Hermes, DPD, GLS, UPS, FedEx, Amazon and others) becomes a
+  shipment with carrier, tracking number, status, delivery window and pickup place. JMAP extension
+  `urn:uwumail:jmap:shipments` (`Shipment/get|changes|query|queryChanges|set|rescan`, push type
+  `Shipment`, docs/jmap-shipments.md), meant for the apps and Home Assistant. Found from the labels
+  when the mail arrives; when the model is allowed to label mail, it helps with the rest. Shared
+  mailboxes show their parcels to everyone who may read them. Switched off on the account page
+  (*Parcels*), which deletes them all. Tracking pages are never fetched.
+- Calendars: built-in holiday calendars for Germany (all 16 states), Austria and Switzerland, and a
+  week-number calendar, switched on in *Account → Calendars* or by apps over JMAP. They are
+  read-only, follow the setting, and move along with an account move from another UwUMail server.
+- Webmail 0.31.0: the Pakete view (today, on the way, delivered, hidden), a parcel chip on mails,
+  adding a parcel by hand.
+- Security review of the new code (docs/security-audit-0.36.0.md): tracking links only on each
+  carrier's own domains, unauthenticated mail cannot end a parcel, and shared views see only the
+  mails they may read.
+- Dependencies: zip 9.5 for the attachment check, minimatch override in the portal.
+
 ## 0.35.2
 
 - Updates: a machine without a helper is shown the one command that installs it (fetched, checked,

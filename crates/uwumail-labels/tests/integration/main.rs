@@ -4,6 +4,7 @@ mod classifier;
 mod corpus;
 mod detectors;
 mod rules;
+mod shipments;
 
 use uwumail_labels::Mail;
 
@@ -16,6 +17,18 @@ pub fn message(headers: &[&str], text: &str) -> Mail {
     }
     raw.push_str("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n");
     raw.push_str(&text.replace('\n', "\r\n"));
+    Mail::parse(raw.as_bytes())
+}
+
+/// A raw message with the given headers and an HTML body.
+pub fn html_message(headers: &[&str], html: &str) -> Mail {
+    let mut raw = String::new();
+    for header in headers {
+        raw.push_str(header);
+        raw.push_str("\r\n");
+    }
+    raw.push_str("MIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n");
+    raw.push_str(&html.replace('\n', "\r\n"));
     Mail::parse(raw.as_bytes())
 }
 

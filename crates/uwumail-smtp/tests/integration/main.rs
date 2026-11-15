@@ -10,4 +10,5 @@ mod gateway;
 mod imip;
 mod microsoft;
 mod mta_sts;
+mod shipments;
 mod verification;

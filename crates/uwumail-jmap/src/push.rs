@@ -91,6 +91,7 @@ const TYPES: &[&str] = &[
     "MaskedEmail",
     "ProfilePicture",
     "AssistLabel",
+    "Shipment",
 ];
 
 #[derive(Deserialize)]

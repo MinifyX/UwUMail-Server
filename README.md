@@ -51,7 +51,8 @@ The long version of every point is in [docs/features.md](docs/features.md):
   [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web home.
 - **Mail, calendars, contacts.** JMAP, IMAP and SMTP, CalDAV and CardDAV, JMAP
   Calendars and Contacts, [Sieve rules](docs/sieve.md); invitations, free/busy
-  and a [birthdays calendar](docs/birthdays.md) with ages.
+  a [birthdays calendar](docs/birthdays.md) with ages, and built-in
+  [holiday and week-number calendars](docs/holidays.md).
 - **Sharing.** Shared folders, calendars and address books,
   [groups and shared mailboxes](docs/groups.md) like `info@` and `support@`, and
   [masked addresses](docs/jmap-masked-email.md), also on domains of their own.
@@ -65,6 +66,9 @@ The long version of every point is in [docs/features.md](docs/features.md):
 - **Labels that sort themselves.** Your own [labels](docs/labels.md), put on
   new mail by conditions, built-in detectors, senders and a classifier that
   learns from you, no AI needed; an AI can judge the rest.
+- **Parcels followed by themselves.** Shipping mails become
+  [parcels](docs/jmap-shipments.md) with status and delivery day, for the
+  webmail and Home Assistant, no AI and no link ever opened.
 - **Spam filter and, if you want, [ClamAV](docs/antivirus.md).** The filter
   learns, keeps sender and word lists and fetches known-bad lists by itself.
 - **Backups and updates built in.** Nightly deduplicated, encrypted

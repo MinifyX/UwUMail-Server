@@ -46,6 +46,9 @@ has room for, with links to the guides.
   anniversaries in the address books, with the age on JMAP, reminders per
   contact, and birthday events from other calendars moved into the contacts
   ([birthdays.md](birthdays.md)).
+- **Holidays and week numbers.** Built-in calendars with the public holidays of
+  Germany (all 16 states), Austria and Switzerland, and ISO week numbers,
+  worked out on the server without any feed ([holidays.md](holidays.md)).
 - **Bring your calendars along.** Import `.ics` and `.vcf` files, subscribe to
   calendars by their iCal address (Google's secret address too), or move
   everything over from iCloud, WEB.DE, GMX, Posteo and other CalDAV/CardDAV
@@ -98,6 +101,11 @@ has room for, with links to the guides.
 - **Verification codes.** Sign-in codes are found when mail arrives, shown in
   the notification and offered for autofill only when the sender vouched for
   them, and tidied away once they expired ([verification-codes.md](verification-codes.md)).
+- **Parcels.** Shipping mails from shops and carriers become parcels with
+  carrier, tracking number, status, delivery day and pickup place, without AI
+  and without opening a link; the webmail and apps such as Home Assistant
+  follow them and can write the carrier's live status back. Each person can
+  switch it off ([jmap-shipments.md](jmap-shipments.md)).
 - **Text in pictures.** Tesseract reads the text in a mail's pictures (posters,
   tickets) so dates in them can be found ([jmap-image-text.md](jmap-image-text.md)).
 - **Profile pictures.** A picture for everyone, services, groups and a logo per

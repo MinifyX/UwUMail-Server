@@ -20,6 +20,7 @@ mod push_subscription;
 mod query_changes;
 mod senders;
 mod settings;
+mod shipment;
 mod sieve;
 pub mod signatures;
 mod snippet;
@@ -39,8 +40,8 @@ use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
     ASSIST, AVAILABILITY, BACKUPS, BIRTHDAYS, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED,
-    PROFILE, SENDERS, SETTINGS, SIEVE, SIGNATURES, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, VERIFICATION, WEBMAIL,
-    WEBPUSH_VAPID, WEBSOCKET,
+    PROFILE, SENDERS, SETTINGS, SHIPMENTS, SIEVE, SIGNATURES, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, VERIFICATION,
+    WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -71,9 +72,11 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     BACKUPS,
     SIGNATURES,
     VERIFICATION,
+    SHIPMENTS,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
+pub(crate) use shipment::allowed as allowed_shipments;
 
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
 pub(crate) const DAV_TYPES: &[&str] = &[
@@ -252,6 +255,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "ProfilePicture" => PROFILE,
         "SignatureSettings" => SIGNATURES,
         "VerificationCode" => VERIFICATION,
+        "Shipment" => SHIPMENTS,
         "Birthdays" => BIRTHDAYS,
         "Assist" | "AssistProvider" | "AssistSettings" | "AssistLabel" => ASSIST,
         "BackupEmail" => BACKUPS,
@@ -310,6 +314,12 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Email/unsubscribe" => single(unsubscribe::unsubscribe(ctx, &args).await?),
         "Email/imageText" => single(image_text::image_text(ctx, &args).await?),
         "VerificationCode/query" => single(verification::query(ctx, &args).await?),
+        "Shipment/get" => single(shipment::get(ctx, &args).await?),
+        "Shipment/changes" => single(changes(ctx, &args, "Shipment", 's').await?),
+        "Shipment/query" => single(shipment::query(ctx, &args).await?),
+        "Shipment/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "Shipment/set" => single(shipment::set(ctx, &args).await?),
+        "Shipment/rescan" => single(shipment::rescan(ctx, &args).await?),
         "SearchSnippet/get" => single(snippet::get(ctx, &args).await?),
         "Identity/get" => single(identity::get(ctx, &args).await?),
         "Identity/changes" => single(changes(ctx, &args, "Identity", 'i').await?),

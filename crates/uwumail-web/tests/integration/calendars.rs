@@ -126,4 +126,24 @@ async fn calendars_are_shared_and_left_from_my_account() {
     let (status, view) = call(&app, "DELETE", &format!("{path}/{ami_id}"), None, Some(&leni)).await;
     assert_eq!(status, StatusCode::OK);
     assert!(view["own"].as_array().unwrap().iter().all(|c| c["shares"] == json!([])));
+
+    // The built-in holiday and week-number calendars (docs/holidays.md).
+    let (status, catalog) = call(&app, "GET", "/api/account/calendars/catalog", None, Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
+    assert!(catalog["regions"].as_array().unwrap().iter().any(|r| r["code"] == "DE-NW"));
+    assert!(catalog["subscriptions"].is_array());
+    let builtin = "/api/account/calendars/builtin";
+    let on = json!({ "holidays": { "country": "DE", "region": "DE-BY" }, "weekNumbers": true });
+    let (status, view) = call(&app, "PUT", builtin, Some(on), Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["builtin"]["holidays"]["region"], "DE-BY");
+    assert_eq!(view["builtin"]["weekNumbers"], true);
+    let kinds: Vec<&Value> = view["own"].as_array().unwrap().iter().map(|c| &c["builtin"]).collect();
+    assert!(kinds.contains(&&json!("holidays")) && kinds.contains(&&json!("weeks")), "{view}");
+    let (status, _) = call(&app, "PUT", builtin, Some(json!({ "theme": "dark" })), Some(&leni)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let off = json!({ "holidays": null, "weekNumbers": false });
+    let (status, view) = call(&app, "PUT", builtin, Some(off), Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert!(view["own"].as_array().unwrap().iter().all(|c| c["builtin"].is_null()), "{view}");
 }

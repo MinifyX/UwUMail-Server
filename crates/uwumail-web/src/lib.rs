@@ -584,6 +584,8 @@ impl Web {
             .route("/api/account/moving/{id}/pause", post(routes::moving::pause))
             .route("/api/account/moving/{id}/skipped", get(routes::moving::skipped))
             .route("/api/account/calendars", get(routes::calendars::list))
+            .route("/api/account/calendars/builtin", put(routes::calendars::builtin))
+            .route("/api/account/calendars/catalog", get(routes::calendars::catalog))
             .route("/api/account/calendars/{id}/shares", put(routes::calendars::share))
             .route("/api/account/calendars/{id}/shares/{account}", delete(routes::calendars::unshare))
             .route("/api/account/shared-calendars/{id}", delete(routes::calendars::leave))

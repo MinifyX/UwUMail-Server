@@ -36,6 +36,7 @@ const DEFAULTS: &[&str] = &[
     "myRights",
     "uwuSharedBy",
     "uwuBirthdays",
+    "uwuBuiltin",
 ];
 
 /// The longest calendar name, in bytes, as the draft allows.
@@ -247,13 +248,14 @@ fn to_json(listed: &Listed, only_one: bool, shares: &[DavShare]) -> Map<String, 
         "timeZone": calendar.timezone.as_deref().and_then(uwumail_store::ical::timezone_id),
         "shareWith": if listed.access.may_admin() { share_with(shares) } else { Value::Null },
         "myRights": read_only_if(
-            rights(listed.access, !(owner && (only_one || calendar.birthdays))),
+            rights(listed.access, !(owner && (only_one || calendar.birthdays || calendar.builtin.is_some()))),
             calendar.filled()
         ),
         "uwuSharedBy": listed.owner.as_ref().map(|(address, name)| {
             json!({ "email": address, "name": name, "principalId": principal_id(calendar.account_id) })
         }),
         "uwuBirthdays": calendar.birthdays,
+        "uwuBuiltin": calendar.builtin,
     }) else {
         unreachable!("json! of an object literal is an object")
     };
@@ -279,8 +281,12 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let list = listed(ctx).await?;
     let state = ctx.state().await?;
     let properties = properties(args, "properties", DEFAULTS)?;
-    // The birthdays calendar is not one of one's own that could stay alone.
-    let only_one = list.iter().filter(|l| l.access.is_owner() && !l.collection.birthdays).count() <= 1;
+    // The birthdays and built-in calendars are not ones of one's own that could stay alone.
+    let only_one = list
+        .iter()
+        .filter(|l| l.access.is_owner() && !l.collection.birthdays && l.collection.builtin.is_none())
+        .count()
+        <= 1;
     let shares = shares_of(ctx, &list).await?;
     let json_of = |listed: &Listed| {
         let shares = shares.get(&listed.collection.id).map(Vec::as_slice).unwrap_or_default();
@@ -454,6 +460,7 @@ fn parse_all(object: &Map<String, Value>, creating: bool) -> Result<Parsed, SetE
             "isSubscribed" if value == &Value::Bool(true) => {}
             // A new calendar is never the birthdays calendar; there is one, made by the server.
             "uwuBirthdays" if creating && value == &Value::Bool(false) => {}
+            "uwuBuiltin" if creating && value.is_null() => {}
             "includeInAvailability" => match value.as_str() {
                 Some(which @ ("all" | "attending" | "none")) => {
                     prefs.include_in_availability = Some(Some(which.to_owned()))

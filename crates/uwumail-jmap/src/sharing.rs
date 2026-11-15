@@ -39,6 +39,12 @@ const SHARED_METHODS: &[&str] = &[
     "Thread/get",
     "Thread/changes",
     "SearchSnippet/get",
+    // Shipments go by the mailboxes their mail lies in (methods/shipment.rs).
+    "Shipment/get",
+    "Shipment/changes",
+    "Shipment/query",
+    "Shipment/queryChanges",
+    "Shipment/set",
 ];
 
 /// What the logged-in account may see and do in someone else's account.
@@ -274,6 +280,11 @@ pub async fn filter_changes(
                 .map(|(thread, _)| thread)
                 .collect()
         }
+        "Shipment" => {
+            let ids: Vec<i64> = created.iter().chain(updated.iter()).copied().collect();
+            let found = ctx.jmap.store.shipments(ctx.account.id, Some(ids)).await?;
+            crate::methods::allowed_shipments(ctx, found, "r").await?.into_iter().map(|s| s.id).collect()
+        }
         _ => HashSet::new(),
     };
     // Something created since the client's state that it may not see is nothing to it. Something
@@ -318,6 +329,7 @@ pub fn add_to_session(document: &mut Value, me: &Account, accounts: &[(i64, Stri
         json!({ "accountIdForPrincipal": own, "principalId": principal_id(me.id) });
     document["primaryAccounts"][PRINCIPALS] = json!(own);
     let mail = document["accounts"][&own]["accountCapabilities"][crate::session::MAIL].clone();
+    let shipments = document["accounts"][&own]["accountCapabilities"][crate::session::SHIPMENTS].clone();
     for (owner, login, read_only) in accounts {
         let mut capabilities = mail.clone();
         capabilities["mayCreateTopLevelMailbox"] = json!(false);
@@ -330,6 +342,10 @@ pub fn add_to_session(document: &mut Value, me: &Account, accounts: &[(i64, Stri
                 PRINCIPALS_OWNER: { "accountIdForPrincipal": ids::account(*owner), "principalId": principal_id(*owner) }
             }
         });
+        if !shipments.is_null() {
+            document["accounts"][ids::account(*owner)]["accountCapabilities"][crate::session::SHIPMENTS] =
+                shipments.clone();
+        }
         // Unsubscribing for the owner takes the right to change messages, which a read-only share lacks.
         if !read_only {
             document["accounts"][ids::account(*owner)]["accountCapabilities"][crate::session::UNSUBSCRIBE] = json!({});

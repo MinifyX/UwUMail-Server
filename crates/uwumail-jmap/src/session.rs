@@ -39,6 +39,7 @@ pub const IMAGETEXT: &str = "urn:uwumail:jmap:imagetext";
 /// `verification` and `VerificationCode/query` (docs/jmap-verification.md). It implements the
 /// OMXP draft capability `urn:omxp:params:jmap:verification` under our own name until that is final.
 pub const VERIFICATION: &str = "urn:uwumail:jmap:verification";
+pub const SHIPMENTS: &str = "urn:uwumail:jmap:shipments";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 /// When people are busy, `Principal/getAvailability` (draft-ietf-jmap-calendars, section 2.2).
@@ -182,6 +183,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             WEBMAIL: {},
             UNSUBSCRIBE: {},
             VERIFICATION: {},
+            SHIPMENTS: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
                 "imageSizesUrl": format!("{base}/jmap/image/{{accountId}}/sizes"),
@@ -220,6 +222,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
                     MASKED: {},
                     UNSUBSCRIBE: {},
                     VERIFICATION: {},
+                    SHIPMENTS: { "maxEvents": uwumail_store::SHIPMENT_MAX_EVENTS, "maxRescanDays": uwumail_store::SHIPMENT_RESCAN_MAX_DAYS },
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
                     SUGGEST: { "maxLimit": crate::methods::MAX_SUGGESTIONS },
                     SIGNATURES: crate::methods::signatures::capability(),
@@ -252,7 +255,8 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             MASKED: account_id.clone(),
             UNSUBSCRIBE: account_id.clone(),
             IMAGETEXT: account_id.clone(),
-            VERIFICATION: account_id.clone()
+            VERIFICATION: account_id.clone(),
+            SHIPMENTS: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),
