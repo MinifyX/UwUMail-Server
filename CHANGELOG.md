@@ -3,6 +3,20 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.37.2
+
+- Parcels can be marked by hand in the webmail: *Status setzen* offers every step the parcel can
+  still take (shipped, out for delivery, delivered, picked up, …), and the toast's *Rückgängig*
+  takes it back. `Shipment/set` takes `removeEvents` (`[{at, status}]`) for that: it removes
+  events an app added before and works the status out again; events from mail stay
+  (docs/jmap-shipments.md).
+- Parcels: mail in the Trash counts for the look back, only Junk is left out. People bin a shop's
+  mail once read while the parcel is still on its way. Update: every account looks back 14 days
+  once more (migration 0095).
+- Parcels: a failed delivery can end *Zugestellt* (delivered on the next try) instead of only
+  being tried again.
+- Webmail 0.33.0.
+
 ## 0.37.1
 
 - Parcels: a shop that signs as „Apple“ for the order and „Apple Store“ for shipping is one shop,

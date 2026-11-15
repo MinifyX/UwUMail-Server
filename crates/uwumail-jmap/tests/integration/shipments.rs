@@ -130,6 +130,23 @@ async fn a_shipping_mail_becomes_a_shipment_apps_can_follow() {
     assert_eq!(events[2]["source"], "client");
     assert_eq!(events[2]["clientName"], "Home Assistant");
 
+    // Taken back: the status follows what is left.
+    let undo = json!({ "accountId": account, "update": { &id: { "removeEvents": [{ "at": "2026-11-16T08:12:00Z", "status": "outForDelivery" }] } } });
+    let set = call(&server, "Shipment/set", undo).await;
+    assert_eq!(set["updated"], json!({ &id: null }), "{set}");
+    let got = call(
+        &server,
+        "Shipment/get",
+        json!({ "accountId": account, "ids": [&id], "properties": ["status", "events"] }),
+    )
+    .await;
+    assert_ne!(got["list"][0]["status"], "outForDelivery", "{got}");
+    assert_eq!(got["list"][0]["events"].as_array().unwrap().len(), 2);
+    let bad = json!({ "accountId": account, "update": { &id: { "removeEvents": [{ "at": "2026-11-16T08:12:00Z", "status": "inTransit", "text": "x" }] } } });
+    assert_eq!(call(&server, "Shipment/set", bad).await["notUpdated"][&id]["type"], "invalidProperties");
+    let again = json!({ "accountId": account, "update": { &id: { "addEvents": [event("2026-11-16T08:12:00Z", "outForDelivery")] } } });
+    assert_eq!(call(&server, "Shipment/set", again).await["updated"], json!({ &id: null }));
+
     // Bad events are refused whole.
     let bad = json!({
         "accountId": account,

@@ -348,6 +348,34 @@ fn events(value: &Value) -> Result<Vec<NewShipmentEvent>, SetError> {
     Ok(events)
 }
 
+/// `removeEvents`: events an app added before, each by `at` and `status`.
+fn removals(value: &Value) -> Result<Vec<(i64, ShipmentStatus)>, SetError> {
+    let invalid = |message: &str| SetError::invalid_properties(&["removeEvents"], message.to_owned());
+    let list = value.as_array().ok_or_else(|| invalid("removeEvents is a list"))?;
+    if list.len() > SHIPMENT_MAX_EVENTS as usize {
+        return Err(invalid(&format!("at most {SHIPMENT_MAX_EVENTS} events at once")));
+    }
+    list.iter()
+        .map(|event| {
+            let event = event.as_object().ok_or_else(|| invalid("an event is an object"))?;
+            if let Some(key) = event.keys().find(|key| !matches!(key.as_str(), "at" | "status")) {
+                return Err(invalid(&format!("an event to remove has no {key}")));
+            }
+            let at = event
+                .get("at")
+                .and_then(Value::as_str)
+                .and_then(dates::parse)
+                .ok_or_else(|| invalid("at is a date"))?;
+            let status = event
+                .get("status")
+                .and_then(Value::as_str)
+                .and_then(ShipmentStatus::from_id)
+                .ok_or_else(|| invalid("status is not a shipment status"))?;
+            Ok((at, status))
+        })
+        .collect()
+}
+
 /// The store's refusals as JMAP knows them.
 fn refused(err: StoreError) -> SetError {
     match err {
@@ -356,7 +384,7 @@ fn refused(err: StoreError) -> SetError {
     }
 }
 
-const UPDATABLE: &[&str] = &["title", "hidden", "addEvents"];
+const UPDATABLE: &[&str] = &["title", "hidden", "addEvents", "removeEvents"];
 const CREATABLE: &[&str] = &["carrier", "number", "title"];
 
 fn check_known(object: &Map<String, Value>, allowed: &[&str]) -> Result<(), SetError> {
@@ -436,6 +464,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         .map(|t| t.map(str::to_owned)),
                     hidden,
                     add_events: patch.get("addEvents").map(events).transpose()?.unwrap_or_default(),
+                    remove_events: patch.get("removeEvents").map(removals).transpose()?.unwrap_or_default(),
                 };
                 may_change(ctx, number).await?;
                 store.update_shipment(account_id, number, change, client.clone()).await.map_err(refused)
