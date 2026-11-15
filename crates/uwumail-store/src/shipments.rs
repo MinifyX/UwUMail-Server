@@ -109,6 +109,8 @@ pub struct ShipmentUpdate {
     pub title: Option<Option<String>>,
     pub hidden: Option<bool>,
     pub add_events: Vec<NewShipmentEvent>,
+    /// Events an app added before, by `at` and status, to take back (`removeEvents`).
+    pub remove_events: Vec<(i64, ShipmentStatus)>,
 }
 
 /// A look back through earlier mail.
@@ -375,6 +377,34 @@ fn insert(
         params![account_id, carrier, number, tracking_url, merchant, order_ref, status.id(), at, title, now],
     )?;
     Ok(tx.last_insert_rowid())
+}
+
+/// Works the status out again from the events left, in the order they came, by the rules of
+/// [`add_event`]. With none left the status stays.
+fn replay(tx: &Connection, id: i64) -> Result<()> {
+    let mut stmt = tx.prepare_cached("SELECT at, status FROM shipment_events WHERE shipment_id = ?1 ORDER BY id")?;
+    let events: Vec<(i64, String)> =
+        stmt.query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+    let mut state: Option<(ShipmentStatus, i64, Option<i64>)> = None;
+    for (at, status) in events {
+        let status = status_of(&status)?;
+        let at = at.min(now());
+        let delivered = (status == ShipmentStatus::Delivered).then_some(at);
+        state = match state {
+            None => Some((status, at, delivered)),
+            Some((current, current_at, done)) if at >= current_at && current.moves_to(status) => {
+                Some((status, at, delivered.or(done)))
+            }
+            keep => keep,
+        };
+    }
+    if let Some((status, at, delivered)) = state {
+        tx.execute(
+            "UPDATE shipments SET status = ?2, status_at = ?3, delivered_at = ?4 WHERE id = ?1",
+            params![id, status.id(), at, delivered],
+        )?;
+    }
+    Ok(())
 }
 
 /// Puts what one mail tells into the account's shipments. Returns the last modseq it used, if any.
@@ -756,7 +786,9 @@ impl Store {
         update: ShipmentUpdate,
         client_name: Option<String>,
     ) -> Result<()> {
-        if update.add_events.len() > SHIPMENT_MAX_EVENTS as usize {
+        if update.add_events.len() > SHIPMENT_MAX_EVENTS as usize
+            || update.remove_events.len() > SHIPMENT_MAX_EVENTS as usize
+        {
             return Err(StoreError::Invalid(format!("at most {SHIPMENT_MAX_EVENTS} events at once")));
         }
         let title = match &update.title {
@@ -777,6 +809,7 @@ impl Store {
             });
         }
         let hidden = update.hidden;
+        let remove = update.remove_events;
         let modseq = self
             .write(move |tx| {
                 let found: bool = tx.query_row(
@@ -792,6 +825,17 @@ impl Store {
                 }
                 if let Some(hidden) = hidden {
                     tx.execute("UPDATE shipments SET hidden = ?2 WHERE id = ?1", params![id, hidden])?;
+                }
+                let mut removed = 0;
+                for (at, status) in &remove {
+                    removed += tx.execute(
+                        "DELETE FROM shipment_events
+                         WHERE shipment_id = ?1 AND source = 'client' AND at = ?2 AND status = ?3",
+                        params![id, at, status.id()],
+                    )?;
+                }
+                if removed > 0 {
+                    replay(tx, id)?;
                 }
                 // Oldest first, so the status moves on in order.
                 let mut events = events;
@@ -889,7 +933,8 @@ impl Store {
         .await
     }
 
-    /// Up to `limit` mails of a look back after `after_id`, oldest first, in neither Junk nor Trash.
+    /// Up to `limit` mails of a look back after `after_id`, oldest first, not in Junk. Trash counts:
+    /// people bin a shop's mail once read, the parcel is still on its way.
     pub async fn shipment_rescan_candidates(
         &self,
         account_id: i64,
@@ -902,7 +947,7 @@ impl Store {
                 "SELECT {EMAIL_COLUMNS} FROM emails e
                  WHERE e.account_id = ?1 AND e.received_at >= ?2 AND e.id > ?3
                    AND NOT EXISTS (SELECT 1 FROM email_mailboxes em JOIN mailboxes m ON m.id = em.mailbox_id
-                                   WHERE em.email_id = e.id AND m.role IN ('junk', 'trash'))
+                                   WHERE em.email_id = e.id AND m.role = 'junk')
                  ORDER BY e.id LIMIT ?4"
             ))?;
             let rows = stmt.query_map(params![account_id, since, after_id, limit], email_from_row)?;
@@ -1075,8 +1120,20 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         let long = NewShipmentEvent { text: Some("x".repeat(501)), ..delivered.clone() };
         let update = ShipmentUpdate { add_events: vec![long], ..Default::default() };
         assert!(store.update_shipment(account, first.id, update, None).await.is_err());
-        let many = ShipmentUpdate { add_events: vec![delivered; 201], ..Default::default() };
+        let many = ShipmentUpdate { add_events: vec![delivered.clone(); 201], ..Default::default() };
         assert!(store.update_shipment(account, first.id, many, None).await.is_err());
+
+        // The person takes it back: out for delivery again, and mail cannot be taken back.
+        let undo = ShipmentUpdate {
+            remove_events: vec![(t + 5400, ShipmentStatus::Delivered), (t + 3600, ShipmentStatus::OutForDelivery)],
+            ..Default::default()
+        };
+        store.update_shipment(account, first.id, undo, None).await.unwrap();
+        let first = &store.shipments(account, Some(vec![first.id])).await.unwrap()[0];
+        assert_eq!(first.status, ShipmentStatus::OutForDelivery);
+        assert_eq!(first.status_at, t + 3600);
+        assert_eq!(first.delivered_at, None);
+        assert_eq!(first.events.len(), 4);
     }
 
     #[tokio::test]
@@ -1141,8 +1198,20 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert!(rescan.since <= now() - 13 * 86_400);
         let jobs = store.shipment_rescan_jobs().await.unwrap();
         assert_eq!(jobs.len(), 1);
+        // Binned mail is read again, junk is not.
+        let mut binned = Vec::new();
+        for role in [MailboxRole::Trash, MailboxRole::Junk] {
+            let request = IngestRequest {
+                account_id: account,
+                raw: b"From: shop@shop.example\r\nSubject: Paket\r\n\r\nUnterwegs\r\n".to_vec(),
+                mailboxes: vec![MailboxTarget::Role(role)],
+                keywords: vec![],
+                received_at: None,
+            };
+            binned.push(store.ingest(request).await.unwrap().id);
+        }
         let candidates = store.shipment_rescan_candidates(account, jobs[0].since, 0, 10).await.unwrap();
-        assert_eq!(candidates.iter().map(|record| record.id).collect::<Vec<_>>(), vec![email]);
+        assert_eq!(candidates.iter().map(|record| record.id).collect::<Vec<_>>(), vec![email, binned[0]]);
     }
 
     #[tokio::test]

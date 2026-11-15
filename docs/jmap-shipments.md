@@ -172,6 +172,10 @@ the most recently updated come first.
   the name of the app password or OAuth app the request came with. The rules
   above apply, so writing back the full carrier history again and again is
   harmless.
+  **`removeEvents`** takes back events apps added (`source: "client"`), each
+  given by its `at` and `status` as sent; mail events stay. The status is then
+  worked out again from the events left. This is the app's „Undo“ after
+  marking a parcel by hand.
 - **destroy** deletes a shipment. A later mail about the same number creates
   it again.
 
@@ -192,7 +196,8 @@ Looks through the mail of the last `days` (1 to 90, default 14; otherwise
 ["Shipment/rescan", { "accountId": "a1", "rescan": { "since": "2026-10-31T23:50:00Z", "startedAt": "2026-11-14T23:50:00Z", "found": 0, "running": true } }, "0"]
 ```
 
-A mail already noted changes nothing, so a rescan may be repeated. Switching
+Mail in the Trash is read too (people bin a shop's mail once read), Junk is
+not. A mail already noted changes nothing, so a rescan may be repeated. Switching
 shipments on starts one over 14 days.
 
 ## Switching off
