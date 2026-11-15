@@ -167,8 +167,9 @@ fn program_in_zip(bytes: &[u8]) -> Option<String> {
     if archive.len() > MAX_ZIP_ENTRIES {
         return Some(TOO_MANY_ENTRIES.into());
     }
-    let found = archive.file_names().find(|name| matches!(kind(name), Kind::Program | Kind::Macro))?;
-    Some(shown(found))
+    // A name zip cannot decode is skipped; the extension check needs readable text anyway.
+    let found = archive.file_names().flatten().find(|name| matches!(kind(name), Kind::Program | Kind::Macro))?;
+    Some(shown(&found))
 }
 
 fn once(hits: &mut Vec<Hit>, rule: &'static str, points: f32, detail: String) {
