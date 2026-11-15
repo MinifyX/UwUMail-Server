@@ -231,7 +231,10 @@
       "title": "Pakketten",
       "label": "Pakketten volgen uit verzendmails",
       "description": "Herkent trackingnummers en bezorgstatus in mails van winkels en vervoerders, zodat de webmail en gekoppelde apps je pakketten tonen. Uitschakelen verwijdert alle opgeslagen pakketten.",
-      "saved": "Opgeslagen"
+      "saved": "Opgeslagen",
+      "confirmTitle": "Pakketten niet meer volgen?",
+      "confirmText": "Alle opgeslagen pakketten worden verwijderd. Zet je het weer aan, dan worden alleen nieuwe mails en die van de laatste dagen gelezen.",
+      "confirmOff": "Uitzetten en verwijderen"
     }
   },
   "admin": {

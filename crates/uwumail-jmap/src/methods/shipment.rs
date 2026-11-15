@@ -1,13 +1,15 @@
 //! Shipment/get, /changes, /query, /set and /rescan: the parcels found in shipping mail, and
 //! what apps such as Home Assistant report about them. See docs/jmap-shipments.md.
 
+use std::collections::HashMap;
+
 use chrono::{NaiveDate, NaiveTime, TimeZone};
-use chrono_tz::Europe::Berlin;
+use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use uwumail_labels::{Carrier, ShipmentStatus};
 use uwumail_store::{
-    NewShipmentEvent, SHIPMENT_MAX_EVENTS, SHIPMENT_RESCAN_DEFAULT_DAYS, SHIPMENT_RESCAN_MAX_DAYS, Shipment,
-    ShipmentRescan, ShipmentUpdate, StoreError,
+    MailboxRole, NewShipmentEvent, SHIPMENT_MAX_EVENTS, SHIPMENT_RESCAN_DEFAULT_DAYS, SHIPMENT_RESCAN_MAX_DAYS,
+    Shipment, ShipmentRescan, ShipmentUpdate, StoreError,
 };
 
 use super::{
@@ -37,20 +39,65 @@ const DEFAULTS: &[&str] = &[
     "updated",
 ];
 
+/// In someone else's account, the shipments the caller has the `needed` rights for: those of a
+/// mailbox their mail lies in, as for the mail itself. One added by hand goes by the Inbox. In
+/// the caller's own account, all of them.
+pub(crate) async fn allowed(ctx: &Ctx<'_>, shipments: Vec<Shipment>, needed: &str) -> MethodResult<Vec<Shipment>> {
+    let Some(view) = ctx.shared.as_ref() else { return Ok(shipments) };
+    let store = &ctx.jmap.store;
+    let mails: Vec<i64> = shipments.iter().flat_map(Shipment::email_ids).collect();
+    let mailboxes: HashMap<i64, Vec<i64>> =
+        store.emails_by_ids(ctx.account.id, mails).await?.into_iter().map(|mail| (mail.id, mail.mailbox_ids)).collect();
+    let by_inbox = inbox_allows(ctx, needed).await?;
+    Ok(shipments
+        .into_iter()
+        .filter(|shipment| {
+            let mails = shipment.email_ids();
+            if mails.is_empty() {
+                return by_inbox;
+            }
+            mails.iter().filter_map(|mail| mailboxes.get(mail)).flatten().any(|mailbox| view.may(*mailbox, needed))
+        })
+        .collect())
+}
+
+/// Whether the caller has the `needed` rights on the Inbox of the account.
+async fn inbox_allows(ctx: &Ctx<'_>, needed: &str) -> MethodResult<bool> {
+    let Some(view) = ctx.shared.as_ref() else { return Ok(true) };
+    let mailboxes = ctx.jmap.store.mailboxes(ctx.account.id).await?;
+    Ok(mailboxes.iter().find(|m| m.role == Some(MailboxRole::Inbox)).is_some_and(|inbox| view.may(inbox.id, needed)))
+}
+
+/// Whether the caller may change shipment `number`: not found when they may not see it.
+async fn may_change(ctx: &Ctx<'_>, number: i64) -> Result<(), SetError> {
+    if ctx.shared.is_none() {
+        return Ok(());
+    }
+    let found = ctx.jmap.store.shipments(ctx.account.id, Some(vec![number])).await.map_err(refused)?;
+    if allowed(ctx, found.clone(), "r").await.map_err(|_| SetError::not_found())?.is_empty() {
+        return Err(SetError::not_found());
+    }
+    if allowed(ctx, found, "w").await.map_err(|_| SetError::not_found())?.is_empty() {
+        return Err(SetError::new("forbidden", "you may only read this account's shipments"));
+    }
+    Ok(())
+}
+
 fn id(number: i64) -> String {
     format!("s{number}")
 }
 
-/// A wall-clock time in Germany as RFC 3339 with its offset, such as `2026-11-15T10:15:00+01:00`.
-fn berlin(day: &str, time: &str) -> Option<String> {
+/// A wall-clock time in the person's time zone as RFC 3339 with its offset, such as
+/// `2026-11-15T10:15:00+01:00`.
+fn local(day: &str, time: &str, tz: Tz) -> Option<String> {
     let day = NaiveDate::parse_from_str(day, "%Y-%m-%d").ok()?;
     let time = NaiveTime::parse_from_str(time, "%H:%M").ok()?;
-    let at = Berlin.from_local_datetime(&day.and_time(time)).earliest()?;
+    let at = tz.from_local_datetime(&day.and_time(time)).earliest()?;
     Some(at.to_rfc3339_opts(chrono::SecondsFormat::Secs, false))
 }
 
 /// `{from, to, allDay}`. A day without a time window runs from its midnight to the next.
-fn expected(shipment: &Shipment) -> Value {
+fn expected(shipment: &Shipment, tz: Tz) -> Value {
     let Some(day) = shipment.expected_day.as_deref() else { return Value::Null };
     match (&shipment.expected_from, &shipment.expected_to) {
         (None, None) => {
@@ -59,20 +106,20 @@ fn expected(shipment: &Shipment) -> Value {
                 .and_then(|d| d.succ_opt())
                 .map(|d| d.format("%Y-%m-%d").to_string());
             json!({
-                "from": berlin(day, "00:00"),
-                "to": next.and_then(|next| berlin(&next, "00:00")),
+                "from": local(day, "00:00", tz),
+                "to": next.and_then(|next| local(&next, "00:00", tz)),
                 "allDay": true,
             })
         }
         (from, to) => json!({
-            "from": berlin(day, from.as_deref().unwrap_or("00:00")),
-            "to": to.as_deref().and_then(|to| berlin(day, to)),
+            "from": local(day, from.as_deref().unwrap_or("00:00"), tz),
+            "to": to.as_deref().and_then(|to| local(day, to, tz)),
             "allDay": false,
         }),
     }
 }
 
-fn to_json(shipment: &Shipment) -> Map<String, Value> {
+fn to_json(shipment: &Shipment, tz: Tz) -> Map<String, Value> {
     let events: Vec<Value> = shipment
         .events
         .iter()
@@ -103,7 +150,7 @@ fn to_json(shipment: &Shipment) -> Map<String, Value> {
         "orderRef": shipment.order_ref,
         "status": shipment.status.id(),
         "statusAt": dates::format(shipment.status_at),
-        "expected": expected(shipment),
+        "expected": expected(shipment, tz),
         "deliveredAt": shipment.delivered_at.map(dates::format),
         "pickup": shipment.pickup,
         "hidden": shipment.hidden,
@@ -120,22 +167,23 @@ fn to_json(shipment: &Shipment) -> Map<String, Value> {
 pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let state = ctx.state().await?;
     let properties = properties(args, "properties", DEFAULTS)?;
+    let tz = ctx.jmap.store.shipment_timezone(ctx.account.id).await?;
     let mut list = Vec::new();
     let mut not_found = Vec::new();
     match get_ids(args)? {
         None => {
-            let all = ctx.jmap.store.shipments(ctx.account.id, None).await?;
-            list.extend(all.iter().map(|shipment| pick(to_json(shipment), &properties)));
+            let all = allowed(ctx, ctx.jmap.store.shipments(ctx.account.id, None).await?, "r").await?;
+            list.extend(all.iter().map(|shipment| pick(to_json(shipment, tz), &properties)));
         }
         Some(requested) => {
             if requested.len() > MAX_OBJECTS_IN_GET {
                 return Err(MethodError::kind("requestTooLarge"));
             }
             let wanted: Vec<i64> = requested.iter().filter_map(|id| ctx.parse_id('s', id)).collect();
-            let found = ctx.jmap.store.shipments(ctx.account.id, Some(wanted)).await?;
+            let found = allowed(ctx, ctx.jmap.store.shipments(ctx.account.id, Some(wanted)).await?, "r").await?;
             for wanted in requested {
                 match ctx.parse_id('s', &wanted).and_then(|n| found.iter().find(|shipment| shipment.id == n)) {
-                    Some(shipment) => list.push(pick(to_json(shipment), &properties)),
+                    Some(shipment) => list.push(pick(to_json(shipment, tz), &properties)),
                     None => not_found.push(wanted),
                 }
             }
@@ -150,11 +198,11 @@ fn active(status: ShipmentStatus) -> bool {
 }
 
 /// When it is expected, as a sort key: its start, or the end of time when nobody knows.
-fn expected_at(shipment: &Shipment) -> i64 {
-    expected(shipment)["from"].as_str().and_then(dates::parse).unwrap_or(i64::MAX)
+fn expected_at(shipment: &Shipment, tz: Tz) -> i64 {
+    expected(shipment, tz)["from"].as_str().and_then(dates::parse).unwrap_or(i64::MAX)
 }
 
-fn matches(shipment: &Shipment, filter: &Value) -> MethodResult<bool> {
+fn matches(shipment: &Shipment, filter: &Value, tz: Tz) -> MethodResult<bool> {
     let Some(filter) = filter.as_object() else {
         return Err(MethodError::new("unsupportedFilter", "a filter is an object"));
     };
@@ -162,7 +210,7 @@ fn matches(shipment: &Shipment, filter: &Value) -> MethodResult<bool> {
         let conditions = filter.get("conditions").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
         let mut results = Vec::with_capacity(conditions.len());
         for condition in conditions {
-            results.push(matches(shipment, condition)?);
+            results.push(matches(shipment, condition, tz)?);
         }
         return match operator.as_str() {
             Some("AND") => Ok(results.iter().all(|&r| r)),
@@ -191,7 +239,7 @@ fn matches(shipment: &Shipment, filter: &Value) -> MethodResult<bool> {
             "expectedBefore" => {
                 let before =
                     value.as_str().and_then(dates::parse).ok_or_else(|| unsupported("expectedBefore is a date"))?;
-                expected_at(shipment) < before
+                expected_at(shipment, tz) < before
             }
             other => return Err(unsupported(&format!("{other} is not a Shipment filter"))),
         };
@@ -208,9 +256,10 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let sort = args.get("sort").and_then(Value::as_array).cloned().unwrap_or_default();
     check_sort_size(&sort)?;
     let state = ctx.state().await?;
+    let tz = ctx.jmap.store.shipment_timezone(ctx.account.id).await?;
     let mut shipments = Vec::new();
-    for shipment in ctx.jmap.store.shipments(ctx.account.id, None).await? {
-        if filter.map_or(Ok(true), |filter| matches(&shipment, filter))? {
+    for shipment in allowed(ctx, ctx.jmap.store.shipments(ctx.account.id, None).await?, "r").await? {
+        if filter.map_or(Ok(true), |filter| matches(&shipment, filter, tz))? {
             shipments.push(shipment);
         }
     }
@@ -218,11 +267,12 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     shipments.sort_by_key(|shipment| std::cmp::Reverse((shipment.updated_at, shipment.id)));
     for comparator in sort.iter().rev() {
         let ascending = comparator.get("isAscending").and_then(Value::as_bool).unwrap_or(true);
-        let key: fn(&Shipment) -> i64 = match comparator.get("property").and_then(Value::as_str) {
-            Some("expected") => expected_at,
-            Some("updated") => |shipment| shipment.updated_at,
+        let by_expected = match comparator.get("property").and_then(Value::as_str) {
+            Some("expected") => true,
+            Some("updated") => false,
             _ => return Err(MethodError::new("unsupportedSort", "sort by expected or updated")),
         };
+        let key = |shipment: &Shipment| if by_expected { expected_at(shipment, tz) } else { shipment.updated_at };
         shipments.sort_by(|a, b| if ascending { key(a).cmp(&key(b)) } else { key(b).cmp(&key(a)) });
     }
     let ids = shipments.iter().map(|shipment| id(shipment.id)).collect();
@@ -309,6 +359,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     if_in_state(args, &old_state)?;
     let store = ctx.jmap.store.clone();
     let account_id = ctx.account.id;
+    let tz = store.shipment_timezone(account_id).await?;
     let mut response = SetResponse::default();
     let wants_client = args.get("create").is_some_and(|c| c.as_object().is_some_and(|c| !c.is_empty()))
         || args.get("update").is_some();
@@ -326,6 +377,9 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     .ok_or_else(|| SetError::invalid_properties(&["number"], "number is required"))?
                     .to_owned();
                 let title = text(object, "title")?.map(str::to_owned);
+                if !inbox_allows(ctx, "w").await.map_err(|_| SetError::not_found())? {
+                    return Err(SetError::new("forbidden", "adding a shipment needs the right to change the Inbox"));
+                }
                 store.create_shipment(account_id, carrier, number, title, client.clone()).await.map_err(refused)
             }
             .await;
@@ -336,7 +390,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     let shipment = store.shipments(account_id, Some(vec![number])).await?;
                     let mut object = json!({ "id": created });
                     if let Some(shipment) = shipment.first() {
-                        let full = to_json(shipment);
+                        let full = to_json(shipment, tz);
                         for key in ["trackingUrl", "status", "statusAt", "created", "updated"] {
                             object[key] = full[key].clone();
                         }
@@ -370,6 +424,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     hidden,
                     add_events: patch.get("addEvents").map(events).transpose()?.unwrap_or_default(),
                 };
+                may_change(ctx, number).await?;
                 store.update_shipment(account_id, number, change, client.clone()).await.map_err(refused)
             }
             .await;
@@ -387,7 +442,10 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     if let Some(destroy) = args.get("destroy").and_then(Value::as_array) {
         for wanted in destroy.iter().filter_map(Value::as_str) {
             let result = match ctx.parse_id('s', wanted) {
-                Some(number) => store.destroy_shipment(account_id, number).await.map_err(refused),
+                Some(number) => match may_change(ctx, number).await {
+                    Ok(()) => store.destroy_shipment(account_id, number).await.map_err(refused),
+                    Err(err) => Err(err),
+                },
                 None => Err(SetError::not_found()),
             };
             match result {

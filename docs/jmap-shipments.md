@@ -25,9 +25,22 @@ and in the `accountCapabilities` of the person's own account only:
 | `maxEvents` | events one shipment keeps, and that one `addEvents` may bring |
 | `maxRescanDays` | the furthest `Shipment/rescan` looks back, in days |
 
-Accounts others share with the person (shared mailboxes, groups) have no
-shipments; parcels are found in the mail that arrives in the person's own
-mailbox. An app password with the usage `mail` is enough.
+An app password with the usage `mail` is enough.
+
+### Shared accounts
+
+Each account keeps its own shipments; they are never merged. An account others
+share with the person (a shared mailbox such as `info@`, a shared folder) shows
+its shipments to whoever may read the mail they came from: `Shipment/get`,
+`/changes`, `/query` and `/queryChanges` with the shared account's `accountId`
+see a shipment when one of its mails lies in a mailbox the person may read
+(`r`). A shipment someone added by hand goes by the inbox. `Shipment/set`
+needs the right to change that mail (`w`): without it `create`, `update` and
+`destroy` answer `forbidden`, and a shipment the person cannot see is
+`notFound`. `Shipment/rescan` works only on the person's own account
+(`accountNotSupportedByMethod`). Limits: no push `StateChange` is sent for
+shipments of a shared account, and a shipment whose mails are all deleted is
+seen only by the owner.
 
 ## Shipment
 
@@ -65,12 +78,12 @@ mailbox. An app password with the usage `mail` is enough.
 | `merchant`, `orderRef` | the shop and its order number, as the mail names them |
 | `status` | `ordered`, `shipped`, `inTransit`, `outForDelivery`, `delivered`, `readyForPickup`, `deliveryFailed`, `returned` or `cancelled` |
 | `statusAt` | when the status was reached |
-| `expected` | when the parcel comes, or `null`. With a time window `allDay` is `false` and `to` is `null` when the mail names only a start. A day without times has `allDay: true`, `from` that day's midnight and `to` the next midnight. Times are local to Europe/Berlin with their offset |
+| `expected` | when the parcel comes, or `null`. With a time window `allDay` is `false` and `to` is `null` when the mail names only a start. A day without times has `allDay: true`, `from` that day's midnight and `to` the next midnight. Times are local to the person's time zone (that of their default calendar, else Europe/Berlin) with their offset |
 | `deliveredAt` | when it was delivered, or `null` |
 | `pickup` | `{ "kind": "packstation" \| "postOffice" \| "parcelShop" \| "accessPoint", "name", "address", "until" }` (`until` a date, `YYYY-MM-DD`), or `null` |
 | `hidden` | the person put it out of sight |
 | `emailIds` | the mails that told of it, oldest first |
-| `events` | the history, oldest first; `source` is `mail` (with `emailId`) or `client` (with `clientName`) |
+| `events` | the history, oldest first; `source` is `mail` (with `emailId`), `ai` (with `emailId`, see below) or `client` (with `clientName`) |
 
 ### How mails become shipments
 
@@ -91,6 +104,20 @@ mailbox. An app password with the usage `mail` is enough.
   shipments.
 - Delivered, returned and cancelled shipments go 30 days after their status,
   others 60 days after their last news.
+- A day without a year or a relative day ("morgen") is read in the person's
+  time zone from the date the mail arrived.
+
+### The model
+
+When the person has AI labels on and the `shipping` label goes on a mail but the rules could not read
+it in full (no number or no status), the label worker asks the model once, in
+the same structured form as the assistant's event extraction. Its answer
+counts only when it is sure (0.8) and a tracking number or order number in it
+appears **word for word** in the mail's subject or text; anything else it names
+is left out, and it never sets a tracking link or a pickup place. Such events
+have `source: "ai"`. The ask goes through the assistant's usual checks: the
+person's permission for AI labels, the provider's daily request and token
+limits, and the cost limits. A failed ask never stops the labels.
 
 ## Methods
 

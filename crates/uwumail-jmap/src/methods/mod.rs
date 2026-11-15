@@ -76,6 +76,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
+pub(crate) use shipment::allowed as allowed_shipments;
 
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
 pub(crate) const DAV_TYPES: &[&str] = &[

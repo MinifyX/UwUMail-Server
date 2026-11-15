@@ -7,6 +7,7 @@ use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uwumail_labels::{Mail, shipment};
+use uwumail_store::MailboxRole;
 
 use crate::common::{PASSWORD, Server, args, basic, server};
 
@@ -253,4 +254,73 @@ async fn shipments_need_their_capability_and_stay_in_their_account() {
         .api_using("nyu@example.org", &USING, json!([["Shipment/get", { "accountId": other, "ids": null }, "0"]]))
         .await;
     assert_eq!(args(&theirs, 0, "Shipment/get")["list"], json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn whoever_may_read_the_mailbox_sees_its_shipments() {
+    const NYU: &str = "nyu@example.org";
+    const MAIL: [&str; 3] = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", SHIPMENTS];
+    let server = server().await;
+    let mini = server.id(MINI).await;
+    let account = server.account_id(MINI).await;
+    let nyu = format!("p{}", server.id(NYU).await);
+    let mailboxes = server.store.mailboxes(mini).await.unwrap();
+    let inbox = mailboxes.iter().find(|m| m.role == Some(MailboxRole::Inbox)).unwrap().id;
+    let archive = mailboxes.iter().find(|m| m.role == Some(MailboxRole::Archive)).unwrap().id;
+
+    // One parcel from a mail in the inbox, one from a mail moved to the archive.
+    deliver(&server, SHIPPED).await;
+    let private = SHIPPED.replace("00340434161234567890", "JJD000390007777777777").replace("shipped-1", "shipped-2");
+    let moved = deliver(&server, &private).await;
+    let update = json!({ moved.clone(): { "mailboxIds": { format!("m{archive}"): true } } });
+    server.api_using(MINI, &MAIL, json!([["Email/set", { "accountId": account, "update": update }, "0"]])).await;
+    let own =
+        call(&server, "Shipment/get", json!({ "accountId": account, "ids": null, "properties": ["number"] })).await;
+    assert_eq!(own["list"].as_array().unwrap().len(), 2, "{own}");
+
+    let share = |level: &str| {
+        json!([["Mailbox/set", { "accountId": account, "update": {
+            format!("m{inbox}"): { format!("shareWith/{nyu}"): level } } }, "0"]])
+    };
+    let nyu_call = |name: &'static str, arguments: Value| {
+        let server = &server;
+        async move { args(&server.api_using(NYU, &MAIL, json!([[name, arguments, "0"]])).await, 0, name).clone() }
+    };
+
+    // Reading the inbox shows its parcel, not the archived one, and changes nothing.
+    server.api_using(MINI, &MAIL, share("read")).await;
+    let seen = nyu_call("Shipment/get", json!({ "accountId": account, "ids": null })).await;
+    let list = seen["list"].as_array().unwrap();
+    assert_eq!(list.len(), 1, "{seen}");
+    assert_eq!(list[0]["number"], "00340434161234567890");
+    let parcel = list[0]["id"].as_str().unwrap().to_owned();
+    let hidden = own["list"].as_array().unwrap().iter().find(|s| s["id"] != parcel).unwrap()["id"].clone();
+    let found = nyu_call("Shipment/get", json!({ "accountId": account, "ids": [parcel, hidden] })).await;
+    assert_eq!(found["notFound"], json!([hidden]), "{found}");
+    let queried = nyu_call("Shipment/query", json!({ "accountId": account })).await;
+    assert_eq!(queried["ids"], json!([parcel]), "{queried}");
+    let refused = nyu_call(
+        "Shipment/set",
+        json!({ "accountId": account,
+            "create": { "c": { "carrier": "dhl", "number": "00340434160000000017" } },
+            "update": { parcel.clone(): { "hidden": true }, hidden.as_str().unwrap(): { "hidden": true } },
+            "destroy": [parcel] }),
+    )
+    .await;
+    assert_eq!(refused["notCreated"]["c"]["type"], "forbidden", "{refused}");
+    assert_eq!(refused["notUpdated"][&parcel]["type"], "forbidden");
+    assert_eq!(refused["notUpdated"][hidden.as_str().unwrap()]["type"], "notFound");
+    assert_eq!(refused["notDestroyed"][&parcel]["type"], "forbidden");
+    let rescan = server.api_using(NYU, &MAIL, json!([["Shipment/rescan", { "accountId": account }, "0"]])).await;
+    assert_eq!(rescan[0][1]["type"], "accountNotSupportedByMethod", "{rescan:?}");
+
+    // The right to change the inbox lets them change its parcel, still only in Mini's account.
+    server.api_using(MINI, &MAIL, share("write")).await;
+    let changed =
+        nyu_call("Shipment/set", json!({ "accountId": account, "update": { parcel.clone(): { "hidden": true } } }))
+            .await;
+    assert!(changed["updated"].get(&parcel).is_some(), "{changed}");
+    let own_account = server.account_id(NYU).await;
+    let theirs = nyu_call("Shipment/get", json!({ "accountId": own_account, "ids": null })).await;
+    assert_eq!(theirs["list"], json!([]), "Nyu's own account has no parcels");
 }

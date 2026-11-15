@@ -1,4 +1,4 @@
-import { Card, Toggle } from "@uwusuite/design";
+import { Button, Card, Dialog, Toggle } from "@uwusuite/design";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSession } from "@/features/session/session";
@@ -14,6 +14,8 @@ export function ShipmentsCard() {
   const queryClient = useQueryClient();
   const stored = useSession().data?.preferences.shipments !== "off";
   const [pending, setPending] = useState<boolean | null>(null);
+  // Switching off deletes the parcels, so it is asked first.
+  const [asking, setAsking] = useState(false);
   const save = useMutation({
     mutationFn: (on: boolean) =>
       api<Record<string, unknown>>("/api/account/preferences", {
@@ -37,10 +39,35 @@ export function ShipmentsCard() {
       <Toggle
         checked={pending ?? stored}
         disabled={save.isPending}
-        onChange={(on) => save.mutate(on)}
+        onChange={(on) => (on ? save.mutate(true) : setAsking(true))}
         label={t("account.shipments.label")}
         description={t("account.shipments.description")}
       />
+      <Dialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        width="sm"
+        tone="warning"
+        title={t("account.shipments.confirmTitle")}
+        footer={
+          <>
+            <Button autoFocus onClick={() => setAsking(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setAsking(false);
+                save.mutate(false);
+              }}
+            >
+              {t("account.shipments.confirmOff")}
+            </Button>
+          </>
+        }
+      >
+        <p className="px-6 pb-2 text-sm text-muted">{t("account.shipments.confirmText")}</p>
+      </Dialog>
     </Card>
   );
 }

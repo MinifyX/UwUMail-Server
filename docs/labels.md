@@ -229,6 +229,9 @@ sent, an invoice that names the parcel only in its small print. Everything loses
 vouches for the sender; the server keeps only what reaches 0.8. Texts are cut by characters, never
 by bytes, and the windows looked at are short, so no input makes the matching slow.
 
+With AI labels on, a shipping mail the rules could not read in full goes to the model once; only
+numbers it finds word for word in the mail count ([jmap-shipments.md](jmap-shipments.md#the-model)).
+
 ## Learned senders
 
 For each label and From address the server counts how often the person gave a mail from that

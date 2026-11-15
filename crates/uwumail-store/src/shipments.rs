@@ -3,7 +3,7 @@
 //! fetched from a carrier by the server.
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate};
-use chrono_tz::Europe::Berlin;
+use chrono_tz::{Europe::Berlin, Tz};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -205,10 +205,22 @@ fn destroy(conn: &Connection, account_id: i64, id: i64) -> Result<i64> {
     Ok(modseq)
 }
 
-/// The German day a mail meant, from the day it came.
-// shortcut: every day and time is read as German time, upgrade with a time zone per account.
-fn resolve(day: Day, received_at: i64) -> Option<NaiveDate> {
-    let base = DateTime::from_timestamp(received_at, 0)?.with_timezone(&Berlin).date_naive();
+/// The person's time zone: the one of their default calendar, else Europe/Berlin.
+pub(crate) fn timezone(conn: &Connection, account_id: i64) -> Result<Tz> {
+    let text: Option<String> = conn
+        .query_row(
+            "SELECT timezone FROM dav_collections WHERE account_id = ?1 AND kind = 'calendar' AND is_default",
+            [account_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    Ok(text.as_deref().and_then(crate::ical::timezone_id).and_then(|id| id.parse().ok()).unwrap_or(Berlin))
+}
+
+/// The local day a mail meant, from the day it came.
+fn resolve(day: Day, received_at: i64, tz: Tz) -> Option<NaiveDate> {
+    let base = DateTime::from_timestamp(received_at, 0)?.with_timezone(&tz).date_naive();
     match day {
         Day::InDays(days) if days <= 60 => base.checked_add_signed(Duration::days(days.into())),
         Day::InDays(_) => None,
@@ -225,12 +237,12 @@ fn resolve(day: Day, received_at: i64) -> Option<NaiveDate> {
     }
 }
 
-fn pickup_of(pickup: &Pickup, received_at: i64) -> ShipmentPickup {
+fn pickup_of(pickup: &Pickup, received_at: i64, tz: Tz) -> ShipmentPickup {
     ShipmentPickup {
         kind: pickup.kind.id().to_owned(),
         name: pickup.name.as_deref().and_then(|name| clipped(name, TITLE_MAX_CHARS)),
         address: pickup.address.as_deref().and_then(|address| clipped(address, TITLE_MAX_CHARS)),
-        until: pickup.until.and_then(|day| resolve(day, received_at)).map(|date| date.to_string()),
+        until: pickup.until.and_then(|day| resolve(day, received_at, tz)).map(|date| date.to_string()),
     }
 }
 
@@ -347,6 +359,7 @@ fn record_mail(
     received_at: i64,
     subject: &str,
     facts: &ShipmentFacts,
+    source: &str,
 ) -> Result<Option<i64>> {
     if !enabled(tx, account_id)? {
         return Ok(None);
@@ -359,6 +372,7 @@ fn record_mail(
     if numbers.is_empty() && order_ref.is_none() {
         return Ok(None);
     }
+    let tz = timezone(tx, account_id)?;
     let status =
         facts.status.unwrap_or(if numbers.is_empty() { ShipmentStatus::Ordered } else { ShipmentStatus::Shipped });
     let event = ShipmentEvent {
@@ -366,7 +380,7 @@ fn record_mail(
         status,
         text: clipped(subject, TEXT_MAX_CHARS),
         location: None,
-        source: "mail".into(),
+        source: source.into(),
         email_id: Some(email_id),
         client_name: None,
     };
@@ -444,11 +458,11 @@ fn record_mail(
     }
 
     let expected = facts.expected.and_then(|window| {
-        let day = resolve(window.day, received_at)?;
+        let day = resolve(window.day, received_at, tz)?;
         let time = |time: Option<(u32, u32)>| time.map(|(hour, minute)| format!("{hour:02}:{minute:02}"));
         Some((day.to_string(), time(window.from), time(window.to)))
     });
-    let pickup = facts.pickup.as_ref().map(|pickup| pickup_of(pickup, received_at));
+    let pickup = facts.pickup.as_ref().map(|pickup| pickup_of(pickup, received_at, tz));
     let mut last = None;
     for (id, created) in targets {
         let added = add_event(tx, id, &event)?;
@@ -537,6 +551,11 @@ impl Store {
         self.read(move |conn| enabled(conn, account_id)).await
     }
 
+    /// The time zone an account's shipment days and times are in.
+    pub async fn shipment_timezone(&self, account_id: i64) -> Result<Tz> {
+        self.read(move |conn| timezone(conn, account_id)).await
+    }
+
     /// An account's shipments with their events, oldest first; `ids` narrows the list.
     pub async fn shipments(&self, account_id: i64, ids: Option<Vec<i64>>) -> Result<Vec<Shipment>> {
         self.read(move |conn| load(conn, account_id, ids.as_deref())).await
@@ -552,7 +571,33 @@ impl Store {
         subject: String,
         facts: ShipmentFacts,
     ) -> Result<bool> {
-        let modseq = self.write(move |tx| record_mail(tx, account_id, email_id, received_at, &subject, &facts)).await?;
+        self.record_shipment(account_id, email_id, received_at, subject, facts, "mail").await
+    }
+
+    /// [`Store::record_shipment_mail`] for what the model read in a mail the rules could not:
+    /// its event's source is `ai`.
+    pub async fn record_shipment_from_model(
+        &self,
+        account_id: i64,
+        email_id: i64,
+        received_at: i64,
+        subject: String,
+        facts: ShipmentFacts,
+    ) -> Result<bool> {
+        self.record_shipment(account_id, email_id, received_at, subject, facts, "ai").await
+    }
+
+    async fn record_shipment(
+        &self,
+        account_id: i64,
+        email_id: i64,
+        received_at: i64,
+        subject: String,
+        facts: ShipmentFacts,
+        source: &'static str,
+    ) -> Result<bool> {
+        let modseq =
+            self.write(move |tx| record_mail(tx, account_id, email_id, received_at, &subject, &facts, source)).await?;
         if let Some(modseq) = modseq {
             self.notify_change(account_id, modseq);
         }
@@ -820,15 +865,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn days_are_read_in_german_time() {
+    fn days_are_read_in_the_persons_time() {
         // 2026-11-14 23:30 UTC is already the 15th in Germany.
         let at = 1_794_699_000;
-        assert_eq!(resolve(Day::InDays(0), at), NaiveDate::from_ymd_opt(2026, 11, 15));
-        assert_eq!(resolve(Day::InDays(1), at), NaiveDate::from_ymd_opt(2026, 11, 16));
-        assert_eq!(resolve(Day::InDays(61), at), None);
-        assert_eq!(resolve(Day::On { year: None, month: 1, day: 3 }, at), NaiveDate::from_ymd_opt(2027, 1, 3));
-        assert_eq!(resolve(Day::On { year: None, month: 11, day: 2 }, at), NaiveDate::from_ymd_opt(2026, 11, 2));
-        assert_eq!(resolve(Day::On { year: None, month: 2, day: 30 }, at), None);
+        let resolve = |day| resolve(day, at, Berlin);
+        assert_eq!(resolve(Day::InDays(0)), NaiveDate::from_ymd_opt(2026, 11, 15));
+        assert_eq!(resolve(Day::InDays(1)), NaiveDate::from_ymd_opt(2026, 11, 16));
+        assert_eq!(resolve(Day::InDays(61)), None);
+        assert_eq!(resolve(Day::On { year: None, month: 1, day: 3 }), NaiveDate::from_ymd_opt(2027, 1, 3));
+        assert_eq!(resolve(Day::On { year: None, month: 11, day: 2 }), NaiveDate::from_ymd_opt(2026, 11, 2));
+        assert_eq!(resolve(Day::On { year: None, month: 2, day: 30 }), None);
+        // ...and still the 14th in New York.
+        let new_york = super::resolve(Day::InDays(0), at, chrono_tz::America::New_York);
+        assert_eq!(new_york, NaiveDate::from_ymd_opt(2026, 11, 14));
+    }
+
+    #[tokio::test]
+    async fn the_time_zone_comes_from_the_default_calendar() {
+        let (store, _dir, account) = setup().await;
+        assert_eq!(store.shipment_timezone(account).await.unwrap(), Berlin);
+        let vtimezone = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTIMEZONE\r\nTZID:America/New_York\r\n\
+BEGIN:STANDARD\r\nDTSTART:19701101T020000\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nEND:STANDARD\r\n\
+END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "INSERT INTO dav_collections (account_id, kind, slug, created_at, timezone, is_default)
+                     VALUES (?1, 'calendar', 'zone-test', 0, ?2, 1)",
+                    params![account, vtimezone],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert_eq!(store.shipment_timezone(account).await.unwrap(), chrono_tz::America::New_York);
     }
 
     use crate::test_support::store;

@@ -274,6 +274,42 @@ the sentence of the mail the event comes from, copied exactly. Leave out what al
     Prompt { system, user, schema: Some(("calendar_events", events_schema())), max_tokens: 6000 }
 }
 
+pub fn shipment_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["carrier", "numbers", "status", "expectedDate", "expectedFrom", "expectedTo", "merchant",
+                     "orderRef", "confidence"],
+        "properties": {
+            "carrier": nullable_string(),
+            "numbers": { "type": "array", "items": { "type": "string" } },
+            "status": nullable_string(),
+            "expectedDate": nullable_string(),
+            "expectedFrom": nullable_string(),
+            "expectedTo": nullable_string(),
+            "merchant": nullable_string(),
+            "orderRef": nullable_string(),
+            "confidence": { "type": "number" }
+        }
+    })
+}
+
+/// The look at a shipping mail the rules could not read (docs/jmap-shipments.md, "The model").
+pub fn shipment(mail: &MailText) -> Prompt {
+    let system = format!(
+        "You read an e-mail about an order or a parcel so the reader can follow the parcel. carrier: one of dhl, \
+deutschePost, dpd, hermes, gls, ups, amazonLogistics, fedex, other, or null. numbers: the tracking numbers exactly as \
+the mail writes them, never an order, invoice or customer number, an empty list if there is none. status: one of \
+ordered, shipped, inTransit, outForDelivery, delivered, readyForPickup, deliveryFailed, returned, cancelled, or null. \
+expectedDate \"YYYY-MM-DD\" when the mail names the day the parcel arrives, read from the date the mail was sent, else \
+null; expectedFrom and expectedTo \"HH:MM\" for a time window that day, else null. merchant: the shop's name or null. \
+orderRef: the order number exactly as written, or null. confidence from 0 to 1 that the mail is about this \
+shipment. {RULES} Answer only with JSON."
+    );
+    let user = format!("<mail>\n{}\n</mail>", mail.for_prompt(true));
+    Prompt { system, user, schema: Some(("shipment_facts", shipment_schema())), max_tokens: 800 }
+}
+
 pub fn labels_schema(names: &[String]) -> Value {
     let mut schema = json!({
         "type": "object",

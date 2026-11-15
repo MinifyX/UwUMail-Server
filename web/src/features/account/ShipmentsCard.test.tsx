@@ -28,13 +28,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ShipmentsCard", () => {
-  it("is on unless switched off, and saves the change as a preference", async () => {
+  it("is on unless switched off, and switches off only once that is confirmed", async () => {
     show();
     const toggle = screen.getByRole("switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "common.cancel", hidden: true }));
+    expect(api).not.toHaveBeenCalled();
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "account.shipments.confirmOff", hidden: true }));
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith("/api/account/preferences", { method: "PATCH", body: { shipments: "off" } }),
+    );
+  });
+
+  it("switches on without asking", async () => {
+    preferences = { shipments: "off" };
+    show();
+    fireEvent.click(screen.getByRole("switch"));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/api/account/preferences", { method: "PATCH", body: { shipments: "on" } }),
     );
   });
 
