@@ -11,6 +11,12 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   `accountNotSupportedByMethod`, and `urn:uwumail:jmap:shipments` is left out of the JMAP session.
   Stored parcels are kept and come back when it is switched on again. The account switch still
   works on top and still deletes (docs/jmap-shipments.md).
+- JMAP session: with parcels off for an account, `urn:uwumail:jmap:shipments` stays in the top-level
+  `capabilities` (it can be switched on) but leaves that account's `accountCapabilities` and
+  `primaryAccounts`; `Shipment/*` then answers `accountNotSupportedByMethod` instead of `forbidden`.
+  Apps and Home Assistant should look at the account capability.
+- Webmail 0.32.0: parcel detection switch in *Settings → Mail*; with it off, or off on the server,
+  the Pakete view and the parcel chips are gone.
 - Host access: `install.sh` adds the `/host` volume line to a `compose.override.yaml` you wrote
   yourself, marked `# uwumail-host`, checks the result with `docker compose config` and puts the
   file back if that fails. `--remove` takes out only those lines.
