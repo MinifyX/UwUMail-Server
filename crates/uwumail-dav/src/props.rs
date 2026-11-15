@@ -316,6 +316,8 @@ impl Target {
             }
             // A built-in calendar, so that a move from this server to another UwUMail makes it
             // there from the setting instead of copying its events (docs/holidays.md).
+            // Marks the answer as UwUMail's, so that a move trusts `builtin` (security audit 0.36.0 S-7).
+            (UWUMAIL, "server", Target::Home(_)) => "UwUMail".into(),
             (UWUMAIL, "builtin", Target::Collection(v)) if v.access.is_owner() => {
                 let kind = v.collection.builtin.as_deref()?;
                 let region = v.collection.builtin_region.as_deref().unwrap_or_default();
