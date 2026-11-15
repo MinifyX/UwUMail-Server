@@ -3,6 +3,12 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.37.3
+
+- Updates page: *Neu starten* only shows when the machine (or the gateway VPS) needs a restart, next
+  to the note that says so. That other services run on the machine is now a plain grey note, not a
+  yellow warning: nothing is wrong.
+
 ## 0.37.2
 
 - Parcels can be marked by hand in the webmail: *Status setzen* offers every step the parcel can

@@ -387,20 +387,20 @@ function ComponentsCard({ view, control }: { view: UpdatesView; control: RunCont
                   {machine.rebootPackages.length > 0 && ` (${machine.rebootPackages.slice(0, 5).join(", ")})`}
                 </Warning>
               )}
-              {/* Never "alone" unless the helper said so: a warning that sometimes stays quiet is worse than none. */}
+              {/* Never "alone" unless the helper said so; a plain note, since nothing is wrong. */}
               {machine.alone !== true && (
-                <Warning>
+                <p className="text-[13px] text-muted">
                   {machine.alone === false
                     ? t("host.notAlone", { others: machine.others.join(", ") })
                     : t("host.cannotTell")}
-                </Warning>
+                </p>
               )}
               {machine.newRelease && (
                 <p className="text-[13px] text-muted">{t("updates.newRelease", { release: machine.newRelease })}</p>
               )}
               <div className="flex flex-wrap gap-2">
                 {machine.updates > 0 && act("hostSystem", t("updates.one"))}
-                {act("hostReboot", t("updates.restart"), true)}
+                {machine.rebootRequired && act("hostReboot", t("updates.restart"), true)}
               </div>
               <p className="text-[12px] text-muted">{t("host.liability")}</p>
             </Row>
@@ -441,7 +441,7 @@ function ComponentsCard({ view, control }: { view: UpdatesView; control: RunCont
                 )}
                 <div className="flex flex-wrap gap-2">
                   {system.updates > 0 && act("gatewaySystem", t("updates.one"))}
-                  {act("gatewayReboot", t("updates.restart"), true)}
+                  {system.rebootRequired && act("gatewayReboot", t("updates.restart"), true)}
                 </div>
               </Row>
             )}
