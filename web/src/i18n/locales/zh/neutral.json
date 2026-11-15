@@ -220,6 +220,15 @@
       "secondFactorOff": "双重验证登录已关闭",
       "fetchOk_other": "{{count}} 个收取账户正在运行",
       "fetchFailed": "收取账户 {{address}}：上次收取失败"
+    },
+    "shipments": {
+      "title": "包裹",
+      "label": "根据发货邮件跟踪包裹",
+      "description": "在商店和快递公司的邮件中识别运单号和配送状态，让网页邮箱和已连接的应用显示你的包裹。关闭后会删除所有已保存的包裹。",
+      "saved": "已保存",
+      "confirmTitle": "不再跟踪包裹？",
+      "confirmText": "所有已保存的包裹都会被删除。重新开启后，只会读取新邮件和最近几天的邮件。",
+      "confirmOff": "关闭并删除"
     }
   },
   "admin": {

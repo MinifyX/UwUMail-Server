@@ -60,6 +60,8 @@ const MIRRORED: &[(&str, &str, Mirror)] = &[
     // (docs/verification-codes.md).
     ("verificationHeuristics", "mailVerificationHeuristics", Mirror::OnOff),
     ("verificationCleanup", "mailVerificationCleanup", Mirror::Text),
+    // Parcels found in mail (docs/jmap-shipments.md).
+    ("shipments", "shipments", Mirror::OnOff),
 ];
 
 /// How long a message waits before it goes, when the person has not chosen: long enough to
@@ -376,6 +378,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         "conversations"
         | "senderPictures"
         | "verificationHeuristics"
+        | "shipments"
         | "linkConfirm"
         | "darkImages"
         | "assist.refineEvents"
@@ -578,6 +581,7 @@ impl Store {
                     return Err(rule("overQuota", format!("at most {USER_SETTINGS_MAX_KEYS} settings in one write")));
                 }
                 let (mut preferences, modseq) = account_row(tx, account_id)?;
+                let shipments_were_on = crate::shipments::enabled(tx, account_id)?;
                 if if_in_state.is_some_and(|expected| expected != modseq.to_string()) {
                     return Err(rule("stateMismatch", "the settings have changed since"));
                 }
@@ -654,6 +658,7 @@ impl Store {
                     }
                     tx.execute("UPDATE accounts SET preferences = ?1 WHERE id = ?2", params![encoded, account_id])?;
                 }
+                crate::shipments::follow_setting(tx, account_id, shipments_were_on)?;
                 // The built-in calendars follow their settings in the same write; one that cannot
                 // be made (too many calendars) fails it.
                 let mut log = crate::dav::ChangeLog::new(account_id);

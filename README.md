@@ -66,6 +66,9 @@ The long version of every point is in [docs/features.md](docs/features.md):
 - **Labels that sort themselves.** Your own [labels](docs/labels.md), put on
   new mail by conditions, built-in detectors, senders and a classifier that
   learns from you, no AI needed; an AI can judge the rest.
+- **Parcels followed by themselves.** Shipping mails become
+  [parcels](docs/jmap-shipments.md) with status and delivery day, for the
+  webmail and Home Assistant, no AI and no link ever opened.
 - **Spam filter and, if you want, [ClamAV](docs/antivirus.md).** The filter
   learns, keeps sender and word lists and fetches known-bad lists by itself.
 - **Backups and updates built in.** Nightly deduplicated, encrypted

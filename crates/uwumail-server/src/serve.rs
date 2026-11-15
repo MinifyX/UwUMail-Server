@@ -168,6 +168,9 @@ pub async fn run(
     // Once after an update: codes in the mail of the last day that this version finds and the last
     // one missed (docs/verification-codes.md).
     tasks.spawn(assist.clone().run_verification_rescan(shutdown_rx.clone()));
+    // Looks back through earlier mail for parcels when a person asks or switches them on
+    // (docs/jmap-shipments.md).
+    tasks.spawn(assist.clone().run_shipment_rescan(shutdown_rx.clone()));
     // What models cost: LiteLLM's and OpenRouter's price lists and the ECB's exchange rates, once a
     // day through the egress (docs/llm.md, "Costs").
     tasks.spawn(assist.clone().run_price_updater(shutdown_rx.clone()));
@@ -495,6 +498,11 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "forgot rare and old Bayes filter entries"),
             Err(err) => tracing::warn!(%err, "cleaning up the Bayes filter failed"),
+        }
+        match store.prune_shipments().await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "removed delivered and forgotten parcels"),
+            Err(err) => tracing::warn!(%err, "cleaning up parcels failed"),
         }
         match store.prune_changes(uwumail_store::CHANGES_RETENTION_SECS).await {
             Ok(0) => {}

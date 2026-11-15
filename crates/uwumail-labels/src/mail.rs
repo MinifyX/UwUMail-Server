@@ -25,6 +25,10 @@ pub const HEADERS: [&str; 7] = [
 /// Recipient addresses (To and Cc) that are kept, at most.
 pub const MAX_RECIPIENTS: usize = 50;
 
+/// Links that are kept, at most, and the characters of one.
+pub const MAX_LINKS: usize = 100;
+pub const MAX_LINK_CHARS: usize = 2_000;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attachment {
     /// The file name; empty when the part has none.
@@ -57,6 +61,30 @@ pub struct Mail {
     pub calendar: bool,
     /// Of [`HEADERS`], name (lower case) and value.
     pub headers: Vec<(String, String)>,
+    /// The `http(s)` links of the text and the HTML body, as written, at most [`MAX_LINKS`] of at
+    /// most [`MAX_LINK_CHARS`]. Only read, never opened.
+    pub links: Vec<String>,
+}
+
+/// The `http(s)` links in `text` (plain text or HTML), in order and without repeats.
+pub fn links_in(text: &str, links: &mut Vec<String>) {
+    // Each character is looked at once: a link that holds more links is one long link.
+    let mut scanned = 0;
+    for (start, _) in text.match_indices("http") {
+        if links.len() >= MAX_LINKS {
+            return;
+        }
+        let rest = &text[start..];
+        if start < scanned || !(rest.starts_with("https://") || rest.starts_with("http://")) {
+            continue;
+        }
+        let end = rest.find(|c: char| c.is_whitespace() || "\"'<>()[]{}\\`".contains(c)).unwrap_or(rest.len());
+        scanned = start + end;
+        let link = rest[..end].trim_end_matches(['.', ',', ';', ':', '!', '?']).replace("&amp;", "&");
+        if link.chars().count() <= MAX_LINK_CHARS && link.len() > "https://".len() && !links.contains(&link) {
+            links.push(link);
+        }
+    }
 }
 
 /// `text` up to its first `max` characters.
@@ -106,11 +134,16 @@ impl Mail {
             known_sender: false,
             from_trusted: true,
             subject: cut(subject, MAX_FIELD_CHARS),
-            text,
             has_attachment: !attachments.is_empty(),
             attachments,
             calendar,
             headers,
+            links: {
+                let mut links = Vec::new();
+                links_in(&text, &mut links);
+                links
+            },
+            text,
         }
     }
 
@@ -180,7 +213,12 @@ impl Mail {
             .take(20)
             .map(|(name, value)| (name.to_owned(), value.split_whitespace().collect::<Vec<_>>().join(" ")))
             .collect();
+        let html = message.body_html(0);
         let mut mail = Mail::new(&from, &subject, &text, attachments, calendar, headers);
+        if let Some(html) = html {
+            // Links in HTML are only in the markup; 4 MB of it at most, as the caller reads.
+            links_in(&html, &mut mail.links);
+        }
         mail.from_name = cut(from_name.trim(), MAX_FIELD_CHARS);
         mail.to = to;
         mail

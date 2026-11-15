@@ -21,6 +21,7 @@ mod profile;
 mod query_changes;
 mod remote_images;
 mod sharing;
+mod shipments;
 mod sieve;
 mod signatures;
 mod submission;

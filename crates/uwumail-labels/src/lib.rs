@@ -17,6 +17,7 @@ mod facts;
 mod mail;
 mod overlap;
 mod rules;
+mod shipment;
 pub mod similar;
 pub mod text;
 
@@ -32,9 +33,15 @@ pub use classifier::{
 };
 pub use detect::{Detector, Finding, amount, date, detect, time};
 pub use facts::{FREEMAIL, Facts, SenderKind, has_one_time_code};
-pub use mail::{Attachment, HEADERS, MAX_ATTACHMENTS, MAX_FIELD_CHARS, MAX_RECIPIENTS, MAX_TEXT_CHARS, Mail};
+pub use mail::{
+    Attachment, HEADERS, MAX_ATTACHMENTS, MAX_FIELD_CHARS, MAX_LINK_CHARS, MAX_LINKS, MAX_RECIPIENTS, MAX_TEXT_CHARS,
+    Mail, links_in,
+};
 pub use overlap::{Overlap, OverlapLabel, overlaps};
 pub use rules::{Condition, Field, MAX_CONDITIONS, MAX_VALUE_CHARS, Match, Rules};
+pub use shipment::{
+    Carrier, DateWindow, Day, MAX_NUMBERS, Pickup, PickupKind, ShipmentFacts, ShipmentStatus, shipment,
+};
 pub use similar::Neighbour;
 
 /// Hand-labelings of one sender after which their new mail gets the label.

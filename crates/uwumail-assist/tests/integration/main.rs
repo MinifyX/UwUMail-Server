@@ -9,4 +9,5 @@ mod learning;
 mod prices;
 mod providers;
 mod rescan;
+mod shipments;
 mod spam_eval;

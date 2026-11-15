@@ -18,7 +18,10 @@
   },
   "account": {
     "greeting": "Hallo {{name}}!",
-    "intro": "Hier ist alles rund um dein Postfach (｡･ω･｡)"
+    "intro": "Hier ist alles rund um dein Postfach (｡･ω･｡)",
+    "shipments": {
+      "label": "Ich schau nach deinen Paketen (ﾉ◕ヮ◕)ﾉ"
+    }
   },
   "moving": {
     "intro": "Pack dein altes Postfach ein und hol alles nach Hause: jeden Ordner, jede Markierung, jedes Datum. Der Server trägt die Kisten im Hintergrund (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",

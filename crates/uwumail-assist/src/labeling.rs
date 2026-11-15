@@ -183,7 +183,15 @@ impl Assist {
             }
         }
         let chosen = choose(&labels, &present, merge(candidates, from_model));
-        self.put_labels(account, email_id, &stored, chosen, effective).await
+        // Only when the shipping label goes on now, so a mail is asked about once.
+        let shipping = chosen.iter().any(|decision| {
+            stored.iter().any(|label| label.id == decision.label_id && label.base.as_deref() == Some("shipping"))
+        });
+        let picks = self.put_labels(account, email_id, &stored, chosen, effective).await?;
+        if prefs.auto_labels && shipping {
+            self.shipment_by_model(account, &record, &mail, &mail_text).await;
+        }
+        Ok(picks)
     }
 
     async fn record_of(&self, account: &Account, email_id: i64) -> Result<EmailRecord> {

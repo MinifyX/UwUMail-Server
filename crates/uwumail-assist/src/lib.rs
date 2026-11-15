@@ -18,6 +18,7 @@ pub mod mail;
 pub mod prices;
 pub mod prompts;
 mod rescan;
+mod shipments;
 pub mod spam;
 mod worker;
 
