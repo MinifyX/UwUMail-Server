@@ -1703,12 +1703,13 @@ pub(crate) async fn receive(
     } else {
         None
     };
+    let verified_from =
+        verdict.as_ref().and_then(|v| v.from_address.clone().filter(|_| v.from_verified || v.dmarc_passed));
     // What the hub says never files a recipient's contact who is who they say (security audit
     // 0.38.0 S-1); an allowed sender is not junk for that recipient anyway.
     if let Some(score) = score.as_mut()
         && score.hits.iter().any(|hit| hit.rule.starts_with("SPAMNET_"))
-        && let Some(from) =
-            verdict.as_ref().and_then(|v| v.from_address.clone().filter(|_| v.from_verified || v.dmarc_passed))
+        && let Some(from) = verified_from.clone()
     {
         for (account_id, _) in &targets {
             if ctx.store.knows_sender(*account_id, from.clone()).await.unwrap_or(false) {
@@ -2292,11 +2293,16 @@ pub(crate) async fn receive(
                     queue_for_labels(&ctx, account_id, &email_ids).await;
                     let allowed = matches!(decision, Decision::Allow(_));
                     let doubted = parcel_doubted && !allowed;
-                    // An allowed sender's mail is never moved by the check (security audit 0.38.0 S-5).
+                    // An allowed sender's or an authenticated contact's mail is never moved by the
+                    // check (security audit 0.38.0 S-5).
                     if let Some((carrier, numbers)) =
                         labels::shipment(&ctx, account_id, &email_ids, &message, &label_mail, &label_sender, doubted)
                             .await
                         && !allowed
+                        && !match &verified_from {
+                            Some(from) => ctx.store.knows_sender(account_id, from.clone()).await.unwrap_or(false),
+                            None => false,
+                        }
                     {
                         parcel_checks.push(crate::parcels::ParcelCheck {
                             account_id,
