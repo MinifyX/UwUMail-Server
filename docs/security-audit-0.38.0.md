@@ -80,7 +80,7 @@ Nothing blocked the release as long as the Spam-Netz stays off by default (`spam
 - **Place:** `crates/uwumail-smtp/src/inbound.rs:2284` (the `ParcelCheck` push).
 - **Cause:** A check is pushed for every unauthenticated mail that has a carrier and numbers, whatever the decision. `Decision::Allow` only changes whether the parcel is recorded. Mail from a sender the person allowlisted can therefore still be moved to Junk.
 - **Fix:** Do not push a `ParcelCheck` when the decision is `Allow`, or when the sender is an authenticated contact.
-- Fixed in c06a4ef8 and ae3718dd: no `ParcelCheck` when the decision is `Allow`, nor when the From address is verified (DKIM-aligned or DMARC pass) and the recipient knows it (contact or correspondent).
+- Fixed in c06a4ef8 and ae3718dd: no `ParcelCheck` when the decision is `Allow`, nor when the From address is verified (SPF or DKIM for its domain, or DMARC pass) and the recipient knows it (contact or correspondent).
 
 ### S-6 — The Spam-Netz list has no entry limit and is applied in one write (low, fixed)
 
