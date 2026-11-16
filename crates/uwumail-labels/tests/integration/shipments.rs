@@ -236,6 +236,17 @@ fn tickets_are_no_parcels() {
 }
 
 #[test]
+fn contracts_are_no_parcels() {
+    // A hosting provider calls its product a "Paket" and has an order number.
+    let mail = message(
+        &["From: Hoster <service@hoster.example>", "Subject: Kündigung für Ihr Hoster Paket (Auftrag: 10236476)"],
+        "Kundennummer: 77764539\nAuftragsnummer: 10236476\nSie haben beauftragt, Ihr Produkt (VPS Linux M) zu kündigen.\n\
+         Die Kündigung erfolgt zum 16.12.2026. Bis dahin fallen die monatlichen Gebühren an.",
+    );
+    assert_eq!(uwumail_labels::shipment(&mail), None);
+}
+
+#[test]
 fn shopify_themes() {
     // Dawn: a button to the carrier.
     let dawn = html_message(

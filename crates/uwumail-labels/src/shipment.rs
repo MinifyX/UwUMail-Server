@@ -351,7 +351,12 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
     let mut confidence;
     if numbers.is_empty() {
         // An order confirmation or a shop's shipping notice without a number: by shop and order.
-        if order_ref.is_none() || facts.mass_mail() || !order_subject || is_ticket(mail, subject, text) {
+        if order_ref.is_none()
+            || facts.mass_mail()
+            || !order_subject
+            || is_ticket(mail, subject, text)
+            || is_contract(subject, text)
+        {
             return None;
         }
         confidence = 0.8;
@@ -429,6 +434,26 @@ fn is_ticket(mail: &Mail, subject: &str, text: &str) -> bool {
         || fold(&mail.from_name).contains("ticket")
         || mail.from_domain().to_ascii_lowercase().contains("ticket")
         || find_any(text, TICKET_WORDS).is_some()
+}
+
+/// Words of a contract (hosting, phone, subscription) rather than goods: such mail has an order
+/// number too and calls the product a "Paket".
+const CONTRACT_SUBJECT_WORDS: &[&str] =
+    &["kündigung", "gekündigt", "vertrag", "abonnement", "subscription", "tarifwechsel"];
+const CONTRACT_WORDS: &[&str] = &[
+    "kündigung erfolgt zum",
+    "kündigungsbestätigung",
+    "vertragslaufzeit",
+    "mindestlaufzeit",
+    "monatliche gebühr",
+    "monatlichen gebühr",
+    "webspace",
+    "your subscription",
+];
+
+/// Whether `subject` and `text` (folded) are about a contract rather than something shipped.
+fn is_contract(subject: &str, text: &str) -> bool {
+    find_any(subject, CONTRACT_SUBJECT_WORDS).is_some() || find_any(text, CONTRACT_WORDS).is_some()
 }
 
 /// Words of a status, the most telling first: a mail about a failed delivery also tells what was
