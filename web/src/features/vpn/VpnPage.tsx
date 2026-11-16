@@ -131,7 +131,7 @@ function StatusCard({ vpn }: { vpn: VpnView }) {
             <>
               <dt className="font-semibold text-muted">{t("vpn.status.through")}</dt>
               <dd>
-                {(["pictures", "updates", "fetch", "assist", "spamnet"] as const)
+                {(["pictures", "updates", "fetch", "assist", "spamnet", "parcels"] as const)
                   .filter((route) => routes[route])
                   .map((route) => t(`vpn.routes.${route}Short`))
                   .join(", ") || t("vpn.status.nothing")}
@@ -814,6 +814,12 @@ function RoutesFields({ form, vpn }: { form: Form; vpn: VpnView }) {
         label={t("vpn.routes.spamnet")}
         hint={t("vpn.routes.spamnetHint")}
       />
+      <ToggleField
+        form={form}
+        settingKey="egress.parcels"
+        label={t("vpn.routes.parcels")}
+        hint={t("vpn.routes.parcelsHint")}
+      />
       <ChoiceField
         form={form}
         settingKey="egress.fallback"
@@ -908,6 +914,7 @@ export function VpnPage() {
           "egress.fetch",
           "egress.assist",
           "egress.spamnet",
+          "egress.parcels",
           "egress.fallback",
           "egress.image_cache_mb",
           "egress.proxy",

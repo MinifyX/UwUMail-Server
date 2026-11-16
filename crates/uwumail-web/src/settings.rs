@@ -125,9 +125,10 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("egress.image_cache_mb", SettingKind::Integer { min: 0, max: 102_400 }),
     spec("egress.assist", SettingKind::Bool),
     spec("egress.spamnet", SettingKind::Bool),
+    spec("egress.parcels", SettingKind::Bool),
     // Daily TLS reports (RFC 8460) to the domains mail went to, when they ask for them.
     spec("reports.send_tls_reports", SettingKind::Bool),
-    // The shared Spam-Netz (docs/spam.md): its list in the filter, and reports to it.
+    // The shared Spam-Netz (docs/spam-filter.md): its list in the filter, and reports to it.
     spec("spamnet.fetch", SettingKind::Bool),
     spec("spamnet.report", SettingKind::Bool),
     spec("spamnet.url", SettingKind::Text),
@@ -168,6 +169,14 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("fetch.oauth.google_client_secret", SettingKind::Secret),
     // Parcels found in mail, for everyone (docs/jmap-shipments.md, "Switching off").
     spec("shipments.enabled", SettingKind::Bool),
+    // Asking the carriers where a parcel is, by its number only (docs/jmap-shipments.md, "Carrier lookup").
+    spec("shipments.lookup.enabled", SettingKind::Bool),
+    spec("shipments.lookup.dhl_key", SettingKind::Secret),
+    spec("shipments.lookup.ups_client_id", SettingKind::Text),
+    spec("shipments.lookup.ups_client_secret", SettingKind::Secret),
+    spec("shipments.lookup.fedex_client_id", SettingKind::Text),
+    spec("shipments.lookup.fedex_client_secret", SettingKind::Secret),
+    spec("shipments.lookup.unofficial", SettingKind::Bool),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

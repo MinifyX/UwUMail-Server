@@ -132,6 +132,10 @@ pub async fn run(
     // fetching leaves, through the proxy when fetching takes it (docs/fetch.md).
     smtp.provider_oauth().configure(config.fetch.oauth.clone());
     smtp.provider_oauth().set_transport(Arc::new(uwumail_smtp::provider_oauth::EgressTransport(egress.clone())));
+    // Parcels asked of their carriers by number only, the way the admin routes it (docs/jmap-shipments.md).
+    smtp.parcels().configure(config.shipments.lookup.clone());
+    smtp.parcels().set_transport(Arc::new(uwumail_smtp::parcels::EgressTransport(egress.clone())));
+    tasks.spawn(uwumail_smtp::parcels::run_parcel_lookups(smtp.clone(), shutdown_rx.clone()));
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
     tasks.spawn(crate::migrate::run_migrations(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));

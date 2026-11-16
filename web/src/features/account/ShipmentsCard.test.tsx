@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.fn();
 let preferences: Record<string, unknown> = {};
-let features = { shipments: true };
+let features: Record<string, boolean> = { shipments: true };
 vi.mock("@/lib/api", () => ({ api: (...args: unknown[]) => api(...args) }));
 vi.mock("@/features/session/session", () => ({ useSession: () => ({ data: { preferences, features } }) }));
 vi.mock("@/lib/errors", () => ({ useErrorText: () => (error: unknown) => String(error) }));
@@ -65,5 +65,19 @@ describe("ShipmentsCard", () => {
     features = { shipments: false };
     show();
     expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("offers the carrier lookup only when the admin turned it on, and switches it off without asking", async () => {
+    features = { shipments: true, shipmentLookup: true };
+    show();
+    const lookup = screen.getAllByRole("switch")[1]!;
+    expect(lookup.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(lookup);
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/api/account/preferences", {
+        method: "PATCH",
+        body: { shipmentLookup: "off" },
+      }),
+    );
   });
 });

@@ -88,6 +88,7 @@ impl SettingsBackend for ServerSettings {
         self.external.configure(config.auth);
         self.smtp.provider_oauth().configure(config.fetch.oauth);
         self.smtp.store().set_shipments_allowed(config.shipments.enabled);
+        self.smtp.parcels().configure(config.shipments.lookup);
         tracing::info!("settings from the admin panel are in effect");
         Ok(())
     }

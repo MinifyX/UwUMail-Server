@@ -174,7 +174,7 @@ const session = (): Session => ({
   // Installed before any feature with a "New" tag, so they all show.
   server: { hostname: "mail.uwu.example", version: "0.1.0", installedVersion: "0.0.0", brand: brand() },
   webmail: true,
-  features: { shipments: true },
+  features: { shipments: true, shipmentLookup: true },
 });
 
 const address = (value: string, kind: "primary" | "alias" = "primary") => ({
@@ -1177,8 +1177,16 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "spamnet.fetch": { value: true, source: "database" },
   "spamnet.report": { value: false, source: "default" },
   "spamnet.url": { value: "https://spamnet.uwu.minifyx.de", source: "default" },
+  "egress.parcels": { value: false, source: "default" },
   "reports.send_tls_reports": { value: true, source: "default" },
   "shipments.enabled": { value: true, source: "default" },
+  "shipments.lookup.enabled": { value: true, source: "database" },
+  "shipments.lookup.dhl_key": { value: null, source: "database", set: true },
+  "shipments.lookup.ups_client_id": { value: null, source: "default" },
+  "shipments.lookup.ups_client_secret": { value: null, source: "default", set: false },
+  "shipments.lookup.fedex_client_id": { value: null, source: "default" },
+  "shipments.lookup.fedex_client_secret": { value: null, source: "default", set: false },
+  "shipments.lookup.unofficial": { value: true, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
   "log.loki.url": { value: null, source: "default" },

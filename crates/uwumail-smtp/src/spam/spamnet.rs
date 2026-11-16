@@ -1,4 +1,4 @@
-//! Spam-Netz (docs/spam.md): text fingerprints of a mail (Digest v1), the points the shared list
+//! Spam-Netz (docs/spam-filter.md): text fingerprints of a mail (Digest v1), the points the shared list
 //! gives, and the worker that fetches the list and sends reports to the hub every 15 minutes.
 //!
 //! Only four kinds ever leave the server: digests, registrable link domains, the delivering IP

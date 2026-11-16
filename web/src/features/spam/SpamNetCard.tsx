@@ -1,7 +1,8 @@
-import { Button, ICONS } from "@uwusuite/design";
+import { Button, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Section, ToggleField } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
+import { Link } from "@/lib/router";
 import { api, type SettingsView, type SpamNetStatus } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatNumber, formatRelative } from "@/lib/format";
@@ -101,7 +102,13 @@ export function SpamNetCard({ view }: { view: SettingsView }) {
           {status && (status.fetch || status.report) && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Status status={status} />
-              <Button size="sm" variant="ghost" icon={ICONS.refresh} busy={sync.isPending} onClick={() => sync.mutate()}>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={ICONS.refresh}
+                busy={sync.isPending}
+                onClick={() => sync.mutate()}
+              >
                 {t("spam.spamnet.sync")}
               </Button>
             </div>
@@ -112,13 +119,25 @@ export function SpamNetCard({ view }: { view: SettingsView }) {
   );
 }
 
-/** Our half of the one-time card "New: Spam-Netz and parcel lookup"; the parcel lookup brings the other half. */
+/** The Spam-Netz half of the one-time card "New: Spam-Netz and parcel lookup" (admin/NewsCard). */
 export function SpamNetNews() {
   const { t } = useT();
   return (
-    <div className="flex flex-col gap-1">
-      <h3 className="text-[14px] font-medium text-ink">{t("spam.spamnet.newsTitle")}</h3>
-      <p className="text-[13px] text-muted">{t("spam.spamnet.newsText")}</p>
+    <div className="flex items-start gap-3">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-pink-tint text-pink-ink">
+        <Icon icon={ICONS.spam} className="size-[18px]" aria-hidden />
+      </span>
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-sm font-semibold text-ink">{t("spam.spamnet.newsTitle")}</p>
+        <p className="text-[13px] text-muted">{t("spam.spamnet.newsText")}</p>
+        <Link
+          to="/admin/spam/lists"
+          className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-pink-ink hover:underline"
+        >
+          {t("news.spamnetParcels.parcelsOpen")}
+          <Icon icon={ICONS.next} className="size-3.5" aria-hidden />
+        </Link>
+      </div>
     </div>
   );
 }

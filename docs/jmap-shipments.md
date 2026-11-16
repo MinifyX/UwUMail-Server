@@ -8,8 +8,10 @@ read them and write the carrier's live status back.
 
 Everything happens on the server and without AI: the same rules as the
 [labels](labels.md#shipments) read the mail when it arrives. **Links in a mail
-are never opened**, tracking pages are never fetched, and the server sends no
-Web Push of its own for parcels. Shipments are kept per account.
+are never opened** and the server sends no Web Push of its own for parcels.
+Shipments are kept per account. If the admin switches on the
+[carrier lookup](#carrier-lookup), the server also asks the carriers about a
+parcel, by its number only and at fixed addresses, never through a link from a mail.
 
 ## Capability
 
@@ -17,13 +19,14 @@ Web Push of its own for parcels. Shipments are kept per account.
 and in the `accountCapabilities` of the person's own account only:
 
 ```json
-"urn:uwumail:jmap:shipments": { "maxEvents": 200, "maxRescanDays": 90 }
+"urn:uwumail:jmap:shipments": { "maxEvents": 200, "maxRescanDays": 90, "lookupCarriers": ["dhl", "deutschePost"] }
 ```
 
 | Property | |
 | --- | --- |
 | `maxEvents` | events one shipment keeps, and that one `addEvents` may bring |
 | `maxRescanDays` | the furthest `Shipment/rescan` looks back, in days |
+| `lookupCarriers` | the carriers the server asks itself for this account (see [Carrier lookup](#carrier-lookup)); `[]` while the lookup is off for the server or the account |
 
 An app password with the usage `mail` is enough.
 
@@ -86,7 +89,9 @@ seen only by the owner.
 | `pickup` | `{ "kind": "packstation" \| "postOffice" \| "parcelShop" \| "accessPoint", "name", "address", "until" }` (`until` a date, `YYYY-MM-DD`), or `null` |
 | `hidden` | the person put it out of sight |
 | `emailIds` | the mails that told of it, oldest first |
-| `events` | the history, oldest first; `source` is `mail` (with `emailId`), `ai` (with `emailId`, see below) or `client` (with `clientName`) |
+| `events` | the history, oldest first; `source` is `mail` (with `emailId`), `ai` (with `emailId`, see below), `carrier` (the server asked the carrier) or `client` (with `clientName`) |
+| `lookedUpAt` | when the server last asked the carrier, or `null` |
+| `lookupError` | how that last question went wrong: `notFound` (the carrier does not know the number), `unavailable` (no answer, a timeout or an error) or `rateLimited`; `null` when it went well or was never asked |
 
 ### How mails become shipments
 
@@ -206,6 +211,86 @@ A mail moved to Junk takes its parcel along when the parcel came only from it: o
 of its own, hidden, or known from other mail or an app stays and only loses that mail (`updated`
 instead of `destroyed`). Fake shipping mail is kept out at delivery too (docs/spam-filter.md,
 "Parcel mail").
+
+### Shipment/refresh
+
+```json
+["Shipment/refresh", { "accountId": "a1", "ids": ["s7", "s8"] }, "0"]
+```
+
+Asks the carriers about these shipments now, and waits for the answers (at
+most 10 s altogether). `ids` is required, at most 20 (else `requestTooLarge`).
+Needs the right to read the mail (`r`), like `Shipment/get`.
+
+```json
+["Shipment/refresh", { "accountId": "a1", "refreshed": ["s7"], "notRefreshed": { "s8": { "type": "tooSoon" } } }, "0"]
+```
+
+| `type` | |
+| --- | --- |
+| `tooSoon` | refreshed less than 5 minutes ago (by anyone with access) |
+| `notSupported` | no lookup for this carrier, the lookup is off, there is no number, or the parcel is delivered, returned or cancelled |
+| `unavailable` | the carrier did not answer in time, answered with an error, or its rate limit is reached |
+| `notFound` | no such shipment, or the carrier does not know the number |
+
+What the carrier said lands in `events`, `status`, `expected` and
+`lookedUpAt`/`lookupError` as usual; `Shipment/changes` reports it.
+
+## Carrier lookup
+
+Off by default. An admin switches it on under *Settings → Apps & webmail →
+Parcel lookup* in the portal, or in the config file:
+
+```toml
+[shipments.lookup]
+enabled = true
+dhl_key = "…"             # developer.dhl.com, "Shipment Tracking – Unified"; also Deutsche Post
+ups_client_id = "…"       # developer.ups.com, OAuth client credentials
+ups_client_secret = "…"
+fedex_client_id = "…"     # developer.fedex.com, OAuth client credentials
+fedex_client_secret = "…"
+unofficial = true         # DPD, Hermes and GLS without a key
+```
+
+A carrier is asked only once its key is there; DPD, Hermes and GLS have no
+official interface, so the server uses the one behind their tracking pages
+while `unofficial` is on. Those may stop working at any time; their failures
+are only logged. Amazon Logistics and `other` are never asked.
+
+**What leaves the server**: the tracking number and, for the carrier, nothing
+else, sent to the carrier's fixed address (never a link from a mail, never the
+mail itself). No postcode is stored, so none is sent. With `egress.parcels`
+(`[egress] parcels = true`) the questions take the egress proxy, so carriers
+see the proxy's address. Operators who switch the lookup on should mention it
+in their privacy policy: the carriers learn that this server asks about a
+number, and when.
+
+**When**: every 2 hours, every 30 minutes while a parcel is out for delivery,
+and only up to 30 days after its last mail. Never again once it is delivered,
+returned or cancelled. DHL is asked at most once every 5 s and 250 times a day
+(the limits of its free key); every carrier has such a gap. A question that
+hits the limit waits for the next round.
+
+**What comes back** becomes events with `source: "carrier"` (an event the
+shipment already has is not added again), and the carrier's expected delivery
+day becomes `expected`.
+
+**Each account** decides with the setting `shipmentLookup` (on unless
+switched off), in the portal under *My account → Parcels* and as
+`values/shipmentLookup` in [`UserSettings`](jmap-settings.md). Off, nothing
+of that account is asked and `lookupCarriers` is `[]`. The portal learns
+whether the lookup is offered at all from `features.shipmentLookup` in
+`/api/session`.
+
+### Unknown parcel numbers in doubtful mail
+
+A mail that names a parcel number and is doubtful (the spam filter calls it
+suspicious, or it looks like a carrier or shop it does not come from, without
+passing SPF/DKIM/DMARC for them) is checked against the carrier while the
+lookup is on. Only when the carrier says clearly that it does not know any of
+the numbers is the mail moved to Junk and noted in the spam history with
+`PARCEL_NUMBER_UNKNOWN`. An error, a timeout or a rate limit changes nothing,
+and the unofficial carriers never move a mail.
 
 ## Switching off
 

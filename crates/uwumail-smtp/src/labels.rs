@@ -180,7 +180,9 @@ pub(crate) fn for_sieve(message: &[u8], labeled: &Labeled) -> Vec<u8> {
 /// Notes the parcel a delivered message tells of (docs/jmap-shipments.md), with the same time
 /// budget as the labels and never in the way of the mail: on a timeout or error it is only logged.
 /// Only what the rules are sure of (confidence 0.8) counts; links in the mail are never opened.
-/// A mail the spam filter `doubted` counts only when its sender is authenticated.
+/// A mail the spam filter `doubted` counts only when its sender is authenticated. Returns the
+/// carrier and the numbers it found when the sender is not authenticated, for
+/// [`crate::parcels::cross_check`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn shipment(
     ctx: &Context,
@@ -190,37 +192,46 @@ pub(crate) async fn shipment(
     parsed: &Parsed,
     sender: &SenderTrust,
     doubted: bool,
-) {
-    let Some(&email_id) = email_ids.first() else { return };
+) -> Option<(&'static str, Vec<String>)> {
+    let &email_id = email_ids.first()?;
     let work = async {
         if !ctx.store.shipments_enabled(account_id).await? {
-            return Ok(false);
+            return Ok::<_, uwumail_store::StoreError>(None);
         }
         let parsed = parsed.get(message).await?;
         let authenticated = sender.vouches_for(&parsed.0.from);
-        if doubted && !authenticated {
-            return Ok(false);
-        }
         let found = tokio::task::spawn_blocking(move || {
             let (mail, _) = &*parsed;
             let mut mail = mail.clone();
             mail.from_trusted = authenticated;
-            uwumail_labels::shipment(&mail)
-                .filter(|facts| facts.confidence >= 0.8)
-                .map(|facts| (facts, mail.subject.clone()))
+            uwumail_labels::shipment(&mail).map(|facts| (facts, mail.subject.clone()))
         })
         .await
         .map_err(|err| uwumail_store::StoreError::Internal(err.to_string()))?;
-        let Some((facts, subject)) = found else { return Ok(false) };
-        let received_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs() as i64);
-        ctx.store.record_shipment_mail(account_id, email_id, received_at, subject, facts, authenticated).await
+        let Some((facts, subject)) = found else { return Ok(None) };
+        // What an unauthenticated mail claims is worth asking the carrier about, however unsure.
+        let doubtful = match &facts.carrier {
+            Some(carrier) if !authenticated && !facts.numbers.is_empty() => Some((carrier.id(), facts.numbers.clone())),
+            _ => None,
+        };
+        if facts.confidence >= 0.8 && !(doubted && !authenticated) {
+            let received_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs() as i64);
+            ctx.store.record_shipment_mail(account_id, email_id, received_at, subject, facts, authenticated).await?;
+        }
+        Ok(doubtful)
     };
     match tokio::time::timeout(TIMEOUT, work).await {
-        Ok(Ok(_)) => {}
-        Ok(Err(err)) => tracing::warn!(account = account_id, %err, "noting a shipment failed"),
-        Err(_) => tracing::info!(account = account_id, "noting a shipment took too long"),
+        Ok(Ok(doubtful)) => doubtful,
+        Ok(Err(err)) => {
+            tracing::warn!(account = account_id, %err, "noting a shipment failed");
+            None
+        }
+        Err(_) => {
+            tracing::info!(account = account_id, "noting a shipment took too long");
+            None
+        }
     }
 }
 

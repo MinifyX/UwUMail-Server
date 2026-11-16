@@ -324,6 +324,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Shipment/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
         "Shipment/set" => single(shipment::set(ctx, &args).await?),
         "Shipment/rescan" => single(shipment::rescan(ctx, &args).await?),
+        "Shipment/refresh" => single(shipment::refresh(ctx, &args).await?),
         "SearchSnippet/get" => single(snippet::get(ctx, &args).await?),
         "Identity/get" => single(identity::get(ctx, &args).await?),
         "Identity/changes" => single(changes(ctx, &args, "Identity", 'i').await?),

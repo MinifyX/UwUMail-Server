@@ -1,6 +1,6 @@
 //! Parcels on their way to a person: found in their mail when it arrives or by a look back through
-//! earlier mail, added or followed by an app (docs/jmap-shipments.md). Kept per account, never
-//! fetched from a carrier by the server.
+//! earlier mail, added or followed by an app (docs/jmap-shipments.md). Kept per account; the
+//! carrier is asked by number only when the admin and the person allow it (`uwumail_smtp::parcels`).
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate};
 use chrono_tz::{Europe::Berlin, Tz};
@@ -35,6 +35,14 @@ const NUMBER_MAX_CHARS: usize = 40;
 const CLIENT_MAX_CHARS: usize = 100;
 /// The preference that switches it (`"on"`, the default, or `"off"`).
 const PREFERENCE: &str = "shipments";
+/// The preference that lets the server ask carriers (`"on"`, the default, or `"off"`).
+const LOOKUP_PREFERENCE: &str = "shipmentLookup";
+/// Carriers are asked until this long after the last mail about a parcel, in days.
+pub const SHIPMENT_LOOKUP_DAYS: i64 = 30;
+/// An app may ask for one parcel by hand this often at most (`Shipment/refresh`).
+pub const SHIPMENT_REFRESH_SECS: i64 = 300;
+const LOOKUP_EVERY_SECS: i64 = 2 * 3600;
+const LOOKUP_OUT_FOR_DELIVERY_SECS: i64 = 30 * 60;
 
 /// Where a shipment waits to be picked up; `until` is a day like `2026-11-22`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,7 +59,7 @@ pub struct ShipmentEvent {
     pub status: ShipmentStatus,
     pub text: Option<String>,
     pub location: Option<String>,
-    /// `mail`, `ai` or `client`.
+    /// `mail`, `ai`, `client` or `carrier`.
     pub source: String,
     pub email_id: Option<i64>,
     pub client_name: Option<String>,
@@ -80,6 +88,10 @@ pub struct Shipment {
     pub hidden: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    /// When the carrier was last asked, and what went wrong then: `notFound`, `unavailable` or
+    /// `rateLimited`.
+    pub looked_up_at: Option<i64>,
+    pub lookup_error: Option<String>,
     /// Oldest first.
     pub events: Vec<ShipmentEvent>,
 }
@@ -114,6 +126,43 @@ pub struct ShipmentUpdate {
     pub add_events: Vec<NewShipmentEvent>,
     /// Events an app added before, by `at` and status, to take back (`removeEvents`).
     pub remove_events: Vec<(i64, ShipmentStatus)>,
+}
+
+/// A parcel to ask its carrier about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShipmentLookup {
+    pub id: i64,
+    pub account_id: i64,
+    /// A [`Carrier::id`].
+    pub carrier: String,
+    pub number: String,
+}
+
+/// When a carrier expects to deliver: instants, `day_only` when it named only the day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShipmentExpected {
+    pub from: i64,
+    pub to: Option<i64>,
+    pub day_only: bool,
+}
+
+/// What a carrier said: its events and expected delivery, or an `error` (`notFound`,
+/// `unavailable`, `rateLimited`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShipmentLookupResult {
+    pub events: Vec<NewShipmentEvent>,
+    pub expected: Option<ShipmentExpected>,
+    pub error: Option<&'static str>,
+}
+
+/// Whether an app may have a parcel asked about now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShipmentRefresh {
+    Go(ShipmentLookup),
+    /// Asked by hand less than [`SHIPMENT_REFRESH_SECS`] ago.
+    TooSoon,
+    /// No number, a carrier nobody asks, or already delivered, returned or cancelled.
+    NotSupported,
 }
 
 /// A look back through earlier mail.
@@ -155,10 +204,14 @@ fn clipped(value: &str, max: usize) -> Option<String> {
 
 /// Whether shipments are switched on for an account (they are unless the person said no).
 pub(crate) fn enabled(conn: &Connection, account_id: i64) -> Result<bool> {
+    preference_on(conn, account_id, PREFERENCE)
+}
+
+fn preference_on(conn: &Connection, account_id: i64, key: &str) -> Result<bool> {
     let raw: Option<String> =
         conn.query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0)).optional()?;
     let preferences: Value = raw.and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default();
-    Ok(preferences.get(PREFERENCE).and_then(Value::as_str) != Some("off"))
+    Ok(preferences.get(key).and_then(Value::as_str) != Some("off"))
 }
 
 /// After the preferences changed: switched off deletes every shipment and the look back, switched
@@ -292,7 +345,8 @@ fn status_of(value: &str) -> rusqlite::Result<ShipmentStatus> {
 }
 
 const COLUMNS: &str = "id, carrier, number, tracking_url, title, merchant, order_ref, status, status_at, expected_day,
-     expected_from, expected_to, delivered_at, pickup_json, hidden, created_at, updated_at, shop_tracking_url";
+     expected_from, expected_to, delivered_at, pickup_json, hidden, created_at, updated_at, shop_tracking_url,
+     looked_up_at, lookup_error";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Shipment> {
     let pickup: Option<String> = row.get(13)?;
@@ -315,6 +369,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Shipment> {
         hidden: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
+        looked_up_at: row.get(18)?,
+        lookup_error: row.get(19)?,
         events: Vec::new(),
     })
 }
@@ -937,6 +993,158 @@ impl Store {
             self.notify_change(*account_id, *modseq);
         }
         Ok(gone.len())
+    }
+
+    /// Whether the person lets the server ask carriers about their parcels (it does unless they
+    /// said no, or switched shipments off). The admin's side is `uwumail_smtp::Parcels`.
+    pub async fn shipment_lookup_enabled(&self, account_id: i64) -> Result<bool> {
+        if !self.shipments_allowed() {
+            return Ok(false);
+        }
+        self.read(move |conn| Ok(enabled(conn, account_id)? && preference_on(conn, account_id, LOOKUP_PREFERENCE)?))
+            .await
+    }
+
+    /// Up to `limit` parcels of these `carriers` due to be asked about at `now`, the longest
+    /// waiting first: open, with a number, of an account that allows it, and with a mail about
+    /// them in the last [`SHIPMENT_LOOKUP_DAYS`].
+    pub async fn shipment_lookups_due(
+        &self,
+        carriers: Vec<&'static str>,
+        now: i64,
+        limit: i64,
+    ) -> Result<Vec<ShipmentLookup>> {
+        if !self.shipments_allowed() || carriers.is_empty() {
+            return Ok(Vec::new());
+        }
+        let carriers = serde_json::to_string(&carriers).unwrap_or_else(|_| "[]".into());
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT s.id, s.account_id, s.carrier, s.number FROM shipments s JOIN accounts a ON a.id = s.account_id
+                 WHERE s.number IS NOT NULL AND s.carrier IN (SELECT value FROM json_each(?1))
+                   AND s.status NOT IN ('delivered', 'returned', 'cancelled')
+                   AND coalesce(s.lookup_due_at, 0) <= ?2
+                   AND coalesce((SELECT max(e.at) FROM shipment_events e
+                                 WHERE e.shipment_id = s.id AND e.source IN ('mail', 'ai')), s.created_at) >= ?3
+                   AND a.deleted_at IS NULL
+                   AND (NOT json_valid(a.preferences)
+                        OR (coalesce(json_extract(a.preferences, '$.shipments'), '') != 'off'
+                            AND coalesce(json_extract(a.preferences, '$.shipmentLookup'), '') != 'off'))
+                 ORDER BY coalesce(s.lookup_due_at, 0), s.id LIMIT ?4",
+            )?;
+            let rows = stmt.query_map(params![carriers, now, now - SHIPMENT_LOOKUP_DAYS * 86_400, limit], |row| {
+                Ok(ShipmentLookup {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    carrier: row.get(2)?,
+                    number: row.get(3)?,
+                })
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
+    /// Puts what a carrier said at `now` into a shipment: its events with source `carrier`, its
+    /// expected delivery, and when to ask next (30 minutes when out for delivery, else 2 hours).
+    /// A shipment deleted meanwhile is left alone.
+    pub async fn record_shipment_lookup(
+        &self,
+        account_id: i64,
+        id: i64,
+        now: i64,
+        result: ShipmentLookupResult,
+    ) -> Result<()> {
+        let modseq = self
+            .write(move |tx| {
+                let found: bool = tx.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM shipments WHERE id = ?1 AND account_id = ?2)",
+                    params![id, account_id],
+                    |row| row.get(0),
+                )?;
+                if !found {
+                    return Ok(None);
+                }
+                let mut events = result.events;
+                events.sort_by_key(|event| event.at);
+                for event in &events {
+                    let event = ShipmentEvent {
+                        at: event.at,
+                        status: event.status,
+                        text: event.text.as_deref().and_then(|text| clipped(text, TEXT_MAX_CHARS)),
+                        location: event.location.as_deref().and_then(|location| clipped(location, LOCATION_MAX_CHARS)),
+                        source: "carrier".into(),
+                        email_id: None,
+                        client_name: None,
+                    };
+                    add_event(tx, id, &event)?;
+                }
+                if let Some(expected) = result.expected {
+                    let tz = timezone(tx, account_id)?;
+                    let local = |at: i64| DateTime::from_timestamp(at, 0).map(|at| at.with_timezone(&tz));
+                    if let Some(from) = local(expected.from) {
+                        let to = expected.to.and_then(local).filter(|to| to.date_naive() == from.date_naive());
+                        let (from_time, to_time) = if expected.day_only {
+                            (None, None)
+                        } else {
+                            (Some(from.format("%H:%M").to_string()), to.map(|to| to.format("%H:%M").to_string()))
+                        };
+                        tx.execute(
+                            "UPDATE shipments SET expected_day = ?2, expected_from = ?3, expected_to = ?4 WHERE id = ?1",
+                            params![id, from.date_naive().to_string(), from_time, to_time],
+                        )?;
+                    }
+                }
+                let status: String = tx.query_row("SELECT status FROM shipments WHERE id = ?1", [id], |row| row.get(0))?;
+                let every = if status_of(&status)? == ShipmentStatus::OutForDelivery {
+                    LOOKUP_OUT_FOR_DELIVERY_SECS
+                } else {
+                    LOOKUP_EVERY_SECS
+                };
+                tx.execute(
+                    "UPDATE shipments SET looked_up_at = ?2, lookup_error = ?3, lookup_due_at = ?4 WHERE id = ?1",
+                    params![id, now, result.error, now + every],
+                )?;
+                changed(tx, account_id, id, "updated").map(Some)
+            })
+            .await?;
+        if let Some(modseq) = modseq {
+            self.notify_change(account_id, modseq);
+        }
+        Ok(())
+    }
+
+    /// Claims a parcel for an app's `Shipment/refresh` at `now`, if its carrier is one of
+    /// `carriers`: at most once per [`SHIPMENT_REFRESH_SECS`].
+    pub async fn claim_shipment_refresh(
+        &self,
+        account_id: i64,
+        id: i64,
+        now: i64,
+        carriers: Vec<&'static str>,
+    ) -> Result<ShipmentRefresh> {
+        self.write(move |tx| {
+            let row: Option<(String, Option<String>, String, Option<i64>)> = tx
+                .query_row(
+                    "SELECT carrier, number, status, refreshed_at FROM shipments WHERE id = ?1 AND account_id = ?2",
+                    params![id, account_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            let Some((carrier, number, status, refreshed_at)) = row else {
+                return Err(StoreError::NotFound(format!("shipment {id}")));
+            };
+            let done = status_of(&status)?.is_done();
+            let Some(number) = number.filter(|_| carriers.contains(&carrier.as_str()) && !done) else {
+                return Ok(ShipmentRefresh::NotSupported);
+            };
+            if refreshed_at.is_some_and(|at| at > now - SHIPMENT_REFRESH_SECS) {
+                return Ok(ShipmentRefresh::TooSoon);
+            }
+            tx.execute("UPDATE shipments SET refreshed_at = ?2 WHERE id = ?1", params![id, now])?;
+            Ok(ShipmentRefresh::Go(ShipmentLookup { id, account_id, carrier, number }))
+        })
+        .await
     }
 
     /// Starts a look back over the last `days` (1 to [`SHIPMENT_RESCAN_MAX_DAYS`]), from the start

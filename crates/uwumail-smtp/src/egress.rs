@@ -77,8 +77,11 @@ pub struct EgressConfig {
     /// Requests to AI providers on the internet take the proxy (docs/llm.md). Off unless switched on:
     /// the provider knows who the key belongs to anyway. Providers in the local network never do.
     pub assist: bool,
-    /// Talking to the Spam-Netz hub takes the proxy (docs/spam.md). Off unless switched on.
+    /// Talking to the Spam-Netz hub takes the proxy (docs/spam-filter.md). Off unless switched on.
     pub spamnet: bool,
+    /// Asking parcel carriers where a parcel is (docs/jmap-shipments.md) takes the proxy. Off unless
+    /// switched on: the carrier learns the number either way, never more.
+    pub parcels: bool,
 }
 
 impl Default for EgressConfig {
@@ -92,6 +95,7 @@ impl Default for EgressConfig {
             image_cache_mb: 1024,
             assist: false,
             spamnet: false,
+            parcels: false,
         }
     }
 }
@@ -105,6 +109,7 @@ pub enum Purpose {
     Fetch,
     Assist,
     SpamNet,
+    Parcels,
 }
 
 /// Which addresses a request may reach. Everything but the AI assistant reaches public addresses only.
@@ -525,6 +530,7 @@ pub struct Routes {
     pub fetch: bool,
     pub assist: bool,
     pub spamnet: bool,
+    pub parcels: bool,
 }
 
 impl Routes {
@@ -535,6 +541,7 @@ impl Routes {
             fetch: config.fetch,
             assist: config.assist,
             spamnet: config.spamnet,
+            parcels: config.parcels,
         }
     }
 
@@ -545,6 +552,7 @@ impl Routes {
             Purpose::Fetch => self.fetch,
             Purpose::Assist => self.assist,
             Purpose::SpamNet => self.spamnet,
+            Purpose::Parcels => self.parcels,
         }
     }
 }
@@ -1128,7 +1136,7 @@ impl Egress {
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body(Full::new(Bytes::from(form)))
             .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
-        self.send_read(purpose, request, max_bytes).await
+        self.exchange_checked(purpose, request, max_bytes).await
     }
 
     /// Sends JSON to a public https address, or GETs it when `body` is `None`, with a bearer key
@@ -1154,11 +1162,25 @@ impl Egress {
         let request = request
             .body(Full::new(Bytes::from(body.unwrap_or_default())))
             .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
-        self.send_read(purpose, request, max_bytes).await
+        self.exchange_checked(purpose, request, max_bytes).await
     }
 
-    /// Sends a request the way `purpose` leaves and reads the answer up to `max_bytes`.
-    async fn send_read(
+    /// Sends `request` to a public https address the way requests for `purpose` leave, like
+    /// [`Egress::post_form`], and answers the status and the body read up to `max_bytes`. For the parcel
+    /// carriers' tracking APIs. Redirects are answered, not followed.
+    pub async fn exchange(
+        &self,
+        purpose: Purpose,
+        request: Request<Full<Bytes>>,
+        max_bytes: usize,
+    ) -> Result<(u16, Bytes), EgressError> {
+        check_url(&request.uri().to_string(), false).map_err(EgressError::NotAllowed)?;
+        let (mut parts, body) = request.into_parts();
+        parts.headers.insert(USER_AGENT, hyper::header::HeaderValue::from_static(AGENT));
+        self.exchange_checked(purpose, Request::from_parts(parts, body), max_bytes).await
+    }
+
+    async fn exchange_checked(
         &self,
         purpose: Purpose,
         request: Request<Full<Bytes>>,
@@ -1755,7 +1777,7 @@ pub(crate) mod tests {
         egress.reconfigure(&config).unwrap();
         assert_eq!(
             egress.status().routes,
-            Routes { pictures: false, updates: false, fetch: true, assist: false, spamnet: true }
+            Routes { pictures: false, updates: false, fetch: true, assist: false, spamnet: true, parcels: false }
         );
         egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
         assert!(asked.lock().unwrap().is_empty(), "pictures leave directly now");

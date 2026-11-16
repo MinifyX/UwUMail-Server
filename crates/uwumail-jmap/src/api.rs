@@ -168,7 +168,14 @@ pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, R
         String::new()
     } else {
         session::shipments_state(
-            session::shipment_switches(&jmap.inner.store, ctx.account.id, &shared).await.as_deref(),
+            session::shipment_switches(
+                &jmap.inner.store,
+                &jmap.inner.smtp.parcels().carriers(),
+                ctx.account.id,
+                &shared,
+            )
+            .await
+            .as_deref(),
         )
     };
     let state = format!(

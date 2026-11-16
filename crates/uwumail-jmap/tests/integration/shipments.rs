@@ -395,3 +395,60 @@ async fn whoever_may_read_the_mailbox_sees_its_shipments() {
     let theirs = nyu_call("Shipment/get", json!({ "accountId": own_account, "ids": null })).await;
     assert_eq!(theirs["list"], json!([]), "Nyu's own account has no parcels");
 }
+
+/// DHL, as far as these tests are concerned: it knows no parcel at all.
+struct NoParcels;
+
+impl uwumail_smtp::parcels::ParcelTransport for NoParcels {
+    fn send(
+        &self,
+        _request: uwumail_smtp::parcels::ParcelRequest,
+    ) -> uwumail_smtp::provider_oauth::BoxFuture<'_, Result<(u16, Vec<u8>), String>> {
+        Box::pin(async { Ok((404, b"{}".to_vec())) })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_carriers_are_asked_on_request_and_the_session_says_whom() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    deliver(&server, SHIPPED).await;
+    let off = server.session_of(MINI).await;
+    assert_eq!(off["accounts"][&account]["accountCapabilities"][SHIPMENTS]["lookupCarriers"], json!([]), "{off}");
+    let got = call(&server, "Shipment/get", json!({ "accountId": account, "ids": null })).await;
+    assert_eq!(got["list"][0]["lookedUpAt"], Value::Null);
+    assert_eq!(got["list"][0]["lookupError"], Value::Null);
+    let id = got["list"][0]["id"].as_str().unwrap().to_owned();
+    let refresh = json!({ "accountId": account, "ids": [id, "s999"] });
+    let answer = call(&server, "Shipment/refresh", refresh.clone()).await;
+    assert_eq!(answer["notRefreshed"][&id]["type"], "notSupported", "{answer}");
+    assert_eq!(answer["notRefreshed"]["s999"]["type"], "notFound", "{answer}");
+
+    server.smtp.parcels().set_transport(std::sync::Arc::new(NoParcels));
+    server.smtp.parcels().configure(uwumail_smtp::parcels::LookupConfig {
+        enabled: true,
+        dhl_key: "test-key".into(),
+        unofficial: false,
+        ..Default::default()
+    });
+    let on = server.session_of(MINI).await;
+    assert_eq!(
+        on["accounts"][&account]["accountCapabilities"][SHIPMENTS]["lookupCarriers"],
+        json!(["dhl", "deutschePost"])
+    );
+    assert_ne!(on["state"], off["state"]);
+    let answer = call(&server, "Shipment/refresh", refresh.clone()).await;
+    assert_eq!(answer["notRefreshed"][&id]["type"], "notFound", "{answer}");
+    let answer = call(&server, "Shipment/refresh", refresh).await;
+    assert_eq!(answer["notRefreshed"][&id]["type"], "tooSoon", "{answer}");
+    let got = call(&server, "Shipment/get", json!({ "accountId": account, "ids": [id] })).await;
+    assert_eq!(got["list"][0]["lookupError"], "notFound");
+    assert!(got["list"][0]["lookedUpAt"].is_string(), "{got}");
+
+    // The person's own switch takes the lookup away again.
+    let write = json!({ "accountId": account, "update": { "singleton": { "values/shipmentLookup": false } } });
+    let responses = server.api_using(MINI, &USING, json!([["UserSettings/set", write, "0"]])).await;
+    assert!(responses[0][1]["updated"].is_object(), "{responses:?}");
+    let mine = server.session_of(MINI).await;
+    assert_eq!(mine["accounts"][&account]["accountCapabilities"][SHIPMENTS]["lookupCarriers"], json!([]));
+}

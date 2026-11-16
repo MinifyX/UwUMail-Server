@@ -102,7 +102,8 @@ export interface Session {
   /** Whether this person has a mailbox in the browser under /mail. */
   webmail: boolean;
   /** What the admin allows on the whole server; the person's own switches are in `preferences`. */
-  features: { shipments: boolean };
+  /** `shipmentLookup`: the admin asks carriers about parcel numbers, so each person may switch it off. */
+  features: { shipments: boolean; shipmentLookup?: boolean };
 }
 
 export interface Profile {
@@ -1385,7 +1386,7 @@ export interface EgressView {
   /** In unix seconds. */
   lastProxyFailure: { at: number; error: string } | null;
   /** Which kinds of request take the proxy while one is set. */
-  routes?: { pictures: boolean; updates: boolean; fetch: boolean; assist: boolean; spamnet?: boolean };
+  routes?: { pictures: boolean; updates: boolean; fetch: boolean; assist: boolean; spamnet?: boolean; parcels: boolean };
 }
 
 export type VpnKind = "wireguard" | "openvpn";

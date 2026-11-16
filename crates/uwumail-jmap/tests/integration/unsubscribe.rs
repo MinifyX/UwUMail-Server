@@ -87,11 +87,11 @@ async fn server(newsletter: Option<Arc<Newsletter>>) -> Server {
     let smtp = smtp(&store);
     let (name, record) = KEY.dns_record();
     smtp.dns_cache().pin_txt(&name, &record).unwrap();
-    let mut jmap = Jmap::new(smtp);
+    let mut jmap = Jmap::new(smtp.clone());
     if let Some(newsletter) = newsletter {
         jmap = jmap.with_unsubscribe_transport(newsletter);
     }
-    Server { router: jmap.router(), jmap, store, dir }
+    Server { router: jmap.router(), jmap, store, smtp, dir }
 }
 
 /// A newsletter mail with these list headers, signed over the headers it has at that point; `added`

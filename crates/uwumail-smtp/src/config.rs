@@ -378,7 +378,7 @@ impl Default for ReportsConfig {
     }
 }
 
-/// `[spamnet]`: the Spam-Netz shared between UwUMail servers (docs/spam.md).
+/// `[spamnet]`: the Spam-Netz shared between UwUMail servers (docs/spam-filter.md).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SpamNetConfig {

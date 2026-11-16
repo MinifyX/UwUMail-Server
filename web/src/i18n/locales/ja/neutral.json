@@ -228,7 +228,9 @@
       "saved": "保存しました",
       "confirmTitle": "荷物の追跡をやめますか？",
       "confirmText": "保存されているすべての荷物が削除されます。再びオンにすると、新しいメールと直近数日のメールだけが読み取られます。",
-      "confirmOff": "オフにして削除"
+      "confirmOff": "オフにして削除",
+      "lookupLabel": "配送業者に問い合わせる",
+      "lookupDescription": "追跡番号だけで配送業者に状況を問い合わせます。メール内のリンクは開きません。"
     }
   },
   "admin": {
@@ -1846,7 +1848,21 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "メールがサーバーから出ていく方法と、受け付ける内容です。変更は再起動なしですぐに反映されます。",
-    "appsIntro": "メールアプリとブラウザーのメールボックスに適用される設定です。変更は再起動なしですぐに反映されます。"
+    "appsIntro": "メールアプリとブラウザーのメールボックスに適用される設定です。変更は再起動なしですぐに反映されます。",
+    "parcelLookup": {
+      "title": "荷物の問い合わせ",
+      "intro": "次のメールを待つだけでなく、配送業者に直接配送状況を問い合わせます。",
+      "enabled": "配送業者に問い合わせる",
+      "enabledHint": "サーバーは追跡番号と配送業者だけを業者の決まったアドレスに送ります。2時間ごと、最後のメールから30日まで。メール内のリンクは開きません。アカウントごとにオフにできます。プライバシーポリシーに記載してください。",
+      "keysIntro": "DHL、UPS、FedEx には各社の開発者ポータルで無料のキーが必要です:",
+      "dhlKey": "DHL API キー",
+      "upsClientId": "UPS クライアント ID",
+      "upsClientSecret": "UPS クライアントシークレット",
+      "fedexClientId": "FedEx クライアント ID",
+      "fedexClientSecret": "FedEx クライアントシークレット",
+      "unofficial": "DPD、Hermes、GLS にキーなしで問い合わせる",
+      "unofficialHint": "これらの業者には公開インターフェースがなく、追跡ページの裏側を使います。いつでも使えなくなる可能性があります。"
+    }
   },
   "health": {
     "loading": "サーバーの状態を読み込み中…",
@@ -3878,7 +3894,10 @@
       "assistShort": "AI プロバイダー",
       "spamnet": "Spam-Netzへのリクエスト",
       "spamnetHint": "共有リストの取得と報告の送信。Spam-NetzにはサーバーではなくVPNのアドレスが見えます。",
-      "spamnetShort": "Spam-Netz"
+      "spamnetShort": "Spam-Netz",
+      "parcels": "配送業者への問い合わせ",
+      "parcelsHint": "荷物の問い合わせ: 配送業者にはサーバーではなくプロキシのアドレスが見えます。",
+      "parcelsShort": "配送業者"
     },
     "remove": {
       "title": "VPN を削除しますか？",
@@ -5098,5 +5117,14 @@
       "caption": "メール一覧の上にはこのようにコードが表示されます。"
     },
     "saved": "保存しました"
+  },
+  "news": {
+    "close": "閉じる",
+    "spamnetParcels": {
+      "title": "新機能: スパムネットと荷物の問い合わせ",
+      "parcelsTitle": "荷物の問い合わせ",
+      "parcelsText": "サーバーは追跡番号だけで DHL、UPS、FedEx などに荷物の状況を直接問い合わせできます。オンにするまではオフのままです。",
+      "parcelsOpen": "設定を開く"
+    }
   }
 }
