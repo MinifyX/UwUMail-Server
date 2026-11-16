@@ -553,7 +553,8 @@ fn record_mail(
         }
         // A shop may split one order (Amazon, by seller) and name another number in the shipping
         // mail: the same quoted item in the subject of an open order of the last 30 days ties them.
-        let Some(item) = quoted_item(subject) else { return Ok(Vec::new()) };
+        // Only authenticated mail: an item name is easier to guess than an order number.
+        let Some(item) = quoted_item(subject).filter(|_| authenticated) else { return Ok(Vec::new()) };
         let mut stmt = tx.prepare_cached(
             "SELECT DISTINCT s.id FROM shipments s JOIN shipment_events e ON e.shipment_id = s.id
              WHERE s.account_id = ?1 AND s.merchant = ?2 AND (?3 = 0 OR s.number IS NULL)
@@ -1439,6 +1440,14 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
             .await
             .unwrap();
         assert_eq!(store.shipments(account, None).await.unwrap().len(), 2);
+        // An unauthenticated mail naming the same item does not join it.
+        let forged = mail(&store, account).await;
+        let facts_d = facts(&[], Some(ShipmentStatus::Shipped), Some("D-4"));
+        store
+            .record_shipment_mail(account, forged, t + 180, "Versendet: „Pulsgurt M-XXL…“".into(), facts_d, false)
+            .await
+            .unwrap();
+        assert_eq!(store.shipments(account, None).await.unwrap().len(), 3);
         assert_eq!(quoted_item("Ein \"Ab\""), None, "too short to tell items apart");
     }
 

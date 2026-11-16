@@ -125,6 +125,21 @@ Nothing blocked the release as long as the Spam-Netz stays off by default (`spam
 - **Fix:** Use the same host character check as `of_host`, lowercase `from_host` before the PSL lookup, drop the fragment, and widen the tracker list (or keep only an allowlist of keys such as order and number).
 - Fixed in c06a4ef8: the host must be `[a-z0-9.-]` as in `of_host`, `from_host` is lowercased before the PSL lookup, the fragment is dropped, and the tracker list covers `fbclid`, `gclid`, `_hs…`, `mkt_tok`, `msclkid` and others.
 
+### S-11 — A guessed item name could tie a mail to someone's order (low, fixed)
+
+- **Where:** `record_mail` in `crates/uwumail-store/src/shipments.rs`, the fallback for split orders.
+- **Cause:** a shipping mail without a matching order number joins an open order of the same shop whose
+  subject quotes the same item. An item name is easier to guess than an order number.
+- **Fix:** the fallback only applies to authenticated mail; it is bound to the account and the shop,
+  open orders of the last 30 days, and the item is a bound SQL parameter.
+
+### S-12 — DPD, Hermes and GLS were asked through unofficial pages (info, removed)
+
+- **Where:** `crates/uwumail-smtp/src/parcels.rs`.
+- **Cause:** their public tracking pages are no API, change without notice and were already failing.
+- **Fix:** removed with the `shipments.lookup.unofficial` setting; only DHL, UPS and FedEx are asked
+  through their official APIs.
+
 ## What held up
 
 - **Carrier requests:**
