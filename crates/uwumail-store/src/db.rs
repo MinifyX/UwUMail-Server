@@ -102,6 +102,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0093_shipment_events_forget_mail.sql"),
     include_str!("migrations/0094_shipments_reread.sql"),
     include_str!("migrations/0095_shipments_trash.sql"),
+    // shortcut: 0096 is package A's; until it is merged in front, 0097 runs as the 96th.
+    include_str!("migrations/0097_shipment_lookup.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

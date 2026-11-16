@@ -62,6 +62,8 @@ const MIRRORED: &[(&str, &str, Mirror)] = &[
     ("verificationCleanup", "mailVerificationCleanup", Mirror::Text),
     // Parcels found in mail (docs/jmap-shipments.md).
     ("shipments", "shipments", Mirror::OnOff),
+    // Asking carriers about them by number.
+    ("shipmentLookup", "shipmentLookup", Mirror::OnOff),
 ];
 
 /// How long a message waits before it goes, when the person has not chosen: long enough to
@@ -379,6 +381,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         | "senderPictures"
         | "verificationHeuristics"
         | "shipments"
+        | "shipmentLookup"
         | "linkConfirm"
         | "darkImages"
         | "assist.refineEvents"

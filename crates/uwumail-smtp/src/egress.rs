@@ -77,6 +77,9 @@ pub struct EgressConfig {
     /// Requests to AI providers on the internet take the proxy (docs/llm.md). Off unless switched on:
     /// the provider knows who the key belongs to anyway. Providers in the local network never do.
     pub assist: bool,
+    /// Asking parcel carriers where a parcel is (docs/jmap-shipments.md) takes the proxy. Off unless
+    /// switched on: the carrier learns the number either way, never more.
+    pub parcels: bool,
 }
 
 impl Default for EgressConfig {
@@ -89,6 +92,7 @@ impl Default for EgressConfig {
             fetch: false,
             image_cache_mb: 1024,
             assist: false,
+            parcels: false,
         }
     }
 }
@@ -101,6 +105,7 @@ pub enum Purpose {
     Updates,
     Fetch,
     Assist,
+    Parcels,
 }
 
 /// Which addresses a request may reach. Everything but the AI assistant reaches public addresses only.
@@ -520,11 +525,18 @@ pub struct Routes {
     pub updates: bool,
     pub fetch: bool,
     pub assist: bool,
+    pub parcels: bool,
 }
 
 impl Routes {
     fn of(config: &EgressConfig) -> Routes {
-        Routes { pictures: config.pictures, updates: config.updates, fetch: config.fetch, assist: config.assist }
+        Routes {
+            pictures: config.pictures,
+            updates: config.updates,
+            fetch: config.fetch,
+            assist: config.assist,
+            parcels: config.parcels,
+        }
     }
 
     fn takes(&self, purpose: Purpose) -> bool {
@@ -533,6 +545,7 @@ impl Routes {
             Purpose::Updates => self.updates,
             Purpose::Fetch => self.fetch,
             Purpose::Assist => self.assist,
+            Purpose::Parcels => self.parcels,
         }
     }
 }
@@ -1116,6 +1129,30 @@ impl Egress {
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body(Full::new(Bytes::from(form)))
             .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
+        self.exchange_checked(purpose, request, max_bytes).await
+    }
+
+    /// Sends `request` to a public https address the way requests for `purpose` leave, like
+    /// [`Egress::post_form`], and answers the status and the body read up to `max_bytes`. For the parcel
+    /// carriers' tracking APIs. Redirects are answered, not followed.
+    pub async fn exchange(
+        &self,
+        purpose: Purpose,
+        request: Request<Full<Bytes>>,
+        max_bytes: usize,
+    ) -> Result<(u16, Bytes), EgressError> {
+        check_url(&request.uri().to_string(), false).map_err(EgressError::NotAllowed)?;
+        let (mut parts, body) = request.into_parts();
+        parts.headers.insert(USER_AGENT, hyper::header::HeaderValue::from_static(AGENT));
+        self.exchange_checked(purpose, Request::from_parts(parts, body), max_bytes).await
+    }
+
+    async fn exchange_checked(
+        &self,
+        purpose: Purpose,
+        request: Request<Full<Bytes>>,
+        max_bytes: usize,
+    ) -> Result<(u16, Bytes), EgressError> {
         // Made for each request from the way out as it is now, so a proxy the admin changes a moment
         // ago is already the one taken.
         let client = build_post_client(self.dialer(purpose).connector, &self.shared.roots);
@@ -1704,7 +1741,10 @@ mod tests {
             ..EgressConfig::default()
         };
         egress.reconfigure(&config).unwrap();
-        assert_eq!(egress.status().routes, Routes { pictures: false, updates: false, fetch: true, assist: false });
+        assert_eq!(
+            egress.status().routes,
+            Routes { pictures: false, updates: false, fetch: true, assist: false, parcels: false }
+        );
         egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
         assert!(asked.lock().unwrap().is_empty(), "pictures leave directly now");
         assert!(!egress.dialer(Purpose::Updates).proxied());
