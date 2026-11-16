@@ -228,7 +228,9 @@
       "saved": "已保存",
       "confirmTitle": "不再跟踪包裹？",
       "confirmText": "所有已保存的包裹都会被删除。重新开启后，只会读取新邮件和最近几天的邮件。",
-      "confirmOff": "关闭并删除"
+      "confirmOff": "关闭并删除",
+      "lookupLabel": "向承运商查询",
+      "lookupDescription": "仅用运单号向承运商查询状态。从不打开邮件中的链接。"
     }
   },
   "admin": {
@@ -1846,7 +1848,21 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "邮件如何离开服务器，以及服务器接收哪些邮件。更改会立即生效，无需重启。",
-    "appsIntro": "适用于邮件应用和浏览器中邮箱的设置。更改会立即生效，无需重启。"
+    "appsIntro": "适用于邮件应用和浏览器中邮箱的设置。更改会立即生效，无需重启。",
+    "parcelLookup": {
+      "title": "包裹查询",
+      "intro": "直接向承运商查询货件状态，而不只是等待下一封邮件。",
+      "enabled": "向承运商查询",
+      "enabledHint": "服务器只把运单号和承运商发送到承运商的固定地址，每 2 小时一次，直到最后一封邮件后 30 天。从不打开邮件中的链接。每个账户都可以自行关闭。请在隐私政策中说明。",
+      "keysIntro": "DHL、UPS 和 FedEx 需要在其开发者门户获取免费密钥：",
+      "dhlKey": "DHL API 密钥",
+      "upsClientId": "UPS 客户端 ID",
+      "upsClientSecret": "UPS 客户端密钥",
+      "fedexClientId": "FedEx 客户端 ID",
+      "fedexClientSecret": "FedEx 客户端密钥",
+      "unofficial": "无需密钥查询 DPD、Hermes 和 GLS",
+      "unofficialHint": "这些承运商没有公开接口；服务器使用其追踪页面背后的接口。可能随时失效。"
+    }
   },
   "health": {
     "loading": "正在加载服务器健康状况…",
@@ -3853,7 +3869,10 @@
       "direct": "直接",
       "assist": "发往 AI 服务商的请求",
       "assistHint": "仅限互联网上的服务商。本地网络中的服务商（例如 Ollama）始终直接连接。",
-      "assistShort": "AI 服务商"
+      "assistShort": "AI 服务商",
+      "parcels": "向承运商的请求",
+      "parcelsHint": "包裹查询：承运商看到的是代理的地址，而不是服务器的地址。",
+      "parcelsShort": "承运商"
     },
     "remove": {
       "title": "移除 VPN？",
@@ -5073,5 +5092,14 @@
       "caption": "验证码会这样显示在邮件列表上方。"
     },
     "saved": "已保存"
+  },
+  "news": {
+    "close": "关闭",
+    "spamnetParcels": {
+      "title": "新功能：垃圾邮件网络和包裹查询",
+      "parcelsTitle": "包裹查询",
+      "parcelsText": "服务器可以仅凭运单号直接向 DHL、UPS、FedEx 等查询包裹状态。在你开启之前一直关闭。",
+      "parcelsOpen": "打开设置"
+    }
   }
 }

@@ -234,7 +234,9 @@
       "saved": "Gespeichert",
       "confirmTitle": "Pakete nicht mehr verfolgen?",
       "confirmText": "Alle gespeicherten Pakete werden gelöscht. Wenn du es wieder einschaltest, werden nur neue Mails und die der letzten Tage gelesen.",
-      "confirmOff": "Ausschalten und löschen"
+      "confirmOff": "Ausschalten und löschen",
+      "lookupLabel": "Beim Paketdienst nachfragen",
+      "lookupDescription": "Fragt den Paketdienst nur mit der Sendungsnummer nach dem Stand. Links aus Mails werden nie geöffnet."
     }
   },
   "admin": {
@@ -1888,7 +1890,21 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "Wie Mail den Server verlässt und was er annimmt. Änderungen wirken sofort, ohne Neustart.",
-    "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart."
+    "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart.",
+    "parcelLookup": {
+      "title": "Paketabfrage",
+      "intro": "Fragt die Paketdienste selbst nach dem Stand einer Sendung, statt nur auf die nächste Mail zu warten.",
+      "enabled": "Bei Paketdiensten nachfragen",
+      "enabledHint": "Der Server schickt nur die Sendungsnummer und den Paketdienst an deren feste Adressen, alle 2 Stunden und bis 30 Tage nach der letzten Mail. Links aus Mails öffnet er nie. Jedes Konto kann es für sich abschalten. Erwähne es in deiner Datenschutzerklärung.",
+      "keysIntro": "DHL, UPS und FedEx brauchen einen kostenlosen Schlüssel aus ihrem Entwicklerportal:",
+      "dhlKey": "DHL-API-Schlüssel",
+      "upsClientId": "UPS Client-ID",
+      "upsClientSecret": "UPS Client-Secret",
+      "fedexClientId": "FedEx Client-ID",
+      "fedexClientSecret": "FedEx Client-Secret",
+      "unofficial": "DPD, Hermes und GLS ohne Schlüssel fragen",
+      "unofficialHint": "Diese Dienste haben keine öffentliche Schnittstelle; der Server nutzt die ihrer Sendungsverfolgung. Das kann jederzeit aufhören zu klappen."
+    }
   },
   "health": {
     "loading": "Zustand wird geladen …",
@@ -3938,7 +3954,10 @@
       "direct": "Direkt",
       "assist": "Anfragen an KI-Anbieter",
       "assistHint": "Nur Anbieter im Internet. Einer in deinem lokalen Netz, etwa ein Ollama, wird immer direkt erreicht.",
-      "assistShort": "KI-Anbieter"
+      "assistShort": "KI-Anbieter",
+      "parcels": "Fragen an Paketdienste",
+      "parcelsHint": "Die Paketabfrage: Paketdienste sehen dann die Adresse des Proxys statt die des Servers.",
+      "parcelsShort": "Paketdienste"
     },
     "remove": {
       "title": "VPN entfernen?",
@@ -5182,5 +5201,14 @@
       "caption": "So erscheint ein Code über der Mailliste."
     },
     "saved": "Gespeichert"
+  },
+  "news": {
+    "close": "Schließen",
+    "spamnetParcels": {
+      "title": "Neu: Spam-Netz und Paketabfrage",
+      "parcelsTitle": "Paketabfrage",
+      "parcelsText": "Der Server kann DHL, UPS, FedEx und andere direkt nach dem Stand eines Pakets fragen, nur mit der Sendungsnummer. Sie ist aus, bis du sie einschaltest.",
+      "parcelsOpen": "Zu den Einstellungen"
+    }
   }
 }

@@ -14,19 +14,18 @@ export function ShipmentsCard() {
   return <ShipmentsSwitch />;
 }
 
-function ShipmentsSwitch() {
+/** One on/off switch in the person's preferences, on unless stored as "off". */
+function usePreference(key: string) {
   const { t } = useT();
   const errorText = useErrorText();
   const queryClient = useQueryClient();
-  const stored = useSession().data?.preferences.shipments !== "off";
+  const stored = useSession().data?.preferences[key] !== "off";
   const [pending, setPending] = useState<boolean | null>(null);
-  // Switching off deletes the parcels, so it is asked first.
-  const [asking, setAsking] = useState(false);
   const save = useMutation({
     mutationFn: (on: boolean) =>
       api<Record<string, unknown>>("/api/account/preferences", {
         method: "PATCH",
-        body: { shipments: on ? "on" : "off" },
+        body: { [key]: on ? "on" : "off" },
       }),
     onMutate: (on) => setPending(on),
     onSuccess: async () => {
@@ -39,16 +38,36 @@ function ShipmentsSwitch() {
       toast(errorText(error), "error");
     },
   });
+  return { on: pending ?? stored, save };
+}
+
+function ShipmentsSwitch() {
+  const { t } = useT();
+  const { on, save } = usePreference("shipments");
+  const lookup = usePreference("shipmentLookup");
+  // Offered only when the admin has turned the lookup on and at least one carrier can be asked.
+  const lookupOffered = useSession().data?.features?.shipmentLookup === true;
+  // Switching off deletes the parcels, so it is asked first.
+  const [asking, setAsking] = useState(false);
 
   return (
     <Card title={t("account.shipments.title")}>
       <Toggle
-        checked={pending ?? stored}
+        checked={on}
         disabled={save.isPending}
-        onChange={(on) => (on ? save.mutate(true) : setAsking(true))}
+        onChange={(next) => (next ? save.mutate(true) : setAsking(true))}
         label={t("account.shipments.label")}
         description={t("account.shipments.description")}
       />
+      {lookupOffered && on && (
+        <Toggle
+          checked={lookup.on}
+          disabled={lookup.save.isPending}
+          onChange={(next) => lookup.save.mutate(next)}
+          label={t("account.shipments.lookupLabel")}
+          description={t("account.shipments.lookupDescription")}
+        />
+      )}
       <Dialog
         open={asking}
         onClose={() => setAsking(false)}

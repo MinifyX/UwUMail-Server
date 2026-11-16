@@ -1,8 +1,16 @@
-import { Button, Field, Segmented, TextInput, ICONS, Icon } from "@uwusuite/design";
+import { Button, Field, Segmented, ICONS, Icon } from "@uwusuite/design";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { ChoiceField, LockedHint, Section, TextField, ToggleField, type Form } from "@/features/settings/SettingsPage";
+import {
+  ChoiceField,
+  LockedHint,
+  SecretField,
+  Section,
+  TextField,
+  ToggleField,
+  type Form,
+} from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import { api, type LokiStatus, type SettingsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -23,37 +31,6 @@ export const LOKI_SETTING_KEYS = [
 ];
 
 type Auth = "none" | "basic" | "token";
-
-/** A password or token: never shown, only whether one is set; typing replaces it. */
-export function SecretField({ form, settingKey, label }: { form: Form; settingKey: string; label: string }) {
-  const { t } = useT();
-  const locked = form.locked(settingKey);
-  const stored = form.setting(settingKey);
-  const draft = form.value(settingKey);
-  return (
-    <Field
-      label={label}
-      hint={locked ? <LockedHint /> : stored?.set && draft !== null ? t("logs.loki.secretSet") : undefined}
-    >
-      {(id) => (
-        <div className="flex gap-2">
-          <TextInput
-            id={id}
-            type="password"
-            autoComplete="new-password"
-            disabled={locked}
-            placeholder={stored?.set ? "••••••••" : ""}
-            value={typeof draft === "string" ? draft : ""}
-            onChange={(event) => form.set(settingKey, event.target.value === "" ? undefined : event.target.value)}
-          />
-          {stored?.set && !locked && (
-            <Button onClick={() => form.set(settingKey, null)}>{t("logs.loki.secretRemove")}</Button>
-          )}
-        </div>
-      )}
-    </Field>
-  );
-}
 
 function LokiFields({ form }: { form: Form }) {
   const { t, i18n } = useT();

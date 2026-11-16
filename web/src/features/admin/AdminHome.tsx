@@ -9,6 +9,7 @@ import { formatBytes, formatDuration } from "@/lib/format";
 import { useAdminPrefs, useSaveAdminPref, type AdminView } from "./adminPrefs";
 import { AlertMailChoice, AlertsCard } from "./AlertsCard";
 import { HealthCard } from "./HealthCard";
+import { NewsCard } from "./NewsCard";
 import { SimpleHome } from "./SimpleHome";
 import { StatusTiles } from "./StatusTiles";
 
@@ -38,6 +39,7 @@ export function AdminHome() {
     <div className="flex flex-col gap-5">
       <ViewSwitch />
       <MicrosoftBanner />
+      <NewsCard />
       {view === "simple" ? (
         <>
           <SimpleHome />

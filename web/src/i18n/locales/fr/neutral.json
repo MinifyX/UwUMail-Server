@@ -234,7 +234,9 @@
       "saved": "Enregistré",
       "confirmTitle": "Ne plus suivre les colis ?",
       "confirmText": "Tous les colis enregistrés seront supprimés. Si vous le réactivez, seuls les nouveaux e-mails et ceux des derniers jours seront lus.",
-      "confirmOff": "Désactiver et supprimer"
+      "confirmOff": "Désactiver et supprimer",
+      "lookupLabel": "Demander au transporteur",
+      "lookupDescription": "Demande l’état au transporteur avec le seul numéro de suivi. Les liens des e-mails ne sont jamais ouverts."
     }
   },
   "admin": {
@@ -1920,7 +1922,21 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "Comment le courrier quitte le serveur et ce qu'il accepte. Les modifications s'appliquent immédiatement, sans redémarrage.",
-    "appsIntro": "Ce qui vaut pour les applis de messagerie et la boîte mail dans le navigateur. Les modifications s'appliquent immédiatement, sans redémarrage."
+    "appsIntro": "Ce qui vaut pour les applis de messagerie et la boîte mail dans le navigateur. Les modifications s'appliquent immédiatement, sans redémarrage.",
+    "parcelLookup": {
+      "title": "Suivi auprès des transporteurs",
+      "intro": "Demande directement aux transporteurs où en est un envoi, au lieu d’attendre le prochain e-mail.",
+      "enabled": "Interroger les transporteurs",
+      "enabledHint": "Le serveur n’envoie que le numéro de suivi et le transporteur à l’adresse fixe de celui-ci, toutes les 2 heures et jusqu’à 30 jours après le dernier e-mail. Il n’ouvre jamais les liens des e-mails. Chaque compte peut le désactiver pour lui-même. Mentionnez-le dans votre politique de confidentialité.",
+      "keysIntro": "DHL, UPS et FedEx demandent une clé gratuite de leur portail développeur :",
+      "dhlKey": "Clé API DHL",
+      "upsClientId": "ID client UPS",
+      "upsClientSecret": "Secret client UPS",
+      "fedexClientId": "ID client FedEx",
+      "fedexClientSecret": "Secret client FedEx",
+      "unofficial": "Interroger DPD, Hermes et GLS sans clé",
+      "unofficialHint": "Ces transporteurs n’ont pas d’interface publique ; le serveur utilise celle de leur page de suivi. Cela peut cesser de fonctionner à tout moment."
+    }
   },
   "health": {
     "loading": "Chargement de l'état du serveur …",
@@ -4009,7 +4025,10 @@
       "direct": "Direct",
       "assist": "Requêtes vers les fournisseurs d'IA",
       "assistHint": "Uniquement les fournisseurs sur Internet. Un fournisseur sur votre réseau local, comme un Ollama, est toujours joint directement.",
-      "assistShort": "Fournisseurs d'IA"
+      "assistShort": "Fournisseurs d'IA",
+      "parcels": "Requêtes aux transporteurs",
+      "parcelsHint": "Le suivi des colis : les transporteurs voient alors l’adresse du proxy au lieu de celle du serveur.",
+      "parcelsShort": "transporteurs"
     },
     "remove": {
       "title": "Supprimer le VPN ?",
@@ -5277,5 +5296,14 @@
       "caption": "Voici comment un code apparaît au-dessus de la liste des mails."
     },
     "saved": "Enregistré"
+  },
+  "news": {
+    "close": "Fermer",
+    "spamnetParcels": {
+      "title": "Nouveau : réseau anti-spam et suivi des colis",
+      "parcelsTitle": "Suivi des colis",
+      "parcelsText": "Le serveur peut demander directement à DHL, UPS, FedEx et d’autres où en est un colis, avec le seul numéro de suivi. Il reste désactivé jusqu’à ce que vous l’activiez.",
+      "parcelsOpen": "Ouvrir les réglages"
+    }
   }
 }

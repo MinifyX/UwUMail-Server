@@ -3,12 +3,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { CopyButton } from "@/components/ui/Page";
-import { SecretField } from "@/features/logs/LokiCard";
 import { useInfo } from "@/features/session/session";
 import { useT } from "@/i18n";
 import { api, type SettingsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
-import { LockedHint, Section, TextField, ToggleField, type Form } from "./SettingsPage";
+import { LockedHint, SecretField, Section, TextField, ToggleField, type Form } from "./SettingsPage";
 
 const DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/login-oidc-ldap.md";
 const OAUTH_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/oauth.md";

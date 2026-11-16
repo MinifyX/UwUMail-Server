@@ -234,7 +234,9 @@
       "saved": "Opgeslagen",
       "confirmTitle": "Pakketten niet meer volgen?",
       "confirmText": "Alle opgeslagen pakketten worden verwijderd. Zet je het weer aan, dan worden alleen nieuwe mails en die van de laatste dagen gelezen.",
-      "confirmOff": "Uitzetten en verwijderen"
+      "confirmOff": "Uitzetten en verwijderen",
+      "lookupLabel": "Navragen bij de vervoerder",
+      "lookupDescription": "Vraagt de status bij de vervoerder op met alleen het trackingnummer. Links uit mail worden nooit geopend."
     }
   },
   "admin": {
@@ -1888,7 +1890,21 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "Hoe mail de server verlaat en wat hij aanneemt. Wijzigingen werken meteen, zonder herstart.",
-    "appsIntro": "Wat geldt voor mailapps en de mailbox in de browser. Wijzigingen werken meteen, zonder herstart."
+    "appsIntro": "Wat geldt voor mailapps en de mailbox in de browser. Wijzigingen werken meteen, zonder herstart.",
+    "parcelLookup": {
+      "title": "Pakketopvraag",
+      "intro": "Vraagt de vervoerders zelf hoe het met een zending staat, in plaats van alleen op de volgende mail te wachten.",
+      "enabled": "Vervoerders navragen",
+      "enabledHint": "De server stuurt alleen het trackingnummer en de vervoerder naar het vaste adres van de vervoerder, elke 2 uur en tot 30 dagen na de laatste mail. Links uit mail opent hij nooit. Elk account kan het voor zichzelf uitzetten. Vermeld het in je privacyverklaring.",
+      "keysIntro": "DHL, UPS en FedEx hebben een gratis sleutel uit hun ontwikkelaarsportaal nodig:",
+      "dhlKey": "DHL-API-sleutel",
+      "upsClientId": "UPS client-ID",
+      "upsClientSecret": "UPS client-secret",
+      "fedexClientId": "FedEx client-ID",
+      "fedexClientSecret": "FedEx client-secret",
+      "unofficial": "DPD, Hermes en GLS zonder sleutel navragen",
+      "unofficialHint": "Deze vervoerders hebben geen openbare interface; de server gebruikt die achter hun trackingpagina. Dat kan op elk moment ophouden te werken."
+    }
   },
   "health": {
     "loading": "Gezondheid van de server laden …",
@@ -3938,7 +3954,10 @@
       "direct": "Direct",
       "assist": "Verzoeken aan AI-providers",
       "assistHint": "Alleen providers op internet. Een provider in je lokale netwerk, zoals een Ollama, wordt altijd rechtstreeks bereikt.",
-      "assistShort": "AI-providers"
+      "assistShort": "AI-providers",
+      "parcels": "Verzoeken aan vervoerders",
+      "parcelsHint": "De pakketopvraag: vervoerders zien dan het adres van de proxy in plaats van dat van de server.",
+      "parcelsShort": "vervoerders"
     },
     "remove": {
       "title": "De VPN verwijderen?",
@@ -5182,5 +5201,14 @@
       "caption": "Zo verschijnt een code boven de maillijst."
     },
     "saved": "Opgeslagen"
+  },
+  "news": {
+    "close": "Sluiten",
+    "spamnetParcels": {
+      "title": "Nieuw: spamnetwerk en pakketopvraag",
+      "parcelsTitle": "Pakketopvraag",
+      "parcelsText": "De server kan DHL, UPS, FedEx en anderen direct vragen hoe het met een pakket staat, met alleen het trackingnummer. Hij staat uit tot je hem aanzet.",
+      "parcelsOpen": "Naar de instellingen"
+    }
   }
 }
