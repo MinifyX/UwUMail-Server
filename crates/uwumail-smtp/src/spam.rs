@@ -15,6 +15,7 @@ mod feeds;
 mod html;
 pub(crate) mod links;
 mod lists;
+mod parcels;
 pub mod phishing;
 mod uri_lists;
 mod words;

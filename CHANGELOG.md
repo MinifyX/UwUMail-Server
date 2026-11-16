@@ -3,6 +3,19 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+- Parcels: IKEA's („ist fast bei dir … voraussichtlich Freitag, 06.11.2026.“) is now *Unterwegs*
+  with its expected day; a date that ends the sentence was not read before.
+- Parcels: `shopTrackingUrl`, the shop's own tracking page (*Beim Shop ansehen*), from
+  authenticated mail only and only on the shop's own domain, without `utm_`/`oxm_`/`mc_`
+  parameters; it is never opened by the server. Update: every account looks back 14 days once
+  more (migration 0096).
+- Fake shipping mail: new spam rules `PARCEL_FEE_UNAUTH`, `PARCEL_BAD_NUMBER` and
+  `PARCEL_FOREIGN_LINK` (docs/spam-filter.md). A shipping mail the filter doubts is no parcel
+  unless its sender is authenticated, and moving a mail to Junk removes the parcels that came only
+  from it.
+
 ## 0.37.3
 
 - Updates page: *Neu starten* only shows when the machine (or the gateway VPS) needs a restart, next

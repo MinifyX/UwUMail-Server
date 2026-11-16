@@ -4702,6 +4702,7 @@ name = "uwumail-labels"
 version = "0.37.3"
 dependencies = [
  "mail-parser",
+ "psl",
  "serde",
  "serde_json",
 ]

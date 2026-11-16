@@ -28,6 +28,7 @@ pub const SHIPMENT_RESCAN_MAX_DAYS: i64 = 90;
 /// What a look back reaches when the person switches shipments on.
 pub const SHIPMENT_RESCAN_DEFAULT_DAYS: i64 = 14;
 const TEXT_MAX_CHARS: usize = 500;
+const SHOP_URL_MAX_BYTES: usize = 2048;
 const LOCATION_MAX_CHARS: usize = 200;
 const TITLE_MAX_CHARS: usize = 200;
 const NUMBER_MAX_CHARS: usize = 40;
@@ -63,6 +64,8 @@ pub struct Shipment {
     pub carrier: String,
     pub number: Option<String>,
     pub tracking_url: Option<String>,
+    /// The shop's own tracking page, from authenticated mail only.
+    pub shop_tracking_url: Option<String>,
     pub title: Option<String>,
     pub merchant: Option<String>,
     pub order_ref: Option<String>,
@@ -209,6 +212,38 @@ fn destroy(conn: &Connection, account_id: i64, id: i64) -> Result<i64> {
     Ok(modseq)
 }
 
+/// A person filed `email_id` as spam: what it told of shipments goes. A shipment only that mail (or
+/// the model reading it) made is deleted; one with a name, hidden, or with other events only loses
+/// the mail's events and has its status played again.
+pub(crate) fn forget_junk_mail(tx: &Connection, account_id: i64, email_id: i64) -> Result<()> {
+    let ids: Vec<i64> = {
+        let mut stmt = tx.prepare_cached(
+            "SELECT DISTINCT e.shipment_id FROM shipment_events e JOIN shipments s ON s.id = e.shipment_id
+             WHERE e.email_id = ?1 AND s.account_id = ?2 AND e.source IN ('mail', 'model')",
+        )?;
+        stmt.query_map(params![email_id, account_id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?
+    };
+    for id in ids {
+        tx.execute(
+            "DELETE FROM shipment_events WHERE shipment_id = ?1 AND email_id = ?2 AND source IN ('mail', 'model')",
+            params![id, email_id],
+        )?;
+        let keep: bool = tx.query_row(
+            "SELECT title IS NOT NULL OR hidden OR EXISTS (SELECT 1 FROM shipment_events WHERE shipment_id = ?1)
+             FROM shipments WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if keep {
+            replay(tx, id)?;
+            changed(tx, account_id, id, "updated")?;
+        } else {
+            destroy(tx, account_id, id)?;
+        }
+    }
+    Ok(())
+}
+
 /// The person's time zone: the one of their default calendar, else Europe/Berlin.
 pub(crate) fn timezone(conn: &Connection, account_id: i64) -> Result<Tz> {
     let text: Option<String> = conn
@@ -257,7 +292,7 @@ fn status_of(value: &str) -> rusqlite::Result<ShipmentStatus> {
 }
 
 const COLUMNS: &str = "id, carrier, number, tracking_url, title, merchant, order_ref, status, status_at, expected_day,
-     expected_from, expected_to, delivered_at, pickup_json, hidden, created_at, updated_at";
+     expected_from, expected_to, delivered_at, pickup_json, hidden, created_at, updated_at, shop_tracking_url";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Shipment> {
     let pickup: Option<String> = row.get(13)?;
@@ -266,6 +301,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Shipment> {
         carrier: row.get(1)?,
         number: row.get(2)?,
         tracking_url: row.get(3)?,
+        shop_tracking_url: row.get(17)?,
         title: row.get(4)?,
         merchant: row.get(5)?,
         order_ref: row.get(6)?,
@@ -554,6 +590,7 @@ fn record_mail(
             None => (None, None, None),
         };
         let pickup_json = pickup.as_ref().map(|pickup| serde_json::to_string(pickup).unwrap_or_default());
+        let shop = facts.shop_tracking_url.as_deref().filter(|url| authenticated && url.len() <= SHOP_URL_MAX_BYTES);
         tx.execute(
             "UPDATE shipments SET
                 carrier = CASE WHEN carrier = 'other' AND ?2 IS NOT NULL THEN ?2 ELSE carrier END,
@@ -563,9 +600,11 @@ fn record_mail(
                 expected_day = CASE WHEN ?6 IS NOT NULL AND (?9 OR expected_day IS NULL) THEN ?6 ELSE expected_day END,
                 expected_from = CASE WHEN ?6 IS NOT NULL AND (?9 OR expected_day IS NULL) THEN ?7 ELSE expected_from END,
                 expected_to = CASE WHEN ?6 IS NOT NULL AND (?9 OR expected_day IS NULL) THEN ?8 ELSE expected_to END,
-                pickup_json = CASE WHEN ?10 IS NOT NULL AND (?9 OR pickup_json IS NULL) THEN ?10 ELSE pickup_json END
+                pickup_json = CASE WHEN ?10 IS NOT NULL AND (?9 OR pickup_json IS NULL) THEN ?10 ELSE pickup_json END,
+                shop_tracking_url = CASE WHEN ?11 IS NOT NULL AND (?9 OR shop_tracking_url IS NULL) THEN ?11
+                                         ELSE shop_tracking_url END
              WHERE id = ?1",
-            params![id, carrier, tracking, merchant, order_ref, day, from, to, newest, pickup_json],
+            params![id, carrier, tracking, merchant, order_ref, day, from, to, newest, pickup_json, shop],
         )?;
         last = Some(changed(tx, account_id, id, if created { "created" } else { "updated" })?);
     }
@@ -1054,6 +1093,7 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
             carrier: (!numbers.is_empty()).then_some(Carrier::Dhl),
             numbers: numbers.iter().map(|number| number.to_string()).collect(),
             tracking_url: None,
+            shop_tracking_url: None,
             status,
             expected: None,
             merchant: Some("Beispielshop".into()),
@@ -1292,5 +1332,42 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert_eq!(all.len() as i64, MAX_PER_ACCOUNT);
         assert!(all.iter().all(|s| s.number.as_deref() != Some("X1")), "the oldest gave way");
         assert!(all.iter().any(|s| s.number.as_deref() == Some("00340434000000000009")));
+    }
+
+    #[tokio::test]
+    async fn spam_takes_its_shipments_along() {
+        use crate::{EmailUpdate, KeywordsChange, MailboxesChange};
+        let (store, _dir, account) = setup().await;
+        let t = 1_794_699_000;
+        let junk = |id: i64| EmailUpdate {
+            id,
+            keywords: KeywordsChange::Patch(vec![("$junk".into(), true)]),
+            mailboxes: MailboxesChange::Keep,
+        };
+        // Only the fake mail knew this one: it goes.
+        let fake = mail(&store, account).await;
+        let mut lone = facts(&["00340434000000000011"], None, None);
+        lone.shop_tracking_url = Some("https://www.shop.example/sendungsverfolgung/?order=1".into());
+        store.record_shipment_mail(account, fake, t, "Paket".into(), lone, true).await.unwrap();
+        assert_eq!(
+            store.shipments(account, None).await.unwrap()[0].shop_tracking_url.as_deref(),
+            Some("https://www.shop.example/sendungsverfolgung/?order=1")
+        );
+        // Two mails tell of this one: it stays with the other's status.
+        let real = mail(&store, account).await;
+        let both = facts(&["00340434000000000012"], None, None);
+        store.record_shipment_mail(account, real, t, "Versandt".into(), both, true).await.unwrap();
+        let second = mail(&store, account).await;
+        let out = facts(&["00340434000000000012"], Some(ShipmentStatus::OutForDelivery), None);
+        store.record_shipment_mail(account, second, t + 60, "Heute".into(), out, true).await.unwrap();
+
+        for result in store.update_emails(account, vec![junk(fake), junk(second)]).await.unwrap() {
+            result.unwrap();
+        }
+        let left = store.shipments(account, None).await.unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].number.as_deref(), Some("00340434000000000012"));
+        assert_eq!(left[0].status, ShipmentStatus::Shipped);
+        assert_eq!(left[0].email_ids(), vec![real]);
     }
 }

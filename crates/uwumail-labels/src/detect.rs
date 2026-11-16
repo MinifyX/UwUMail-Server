@@ -378,6 +378,11 @@ fn day(word: &str) -> bool {
 pub fn date(text: &str) -> Option<String> {
     // Numeric: 31.12.2026, 31.12.26, "31.12. ", 2026-12-31.
     for (start, run) in runs(text, |c| c.is_ascii_digit() || c == '.' || c == '-', false) {
+        // A sentence's full stop right after the year: "bis 06.11.2026."
+        let run = match run.strip_suffix('.') {
+            Some(cut) if run.matches('.').count() == 3 => cut,
+            _ => run,
+        };
         let parts: Vec<&str> = run.split('.').collect();
         let valid_day_month = |d: &str, m: &str| {
             d.len() <= 2

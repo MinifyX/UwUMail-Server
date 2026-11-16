@@ -1125,7 +1125,7 @@ async fn relay_from_outside(server: &TestServer) -> String {
 
 /// Hands in `message` (headers and body) the way the relay received it from 203.0.113.7, with the Date
 /// and Message-ID every mail program writes, so only what the message itself adds is judged.
-async fn relay_message_from_outside(server: &TestServer, message: &str) -> String {
+pub(crate) async fn relay_message_from_outside(server: &TestServer, message: &str) -> String {
     relay_message_to(server, &["mini@a.test"], message).await
 }
 

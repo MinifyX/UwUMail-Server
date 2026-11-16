@@ -230,6 +230,9 @@ pub(crate) fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &Email
     if let Some(junk) = junk_signal(tx, account_id, (&old_keywords, &new_keywords), (&old_mailboxes, &new_mailboxes))? {
         crate::spam::rebook_verdict(tx, update.id, junk)?;
         crate::bayes::queue_marked(tx, update.id, account_id, junk)?;
+        if junk {
+            crate::shipments::forget_junk_mail(tx, account_id, update.id)?;
+        }
     }
 
     // Counts change in every mailbox the email was or is in.

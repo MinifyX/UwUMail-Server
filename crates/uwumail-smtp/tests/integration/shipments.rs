@@ -45,3 +45,42 @@ async fn a_shipping_mail_is_followed_unless_switched_off() {
     a.wait_for_inbox("mini@a.test", 2).await;
     assert!(store.shipments(mini, None).await.unwrap().is_empty(), "nothing is kept while off");
 }
+
+/// A fake shipping mail (unauthenticated, a fee, links to a third site) goes to Junk and is no
+/// shipment.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fake_shipping_mail_is_junk_and_no_shipment() {
+    let a = crate::flow::spam_test_server(uwumail_smtp::SpamConfig::default(), None).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let reply = crate::flow::relay_message_from_outside(
+        &a,
+        "From: DHL Paket <news@sender.test>\r\nTo: mini@a.test\r\nSubject: Ihr DHL Paket wartet\r\n\r\n\
+         Ihre Sendung 00340433958441804804 konnte nicht zugestellt werden. Bitte zahlen Sie die \
+         Zustellgebuehr: https://pay.elsewhere.example/dhl\r\nZustellgebühr 1,99 EUR.\r\n",
+    )
+    .await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let started = std::time::Instant::now();
+    while a.mailbox("mini@a.test", uwumail_store::MailboxRole::Junk).await.is_empty() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "the fake never reached Junk");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(store.shipments(mini, None).await.unwrap().is_empty());
+
+    // Not bad enough for Junk (the limit is high here), but doubted: greylisted, then in the Inbox
+    // on the retry, and still no shipment though it links to the carrier's tracking page.
+    let a =
+        crate::flow::spam_test_server(uwumail_smtp::SpamConfig { junk_score: 50.0, ..Default::default() }, None).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let doubted = "From: Versand <news@sender.test>\r\nTo: mini@a.test\r\nSubject: Ihr DHL Paket ist unterwegs\r\n\r\n\
+         Ihre Sendung ist unterwegs: \
+         https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567896\r\n";
+    let reply = crate::flow::relay_message_from_outside(&a, doubted).await;
+    assert!(reply.starts_with("451"), "{reply}");
+    let reply = crate::flow::relay_message_from_outside(&a, doubted).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    a.wait_for_inbox("mini@a.test", 1).await;
+    assert!(store.shipments(mini, None).await.unwrap().is_empty());
+}

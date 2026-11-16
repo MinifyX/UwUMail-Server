@@ -51,6 +51,7 @@ seen only by the owner.
   "carrier": "dhl",
   "number": "00340434000000000000",
   "trackingUrl": "https://www.dhl.de/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434000000000000",
+  "shopTrackingUrl": "https://www.shop.example/sendungsverfolgung/?orderNo=12345",
   "title": null,
   "merchant": "Beispielshop",
   "orderRef": "12345",
@@ -75,6 +76,7 @@ seen only by the owner.
 | `carrier` | `dhl`, `deutschePost`, `dpd`, `hermes`, `gls`, `ups`, `amazonLogistics`, `fedex` or `other` |
 | `number` | the tracking number, upper case without spaces; `null` while only the order is known |
 | `trackingUrl` | the carrier's own tracking page for the number; for a shipment without a number, a link from the mail on that carrier's own domain; `null` otherwise. Never opened by the server |
+| `shopTrackingUrl` | the shop's own tracking page ("Beim Shop ansehen"): only from mail whose sender is authenticated (SPF/DKIM/DMARC), only a link on the From address's registrable domain whose path names tracking, with `utm_*`, `oxm_*` and `mc_*` parameters removed; `null` otherwise. Never opened by the server |
 | `title` | the person's own name for the parcel, at most 200 characters |
 | `merchant`, `orderRef` | the shop and its order number, as the mail names them |
 | `status` | `ordered`, `shipped`, `inTransit`, `outForDelivery`, `delivered`, `readyForPickup`, `deliveryFailed`, `returned` or `cancelled` |
@@ -199,6 +201,11 @@ Looks through the mail of the last `days` (1 to 90, default 14; otherwise
 Mail in the Trash is read too (people bin a shop's mail once read), Junk is
 not. A mail already noted changes nothing, so a rescan may be repeated. Switching
 shipments on starts one over 14 days.
+
+A mail moved to Junk takes its parcel along when the parcel came only from it: one with a title
+of its own, hidden, or known from other mail or an app stays and only loses that mail (`updated`
+instead of `destroyed`). Fake shipping mail is kept out at delivery too (docs/spam-filter.md,
+"Parcel mail").
 
 ## Switching off
 

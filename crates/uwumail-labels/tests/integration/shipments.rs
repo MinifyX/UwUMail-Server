@@ -406,3 +406,27 @@ fn odd_input_does_not_panic() {
     );
     assert_eq!(found(&mail).status, Some(ShipmentStatus::Delivered));
 }
+
+#[test]
+fn shop_tracking_page_and_a_date_ending_the_sentence() {
+    // A shop's own notice through a tracking service: the shop's page next to the carrier's.
+    let mut mail = html_message(
+        &["From: Beispielmoebel <no.reply@order.email.moebel.example>", "Subject: Lieferzeitfenster"],
+        r#"<p>Hej Leni,</p><p>deine Lieferung ist fast bei dir. Sie kommt voraussichtlich Freitag, 06.11.2026.</p>
+        <a href="https://www.moebel.example/de/de/customer-service/sendungsverfolgungPL/?orderNo=1642190674&amp;utm_source=mail&amp;utm_medium=email">Lieferung verfolgen</a>
+        <a href="https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567890">DHL</a>
+        <a href="https://www.moebel.example/de/de/p/stoffhai/?utm_source=mail">Stoffhai</a>"#,
+    );
+    let facts = found(&mail);
+    assert_eq!(facts.status, Some(ShipmentStatus::InTransit));
+    assert_eq!(facts.expected.map(|e| e.day), Some(on(6, 11, 2026)));
+    assert_eq!(facts.numbers, ["00340434161234567890"]);
+    assert_eq!(
+        facts.shop_tracking_url.as_deref(),
+        Some("https://www.moebel.example/de/de/customer-service/sendungsverfolgungPL/?orderNo=1642190674")
+    );
+
+    // Unauthenticated mail never gets a shop link.
+    mail.from_trusted = false;
+    assert_eq!(found(&mail).shop_tracking_url, None);
+}

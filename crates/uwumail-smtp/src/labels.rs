@@ -180,6 +180,8 @@ pub(crate) fn for_sieve(message: &[u8], labeled: &Labeled) -> Vec<u8> {
 /// Notes the parcel a delivered message tells of (docs/jmap-shipments.md), with the same time
 /// budget as the labels and never in the way of the mail: on a timeout or error it is only logged.
 /// Only what the rules are sure of (confidence 0.8) counts; links in the mail are never opened.
+/// A mail the spam filter `doubted` counts only when its sender is authenticated.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn shipment(
     ctx: &Context,
     account_id: i64,
@@ -187,6 +189,7 @@ pub(crate) async fn shipment(
     message: &[u8],
     parsed: &Parsed,
     sender: &SenderTrust,
+    doubted: bool,
 ) {
     let Some(&email_id) = email_ids.first() else { return };
     let work = async {
@@ -195,6 +198,9 @@ pub(crate) async fn shipment(
         }
         let parsed = parsed.get(message).await?;
         let authenticated = sender.vouches_for(&parsed.0.from);
+        if doubted && !authenticated {
+            return Ok(false);
+        }
         let found = tokio::task::spawn_blocking(move || {
             let (mail, _) = &*parsed;
             let mut mail = mail.clone();

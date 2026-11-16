@@ -1704,6 +1704,12 @@ pub(crate) async fn receive(
     let spam_tests = score.as_ref().map(spam::Score::tests);
     let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
     let junk = quarantined || matches!(outcome, spam::Outcome::Junk | spam::Outcome::Reject);
+    // A parcel notice that dresses up as a brand, or that the filter doubts, is no parcel unless
+    // its sender is authenticated (labels::shipment checks that).
+    let parcel_doubted = outcome != spam::Outcome::Deliver
+        || score.as_ref().is_some_and(|score| {
+            score.hits.iter().any(|hit| hit.rule.starts_with("BRAND_") || hit.rule.starts_with("LOOKALIKE_"))
+        });
     // What the score means for each person without a listed sender: their own Bayes knowledge and
     // word lists add points, and their own limits say what the sum means.
     let limits = match &score {
@@ -2258,7 +2264,8 @@ pub(crate) async fn receive(
                 if !junk && kept {
                     labels::log(&ctx, account_id, &email_ids, &labeled).await;
                     queue_for_labels(&ctx, account_id, &email_ids).await;
-                    labels::shipment(&ctx, account_id, &email_ids, &message, &label_mail, &label_sender).await;
+                    let doubted = parcel_doubted && !matches!(decision, Decision::Allow(_));
+                    labels::shipment(&ctx, account_id, &email_ids, &message, &label_mail, &label_sender, doubted).await;
                 }
                 // The code, for the notification and autofill. Never in the way of the delivery
                 // either: past the limit or failing, the mail is simply one without a code.

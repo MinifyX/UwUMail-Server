@@ -192,6 +192,22 @@ written that From, and the link counts as `PHISHING_LINK_TEXT`. A user name
 with dots ("lia.lunare") is not taken for a domain: only names with a known
 ending are.
 
+### Parcel mail
+
+Fake shipping mail ("Ihr Paket wartet, bitte Zollgebühr zahlen") is a phishing classic. These
+rules look at mail that talks about a parcel:
+
+| Rule | Points | When |
+|---|---|---|
+| `PARCEL_FEE_UNAUTH` | +3.0 | the From domain is not authenticated and the mail asks for a fee (customs, delivery, storage) or to confirm or update the address |
+| `PARCEL_BAD_NUMBER` | +2.5 | a tracking number with a check digit (DHL SSCC `0034…`, UPS `1Z…`) has the wrong one: no carrier hands it out, whoever sent it |
+| `PARCEL_FOREIGN_LINK` | +2.0 | the From domain is not authenticated, the mail names a carrier, and every link leads somewhere that is neither the carrier nor the sender's own site |
+
+A shipping mail the filter doubts (anything above *Deliver*, or a brand or lookalike rule) only
+becomes a parcel when its sender is authenticated, unless the sender is on the person's allowed
+list. Mail in Junk never does, and moving a mail to Junk later takes the parcels along that came
+only from it (docs/jmap-shipments.md).
+
 ### How well it does
 
 `crates/uwumail-smtp/tests/corpus` holds 195 made-up mails in German and

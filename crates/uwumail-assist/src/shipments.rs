@@ -216,6 +216,7 @@ fn from_model(answer: &Value, mail: &Mail) -> Option<ShipmentFacts> {
         carrier: answer["carrier"].as_str().and_then(Carrier::from_id),
         numbers,
         tracking_url: None,
+        shop_tracking_url: None,
         status: answer["status"].as_str().and_then(ShipmentStatus::from_id),
         expected,
         merchant: merchant.map(str::to_string),
