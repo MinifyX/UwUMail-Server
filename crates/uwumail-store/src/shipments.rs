@@ -536,16 +536,33 @@ fn record_mail(
     };
     // The same shop may sign as „Apple“ and as „Apple Store“: one name starting the other counts.
     let order_of = |tx: &Connection, number_is_null: bool| -> Result<Vec<i64>> {
-        let Some(order_ref) = &order_ref else { return Ok(Vec::new()) };
-        let mut stmt = tx.prepare_cached(
-            "SELECT id FROM shipments WHERE account_id = ?1 AND order_ref = ?2
+        if let Some(order_ref) = &order_ref {
+            let mut stmt = tx.prepare_cached(
+                "SELECT id FROM shipments WHERE account_id = ?1 AND order_ref = ?2
                AND (?3 IS NULL OR merchant IS NULL OR merchant = ?3
                     OR substr(?3, 1, length(merchant) + 1) = merchant || ' '
                     OR substr(merchant, 1, length(?3) + 1) = ?3 || ' ')
                AND (?4 = 0 OR number IS NULL)
              ORDER BY id",
+            )?;
+            let rows = stmt.query_map(params![account_id, order_ref, merchant, number_is_null], |row| row.get(0))?;
+            let ids: Vec<i64> = rows.collect::<rusqlite::Result<_>>()?;
+            if !ids.is_empty() {
+                return Ok(ids);
+            }
+        }
+        // A shop may split one order (Amazon, by seller) and name another number in the shipping
+        // mail: the same quoted item in the subject of an open order of the last 30 days ties them.
+        let Some(item) = quoted_item(subject) else { return Ok(Vec::new()) };
+        let mut stmt = tx.prepare_cached(
+            "SELECT DISTINCT s.id FROM shipments s JOIN shipment_events e ON e.shipment_id = s.id
+             WHERE s.account_id = ?1 AND s.merchant = ?2 AND (?3 = 0 OR s.number IS NULL)
+               AND s.status NOT IN ('delivered', 'returned', 'cancelled') AND s.status_at >= ?4
+               AND e.email_id IS NOT NULL AND instr(e.text, ?5) > 0
+             ORDER BY s.id",
         )?;
-        let rows = stmt.query_map(params![account_id, order_ref, merchant, number_is_null], |row| row.get(0))?;
+        let since = received_at - 30 * 86_400;
+        let rows = stmt.query_map(params![account_id, merchant, number_is_null, since, item], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     };
 
@@ -665,6 +682,16 @@ fn record_mail(
         last = Some(changed(tx, account_id, id, if created { "created" } else { "updated" })?);
     }
     Ok(last)
+}
+
+/// The item a subject names in quotes („Wasserkocher“ or "Wasserkocher"), quotes included, when
+/// it is long enough to tell one item from another.
+fn quoted_item(subject: &str) -> Option<&str> {
+    let (open, close) = [('„', '“'), ('"', '"'), ('“', '”')].into_iter().find(|(open, _)| subject.contains(*open))?;
+    let start = subject.find(open)?;
+    let inner = start + open.len_utf8();
+    let end = inner + subject[inner..].find(close)? + close.len_utf8();
+    (subject[inner..end - close.len_utf8()].chars().count() >= 4).then(|| &subject[start..end])
 }
 
 /// The link to follow a shipment: the carrier's own page, else the mail's (which `shipment` only
@@ -1382,6 +1409,37 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert_eq!(first.status_at, t + 3600);
         assert_eq!(first.delivered_at, None);
         assert_eq!(first.events.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn a_split_order_follows_its_item() {
+        let (store, _dir, account) = setup().await;
+        let t = 1_794_699_000;
+        let order = mail(&store, account).await;
+        let subject = "Bestellt: „Pulsgurt M-XXL…“ und 1 mehr Artikel";
+        store
+            .record_shipment_mail(account, order, t, subject.into(), facts(&[], None, Some("A-1")), true)
+            .await
+            .unwrap();
+        // Shipped under the second order number of the split: the same item still ties it.
+        let shipped = mail(&store, account).await;
+        let facts_b = facts(&[], Some(ShipmentStatus::Shipped), Some("B-2"));
+        store
+            .record_shipment_mail(account, shipped, t + 60, "Versendet: „Pulsgurt M-XXL…“".into(), facts_b, true)
+            .await
+            .unwrap();
+        let all = store.shipments(account, None).await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].status, ShipmentStatus::Shipped);
+        // Another item of another order stays apart.
+        let other = mail(&store, account).await;
+        let facts_c = facts(&[], Some(ShipmentStatus::Shipped), Some("C-3"));
+        store
+            .record_shipment_mail(account, other, t + 120, "Versendet: „Wasserkocher“".into(), facts_c, true)
+            .await
+            .unwrap();
+        assert_eq!(store.shipments(account, None).await.unwrap().len(), 2);
+        assert_eq!(quoted_item("Ein \"Ab\""), None, "too short to tell items apart");
     }
 
     #[tokio::test]
