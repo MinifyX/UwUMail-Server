@@ -540,6 +540,90 @@ good one and is tried again an hour later. The portal shows for each list how
 many entries it holds, when it was fetched and why it failed, with a button to
 fetch it now; `uwumail-server spam feeds` shows the same.
 
+## Spam-Netz
+
+The Spam-Netz is a list that UwUMail servers keep together, run as its own service
+([UwUSpamNet](https://github.com/MinifyX/UwUSpamNet)). Servers report what people mark as spam;
+what enough servers report independently lands on the list, and every server that fetches it
+scores mail by it. Fetching and reporting are two switches (*Spamfilter → Listen → Spam-Netz* or
+`[spamnet]` in the config file), both off by default:
+
+```toml
+[spamnet]
+fetch = false   # fetch the list every 15 minutes and score by it
+report = false  # report spam and not-spam
+url = "https://spamnet.uwu.minifyx.de"
+```
+
+The first time either switch is on, the server registers with the hub (its host name and
+`UwUMail <version>`, nothing else) and keeps the key it gets sealed in the database. A key the
+hub no longer accepts (401) is dropped and the server registers again on the next run.
+
+**Fetching.** The first run is two minutes after start, then every 15 minutes; *Jetzt abgleichen*
+in the portal runs one at once (at most once a minute). Each fetch only brings what changed since
+the last cursor; when the hub sends the full list, it replaces the old one. Entries the hub gave
+an expiry drop out by themselves. A failed fetch keeps the last list.
+
+| Kind | Finding | Matches |
+|---|---|---|
+| Text fingerprint | `SPAMNET_DIGEST` | one of the message's text fingerprints (digest v1 of the visible text) |
+| Link domain | `SPAMNET_DOMAIN` | the registrable domain of a link in the message |
+| Sending server | `SPAMNET_IP` | the address that handed the message over (IPv4, or the IPv6 /64) |
+| Sender domain | `SPAMNET_FROM` | the registrable domain of the `From` address |
+
+Each kind gives the points the hub lists for its best match, at most 4; all four together give at
+most 6, so the Spam-Netz alone does not refuse a mail at the default thresholds. Mail the server
+sends itself is never scored by it.
+
+**Reporting.** The server reports:
+
+- *spam* when a person moves a message into Junk, and when the filter refuses a message (the hub
+  counts a person twice as much as a filter);
+- *not spam* when a person moves a message out of Junk.
+
+It never reports mail from its own domains or accounts, and never authenticated mail (DMARC pass)
+from someone's contacts. Of what the filter refuses, only unauthenticated mail is reported. What a delivered message would report is kept
+next to it, so a later move reports exactly that and never needs to read the message again.
+Reports wait in a queue and go out with the next run, at most 500 per run; a failed send (the hub
+down, the daily limit reached, the server banned) leaves them queued for the next run. Turning
+reporting off empties the queue.
+
+**What leaves the server** with a report: the verdict (spam/not spam), why (a person or the
+filter), up to 8 text fingerprints, up to 20 link domains, the sending server's address and the
+sender's domain. **Never:** recipients, the text, subjects, attachments, the sender's full
+address, the account or who marked the message. The fingerprints are hashes of normalised text
+shingles; the text cannot be read back from them.
+
+With the gateway VPN, *VPN → egress.spamnet* sends these requests through it, so the hub sees the
+VPN's address instead of the server's.
+
+Known limit: list entries match exactly. A listed domain does not match its subdomains (the
+client already shortens hosts to the registrable domain), and an IPv4 entry does not match a
+wider network.
+
+### Text for your privacy policy
+
+> **Spam-Netz.** To recognise spam, this mail server takes part in the Spam-Netz, a list run
+> together by UwUMail servers at spamnet.uwu.minifyx.de. When a message is marked as spam or not
+> spam, or refused as spam, the server sends: fingerprints of its text (hashes from which the
+> text cannot be restored), the domains of its links, the IP address of the server that delivered
+> it and the domain of the sender's address. Recipients, content, subjects, attachments and the
+> sender's full address are never sent. Mail from our own domains and authenticated mail from
+> your contacts is never reported. Legal basis: our legitimate interest in protecting the service
+> and its users from spam (Art. 6(1)(f) GDPR).
+
+German:
+
+> **Spam-Netz.** Um Spam zu erkennen, nimmt dieser Mailserver am Spam-Netz teil, einer Liste, die
+> UwUMail-Server gemeinsam unter spamnet.uwu.minifyx.de führen. Wird eine Mail als Spam oder kein
+> Spam markiert oder als Spam abgelehnt, sendet der Server: Fingerabdrücke ihres Textes (Hashes,
+> aus denen sich der Text nicht wiederherstellen lässt), die Domains ihrer Links, die IP-Adresse
+> des einliefernden Servers und die Domain der Absenderadresse. Empfänger, Inhalt, Betreff,
+> Anhänge und die volle Absenderadresse werden nie übertragen. Mail von unseren eigenen Domains
+> und authentifizierte Mail von deinen Kontakten wird nie gemeldet. Rechtsgrundlage: unser
+> berechtigtes Interesse, den Dienst und seine Nutzer vor Spam zu schützen (Art. 6 Abs. 1 lit. f
+> DSGVO).
+
 ## Headers
 
 Every scored message gets two headers, so a mail app can filter on them and a
