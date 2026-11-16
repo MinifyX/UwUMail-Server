@@ -3,7 +3,7 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.38.0
 
 - Parcels: IKEA's („ist fast bei dir … voraussichtlich Freitag, 06.11.2026.“) is now *Unterwegs*
   with its expected day; a date that ends the sentence was not read before.
@@ -23,8 +23,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   DMARC-aligned) leave the server, plus host name and version at registration; never recipients or content, never mail from own domains or authenticated mail from
   contacts. Both off by default (`[spamnet] fetch`, `report`); portal card under *Spamfilter →
   Listen*, `egress.spamnet` on the VPN page, privacy text in docs/spam-filter.md. Migration 0098.
-- Parcel lookup: the server can ask DHL/Deutsche Post, UPS and FedEx (with their free developer keys)
-  and DPD, Hermes and GLS (without a key, unofficial) how a parcel is doing. Off by default; switch it
+- Parcel lookup: the server can ask DHL/Deutsche Post, UPS and FedEx through their official APIs (with
+  their free developer keys) how a parcel is doing; other carriers keep the link from the mail. UPS
+  and FedEx are not yet tested with real keys. Off by default; switch it
   on under *Settings → Apps & webmail → Parcel lookup*. Only the tracking number goes to the carrier's
   fixed address, never a link from a mail. Every 2 hours (every 30 minutes while out for delivery), up
   to 30 days after the last mail, never after delivery. Each account can switch it off under *My
@@ -38,6 +39,12 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   per sender. An error, a bare 404 or a timeout at the carrier changes nothing, and the move
   teaches the spam filter nothing.
 - Portal: a one-time card on the overview about what is new.
+- Parcels: a cancelled contract („Kündigung für Ihr … Paket“, a hosting or phone plan) is no
+  longer an order.
+- Parcels: when a shop splits an order (Amazon ships some items under another order number), the
+  shipping mail finds its order by the item quoted in the subject and no second parcel appears.
+- Webmail 0.34.0: *Beim Shop ansehen*, *Jetzt aktualisieren* and the carrier's last answer on a
+  parcel.
 
 ## 0.37.3
 
