@@ -1,5 +1,5 @@
 //! Fake shipping mails: a parcel that waits for a fee, a tracking number no carrier hands out, a
-//! "track your parcel" mail whose links all lead somewhere else (docs/spam.md, "Parcel mail").
+//! "track your parcel" mail whose links all lead somewhere else (docs/spam-filter.md, "Parcel mail").
 //! The rules read what [`super::phishing::Input`] holds.
 
 use super::links::site;
