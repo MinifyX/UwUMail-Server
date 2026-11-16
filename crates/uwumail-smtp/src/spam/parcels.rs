@@ -21,8 +21,9 @@ const PARCEL_WORDS: &[&str] = &[
     "tracking",
 ];
 
-/// Carriers by name, in lower case; `ups` only as a word of its own.
-const CARRIER_NAMES: &[&str] = &["dhl", "dpd", "hermes", "gls", "ups", "fedex", "deutsche post", "post"];
+/// Carriers by name, in lower case, each only as a word of its own. Not "post" alone: newsletters
+/// say it all the time.
+const CARRIER_NAMES: &[&str] = &["dhl", "dpd", "hermes", "gls", "ups", "fedex", "deutsche post"];
 
 /// A parcel that waits for money or for the address to be confirmed: how fake shipping mails phish.
 const FEE_CUES: &[&str] = &[
@@ -62,7 +63,10 @@ const FEE_CUES: &[&str] = &[
 pub fn check(input: &Input<'_>) -> Vec<Finding> {
     let lower = format!("{}\n{}", input.subject, input.text).to_lowercase();
     let mut found = Vec::new();
-
+    // Only unauthenticated mail about a parcel (security audit 0.38.0 S-9).
+    if input.from_authenticated || !PARCEL_WORDS.iter().any(|word| lower.contains(word)) {
+        return found;
+    }
     if let Some(number) = bad_number(&lower) {
         found.push(Finding {
             rule: "PARCEL_BAD_NUMBER",
@@ -70,7 +74,8 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
             detail: format!("{number} has a wrong check digit"),
         });
     }
-    if input.from_authenticated || !PARCEL_WORDS.iter().any(|word| lower.contains(word)) {
+    // Bills and newsletters use the same words; a carrier's name and a number together are a parcel.
+    if !CARRIER_NAMES.iter().any(|name| has_word(&lower, name)) || !has_number(&lower) {
         return found;
     }
     if let Some(cue) = FEE_CUES.iter().find(|cue| lower.contains(*cue)) {
@@ -87,8 +92,7 @@ pub fn check(input: &Input<'_>) -> Vec<Finding> {
             LinkTarget::Ip(_) => None,
         })
         .collect();
-    if CARRIER_NAMES.iter().any(|name| has_word(&lower, name))
-        && !hosts.is_empty()
+    if !hosts.is_empty()
         && hosts.len() == input.links.len()
         && hosts.iter().all(|host| Carrier::of_host(host).is_none() && Some(site(host)) != from_site)
     {
@@ -144,6 +148,13 @@ fn ups_ok(word: &str) -> bool {
     (10 - sum % 10) % 10 == u32::from(word.as_bytes()[17] - b'0')
 }
 
+/// Whether a word looks like a parcel number: 8 to 40 letters and digits, at least 8 of them digits.
+fn has_number(lower: &str) -> bool {
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| (8..=40).contains(&word.len()) && word.bytes().filter(u8::is_ascii_digit).count() >= 8)
+}
+
 fn has_word(text: &str, word: &str) -> bool {
     text.match_indices(word).any(|(at, _)| {
         let before = text[..at].chars().next_back().is_none_or(|c| !c.is_alphanumeric());
@@ -182,11 +193,22 @@ mod tests {
         let fake = Input {
             from_address: Some("info@paket-service.example"),
             subject: "Ihr DHL Paket wartet",
-            text: "Ihre Sendung konnte nicht zugestellt werden. Bitte zahlen Sie die Zustellgebühr von 1,99 €.",
+            text: "Ihre Sendung 00340433958441804804 konnte nicht zugestellt werden. Bitte zahlen Sie die \
+                   Zustellgebühr von 1,99 €.",
             links: vec![link("pay.elsewhere.example")],
             ..Input::default()
         };
         assert_eq!(rules(&fake), ["PARCEL_FEE_UNAUTH", "PARCEL_FOREIGN_LINK"]);
+        // A bill or a newsletter with the same words, but no carrier and number, is none.
+        let bill =
+            Input { subject: "Ihre Rechnung", text: "Lieferung bezahlt, Gebühr von 1,99 € (Post).", ..fake.clone() };
+        assert!(rules(&bill).is_empty());
+        // A wrong check digit counts only in mail about a parcel, and not from who it says.
+        let order = Input { subject: "Bestellung", text: "Nummer 00340433958441804805", ..fake.clone() };
+        assert!(rules(&order).is_empty());
+        let wrong = Input { text: "Sendung 00340433958441804805", ..fake.clone() };
+        assert!(rules(&wrong).contains(&"PARCEL_BAD_NUMBER"));
+        assert!(rules(&Input { from_authenticated: true, ..wrong }).is_empty());
         // The same words from a sender that authenticates are the shop's own business; links to
         // the carrier or the sender's own site are what real tracking mails have.
         assert!(rules(&Input { from_authenticated: true, ..fake.clone() }).is_empty());

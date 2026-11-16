@@ -892,17 +892,40 @@ fn merchant_of(mail: &Mail) -> Option<String> {
 const SHOP_TRACKING_WORDS: &[&str] =
     &["sendungsverfolgung", "track", "verfolg", "bestellstatus", "lieferstatus", "order-status", "orderstatus"];
 /// Query keys of newsletter and click trackers, dropped from a shop's link.
-const TRACKER_PREFIXES: &[&str] = &["utm_", "oxm_", "mc_"];
+const TRACKER_PREFIXES: &[&str] = &[
+    "utm_",
+    "oxm_",
+    "mc_",
+    "_hs",
+    "mkt_tok",
+    "fbclid",
+    "gclid",
+    "gbraid",
+    "wbraid",
+    "dclid",
+    "msclkid",
+    "igshid",
+    "yclid",
+    "twclid",
+    "ttclid",
+    "li_fat_id",
+    "_ga",
+    "_gl",
+];
 
 /// The first https link to a tracking page on the From address's own registrable domain.
 fn shop_link(mail: &Mail) -> Option<String> {
-    let from_host = mail.from.rsplit_once('@')?.1;
-    let site = psl::domain_str(from_host)?;
+    let from_host = mail.from.rsplit_once('@')?.1.to_ascii_lowercase();
+    let site = psl::domain_str(&from_host)?;
     mail.links.iter().find_map(|link| {
         if !link.starts_with("https://") {
             return None;
         }
         let parts = Url::split(link)?;
+        // The same characters `Carrier::of_host` allows, so no look-alike host is shown.
+        if !parts.host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-') {
+            return None;
+        }
         let on_site = parts.host == site || parts.host.ends_with(&format!(".{site}"));
         let path = parts.path.to_ascii_lowercase();
         if !on_site || Carrier::of_host(&parts.host).is_some() || find_any(&path, SHOP_TRACKING_WORDS).is_none() {
@@ -920,10 +943,6 @@ fn shop_link(mail: &Mail) -> Option<String> {
         if !query.is_empty() {
             url.push('?');
             url.push_str(&query.join("&"));
-        }
-        if !parts.fragment.is_empty() {
-            url.push('#');
-            url.push_str(parts.fragment);
         }
         Some(url)
     })

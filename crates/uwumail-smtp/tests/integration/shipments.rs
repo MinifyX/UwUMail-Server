@@ -220,9 +220,8 @@ async fn a_refresh_waits_five_minutes_and_says_what_the_carrier_said() {
 /// one whose parcel DHL knows stays where it was.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_doubtful_mail_about_an_unknown_parcel_goes_to_junk() {
-    // Doubtful, not spam: the filter alone would deliver it.
-    let a =
-        spam_test_server(SpamConfig { junk_score: 20.0, greylist_score: 20.0, ..SpamConfig::default() }, None).await;
+    // Suspicious, not spam: the filter alone would deliver it after greylisting.
+    let a = spam_test_server(SpamConfig { junk_score: 20.0, greylist_score: 1.0, ..SpamConfig::default() }, None).await;
     let fake = with_carriers(&a);
     let fake_dhl = |number: &str| {
         format!(
@@ -230,6 +229,8 @@ async fn a_doubtful_mail_about_an_unknown_parcel_goes_to_junk() {
              Ihre Sendung {number} von Beispielshop wurde an DHL \u{fc}bergeben.\r\n"
         )
     };
+    let reply = relay_message_from_outside(&a, &fake_dhl("00340434169999000003")).await;
+    assert!(reply.starts_with("451"), "{reply}");
     let reply = relay_message_from_outside(&a, &fake_dhl("00340434169999000003")).await;
     assert!(reply.starts_with("250"), "{reply}");
     let started = std::time::Instant::now();
@@ -246,14 +247,15 @@ async fn a_doubtful_mail_about_an_unknown_parcel_goes_to_junk() {
     assert_eq!(entry.recipients[0].address, "mini@a.test");
 
     // DHL is asked once in five seconds at most, so the next one goes to a server of its own.
-    let b =
-        spam_test_server(SpamConfig { junk_score: 20.0, greylist_score: 20.0, ..SpamConfig::default() }, None).await;
+    let b = spam_test_server(SpamConfig { junk_score: 20.0, greylist_score: 1.0, ..SpamConfig::default() }, None).await;
     let known = with_carriers(&b);
     known.answer(
         "trackingNumber=00340434169999000004",
         200,
         json!({ "shipments": [{ "events": [{ "timestamp": "2027-01-11T20:00:00+01:00", "statusCode": "transit", "description": "Unterwegs" }] }] }),
     );
+    let reply = relay_message_from_outside(&b, &fake_dhl("00340434169999000004")).await;
+    assert!(reply.starts_with("451"), "{reply}");
     let reply = relay_message_from_outside(&b, &fake_dhl("00340434169999000004")).await;
     assert!(reply.starts_with("250"), "{reply}");
     b.wait_for_inbox("mini@a.test", 1).await;

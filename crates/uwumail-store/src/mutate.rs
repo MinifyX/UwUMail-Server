@@ -47,13 +47,16 @@ pub(crate) struct Batch {
     /// The person makes these changes (JMAP, IMAP): label keywords they put on or take off teach
     /// the labels (docs/labels.md). The server's own changes teach nothing.
     pub(crate) by_hand: bool,
+    /// The server makes these changes by itself: its own Junk moves teach the spam filter nothing
+    /// (security audit 0.38.0 S-3).
+    pub(crate) by_server: bool,
     /// Something was queued for the labels to learn.
     pub(crate) learned: bool,
 }
 
 impl Batch {
     pub(crate) fn new(account_id: i64) -> Batch {
-        Batch { account_id, modseq: None, by_hand: true, learned: false }
+        Batch { account_id, modseq: None, by_hand: true, by_server: false, learned: false }
     }
 
     pub(crate) fn modseq(&mut self, tx: &Transaction<'_>) -> Result<i64> {
@@ -228,8 +231,10 @@ pub(crate) fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &Email
 
     // "Spam" and "Not spam" from a person teach the filter about the sender.
     if let Some(junk) = junk_signal(tx, account_id, (&old_keywords, &new_keywords), (&old_mailboxes, &new_mailboxes))? {
-        crate::spam::rebook_verdict(tx, update.id, junk)?;
-        crate::bayes::queue_marked(tx, update.id, account_id, junk)?;
+        if !batch.by_server {
+            crate::spam::rebook_verdict(tx, update.id, junk)?;
+            crate::bayes::queue_marked(tx, update.id, account_id, junk)?;
+        }
         if junk {
             crate::shipments::forget_junk_mail(tx, account_id, update.id)?;
         }
@@ -335,7 +340,7 @@ impl Store {
     /// Applies updates the person makes in one transaction. Returns one result per update, in
     /// order.
     pub async fn update_emails(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {
-        self.apply_updates(account_id, updates, true).await
+        self.apply_updates(account_id, updates, true, false).await
     }
 
     /// Applies updates someone makes in an account shared with them. Their labeling teaches the
@@ -343,13 +348,13 @@ impl Store {
     /// members' (security audit 0.21.0 LABELS-M1).
     pub async fn update_emails_in_share(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {
         let teaches = self.read(move |conn| Ok(crate::labels::teaches_in_share(conn, account_id)?)).await?;
-        self.apply_updates(account_id, updates, teaches).await
+        self.apply_updates(account_id, updates, teaches, false).await
     }
 
-    /// Applies updates the server makes by itself (labels it puts on or takes off), which teach the
-    /// labels nothing.
+    /// Applies updates the server makes by itself (labels it puts on or takes off, its own Junk
+    /// moves), which teach the labels and the spam filter nothing.
     pub async fn update_emails_by_server(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {
-        self.apply_updates(account_id, updates, false).await
+        self.apply_updates(account_id, updates, false, true).await
     }
 
     async fn apply_updates(
@@ -357,10 +362,11 @@ impl Store {
         account_id: i64,
         updates: Vec<EmailUpdate>,
         by_hand: bool,
+        by_server: bool,
     ) -> Result<Vec<Result<()>>> {
         let (results, modseq, learned) = self
             .write(move |tx| {
-                let mut batch = Batch { by_hand, ..Batch::new(account_id) };
+                let mut batch = Batch { by_hand, by_server, ..Batch::new(account_id) };
                 let results = updates.iter().map(|update| update_one(tx, &mut batch, update)).collect::<Vec<_>>();
                 Ok((results, batch.modseq, batch.learned))
             })

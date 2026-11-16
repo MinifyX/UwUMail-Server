@@ -1,8 +1,9 @@
 //! Spam-Netz (docs/spam-filter.md): text fingerprints of a mail (Digest v1), the points the shared list
 //! gives, and the worker that fetches the list and sends reports to the hub every 15 minutes.
 //!
-//! Only four kinds ever leave the server: digests, registrable link domains, the delivering IP
-//! (IPv4 /32, IPv6 /64) and the registrable From domain. Never recipients, never content.
+//! Reports carry only four kinds: digests, registrable link domains, the delivering IP (IPv4 /32,
+//! IPv6 /64) and the From domain when DMARC-aligned. Never recipients, never content. Registration
+//! sends the host name and the version.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -26,6 +27,8 @@ const BATCH: usize = 100;
 const BATCHES_PER_RUN: usize = 5;
 const TICK: Duration = Duration::from_secs(15 * 60);
 const MAX_ANSWER: usize = 16 * 1024 * 1024;
+/// Entries and removals taken from one page of the list at most (security audit 0.38.0 S-6).
+const MAX_ENTRIES: usize = 50_000;
 const KEY_SETTING: &str = "spamnet.key";
 const CURSOR_SETTING: &str = "spamnet.cursor";
 const STATUS_SETTING: &str = "spamnet.status";
@@ -93,8 +96,13 @@ pub(crate) struct Features {
     pub domains: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,
+    /// The registrable From domain, reported only when DMARC vouched for it: a forged From must not
+    /// build up a score for somebody else's domain (security audit 0.38.0 S-1).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+    /// The From domain looked up in the list when DMARC did not vouch for it; never sent.
+    #[serde(skip)]
+    pub unaligned_from: Option<String>,
     /// The full From address and host, only to rule out own and contact mail; never sent.
     #[serde(skip)]
     pub from_address: String,
@@ -119,6 +127,7 @@ impl Features {
         link_hosts: &[String],
         ip: Option<IpAddr>,
         from_address: Option<&str>,
+        dmarc_aligned: bool,
     ) -> Features {
         let mut domains: Vec<String> = Vec::new();
         for domain in link_hosts.iter().filter_map(|host| uwumail_store::verification::registrable_domain(host)) {
@@ -128,11 +137,14 @@ impl Features {
         }
         let from_address = from_address.unwrap_or_default().trim().to_lowercase();
         let from_host = from_address.rsplit_once('@').map(|(_, host)| host.trim_end_matches('.').to_owned());
+        let from = from_host.as_deref().and_then(uwumail_store::verification::registrable_domain);
+        let (from, unaligned_from) = if dmarc_aligned { (from, None) } else { (None, from) };
         Features {
             digests: digests.into_iter().take(MAX_DIGESTS).collect(),
             domains,
             ip: ip.map(ip_key),
-            from: from_host.as_deref().and_then(uwumail_store::verification::registrable_domain),
+            from,
+            unaligned_from,
             from_host: from_host.unwrap_or_default(),
             from_address,
         }
@@ -155,7 +167,8 @@ pub(crate) async fn add_findings(ctx: &Context, features: &Features, score: &mut
     wanted.extend(features.digests.iter().map(|digest| ("digest", digest.clone())));
     wanted.extend(features.domains.iter().map(|domain| ("domain", domain.clone())));
     wanted.extend(features.ip.iter().map(|ip| ("ip", ip.clone())));
-    wanted.extend(features.from.iter().map(|from| ("from", from.clone())));
+    // Mail authenticated for its From domain is not judged by what others say about that domain.
+    wanted.extend(features.unaligned_from.iter().map(|from| ("from", from.clone())));
     let found = match ctx.store.spamnet_matches(wanted).await {
         Ok(found) => found,
         Err(err) => {
@@ -377,12 +390,14 @@ async fn fetch_list(ctx: &Context, egress: &Egress, url: &str, key: &str) -> Res
         .entries
         .into_iter()
         .filter(|entry| known_kind(&entry.kind) && !entry.value.is_empty() && entry.value.len() <= 255)
+        .take(MAX_ENTRIES)
         .collect();
-    let removed = list.removed.into_iter().filter(|gone| known_kind(&gone.kind)).collect();
-    ctx.store
-        .apply_spamnet_list(list.full || cursor.is_none(), entries, removed)
-        .await
-        .map_err(|err| Failure::Other(err.to_string()))?;
+    let removed = list.removed.into_iter().filter(|gone| known_kind(&gone.kind)).take(MAX_ENTRIES).collect();
+    if let Err(err) = ctx.store.apply_spamnet_list(list.full || cursor.is_none(), entries, removed).await {
+        // Applied in chunks, the list may be half new: the next run fetches it whole.
+        let _ = ctx.store.delete_setting(CURSOR_SETTING).await;
+        return Err(Failure::Other(err.to_string()));
+    }
     let _ = ctx.store.set_setting(CURSOR_SETTING, &list.cursor).await;
     Ok(())
 }
@@ -499,7 +514,7 @@ mod tests {
     fn features_keep_only_the_four_kinds() {
         let hosts = ["click.mailer.example.com".to_owned(), "www.example.com".to_owned(), "x".to_owned()];
         let ip: IpAddr = "2001:db8:1:2:3:4:5:6".parse().unwrap();
-        let features = Features::of(vec!["d1:00".into()], &hosts, Some(ip), Some("Spam@News.Example.ORG"));
+        let features = Features::of(vec!["d1:00".into()], &hosts, Some(ip), Some("Spam@News.Example.ORG"), true);
         assert_eq!(features.domains, ["example.com"]);
         assert_eq!(features.ip.as_deref(), Some("2001:db8:1:2::/64"));
         assert_eq!(features.from.as_deref(), Some("example.org"));
@@ -507,7 +522,9 @@ mod tests {
         let mut keys: Vec<_> = sent.as_object().unwrap().keys().cloned().collect();
         keys.sort();
         assert_eq!(keys, ["digests", "domains", "from", "ip"], "the address itself is never sent");
-        let v4 = Features::of(vec![], &[], Some("192.0.2.7".parse().unwrap()), None);
+        let forged = Features::of(vec![], &[], None, Some("spam@example.org"), false);
+        assert_eq!((forged.from, forged.unaligned_from.as_deref()), (None, Some("example.org")), "only looked up");
+        let v4 = Features::of(vec![], &[], Some("192.0.2.7".parse().unwrap()), None, false);
         assert_eq!((v4.ip.as_deref(), v4.from), (Some("192.0.2.7"), None));
     }
 
@@ -561,6 +578,7 @@ mod tests {
             &["www.example.net".into(), "mx.example.org".into()],
             Some("192.0.2.7".parse().unwrap()),
             Some("spam@example.com"),
+            false,
         );
         smtp.inner.store.queue_spamnet_report("spam", "filter", features.for_store(false)).await.unwrap();
 
@@ -601,7 +619,7 @@ mod tests {
             _ => "HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n{\"error\":\"unknown key\"}",
         })
         .await;
-        let features = Features::of(vec!["d1:bb".into()], &[], None, Some("spam@example.com"));
+        let features = Features::of(vec!["d1:bb".into()], &[], None, Some("spam@example.com"), false);
         smtp.inner.store.queue_spamnet_report("spam", "filter", features.for_store(false)).await.unwrap();
         let status = smtp.sync_spamnet(&egress).await;
         assert!(status.fetch_error.is_some());

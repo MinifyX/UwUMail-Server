@@ -1698,11 +1698,25 @@ pub(crate) async fn receive(
         fetched: provenance.as_ref(),
         outbound: false,
     };
-    let score = if live.spam.enabled && (client.is_some() || provenance.is_some()) {
+    let mut score = if live.spam.enabled && (client.is_some() || provenance.is_some()) {
         spam::score(&ctx, &live.spam, source, &raw).await
     } else {
         None
     };
+    // What the hub says never files a recipient's contact who is who they say (security audit
+    // 0.38.0 S-1); an allowed sender is not junk for that recipient anyway.
+    if let Some(score) = score.as_mut()
+        && score.hits.iter().any(|hit| hit.rule.starts_with("SPAMNET_"))
+        && let Some(from) =
+            verdict.as_ref().and_then(|v| v.from_address.clone().filter(|_| v.from_verified || v.dmarc_passed))
+    {
+        for (account_id, _) in &targets {
+            if ctx.store.knows_sender(*account_id, from.clone()).await.unwrap_or(false) {
+                score.without_spamnet();
+                break;
+            }
+        }
+    }
     let outcome = score.as_ref().map_or(spam::Outcome::Deliver, |score| spam::outcome(&live.spam, score.points));
     // What the filter saw, for the log: the score and the rules behind it.
     let spam_score = score.as_ref().map(|score| score.points);
@@ -2276,10 +2290,13 @@ pub(crate) async fn receive(
                 if !junk && kept {
                     labels::log(&ctx, account_id, &email_ids, &labeled).await;
                     queue_for_labels(&ctx, account_id, &email_ids).await;
-                    let doubted = parcel_doubted && !matches!(decision, Decision::Allow(_));
+                    let allowed = matches!(decision, Decision::Allow(_));
+                    let doubted = parcel_doubted && !allowed;
+                    // An allowed sender's mail is never moved by the check (security audit 0.38.0 S-5).
                     if let Some((carrier, numbers)) =
                         labels::shipment(&ctx, account_id, &email_ids, &message, &label_mail, &label_sender, doubted)
                             .await
+                        && !allowed
                     {
                         parcel_checks.push(crate::parcels::ParcelCheck {
                             account_id,
@@ -2392,12 +2409,10 @@ pub(crate) async fn receive(
         };
         note_spam(&ctx, &live.spam.log, note).await;
     }
-    // A doubtful mail about a parcel its carrier has never heard of is phishing (docs/jmap-shipments.md).
-    let doubtful = matches!(outcome, spam::Outcome::Suspicious)
-        || score
-            .as_ref()
-            .is_some_and(|score| score.hits.iter().any(|hit| crate::parcels::BRAND_RULES.contains(&hit.rule)));
-    if doubtful && !parcel_checks.is_empty() {
+    // A suspicious mail about a parcel its carrier has never heard of is phishing
+    // (docs/jmap-shipments.md). Looking like a brand alone is not enough: forwarded mail does too
+    // (security audit 0.38.0 S-4).
+    if outcome == spam::Outcome::Suspicious && !parcel_checks.is_empty() {
         let entry = live.spam.log.enabled.then(|| {
             let note = SpamNote {
                 id: &id,
@@ -2419,7 +2434,8 @@ pub(crate) async fn receive(
             });
             entry
         });
-        tokio::spawn(crate::parcels::cross_check(smtp.clone(), entry, parcel_checks, crate::now()));
+        let sender = spam::reputation_subject(client.as_ref().map(|(ip, _)| *ip), verdict.as_ref());
+        tokio::spawn(crate::parcels::cross_check(smtp.clone(), entry, sender, parcel_checks, crate::now()));
     }
 
     // What the Spam-Netz would hear of it, should a person mark it as junk or not junk later.

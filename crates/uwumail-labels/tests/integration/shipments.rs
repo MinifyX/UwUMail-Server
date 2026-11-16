@@ -413,7 +413,7 @@ fn shop_tracking_page_and_a_date_ending_the_sentence() {
     let mut mail = html_message(
         &["From: Beispielmoebel <no.reply@order.email.moebel.example>", "Subject: Lieferzeitfenster"],
         r#"<p>Hej Leni,</p><p>deine Lieferung ist fast bei dir. Sie kommt voraussichtlich Freitag, 06.11.2026.</p>
-        <a href="https://www.moebel.example/de/de/customer-service/sendungsverfolgungPL/?orderNo=1642190674&amp;utm_source=mail&amp;utm_medium=email">Lieferung verfolgen</a>
+        <a href="https://www.moebel.example/de/de/customer-service/sendungsverfolgungPL/?orderNo=1642190674&amp;utm_source=mail&amp;fbclid=x1&amp;_hsenc=x2&amp;gclid=x3#top">Lieferung verfolgen</a>
         <a href="https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567890">DHL</a>
         <a href="https://www.moebel.example/de/de/p/stoffhai/?utm_source=mail">Stoffhai</a>"#,
     );
@@ -425,6 +425,15 @@ fn shop_tracking_page_and_a_date_ending_the_sentence() {
         facts.shop_tracking_url.as_deref(),
         Some("https://www.moebel.example/de/de/customer-service/sendungsverfolgungPL/?orderNo=1642190674")
     );
+
+    // A look-alike host on the shop's domain is no shop link.
+    let odd = html_message(
+        &["From: Beispielmoebel <no.reply@order.email.moebel.example>", "Subject: Lieferzeitfenster"],
+        r#"<p>deine Lieferung ist fast bei dir. Sie kommt voraussichtlich Freitag, 06.11.2026.</p>
+        <a href="https://www.möbel.moebel.example/de/sendungsverfolgung/?orderNo=1">Lieferung verfolgen</a>
+        <a href="https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567890">DHL</a>"#,
+    );
+    assert_eq!(found(&odd).shop_tracking_url, None);
 
     // Unauthenticated mail never gets a shop link.
     mail.from_trusted = false;

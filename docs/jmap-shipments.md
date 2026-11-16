@@ -228,7 +228,7 @@ Needs the right to read the mail (`r`), like `Shipment/get`.
 
 | `type` | |
 | --- | --- |
-| `tooSoon` | refreshed less than 5 minutes ago (by anyone with access) |
+| `tooSoon` | refreshed less than 5 minutes ago (by anyone with access), or the account already refreshed 20 parcels in the last 5 minutes |
 | `notSupported` | no lookup for this carrier, the lookup is off, there is no number, or the parcel is delivered, returned or cancelled |
 | `unavailable` | the carrier did not answer in time, answered with an error, or its rate limit is reached |
 | `notFound` | no such shipment, or the carrier does not know the number |
@@ -269,7 +269,9 @@ number, and when.
 and only up to 30 days after its last mail. Never again once it is delivered,
 returned or cancelled. DHL is asked at most once every 5 s and 250 times a day
 (the limits of its free key); every carrier has such a gap. A question that
-hits the limit waits for the next round.
+hits the limit waits for the next round. Of each carrier's daily limit,
+*Refresh* may use 40 % and the check of doubtful mail below 10 %; the
+regular rounds always keep the rest.
 
 **What comes back** becomes events with `source: "carrier"` (an event the
 shipment already has is not added again), and the carrier's expected delivery
@@ -284,13 +286,16 @@ whether the lookup is offered at all from `features.shipmentLookup` in
 
 ### Unknown parcel numbers in doubtful mail
 
-A mail that names a parcel number and is doubtful (the spam filter calls it
-suspicious, or it looks like a carrier or shop it does not come from, without
-passing SPF/DKIM/DMARC for them) is checked against the carrier while the
-lookup is on. Only when the carrier says clearly that it does not know any of
-the numbers is the mail moved to Junk and noted in the spam history with
-`PARCEL_NUMBER_UNKNOWN`. An error, a timeout or a rate limit changes nothing,
-and the unofficial carriers never move a mail.
+A mail that names a parcel number and that the spam filter calls suspicious
+is checked against the carrier while the lookup is on, unless its sender is
+on the person's allowed list. Only when the carrier's official API answers
+clearly that it does not know any of the numbers is the mail moved to Junk
+and noted in the spam history with `PARCEL_NUMBER_UNKNOWN`; a bare 404, an
+error, a timeout or a rate limit changes nothing, and the unofficial carriers
+never move a mail. These checks get 10 % of each carrier's daily limit and at
+most 5 a day per sender (its domain when DMARC passes, else its network).
+Such a move takes the mail's parcels along but teaches the spam filter
+nothing.
 
 ## Switching off
 

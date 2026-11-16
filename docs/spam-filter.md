@@ -195,12 +195,14 @@ ending are.
 ### Parcel mail
 
 Fake shipping mail ("Ihr Paket wartet, bitte Zollgebühr zahlen") is a phishing classic. These
-rules look at mail that talks about a parcel:
+rules look only at mail whose From domain is not authenticated and that talks about a parcel; the
+fee and link rules also need a carrier's name ("post" alone does not count) and something that
+looks like a parcel number, so bills and newsletters with the same words stay out:
 
 | Rule | Points | When |
 |---|---|---|
 | `PARCEL_FEE_UNAUTH` | +3.0 | the From domain is not authenticated and the mail asks for a fee (customs, delivery, storage) or to confirm or update the address |
-| `PARCEL_BAD_NUMBER` | +2.5 | a tracking number with a check digit (DHL SSCC `0034…`, UPS `1Z…`) has the wrong one: no carrier hands it out, whoever sent it |
+| `PARCEL_BAD_NUMBER` | +2.5 | a tracking number with a check digit (DHL SSCC `0034…`, UPS `1Z…`) has the wrong one: no carrier hands it out |
 | `PARCEL_FOREIGN_LINK` | +2.0 | the From domain is not authenticated, the mail names a carrier, and every link leads somewhere that is neither the carrier nor the sender's own site |
 
 A shipping mail the filter doubts (anything above *Deliver*, or a brand or lookalike rule) only
@@ -571,31 +573,40 @@ report = false  # report spam and not-spam
 url = "https://spamnet.uwu.minifyx.de"
 ```
 
-The first time either switch is on, the server registers with the hub (its host name and
-`UwUMail <version>`, nothing else) and keeps the key it gets sealed in the database. A key the
+The first time either switch is on, the server registers with the hub and keeps the key it gets
+sealed in the database. Registration sends the server's host name and `UwUMail <version>`, nothing
+else; the host name names the server and its domain, and the version tells the hub which release
+it runs. A key the
 hub no longer accepts (401) is dropped and the server registers again on the next run.
 
 **Fetching.** The first run is two minutes after start, then every 15 minutes; *Jetzt abgleichen*
 in the portal runs one at once (at most once a minute). Each fetch only brings what changed since
 the last cursor; when the hub sends the full list, it replaces the old one. Entries the hub gave
-an expiry drop out by themselves. A failed fetch keeps the last list.
+an expiry drop out by themselves. A failed fetch keeps the last list. One fetch takes at most
+50,000 entries and writes them in chunks, so a huge answer cannot hold up mail delivery; a fetch
+that fails half way starts over with the full list next time.
 
 | Kind | Finding | Matches |
 |---|---|---|
 | Text fingerprint | `SPAMNET_DIGEST` | one of the message's text fingerprints (digest v1 of the visible text) |
 | Link domain | `SPAMNET_DOMAIN` | the registrable domain of a link in the message |
 | Sending server | `SPAMNET_IP` | the address that handed the message over (IPv4, or the IPv6 /64) |
-| Sender domain | `SPAMNET_FROM` | the registrable domain of the `From` address |
+| Sender domain | `SPAMNET_FROM` | the registrable domain of the `From` address, only when the mail is not authenticated for it |
 
 Each kind gives the points the hub lists for its best match, at most 4; all four together give at
 most 6, so the Spam-Netz alone does not refuse a mail at the default thresholds. Mail the server
-sends itself is never scored by it.
+sends itself is never scored by it, and neither is mail from an authenticated sender a recipient
+knows (a contact or someone they wrote to); a sender on the allowed list stays out of Junk
+anyway. What other servers say about a domain cannot push its own authenticated mail into Junk.
 
 **Reporting.** The server reports:
 
 - *spam* when a person moves a message into Junk, and when the filter refuses a message (the hub
   counts a person twice as much as a filter);
 - *not spam* when a person moves a message out of Junk.
+
+Moves the server makes itself (a rule, a parcel the carrier does not know) teach nothing: they
+report nothing and train neither the learning filter nor the sender's reputation.
 
 It never reports mail from its own domains or accounts, and never authenticated mail (DMARC pass)
 from someone's contacts. Of what the filter refuses, only unauthenticated mail is reported. What a delivered message would report is kept
@@ -606,9 +617,13 @@ reporting off empties the queue.
 
 **What leaves the server** with a report: the verdict (spam/not spam), why (a person or the
 filter), up to 8 text fingerprints, up to 20 link domains, the sending server's address and the
-sender's domain. **Never:** recipients, the text, subjects, attachments, the sender's full
+sender's domain (only when the mail was authenticated for it, so a forged From never puts a
+stranger's domain on the list). **Never:** recipients, the text, subjects, attachments, the sender's full
 address, the account or who marked the message. The fingerprints are hashes of normalised text
-shingles; the text cannot be read back from them.
+shingles; the text cannot be read back from them. They are not salted, though: whoever has the
+same text can tell from the list that some server got it. A *not spam* report can come from
+personal mail, such as a first mail from someone new that the filter had put in Junk; mail that
+was never in Junk is not reported as not spam.
 
 With the gateway VPN, *VPN → egress.spamnet* sends these requests through it, so the hub sees the
 VPN's address instead of the server's.

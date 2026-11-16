@@ -12,6 +12,8 @@ use crate::{Result, Store, now};
 pub const SPAMNET_FEATURES_DAYS: i64 = 30;
 /// A report the hub never took is given up after this long.
 pub const SPAMNET_QUEUE_DAYS: i64 = 14;
+/// Entries of the list written per transaction.
+const LIST_CHUNK: usize = 2_000;
 
 /// One entry of the shared list.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -162,31 +164,47 @@ impl Store {
     pub async fn apply_spamnet_list(
         &self,
         full: bool,
-        entries: Vec<SpamNetEntry>,
-        removed: Vec<SpamNetRemoved>,
+        mut entries: Vec<SpamNetEntry>,
+        mut removed: Vec<SpamNetRemoved>,
     ) -> Result<()> {
-        self.write(move |tx| {
-            if full {
-                tx.execute("DELETE FROM spamnet_list", [])?;
-            }
-            let mut drop = tx.prepare("DELETE FROM spamnet_list WHERE kind = ?1 AND value = ?2")?;
-            for gone in removed {
-                drop.execute(params![gone.kind, gone.value])?;
-            }
-            let mut put = tx.prepare(
-                "INSERT INTO spamnet_list (kind, value, score, expires) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT (kind, value) DO UPDATE SET score = excluded.score, expires = excluded.expires",
-            )?;
-            for entry in entries {
-                let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&entry.expires) else { continue };
-                if !entry.score.is_finite() {
-                    continue;
+        // In chunks: a long list must not hold the one writer, and so delivery, for long (security
+        // audit 0.38.0 S-6). What goes comes first, as in one go.
+        let mut first = true;
+        while first || !removed.is_empty() || !entries.is_empty() {
+            let gone: Vec<_> = removed.drain(..removed.len().min(LIST_CHUNK)).collect();
+            let take = if removed.is_empty() { entries.len().min(LIST_CHUNK - gone.len()) } else { 0 };
+            let put: Vec<_> = entries.drain(..take).collect();
+            let clear = full && first;
+            first = false;
+            self.write(move |tx| {
+                if clear {
+                    tx.execute("DELETE FROM spamnet_list", [])?;
                 }
-                put.execute(params![entry.kind, entry.value.to_lowercase(), entry.score, expires.timestamp()])?;
-            }
-            Ok(())
-        })
-        .await
+                let mut drop = tx.prepare("DELETE FROM spamnet_list WHERE kind = ?1 AND value = ?2")?;
+                for gone in gone {
+                    drop.execute(params![gone.kind, gone.value])?;
+                }
+                let mut insert = tx.prepare(
+                    "INSERT INTO spamnet_list (kind, value, score, expires) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (kind, value) DO UPDATE SET score = excluded.score, expires = excluded.expires",
+                )?;
+                for entry in put {
+                    let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&entry.expires) else { continue };
+                    if !entry.score.is_finite() {
+                        continue;
+                    }
+                    insert.execute(params![
+                        entry.kind,
+                        entry.value.to_lowercase(),
+                        entry.score,
+                        expires.timestamp()
+                    ])?;
+                }
+                Ok(())
+            })
+            .await?;
+        }
+        Ok(())
     }
 
     /// The entries of the list that match, and have not expired, as (kind, value, score).
@@ -340,6 +358,14 @@ mod tests {
         assert_eq!(store.spamnet_queue_len().await.unwrap(), 1);
         store.clear_spamnet_reports().await.unwrap();
         assert_eq!(store.spamnet_queue_len().await.unwrap(), 0);
+
+        // A Junk move the server makes by itself reports nothing and teaches Bayes nothing.
+        let learning = store.bayes_jobs(100).await.unwrap().len();
+        let by_server =
+            EmailUpdate { id: ids[0], keywords: KeywordsChange::Keep, mailboxes: MailboxesChange::Replace(vec![junk]) };
+        store.update_emails_by_server(mini, vec![by_server]).await.unwrap();
+        assert_eq!(store.spamnet_queue_len().await.unwrap(), 0);
+        assert_eq!(store.bayes_jobs(100).await.unwrap().len(), learning);
     }
 
     #[tokio::test]
@@ -378,5 +404,11 @@ mod tests {
         assert_eq!(store.spamnet_list_len().await.unwrap(), 1);
         store.apply_spamnet_list(true, vec![], vec![]).await.unwrap();
         assert_eq!(store.spamnet_list_len().await.unwrap(), 0, "a full list replaces everything");
+
+        // A long list goes in chunk by chunk, what goes first.
+        let many: Vec<_> = (0..LIST_CHUNK * 2 + 1).map(|n| entry("digest", &format!("d1:{n}"), later)).collect();
+        let gone = vec![SpamNetRemoved { kind: "digest".into(), value: "d1:0".into() }];
+        store.apply_spamnet_list(true, many, gone).await.unwrap();
+        assert_eq!(store.spamnet_list_len().await.unwrap(), (LIST_CHUNK * 2 + 1) as i64);
     }
 }

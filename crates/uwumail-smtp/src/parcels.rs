@@ -33,6 +33,15 @@ pub const REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
 /// The worker's share of a carrier's daily budget, in percent; the rest is for refreshes and
 /// suspicious mail.
 const BACKGROUND_SHARE: u32 = 80;
+/// What refreshes and the check of suspicious mail may take of the day at most, in percent, so
+/// neither leaves the worker without (security audit 0.38.0 S-2).
+const PERSON_SHARE: u32 = 40;
+const CROSS_CHECK_SHARE: u32 = 10;
+/// Suspicious mails of one sender (domain or network) checked with carriers per day.
+const CHECKS_PER_SENDER: u32 = 5;
+/// Parcels one account may refresh per window.
+const REFRESHES_PER_ACCOUNT: u32 = 20;
+const REFRESH_WINDOW: i64 = 300;
 /// Parcels the worker looks at per round.
 const BATCH: i64 = 50;
 const MAX_ANSWER: usize = 1024 * 1024;
@@ -155,6 +164,16 @@ struct Budget {
     next_at: i64,
     day: i64,
     used: u32,
+    by_people: u32,
+    by_cross_check: u32,
+}
+
+/// Who asks a carrier, for its share of the budget.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Asker {
+    Worker,
+    Person,
+    CrossCheck,
 }
 
 /// Asking carriers; one per server, changed in place from the admin panel.
@@ -162,6 +181,10 @@ pub struct Parcels {
     config: RwLock<LookupConfig>,
     transport: RwLock<Arc<dyn ParcelTransport>>,
     budgets: Mutex<HashMap<Service, Budget>>,
+    /// Today's suspicious mails checked per sender, with the day.
+    checked_senders: Mutex<(i64, HashMap<String, u32>)>,
+    /// Refreshes per account in the current window, with its start.
+    refreshes: Mutex<HashMap<i64, (i64, u32)>>,
     /// Access tokens of UPS and FedEx with when they run out.
     tokens: Mutex<HashMap<Service, (String, i64)>>,
 }
@@ -184,6 +207,8 @@ impl Parcels {
             config: RwLock::default(),
             transport: RwLock::new(transport),
             budgets: Mutex::default(),
+            checked_senders: Mutex::default(),
+            refreshes: Mutex::default(),
             tokens: Mutex::default(),
         }
     }
@@ -232,27 +257,56 @@ impl Parcels {
         Service::of(carrier).is_some_and(Service::official) && self.carriers().contains(&carrier)
     }
 
-    /// Takes one request from a carrier's budget at `now`; the worker (`background`) leaves a
-    /// share of the day for the rest.
-    fn take(&self, service: Service, now: i64, background: bool) -> bool {
+    /// Takes one request from a carrier's budget at `now`; the worker leaves a share of the day for
+    /// the rest, and people and the check of suspicious mail each leave the worker some.
+    fn take(&self, service: Service, now: i64, asker: Asker) -> bool {
         let (gap, per_day) = service.limits();
-        let cap = if background { per_day * BACKGROUND_SHARE / 100 } else { per_day };
         let mut budgets = self.budgets.lock().unwrap_or_else(|e| e.into_inner());
         let budget = budgets.entry(service).or_default();
         let day = now.div_euclid(86_400);
         if budget.day != day {
-            *budget = Budget { next_at: budget.next_at, day, used: 0 };
+            *budget = Budget { next_at: budget.next_at, day, ..Default::default() };
         }
-        if now < budget.next_at || budget.used >= cap {
+        let within = match asker {
+            Asker::Worker => budget.used < per_day * BACKGROUND_SHARE / 100,
+            Asker::Person => budget.used < per_day && budget.by_people < per_day * PERSON_SHARE / 100,
+            Asker::CrossCheck => budget.used < per_day && budget.by_cross_check < per_day * CROSS_CHECK_SHARE / 100,
+        };
+        if now < budget.next_at || !within {
             return false;
         }
         budget.used += 1;
+        budget.by_people += u32::from(asker == Asker::Person);
+        budget.by_cross_check += u32::from(asker == Asker::CrossCheck);
         budget.next_at = now + gap;
         true
     }
 
+    /// Counts one refresh of `account_id` at `now`; false once it had its share of the window.
+    fn take_refresh(&self, account_id: i64, now: i64) -> bool {
+        let mut refreshes = self.refreshes.lock().unwrap_or_else(|e| e.into_inner());
+        let (since, count) = refreshes.entry(account_id).or_insert((now, 0));
+        if now - *since >= REFRESH_WINDOW {
+            (*since, *count) = (now, 0);
+        }
+        *count += 1;
+        *count <= REFRESHES_PER_ACCOUNT
+    }
+
+    /// Counts one checked mail of `sender` at `now`; false once the sender had its share of the day.
+    fn take_sender(&self, sender: &str, now: i64) -> bool {
+        let mut checked = self.checked_senders.lock().unwrap_or_else(|e| e.into_inner());
+        let day = now.div_euclid(86_400);
+        if checked.0 != day {
+            *checked = (day, HashMap::new());
+        }
+        let count = checked.1.entry(sender.to_owned()).or_default();
+        *count += 1;
+        *count <= CHECKS_PER_SENDER
+    }
+
     /// Asks the carrier about a parcel at `now`. Never fails: what went wrong is in `error`.
-    pub async fn lookup(&self, carrier: &str, number: &str, now: i64, background: bool) -> ShipmentLookupResult {
+    async fn lookup(&self, carrier: &str, number: &str, now: i64, asker: Asker) -> ShipmentLookupResult {
         let failed = |error| ShipmentLookupResult { error: Some(error), ..Default::default() };
         let Some(service) = Service::of(carrier).filter(|_| self.carriers().contains(&carrier)) else {
             return failed(UNAVAILABLE);
@@ -261,7 +315,7 @@ impl Parcels {
         if number.is_empty() || number.len() > 40 || !number.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return failed(UNAVAILABLE);
         }
-        if !self.take(service, now, background) {
+        if !self.take(service, now, asker) {
             return failed(RATE_LIMITED);
         }
         let answer = match service {
@@ -295,7 +349,7 @@ impl Parcels {
         };
         let mut held = false;
         for lookup in due {
-            let result = self.lookup(&lookup.carrier, &lookup.number, now, true).await;
+            let result = self.lookup(&lookup.carrier, &lookup.number, now, Asker::Worker).await;
             // Held back by the budget, it stays due and is asked about next round.
             if result.error == Some(RATE_LIMITED) {
                 held = true;
@@ -317,14 +371,18 @@ impl Parcels {
         id: i64,
         now: i64,
     ) -> uwumail_store::Result<Result<(), &'static str>> {
+        if !self.take_refresh(account_id, now) {
+            return Ok(Err("tooSoon"));
+        }
         let lookup = match store.claim_shipment_refresh(account_id, id, now, self.carriers()).await? {
             ShipmentRefresh::Go(lookup) => lookup,
             ShipmentRefresh::TooSoon => return Ok(Err("tooSoon")),
             ShipmentRefresh::NotSupported => return Ok(Err("notSupported")),
         };
-        let result = tokio::time::timeout(REFRESH_TIMEOUT, self.lookup(&lookup.carrier, &lookup.number, now, false))
-            .await
-            .unwrap_or_else(|_| ShipmentLookupResult { error: Some(UNAVAILABLE), ..Default::default() });
+        let result =
+            tokio::time::timeout(REFRESH_TIMEOUT, self.lookup(&lookup.carrier, &lookup.number, now, Asker::Person))
+                .await
+                .unwrap_or_else(|_| ShipmentLookupResult { error: Some(UNAVAILABLE), ..Default::default() });
         let outcome = match result.error {
             None => Ok(()),
             Some(NOT_FOUND) => Err(NOT_FOUND),
@@ -341,7 +399,10 @@ impl Parcels {
             UNAVAILABLE
         })?;
         match status {
-            404 => return Err(NOT_FOUND),
+            // Only the carrier's own answer says it does not know a parcel; a bare 404 may be a proxy's
+            // (security audit 0.38.0 S-4).
+            404 if serde_json::from_slice::<Value>(&body).is_ok_and(|json| json.is_object()) => return Err(NOT_FOUND),
+            404 => return Err(UNAVAILABLE),
             429 => return Err(RATE_LIMITED),
             401 | 403 => {
                 tracing::warn!(status, "a carrier refused the key of the parcel lookup");
@@ -475,15 +536,6 @@ impl Parcels {
     }
 }
 
-/// Spam rules that say a mail dresses up as a brand; with a parcel number it is worth asking.
-pub(crate) const BRAND_RULES: &[&str] = &[
-    "BRAND_IN_FROM_NAME",
-    "LOOKALIKE_BRAND_FROM",
-    "BRAND_IN_FROM_DOMAIN",
-    "BRAND_IN_SUBJECT",
-    "LOOKALIKE_BRAND_LINK",
-    "BRAND_LINK_TEXT",
-];
 /// The finding a mail gets when its carrier does not know its parcel number.
 pub const PARCEL_NUMBER_UNKNOWN: &str = "PARCEL_NUMBER_UNKNOWN";
 
@@ -499,8 +551,18 @@ pub(crate) struct ParcelCheck {
 /// Puts the numbers of a doubtful mail to their carriers at `now`. Where the carrier's official
 /// API says for sure that it does not know every one of them, the mail goes to Junk and the spam
 /// history gets `entry` with [`PARCEL_NUMBER_UNKNOWN`]. An error or a timeout changes nothing.
-pub(crate) async fn cross_check(smtp: Smtp, entry: Option<NewSpamLogEntry>, checks: Vec<ParcelCheck>, now: i64) {
+pub(crate) async fn cross_check(
+    smtp: Smtp,
+    entry: Option<NewSpamLogEntry>,
+    sender: Option<String>,
+    checks: Vec<ParcelCheck>,
+    now: i64,
+) {
     let (parcels, store) = (smtp.parcels(), smtp.store());
+    // One sender must not take the whole share of the day.
+    if !parcels.take_sender(sender.as_deref().unwrap_or_default(), now) {
+        return;
+    }
     let mut known: HashMap<(&'static str, String), bool> = HashMap::new();
     let mut moved = Vec::new();
     for check in checks {
@@ -516,8 +578,10 @@ pub(crate) async fn cross_check(smtp: Smtp, entry: Option<NewSpamLogEntry>, chec
             let is_unknown = match known.get(&key) {
                 Some(is_unknown) => *is_unknown,
                 None => {
-                    let asked =
-                        tokio::time::timeout(REFRESH_TIMEOUT, parcels.lookup(check.carrier, number, now, false));
+                    let asked = tokio::time::timeout(
+                        REFRESH_TIMEOUT,
+                        parcels.lookup(check.carrier, number, now, Asker::CrossCheck),
+                    );
                     let is_unknown = asked.await.is_ok_and(|result| result.error == Some(NOT_FOUND));
                     known.insert(key, is_unknown);
                     is_unknown
@@ -907,18 +971,63 @@ mod tests {
     fn budgets_keep_the_gap_and_a_share_for_people() {
         let parcels = Parcels::default();
         let day = 20_000 * 86_400;
-        assert!(parcels.take(Service::Dhl, day, true));
-        assert!(!parcels.take(Service::Dhl, day + 4, false), "5 s between two");
-        assert!(parcels.take(Service::Dhl, day + 5, false));
+        assert!(parcels.take(Service::Dhl, day, Asker::Worker));
+        assert!(!parcels.take(Service::Dhl, day + 4, Asker::Person), "5 s between two");
+        assert!(parcels.take(Service::Dhl, day + 5, Asker::Person));
         let mut at = day + 10;
         let mut background = 2;
-        while parcels.take(Service::Dhl, at, true) {
+        while parcels.take(Service::Dhl, at, Asker::Worker) {
             background += 1;
             at += 5;
         }
         assert_eq!(background, 200, "the worker stops at 80 % of 250");
-        assert!(parcels.take(Service::Dhl, at, false), "a person still gets one");
-        assert!(parcels.take(Service::Dhl, day + 86_400, true), "a new day starts again");
+        assert!(parcels.take(Service::Dhl, at, Asker::Person), "a person still gets one");
+        assert!(parcels.take(Service::Dhl, day + 86_400, Asker::Worker), "a new day starts again");
+
+        // People and the check of suspicious mail each stop at their share, and leave the worker some.
+        let mut at = 2 * day;
+        let mut taken = |asker| {
+            let mut n = 0;
+            while parcels.take(Service::Dhl, at, asker) {
+                n += 1;
+                at += 5;
+            }
+            at += 5;
+            n
+        };
+        assert_eq!((taken(Asker::Person), taken(Asker::CrossCheck), taken(Asker::Worker)), (100, 25, 75));
+    }
+
+    struct Answer(u16, &'static str);
+
+    impl ParcelTransport for Answer {
+        fn send(&self, _: ParcelRequest) -> BoxFuture<'_, Result<(u16, Vec<u8>), String>> {
+            let answer = (self.0, self.1.as_bytes().to_vec());
+            Box::pin(async move { Ok(answer) })
+        }
+    }
+
+    #[tokio::test]
+    async fn only_the_carriers_own_answer_says_not_found() {
+        for (body, expected) in
+            [(r#"{"title":"No shipment found"}"#, NOT_FOUND), ("<html>Not Found</html>", UNAVAILABLE)]
+        {
+            let parcels = Parcels::new(Arc::new(Answer(404, body)));
+            let answer = parcels.send(page("https://carrier.example/".into(), Vec::new())).await;
+            assert_eq!(answer.err(), Some(expected), "{body}");
+        }
+    }
+
+    #[test]
+    fn refreshes_and_checks_have_limits_of_their_own() {
+        let parcels = Parcels::default();
+        assert!((0..20).all(|_| parcels.take_refresh(1, 1_000)));
+        assert!(!parcels.take_refresh(1, 1_299), "20 parcels in five minutes per account");
+        assert!(parcels.take_refresh(2, 1_299), "another account is not held back");
+        assert!(parcels.take_refresh(1, 1_300));
+        assert!((0..5).all(|_| parcels.take_sender("domain:example.com", 1_000)));
+        assert!(!parcels.take_sender("domain:example.com", 1_000));
+        assert!(parcels.take_sender("domain:example.com", 1_000 + 86_400), "a new day starts again");
     }
 
     #[test]

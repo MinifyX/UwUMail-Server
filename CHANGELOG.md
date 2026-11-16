@@ -8,18 +8,19 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - Parcels: IKEA's („ist fast bei dir … voraussichtlich Freitag, 06.11.2026.“) is now *Unterwegs*
   with its expected day; a date that ends the sentence was not read before.
 - Parcels: `shopTrackingUrl`, the shop's own tracking page (*Beim Shop ansehen*), from
-  authenticated mail only and only on the shop's own domain, without `utm_`/`oxm_`/`mc_`
-  parameters; it is never opened by the server. Update: every account looks back 14 days once
+  authenticated mail only and only on the shop's own domain, without tracking parameters
+  (`utm_`, `fbclid`, `gclid`, …) or fragment; it is never opened by the server. Update: every account looks back 14 days once
   more (migration 0096).
 - Fake shipping mail: new spam rules `PARCEL_FEE_UNAUTH`, `PARCEL_BAD_NUMBER` and
-  `PARCEL_FOREIGN_LINK` (docs/spam-filter.md). A shipping mail the filter doubts is no parcel
+  `PARCEL_FOREIGN_LINK` (docs/spam-filter.md), only for unauthenticated mail that names a carrier
+  and a parcel number. A shipping mail the filter doubts is no parcel
   unless its sender is authenticated, and moving a mail to Junk removes the parcels that came only
   from it.
 - Spam-Netz: the server can fetch a list that UwUMail servers keep together and score mail by it
-  (`SPAMNET_DIGEST`, `SPAMNET_DOMAIN`, `SPAMNET_IP`, `SPAMNET_FROM`, at most 6 points together),
-  and report what people move into or out of Junk and what the filter refuses. Only text
-  fingerprints, link domains, the sending server's address and the sender's domain leave the
-  server; never recipients or content, never mail from own domains or authenticated mail from
+  (`SPAMNET_DIGEST`, `SPAMNET_DOMAIN`, `SPAMNET_IP`, `SPAMNET_FROM`, at most 6 points together;
+  none for authenticated mail from contacts), and report what people move into or out of Junk and what the filter refuses. Only text
+  fingerprints, link domains, the sending server's address and the sender's domain (only when
+  DMARC-aligned) leave the server, plus host name and version at registration; never recipients or content, never mail from own domains or authenticated mail from
   contacts. Both off by default (`[spamnet] fetch`, `report`); portal card under *Spamfilter →
   Listen*, `egress.spamnet` on the VPN page, privacy text in docs/spam-filter.md. Migration 0098.
 - Parcel lookup: the server can ask DHL/Deutsche Post, UPS and FedEx (with their free developer keys)
@@ -31,10 +32,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   your privacy policy before switching it on.**
 - JMAP: `lookupCarriers` in the shipments capability, `lookedUpAt` and `lookupError` on `Shipment`,
   and `Shipment/refresh` to ask the carrier now (at most every 5 minutes per parcel). Events from the
-  carrier have `source: "carrier"`.
-- Spam: a doubtful mail (suspicious, or posing as a carrier or shop without passing its checks) about
-  a parcel number the carrier clearly does not know goes to Junk, noted as `PARCEL_NUMBER_UNKNOWN`.
-  An error or timeout at the carrier changes nothing.
+  carrier have `source: "carrier"`. An account can refresh at most 20 parcels in 5 minutes.
+- Spam: a suspicious mail about a parcel number the carrier's official API clearly does not know
+  goes to Junk, noted as `PARCEL_NUMBER_UNKNOWN`; never for allowed senders, at most 5 checks a day
+  per sender. An error, a bare 404 or a timeout at the carrier changes nothing, and the move
+  teaches the spam filter nothing.
 - Portal: a one-time card on the overview about what is new.
 
 ## 0.37.3

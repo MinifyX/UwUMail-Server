@@ -193,6 +193,14 @@ impl Score {
         self.hits.push(Hit { rule, points, detail });
     }
 
+    /// Takes back what the Spam-Netz list gave.
+    pub(crate) fn without_spamnet(&mut self) {
+        let (spamnet, kept): (Vec<Hit>, Vec<Hit>) =
+            std::mem::take(&mut self.hits).into_iter().partition(|hit| hit.rule.starts_with("SPAMNET_"));
+        self.points -= spamnet.iter().map(|hit| hit.points).sum::<f32>();
+        self.hits = kept;
+    }
+
     /// The score on the message's own merits, without what the filter learned: the sender's
     /// reputation and the Bayes filter. Both are fed from this, so what was learned cannot keep
     /// itself going: a sender that was filed as junk and has since fixed its setup recovers instead of
@@ -504,7 +512,13 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
     }
     let spamnet_config = ctx.spamnet();
     if !outbound && (spamnet_config.fetch || spamnet_config.report) {
-        let features = spamnet::Features::of(digests, &link_hosts, ip, from_address.as_deref());
+        let features = spamnet::Features::of(
+            digests,
+            &link_hosts,
+            ip,
+            from_address.as_deref(),
+            verdict.is_some_and(|verdict| verdict.dmarc_passed),
+        );
         if spamnet_config.fetch {
             spamnet::add_findings(ctx, &features, &mut score).await;
         }
