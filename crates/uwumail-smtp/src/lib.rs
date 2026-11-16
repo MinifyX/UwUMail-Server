@@ -34,6 +34,7 @@ pub mod microsoft;
 pub mod mta_sts;
 mod outbound;
 pub mod palette;
+pub mod parcels;
 pub mod pictures;
 pub mod profile_pictures;
 pub mod provider_oauth;
@@ -159,6 +160,8 @@ pub(crate) struct Context {
     brand: RwLock<Arc<BrandConfig>>,
     /// Signing in at Microsoft and Google for fetched mailboxes, and their tokens.
     pub(crate) provider_oauth: provider_oauth::ProviderOAuth,
+    /// Asking carriers where a parcel is, by number (docs/jmap-shipments.md).
+    pub(crate) parcels: parcels::Parcels,
     /// Recipients each account sent to lately, for `smtp.max_recipients_per_hour` and `_per_day`.
     pub(crate) send_limits: send_limit::SendLimits,
 }
@@ -259,6 +262,7 @@ impl Smtp {
                 connector: RwLock::new(None),
                 brand: RwLock::new(Arc::new(BrandConfig::default())),
                 provider_oauth: provider_oauth::ProviderOAuth::default(),
+                parcels: parcels::Parcels::default(),
                 send_limits: send_limit::SendLimits::default(),
             }),
         })
@@ -302,6 +306,11 @@ impl Smtp {
     /// Signing in at Microsoft and Google for fetched mailboxes (docs/fetch.md).
     pub fn provider_oauth(&self) -> &provider_oauth::ProviderOAuth {
         &self.inner.provider_oauth
+    }
+
+    /// Asking carriers where a parcel is (docs/jmap-shipments.md, "Asking the carrier").
+    pub fn parcels(&self) -> &parcels::Parcels {
+        &self.inner.parcels
     }
 
     /// The mail servers a domain names, for telling who runs its mail. Empty when it names none or

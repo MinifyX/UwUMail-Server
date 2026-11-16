@@ -50,6 +50,7 @@ const PREFERENCES: &[(&str, &[&str])] = &[
     ("mailVerificationCleanup", &["off", "immediately", "24h", "7d"]),
     // Parcels found in mail (docs/jmap-shipments.md); off deletes the ones found.
     ("shipments", &["on", "off"]),
+    ("shipmentLookup", &["on", "off"]),
     // Admins only: the calm view with just the traffic light, or everything (docs/admin-alerts.md).
     ("adminView", &["simple", "full"]),
     // Admins only: which alert mails they get.

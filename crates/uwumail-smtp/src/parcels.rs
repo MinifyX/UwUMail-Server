@@ -1,0 +1,942 @@
+//! Asking carriers where a parcel is, by its number only (docs/jmap-shipments.md, "Asking the
+//! carrier"). Never a link from a mail: the carrier and the number go to the fixed endpoints below,
+//! nothing else about the person. Off unless the admin switches it on, and each person can say no.
+//!
+//! DHL, UPS and FedEx are asked through their official APIs with the admin's keys. DPD, Hermes and
+//! GLS have no open API: their tracking pages' JSON is asked when `unofficial` is on, and when it
+//! fails that is only logged.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
+
+use base64::Engine;
+use bytes::Bytes;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+use chrono_tz::Europe::Berlin;
+use http_body_util::Full;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use tokio::sync::watch;
+use uwumail_labels::ShipmentStatus;
+use uwumail_store::{
+    EmailUpdate, MailboxRole, MailboxesChange, NewShipmentEvent, NewSpamLogEntry, ShipmentExpected,
+    ShipmentLookupResult, ShipmentRefresh, SpamLogRecipient, Store,
+};
+
+use crate::Smtp;
+use crate::egress::{Egress, Purpose};
+use crate::provider_oauth::BoxFuture;
+
+/// A refresh an app asked for waits this long for the carrier at most.
+pub const REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
+/// The worker's share of a carrier's daily budget, in percent; the rest is for refreshes and
+/// suspicious mail.
+const BACKGROUND_SHARE: u32 = 80;
+/// Parcels the worker looks at per round.
+const BATCH: i64 = 50;
+const MAX_ANSWER: usize = 1024 * 1024;
+
+const DHL_URL: &str = "https://api-eu.dhl.com/track/shipments";
+const UPS_TOKEN_URL: &str = "https://onlinetools.ups.com/security/v1/oauth/token";
+const UPS_TRACK_URL: &str = "https://onlinetools.ups.com/api/track/v1/details/";
+const FEDEX_TOKEN_URL: &str = "https://apis.fedex.com/oauth/token";
+const FEDEX_TRACK_URL: &str = "https://apis.fedex.com/track/v1/trackingnumbers";
+const DPD_URL: &str = "https://tracking.dpd.de/rest/plc/de_DE/";
+const HERMES_URL: &str = "https://api.my-deliveries.de/tnt/v2/shipments/search/";
+const GLS_URL: &str = "https://gls-group.eu/app/service/open/rest/DE/de/rstt001?match=";
+
+/// `[shipments.lookup]` in the configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LookupConfig {
+    pub enabled: bool,
+    /// developer.dhl.com, "Shipment Tracking - Unified"; also answers for Deutsche Post.
+    pub dhl_key: String,
+    pub ups_client_id: String,
+    pub ups_client_secret: String,
+    pub fedex_client_id: String,
+    pub fedex_client_secret: String,
+    /// DPD, Hermes and GLS through their tracking pages, without a key.
+    pub unofficial: bool,
+}
+
+impl Default for LookupConfig {
+    fn default() -> Self {
+        LookupConfig {
+            enabled: false,
+            dhl_key: String::new(),
+            ups_client_id: String::new(),
+            ups_client_secret: String::new(),
+            fedex_client_id: String::new(),
+            fedex_client_secret: String::new(),
+            unofficial: true,
+        }
+    }
+}
+
+/// A request to a carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParcelRequest {
+    pub method: &'static str,
+    pub url: String,
+    pub headers: Vec<(&'static str, String)>,
+    pub body: Option<String>,
+}
+
+/// How a request reaches a carrier: through the egress, or a stand-in in tests.
+pub trait ParcelTransport: Send + Sync {
+    /// The status and the body of the answer.
+    fn send(&self, request: ParcelRequest) -> BoxFuture<'_, Result<(u16, Vec<u8>), String>>;
+}
+
+/// The egress, with [`Purpose::Parcels`]: through the proxy when the admin sends it there.
+pub struct EgressTransport(pub Egress);
+
+impl ParcelTransport for EgressTransport {
+    fn send(&self, request: ParcelRequest) -> BoxFuture<'_, Result<(u16, Vec<u8>), String>> {
+        Box::pin(async move {
+            let mut builder = hyper::Request::builder().method(request.method).uri(&request.url);
+            for (name, value) in &request.headers {
+                builder = builder.header(*name, value);
+            }
+            let request = builder
+                .body(Full::new(Bytes::from(request.body.unwrap_or_default())))
+                .map_err(|err| err.to_string())?;
+            self.0
+                .exchange(Purpose::Parcels, request, MAX_ANSWER)
+                .await
+                .map(|(status, body)| (status, body.to_vec()))
+                .map_err(|err| err.to_string())
+        })
+    }
+}
+
+/// Who answers for a carrier, with its own budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Service {
+    Dhl,
+    Ups,
+    Fedex,
+    Dpd,
+    Hermes,
+    Gls,
+}
+
+impl Service {
+    fn of(carrier: &str) -> Option<Service> {
+        Some(match carrier {
+            "dhl" | "deutschePost" => Service::Dhl,
+            "ups" => Service::Ups,
+            "fedex" => Service::Fedex,
+            "dpd" => Service::Dpd,
+            "hermes" => Service::Hermes,
+            "gls" => Service::Gls,
+            _ => return None,
+        })
+    }
+
+    /// Seconds between two requests and requests per day (UTC). DHL's are its free plan's.
+    fn limits(self) -> (i64, u32) {
+        match self {
+            Service::Dhl => (5, 250),
+            Service::Ups | Service::Fedex => (1, 1000),
+            Service::Dpd | Service::Hermes | Service::Gls => (3, 500),
+        }
+    }
+
+    fn official(self) -> bool {
+        matches!(self, Service::Dhl | Service::Ups | Service::Fedex)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct Budget {
+    next_at: i64,
+    day: i64,
+    used: u32,
+}
+
+/// Asking carriers; one per server, changed in place from the admin panel.
+pub struct Parcels {
+    config: RwLock<LookupConfig>,
+    transport: RwLock<Arc<dyn ParcelTransport>>,
+    budgets: Mutex<HashMap<Service, Budget>>,
+    /// Access tokens of UPS and FedEx with when they run out.
+    tokens: Mutex<HashMap<Service, (String, i64)>>,
+}
+
+impl Default for Parcels {
+    fn default() -> Self {
+        Parcels::new(Arc::new(EgressTransport(Egress::direct())))
+    }
+}
+
+/// What went wrong, as `lookupError` names it.
+type Failure = &'static str;
+const NOT_FOUND: Failure = "notFound";
+const UNAVAILABLE: Failure = "unavailable";
+const RATE_LIMITED: Failure = "rateLimited";
+
+impl Parcels {
+    pub fn new(transport: Arc<dyn ParcelTransport>) -> Parcels {
+        Parcels {
+            config: RwLock::default(),
+            transport: RwLock::new(transport),
+            budgets: Mutex::default(),
+            tokens: Mutex::default(),
+        }
+    }
+
+    pub fn configure(&self, config: LookupConfig) {
+        let mut current = self.config.write().unwrap_or_else(|e| e.into_inner());
+        if *current != config {
+            self.tokens.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        }
+        *current = config;
+    }
+
+    pub fn set_transport(&self, transport: Arc<dyn ParcelTransport>) {
+        *self.transport.write().unwrap_or_else(|e| e.into_inner()) = transport;
+    }
+
+    fn config(&self) -> LookupConfig {
+        self.config.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The carriers asked on this server ([`uwumail_labels::Carrier::id`]s); empty when it is off.
+    pub fn carriers(&self) -> Vec<&'static str> {
+        let config = self.config();
+        let mut carriers = Vec::new();
+        if !config.enabled {
+            return carriers;
+        }
+        if !config.dhl_key.trim().is_empty() {
+            carriers.extend(["dhl", "deutschePost"]);
+        }
+        if !config.ups_client_id.trim().is_empty() && !config.ups_client_secret.trim().is_empty() {
+            carriers.push("ups");
+        }
+        if !config.fedex_client_id.trim().is_empty() && !config.fedex_client_secret.trim().is_empty() {
+            carriers.push("fedex");
+        }
+        if config.unofficial {
+            carriers.extend(["dpd", "hermes", "gls"]);
+        }
+        carriers
+    }
+
+    /// Whether a carrier's official API answers here, so that "unknown" from it means unknown;
+    /// the tracking pages say that for parcels not scanned yet too.
+    pub fn answers_for_sure(&self, carrier: &str) -> bool {
+        Service::of(carrier).is_some_and(Service::official) && self.carriers().contains(&carrier)
+    }
+
+    /// Takes one request from a carrier's budget at `now`; the worker (`background`) leaves a
+    /// share of the day for the rest.
+    fn take(&self, service: Service, now: i64, background: bool) -> bool {
+        let (gap, per_day) = service.limits();
+        let cap = if background { per_day * BACKGROUND_SHARE / 100 } else { per_day };
+        let mut budgets = self.budgets.lock().unwrap_or_else(|e| e.into_inner());
+        let budget = budgets.entry(service).or_default();
+        let day = now.div_euclid(86_400);
+        if budget.day != day {
+            *budget = Budget { next_at: budget.next_at, day, used: 0 };
+        }
+        if now < budget.next_at || budget.used >= cap {
+            return false;
+        }
+        budget.used += 1;
+        budget.next_at = now + gap;
+        true
+    }
+
+    /// Asks the carrier about a parcel at `now`. Never fails: what went wrong is in `error`.
+    pub async fn lookup(&self, carrier: &str, number: &str, now: i64, background: bool) -> ShipmentLookupResult {
+        let failed = |error| ShipmentLookupResult { error: Some(error), ..Default::default() };
+        let Some(service) = Service::of(carrier).filter(|_| self.carriers().contains(&carrier)) else {
+            return failed(UNAVAILABLE);
+        };
+        // Only what a number is made of goes into a URL.
+        if number.is_empty() || number.len() > 40 || !number.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return failed(UNAVAILABLE);
+        }
+        if !self.take(service, now, background) {
+            return failed(RATE_LIMITED);
+        }
+        let answer = match service {
+            Service::Dhl => self.dhl(number).await,
+            Service::Ups => self.ups(number, now).await,
+            Service::Fedex => self.fedex(number, now).await,
+            Service::Dpd => self.dpd(number).await,
+            Service::Hermes => self.hermes(number).await,
+            Service::Gls => self.gls(number).await,
+        };
+        match answer {
+            Ok((events, expected)) => ShipmentLookupResult { events, expected, error: None },
+            Err(error) => {
+                if error == UNAVAILABLE {
+                    tracing::info!(?service, "a carrier did not answer about a parcel");
+                }
+                failed(error)
+            }
+        }
+    }
+
+    /// The parcels due at `now`, asked about one after the other within each carrier's budget.
+    /// Returns whether some were held back by a budget.
+    pub async fn run_due(&self, store: &Store, now: i64) -> bool {
+        let due = match store.shipment_lookups_due(self.carriers(), now, BATCH).await {
+            Ok(due) => due,
+            Err(err) => {
+                tracing::error!(%err, "listing the parcels to ask carriers about failed");
+                return false;
+            }
+        };
+        let mut held = false;
+        for lookup in due {
+            let result = self.lookup(&lookup.carrier, &lookup.number, now, true).await;
+            // Held back by the budget, it stays due and is asked about next round.
+            if result.error == Some(RATE_LIMITED) {
+                held = true;
+                continue;
+            }
+            if let Err(err) = store.record_shipment_lookup(lookup.account_id, lookup.id, now, result).await {
+                tracing::error!(%err, "noting what a carrier said failed");
+            }
+        }
+        held
+    }
+
+    /// `Shipment/refresh` for one parcel: `Ok(())` when the carrier was asked and answered,
+    /// else the `notRefreshed` type. A parcel that is not there is the store's `NotFound`.
+    pub async fn refresh(
+        &self,
+        store: &Store,
+        account_id: i64,
+        id: i64,
+        now: i64,
+    ) -> uwumail_store::Result<Result<(), &'static str>> {
+        let lookup = match store.claim_shipment_refresh(account_id, id, now, self.carriers()).await? {
+            ShipmentRefresh::Go(lookup) => lookup,
+            ShipmentRefresh::TooSoon => return Ok(Err("tooSoon")),
+            ShipmentRefresh::NotSupported => return Ok(Err("notSupported")),
+        };
+        let result = tokio::time::timeout(REFRESH_TIMEOUT, self.lookup(&lookup.carrier, &lookup.number, now, false))
+            .await
+            .unwrap_or_else(|_| ShipmentLookupResult { error: Some(UNAVAILABLE), ..Default::default() });
+        let outcome = match result.error {
+            None => Ok(()),
+            Some(NOT_FOUND) => Err(NOT_FOUND),
+            Some(_) => Err(UNAVAILABLE),
+        };
+        store.record_shipment_lookup(account_id, id, now, result).await?;
+        Ok(outcome)
+    }
+
+    async fn send(&self, request: ParcelRequest) -> Result<(u16, Value), Failure> {
+        let transport = self.transport.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let (status, body) = transport.send(request).await.map_err(|err| {
+            tracing::debug!(%err, "a request to a carrier failed");
+            UNAVAILABLE
+        })?;
+        match status {
+            404 => return Err(NOT_FOUND),
+            429 => return Err(RATE_LIMITED),
+            401 | 403 => {
+                tracing::warn!(status, "a carrier refused the key of the parcel lookup");
+                return Err(UNAVAILABLE);
+            }
+            200..=299 => {}
+            // Redirects are not followed: a tracking page that sends elsewhere is gone.
+            _ => return Err(UNAVAILABLE),
+        }
+        serde_json::from_slice(&body).map(|json| (status, json)).map_err(|_| UNAVAILABLE)
+    }
+
+    async fn token(&self, service: Service, now: i64) -> Result<String, Failure> {
+        if let Some((token, until)) = self.tokens.lock().unwrap_or_else(|e| e.into_inner()).get(&service)
+            && *until > now
+        {
+            return Ok(token.clone());
+        }
+        let config = self.config();
+        let form =
+            |pairs: &[(&str, &str)]| url::form_urlencoded::Serializer::new(String::new()).extend_pairs(pairs).finish();
+        let request = match service {
+            Service::Ups => {
+                let basic = base64::engine::general_purpose::STANDARD.encode(format!(
+                    "{}:{}",
+                    config.ups_client_id.trim(),
+                    config.ups_client_secret.trim()
+                ));
+                ParcelRequest {
+                    method: "POST",
+                    url: UPS_TOKEN_URL.into(),
+                    headers: vec![
+                        ("authorization", format!("Basic {basic}")),
+                        ("content-type", "application/x-www-form-urlencoded".into()),
+                    ],
+                    body: Some(form(&[("grant_type", "client_credentials")])),
+                }
+            }
+            _ => ParcelRequest {
+                method: "POST",
+                url: FEDEX_TOKEN_URL.into(),
+                headers: vec![("content-type", "application/x-www-form-urlencoded".into())],
+                body: Some(form(&[
+                    ("grant_type", "client_credentials"),
+                    ("client_id", config.fedex_client_id.trim()),
+                    ("client_secret", config.fedex_client_secret.trim()),
+                ])),
+            },
+        };
+        let (_, json) = self.send(request).await.map_err(|_| UNAVAILABLE)?;
+        let token = json["access_token"].as_str().filter(|token| !token.is_empty()).ok_or(UNAVAILABLE)?.to_owned();
+        // UPS sends the seconds as a string, FedEx as a number.
+        let lasts = json["expires_in"].as_i64().or_else(|| json["expires_in"].as_str()?.parse().ok()).unwrap_or(600);
+        self.tokens.lock().unwrap_or_else(|e| e.into_inner()).insert(service, (token.clone(), now + lasts - 60));
+        Ok(token)
+    }
+
+    async fn dhl(&self, number: &str) -> Answer {
+        let key = self.config().dhl_key.trim().to_owned();
+        let request = ParcelRequest {
+            method: "GET",
+            url: format!("{DHL_URL}?trackingNumber={number}"),
+            headers: vec![("dhl-api-key", key), ("accept", "application/json".into())],
+            body: None,
+        };
+        let (_, json) = self.send(request).await?;
+        parse_dhl(&json)
+    }
+
+    async fn ups(&self, number: &str, now: i64) -> Answer {
+        let token = self.token(Service::Ups, now).await?;
+        let request = ParcelRequest {
+            method: "GET",
+            url: format!("{UPS_TRACK_URL}{number}?locale=de_DE&returnSignature=false"),
+            headers: vec![
+                ("authorization", format!("Bearer {token}")),
+                ("transid", hex::encode(rand_bytes())),
+                ("transactionsrc", "uwumail".into()),
+                ("accept", "application/json".into()),
+            ],
+            body: None,
+        };
+        let answer = self.send(request).await;
+        if answer == Err(UNAVAILABLE) {
+            self.tokens.lock().unwrap_or_else(|e| e.into_inner()).remove(&Service::Ups);
+        }
+        parse_ups(&answer?.1)
+    }
+
+    async fn fedex(&self, number: &str, now: i64) -> Answer {
+        let token = self.token(Service::Fedex, now).await?;
+        let body = json!({
+            "includeDetailedScans": true,
+            "trackingInfo": [{ "trackingNumberInfo": { "trackingNumber": number } }],
+        });
+        let request = ParcelRequest {
+            method: "POST",
+            url: FEDEX_TRACK_URL.into(),
+            headers: vec![
+                ("authorization", format!("Bearer {token}")),
+                ("content-type", "application/json".into()),
+                ("x-locale", "de_DE".into()),
+            ],
+            body: Some(body.to_string()),
+        };
+        let answer = self.send(request).await;
+        if answer == Err(UNAVAILABLE) {
+            self.tokens.lock().unwrap_or_else(|e| e.into_inner()).remove(&Service::Fedex);
+        }
+        parse_fedex(&answer?.1)
+    }
+
+    async fn dpd(&self, number: &str) -> Answer {
+        let request = page(format!("{DPD_URL}{number}"), Vec::new());
+        parse_dpd(&self.send(request).await?.1)
+    }
+
+    async fn hermes(&self, number: &str) -> Answer {
+        let headers = vec![("x-language", "de".into()), ("referer", "https://www.myhermes.de/".into())];
+        let request = page(format!("{HERMES_URL}{number}"), headers);
+        match self.send(request).await {
+            Ok((_, json)) => parse_hermes(&json),
+            // It answers 400 for numbers it has no data for yet.
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn gls(&self, number: &str) -> Answer {
+        let request = page(format!("{GLS_URL}{number}"), Vec::new());
+        parse_gls(&self.send(request).await?.1)
+    }
+}
+
+/// Spam rules that say a mail dresses up as a brand; with a parcel number it is worth asking.
+pub(crate) const BRAND_RULES: &[&str] = &[
+    "BRAND_IN_FROM_NAME",
+    "LOOKALIKE_BRAND_FROM",
+    "BRAND_IN_FROM_DOMAIN",
+    "BRAND_IN_SUBJECT",
+    "LOOKALIKE_BRAND_LINK",
+    "BRAND_LINK_TEXT",
+];
+/// The finding a mail gets when its carrier does not know its parcel number.
+pub const PARCEL_NUMBER_UNKNOWN: &str = "PARCEL_NUMBER_UNKNOWN";
+
+/// The parcel a doubtful, unauthenticated mail told one person of, as it was stored for them.
+pub(crate) struct ParcelCheck {
+    pub account_id: i64,
+    pub address: String,
+    pub email_ids: Vec<i64>,
+    pub carrier: &'static str,
+    pub numbers: Vec<String>,
+}
+
+/// Puts the numbers of a doubtful mail to their carriers at `now`. Where the carrier's official
+/// API says for sure that it does not know every one of them, the mail goes to Junk and the spam
+/// history gets `entry` with [`PARCEL_NUMBER_UNKNOWN`]. An error or a timeout changes nothing.
+pub(crate) async fn cross_check(smtp: Smtp, entry: Option<NewSpamLogEntry>, checks: Vec<ParcelCheck>, now: i64) {
+    let (parcels, store) = (smtp.parcels(), smtp.store());
+    let mut known: HashMap<(&'static str, String), bool> = HashMap::new();
+    let mut moved = Vec::new();
+    for check in checks {
+        if check.numbers.is_empty()
+            || !parcels.answers_for_sure(check.carrier)
+            || !store.shipment_lookup_enabled(check.account_id).await.unwrap_or(false)
+        {
+            continue;
+        }
+        let mut unknown = true;
+        for number in check.numbers.iter().take(3) {
+            let key = (check.carrier, number.clone());
+            let is_unknown = match known.get(&key) {
+                Some(is_unknown) => *is_unknown,
+                None => {
+                    let asked =
+                        tokio::time::timeout(REFRESH_TIMEOUT, parcels.lookup(check.carrier, number, now, false));
+                    let is_unknown = asked.await.is_ok_and(|result| result.error == Some(NOT_FOUND));
+                    known.insert(key, is_unknown);
+                    is_unknown
+                }
+            };
+            unknown &= is_unknown;
+        }
+        if !unknown {
+            continue;
+        }
+        let junk = match store.mailboxes(check.account_id).await {
+            Ok(mailboxes) => mailboxes.into_iter().find(|mailbox| mailbox.role == Some(MailboxRole::Junk)),
+            Err(err) => {
+                tracing::warn!(account = check.account_id, %err, "finding the Junk mailbox failed");
+                None
+            }
+        };
+        let Some(junk) = junk else { continue };
+        let updates = check
+            .email_ids
+            .iter()
+            .map(|&id| EmailUpdate { id, mailboxes: MailboxesChange::Replace(vec![junk.id]), ..Default::default() })
+            .collect();
+        match store.update_emails_by_server(check.account_id, updates).await {
+            Ok(_) => {
+                tracing::info!(
+                    account = check.account_id,
+                    carrier = check.carrier,
+                    "the carrier does not know the parcel of a doubtful mail; it went to Junk"
+                );
+                moved.push(SpamLogRecipient {
+                    address: check.address,
+                    action: "junk".into(),
+                    mailbox: Some("junk".into()),
+                });
+            }
+            Err(err) => {
+                tracing::warn!(account = check.account_id, %err, "moving a mail with an unknown parcel to Junk failed")
+            }
+        }
+    }
+    if let Some(mut entry) = entry.filter(|_| !moved.is_empty()) {
+        entry.recipients = moved;
+        if let Err(err) = store.add_spam_log(entry).await {
+            tracing::warn!(%err, "writing the spam history failed");
+        }
+    }
+}
+
+fn page(url: String, mut headers: Vec<(&'static str, String)>) -> ParcelRequest {
+    headers.push(("accept", "application/json".into()));
+    ParcelRequest { method: "GET", url, headers, body: None }
+}
+
+fn rand_bytes() -> [u8; 16] {
+    let mut bytes = [0u8; 16];
+    let _ = getrandom::fill(&mut bytes);
+    bytes
+}
+
+/// Asks carriers about the parcels that are due, until `shutdown` changes: every minute, or every
+/// 15 seconds while a budget holds some back.
+pub async fn run_parcel_lookups(smtp: Smtp, mut shutdown: watch::Receiver<bool>) {
+    loop {
+        let held = smtp.parcels().run_due(smtp.store(), crate::now()).await;
+        let wait = if held { Duration::from_secs(15) } else { Duration::from_secs(60) };
+        tokio::select! {
+            _ = tokio::time::sleep(wait) => {}
+            _ = shutdown.changed() => break,
+        }
+    }
+}
+
+type Answer = Result<(Vec<NewShipmentEvent>, Option<ShipmentExpected>), Failure>;
+
+fn text(value: &Value) -> Option<String> {
+    value.as_str().map(str::trim).filter(|text| !text.is_empty()).map(str::to_owned)
+}
+
+/// A carrier's time: with an offset as it says, without one as the wall clock in Germany.
+fn instant(value: &str) -> Option<i64> {
+    let value = value.trim();
+    if let Ok(at) = DateTime::parse_from_rfc3339(value) {
+        return Some(at.timestamp());
+    }
+    for format in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%d.%m.%Y, %H:%M",
+        "%d.%m.%Y %H:%M",
+    ] {
+        if let Ok(at) = NaiveDateTime::parse_from_str(value, format) {
+            return local(at);
+        }
+    }
+    ["%Y-%m-%d", "%d.%m.%Y", "%Y%m%d"]
+        .iter()
+        .find_map(|format| NaiveDate::parse_from_str(value, format).ok())
+        .and_then(|day| local(day.and_time(NaiveTime::MIN)))
+}
+
+fn local(at: NaiveDateTime) -> Option<i64> {
+    Berlin.from_local_datetime(&at).earliest().map(|at| at.timestamp())
+}
+
+/// What a carrier's words say beyond its code: out for delivery, waiting for pickup, on its way back.
+fn by_text(text: &str) -> Option<ShipmentStatus> {
+    let text = text.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|word| text.contains(word));
+    if has(&["rücksendung", "zurück an den absender", "zurückgesendet", "retoure", "returned to", "return to sender"])
+    {
+        Some(ShipmentStatus::Returned)
+    } else if has(&[
+        "nicht zugestellt",
+        "nicht angetroffen",
+        "zustellung nicht möglich",
+        "not delivered",
+        "delivery attempt",
+    ]) {
+        Some(ShipmentStatus::DeliveryFailed)
+    } else if has(&[
+        "zur abholung bereit",
+        "abholbereit",
+        "liegt zur abholung",
+        "ready for pickup",
+        "ready for collection",
+    ]) {
+        Some(ShipmentStatus::ReadyForPickup)
+    } else if has(&["in zustellung", "zustellfahrzeug", "zustelltour", "out for delivery", "on the way to you"]) {
+        Some(ShipmentStatus::OutForDelivery)
+    } else {
+        None
+    }
+}
+
+fn dhl_status(code: &str, words: &str) -> Option<ShipmentStatus> {
+    match code {
+        "delivered" => Some(ShipmentStatus::Delivered),
+        "failure" => Some(by_text(words).unwrap_or(ShipmentStatus::DeliveryFailed)),
+        "pre-transit" => Some(ShipmentStatus::Shipped),
+        "transit" => Some(by_text(words).unwrap_or(ShipmentStatus::InTransit)),
+        _ => by_text(words),
+    }
+}
+
+/// DHL's Unified API: `shipments[0]` with `events` (newest first) and an estimated delivery.
+fn parse_dhl(json: &Value) -> Answer {
+    let shipment = json["shipments"].get(0).ok_or(NOT_FOUND)?;
+    let event_of = |event: &Value| {
+        let words = [text(&event["status"]), text(&event["description"])].into_iter().flatten().collect::<Vec<_>>();
+        let status = dhl_status(event["statusCode"].as_str().unwrap_or(""), &words.join(" "))?;
+        Some(NewShipmentEvent {
+            at: instant(event["timestamp"].as_str()?)?,
+            status,
+            text: text(&event["description"]).or_else(|| text(&event["status"])),
+            location: text(&event["location"]["address"]["addressLocality"]),
+        })
+    };
+    let mut events: Vec<NewShipmentEvent> =
+        shipment["events"].as_array().into_iter().flatten().filter_map(event_of).collect();
+    if events.is_empty() {
+        events.extend(event_of(&shipment["status"]));
+    }
+    let frame = &shipment["estimatedDeliveryTimeFrame"];
+    let expected =
+        match (frame["estimatedFrom"].as_str().and_then(instant), shipment["estimatedTimeOfDelivery"].as_str()) {
+            (Some(from), _) => Some(ShipmentExpected {
+                from,
+                to: frame["estimatedThrough"].as_str().and_then(instant),
+                day_only: false,
+            }),
+            (None, Some(at)) => instant(at).map(|from| ShipmentExpected { from, to: None, day_only: at.len() <= 10 }),
+            _ => None,
+        };
+    Ok((events, expected))
+}
+
+/// UPS's Track API: `trackResponse.shipment[0].package[0].activity`, a warning when it does not
+/// know the number.
+fn parse_ups(json: &Value) -> Answer {
+    let shipment = &json["trackResponse"]["shipment"][0];
+    let unknown = shipment["warnings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|warning| warning["code"].as_str().is_some_and(|code| code.starts_with("TW0001")));
+    let package = &shipment["package"][0];
+    if unknown || package.is_null() {
+        return Err(NOT_FOUND);
+    }
+    let events = package["activity"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|activity| {
+            let words = text(&activity["status"]["description"]);
+            let status = match activity["status"]["type"].as_str()? {
+                "M" | "P" => ShipmentStatus::Shipped,
+                "I" => words.as_deref().and_then(by_text).unwrap_or(ShipmentStatus::InTransit),
+                "O" => ShipmentStatus::OutForDelivery,
+                "D" => ShipmentStatus::Delivered,
+                "X" => words.as_deref().and_then(by_text).unwrap_or(ShipmentStatus::DeliveryFailed),
+                "RS" => ShipmentStatus::Returned,
+                _ => return None,
+            };
+            // shortcut: UPS gives the wall clock where the scan was, read as Germany's; off by the
+            // time zone for scans abroad, which only shifts their order among themselves.
+            let at = format!("{} {}", activity["date"].as_str()?, activity["time"].as_str().unwrap_or("000000"));
+            let at = local(NaiveDateTime::parse_from_str(&at, "%Y%m%d %H%M%S").ok()?)?;
+            Some(NewShipmentEvent { at, status, text: words, location: text(&activity["location"]["address"]["city"]) })
+        })
+        .collect();
+    let expected = package["deliveryDate"].as_array().into_iter().flatten().find_map(|date| {
+        if date["type"].as_str() == Some("DEL") {
+            return None;
+        }
+        let day = NaiveDate::parse_from_str(date["date"].as_str()?, "%Y%m%d").ok()?;
+        let time = |key: &str| {
+            let raw = package["deliveryTime"][key].as_str()?;
+            NaiveTime::parse_from_str(raw, "%H%M%S").ok().and_then(|time| local(day.and_time(time)))
+        };
+        match time("startTime") {
+            Some(from) => Some(ShipmentExpected { from, to: time("endTime"), day_only: false }),
+            None => local(day.and_time(NaiveTime::MIN)).map(|from| ShipmentExpected { from, to: None, day_only: true }),
+        }
+    });
+    Ok((events, expected))
+}
+
+/// FedEx's Track API: `output.completeTrackResults[0].trackResults[0]` with `scanEvents`.
+fn parse_fedex(json: &Value) -> Answer {
+    let result = &json["output"]["completeTrackResults"][0]["trackResults"][0];
+    if result.is_null() || result["error"]["code"].as_str().is_some_and(|code| code.ends_with("NOTFOUND")) {
+        return Err(NOT_FOUND);
+    }
+    let events = result["scanEvents"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|scan| {
+            let words = text(&scan["eventDescription"]);
+            let status = match scan["eventType"].as_str()? {
+                "OC" | "PU" => ShipmentStatus::Shipped,
+                "AR" | "DP" | "IT" | "AF" | "CC" | "PM" => ShipmentStatus::InTransit,
+                "OD" => ShipmentStatus::OutForDelivery,
+                "DL" => ShipmentStatus::Delivered,
+                "DE" | "DY" => ShipmentStatus::DeliveryFailed,
+                "RS" => ShipmentStatus::Returned,
+                "CA" => ShipmentStatus::Cancelled,
+                "HP" => ShipmentStatus::ReadyForPickup,
+                _ => return None,
+            };
+            Some(NewShipmentEvent {
+                at: instant(scan["date"].as_str()?)?,
+                status,
+                text: words,
+                location: text(&scan["scanLocation"]["city"]),
+            })
+        })
+        .collect();
+    let window = &result["estimatedDeliveryTimeWindow"]["window"];
+    let expected = window["begins"].as_str().and_then(instant).map(|from| ShipmentExpected {
+        from,
+        to: window["ends"].as_str().and_then(instant),
+        day_only: false,
+    });
+    Ok((events, expected))
+}
+
+/// DPD's tracking page: `parcellifecycleResponse.parcelLifeCycleData.statusInfo`, the steps it
+/// shows; only those reached count.
+fn parse_dpd(json: &Value) -> Answer {
+    let data = &json["parcellifecycleResponse"]["parcelLifeCycleData"];
+    let steps = data["statusInfo"].as_array().ok_or(NOT_FOUND)?;
+    let events = steps
+        .iter()
+        .filter(|step| step["statusHasBeenReached"].as_bool() == Some(true))
+        .filter_map(|step| {
+            let status = match step["status"].as_str()? {
+                "ACCEPTED" => ShipmentStatus::Shipped,
+                "AT_SENDING_DEPOT" | "ON_THE_ROAD" | "AT_DELIVERY_DEPOT" => ShipmentStatus::InTransit,
+                "OUT_FOR_DELIVERY" => ShipmentStatus::OutForDelivery,
+                "DELIVERED" => ShipmentStatus::Delivered,
+                "DELIVERED_PARCELSHOP" | "PICKUP_PARCELSHOP" => ShipmentStatus::ReadyForPickup,
+                _ => return None,
+            };
+            let words = step["description"]["content"]
+                .as_array()
+                .map(|lines| lines.iter().filter_map(text).collect::<Vec<_>>().join(" "))
+                .filter(|words| !words.is_empty())
+                .or_else(|| text(&step["label"]));
+            // shortcut: the page's date format is not documented; one it does not read drops the step.
+            Some(NewShipmentEvent {
+                at: instant(step["date"].as_str()?)?,
+                status,
+                text: words,
+                location: text(&step["location"]),
+            })
+        })
+        .collect();
+    Ok((events, None))
+}
+
+fn hermes_status(code: &str) -> Option<ShipmentStatus> {
+    let code = code.to_ascii_uppercase();
+    let has = |words: &[&str]| words.iter().any(|word| code.contains(word));
+    Some(if has(&["RETURN", "RETOURE"]) {
+        ShipmentStatus::Returned
+    } else if has(&["NOT_DELIVERABLE", "DELIVERY_FAILED", "NOT_DELIVERED"]) {
+        ShipmentStatus::DeliveryFailed
+    } else if has(&["READY_FOR", "FOR_COLLECTION"]) {
+        ShipmentStatus::ReadyForPickup
+    } else if has(&["DELIVERED", "PICKED_UP_BY_RECIPIENT", "COLLECTED"]) {
+        ShipmentStatus::Delivered
+    } else if has(&["TOUR_STARTED", "OUT_FOR_DELIVERY", "NEXT_STOP"]) {
+        ShipmentStatus::OutForDelivery
+    } else if has(&["ANNOUNCED", "ORDER_INFO"]) {
+        ShipmentStatus::Shipped
+    } else if has(&["TRANSIT", "SORTED", "DEPOT", "HANDED_OVER", "PICKED_UP"]) {
+        ShipmentStatus::InTransit
+    } else {
+        return None;
+    })
+}
+
+/// Hermes's tracking page: an array whose first entry has `parcelProgress`.
+fn parse_hermes(json: &Value) -> Answer {
+    let progress = json[0]["parcelProgress"].as_array().ok_or(NOT_FOUND)?;
+    let events = progress
+        .iter()
+        .filter_map(|step| {
+            Some(NewShipmentEvent {
+                at: instant(step["timestamp"].as_str()?)?,
+                status: hermes_status(step["parcelStatus"].as_str()?)?,
+                text: text(&step["historyText"]),
+                location: None,
+            })
+        })
+        .collect();
+    Ok((events, None))
+}
+
+/// GLS's tracking page: `tuStatus[0].history`, newest first, and where the bar stands.
+fn parse_gls(json: &Value) -> Answer {
+    let status = &json["tuStatus"][0];
+    let history = status["history"].as_array().ok_or(NOT_FOUND)?;
+    let current = match status["progressBar"]["statusInfo"].as_str().unwrap_or("") {
+        "PREADVICE" => Some(ShipmentStatus::Shipped),
+        "INTRANSIT" | "INWAREHOUSE" => Some(ShipmentStatus::InTransit),
+        "INDELIVERY" => Some(ShipmentStatus::OutForDelivery),
+        "DELIVERED" => Some(ShipmentStatus::Delivered),
+        "DELIVEREDPS" => Some(ShipmentStatus::ReadyForPickup),
+        "NOTDELIVERED" => Some(ShipmentStatus::DeliveryFailed),
+        _ => None,
+    };
+    let events = history
+        .iter()
+        .enumerate()
+        .filter_map(|(index, step)| {
+            let words = text(&step["evtDscr"]);
+            let status = words.as_deref().and_then(by_text);
+            let status = if index == 0 { current.or(status) } else { status }.unwrap_or(ShipmentStatus::InTransit);
+            let at = format!("{} {}", step["date"].as_str()?, step["time"].as_str().unwrap_or("00:00:00"));
+            Some(NewShipmentEvent { at: instant(&at)?, status, text: words, location: text(&step["address"]["city"]) })
+        })
+        .collect();
+    Ok((events, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn times_without_an_offset_are_germanys() {
+        // 10:15 in winter in Berlin is 09:15 UTC.
+        assert_eq!(instant("2026-01-12T10:15:00"), Some(1_768_209_300));
+        assert_eq!(instant("2026-01-12T10:15:00+01:00"), Some(1_768_209_300));
+        assert_eq!(instant("12.01.2026, 10:15"), Some(1_768_209_300));
+        assert_eq!(instant("2026-01-12 10:15:00"), Some(1_768_209_300));
+        assert_eq!(instant("soon"), None);
+    }
+
+    #[test]
+    fn budgets_keep_the_gap_and_a_share_for_people() {
+        let parcels = Parcels::default();
+        let day = 20_000 * 86_400;
+        assert!(parcels.take(Service::Dhl, day, true));
+        assert!(!parcels.take(Service::Dhl, day + 4, false), "5 s between two");
+        assert!(parcels.take(Service::Dhl, day + 5, false));
+        let mut at = day + 10;
+        let mut background = 2;
+        while parcels.take(Service::Dhl, at, true) {
+            background += 1;
+            at += 5;
+        }
+        assert_eq!(background, 200, "the worker stops at 80 % of 250");
+        assert!(parcels.take(Service::Dhl, at, false), "a person still gets one");
+        assert!(parcels.take(Service::Dhl, day + 86_400, true), "a new day starts again");
+    }
+
+    #[test]
+    fn words_refine_a_code() {
+        assert_eq!(
+            dhl_status("transit", "Die Sendung wurde in das Zustellfahrzeug geladen."),
+            Some(ShipmentStatus::OutForDelivery)
+        );
+        assert_eq!(
+            dhl_status("transit", "Die Sendung liegt zur Abholung bereit."),
+            Some(ShipmentStatus::ReadyForPickup)
+        );
+        assert_eq!(
+            dhl_status("transit", "Die Sendung wurde im Paketzentrum bearbeitet."),
+            Some(ShipmentStatus::InTransit)
+        );
+        assert_eq!(dhl_status("unknown", "Sendung angekündigt"), None);
+        assert_eq!(hermes_status("DELIVERED_TO_NEIGHBOUR"), Some(ShipmentStatus::Delivered));
+        assert_eq!(hermes_status("RETOURE_DELIVERED"), Some(ShipmentStatus::Returned));
+    }
+}

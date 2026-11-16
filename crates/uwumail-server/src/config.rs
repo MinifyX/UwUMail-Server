@@ -52,11 +52,13 @@ pub struct Config {
 pub struct ShipmentsConfig {
     /// Off: no parcels are found, served or shown for anyone; the ones stored stay for later.
     pub enabled: bool,
+    /// `[shipments.lookup]`: asking the carriers by number, off unless an admin turns it on.
+    pub lookup: uwumail_smtp::parcels::LookupConfig,
 }
 
 impl Default for ShipmentsConfig {
     fn default() -> Self {
-        ShipmentsConfig { enabled: true }
+        ShipmentsConfig { enabled: true, lookup: Default::default() }
     }
 }
 
