@@ -1901,9 +1901,7 @@
       "upsClientId": "UPS client-ID",
       "upsClientSecret": "UPS client-secret",
       "fedexClientId": "FedEx client-ID",
-      "fedexClientSecret": "FedEx client-secret",
-      "unofficial": "DPD, Hermes en GLS zonder sleutel navragen",
-      "unofficialHint": "Deze vervoerders hebben geen openbare interface; de server gebruikt die achter hun trackingpagina. Dat kan op elk moment ophouden te werken."
+      "fedexClientSecret": "FedEx client-secret"
     }
   },
   "health": {

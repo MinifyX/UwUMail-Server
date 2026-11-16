@@ -2,9 +2,8 @@
 //! carrier"). Never a link from a mail: the carrier and the number go to the fixed endpoints below,
 //! nothing else about the person. Off unless the admin switches it on, and each person can say no.
 //!
-//! DHL, UPS and FedEx are asked through their official APIs with the admin's keys. DPD, Hermes and
-//! GLS have no open API: their tracking pages' JSON is asked when `unofficial` is on, and when it
-//! fails that is only logged.
+//! Only DHL, UPS and FedEx are asked, through their official APIs with the admin's keys. Other
+//! carriers keep the link from the mail.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
@@ -51,12 +50,9 @@ const UPS_TOKEN_URL: &str = "https://onlinetools.ups.com/security/v1/oauth/token
 const UPS_TRACK_URL: &str = "https://onlinetools.ups.com/api/track/v1/details/";
 const FEDEX_TOKEN_URL: &str = "https://apis.fedex.com/oauth/token";
 const FEDEX_TRACK_URL: &str = "https://apis.fedex.com/track/v1/trackingnumbers";
-const DPD_URL: &str = "https://tracking.dpd.de/rest/plc/de_DE/";
-const HERMES_URL: &str = "https://api.my-deliveries.de/tnt/v2/shipments/search/";
-const GLS_URL: &str = "https://gls-group.eu/app/service/open/rest/DE/de/rstt001?match=";
 
 /// `[shipments.lookup]` in the configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LookupConfig {
     pub enabled: bool,
@@ -66,22 +62,6 @@ pub struct LookupConfig {
     pub ups_client_secret: String,
     pub fedex_client_id: String,
     pub fedex_client_secret: String,
-    /// DPD, Hermes and GLS through their tracking pages, without a key.
-    pub unofficial: bool,
-}
-
-impl Default for LookupConfig {
-    fn default() -> Self {
-        LookupConfig {
-            enabled: false,
-            dhl_key: String::new(),
-            ups_client_id: String::new(),
-            ups_client_secret: String::new(),
-            fedex_client_id: String::new(),
-            fedex_client_secret: String::new(),
-            unofficial: true,
-        }
-    }
 }
 
 /// A request to a carrier.
@@ -127,9 +107,6 @@ enum Service {
     Dhl,
     Ups,
     Fedex,
-    Dpd,
-    Hermes,
-    Gls,
 }
 
 impl Service {
@@ -138,9 +115,6 @@ impl Service {
             "dhl" | "deutschePost" => Service::Dhl,
             "ups" => Service::Ups,
             "fedex" => Service::Fedex,
-            "dpd" => Service::Dpd,
-            "hermes" => Service::Hermes,
-            "gls" => Service::Gls,
             _ => return None,
         })
     }
@@ -150,12 +124,7 @@ impl Service {
         match self {
             Service::Dhl => (5, 250),
             Service::Ups | Service::Fedex => (1, 1000),
-            Service::Dpd | Service::Hermes | Service::Gls => (3, 500),
         }
-    }
-
-    fn official(self) -> bool {
-        matches!(self, Service::Dhl | Service::Ups | Service::Fedex)
     }
 }
 
@@ -245,16 +214,12 @@ impl Parcels {
         if !config.fedex_client_id.trim().is_empty() && !config.fedex_client_secret.trim().is_empty() {
             carriers.push("fedex");
         }
-        if config.unofficial {
-            carriers.extend(["dpd", "hermes", "gls"]);
-        }
         carriers
     }
 
-    /// Whether a carrier's official API answers here, so that "unknown" from it means unknown;
-    /// the tracking pages say that for parcels not scanned yet too.
+    /// Whether a carrier's official API answers here, so that "unknown" from it means unknown.
     pub fn answers_for_sure(&self, carrier: &str) -> bool {
-        Service::of(carrier).is_some_and(Service::official) && self.carriers().contains(&carrier)
+        self.carriers().contains(&carrier)
     }
 
     /// Takes one request from a carrier's budget at `now`; the worker leaves a share of the day for
@@ -322,9 +287,6 @@ impl Parcels {
             Service::Dhl => self.dhl(number).await,
             Service::Ups => self.ups(number, now).await,
             Service::Fedex => self.fedex(number, now).await,
-            Service::Dpd => self.dpd(number).await,
-            Service::Hermes => self.hermes(number).await,
-            Service::Gls => self.gls(number).await,
         };
         match answer {
             Ok((events, expected)) => ShipmentLookupResult { events, expected, error: None },
@@ -514,26 +476,6 @@ impl Parcels {
         }
         parse_fedex(&answer?.1)
     }
-
-    async fn dpd(&self, number: &str) -> Answer {
-        let request = page(format!("{DPD_URL}{number}"), Vec::new());
-        parse_dpd(&self.send(request).await?.1)
-    }
-
-    async fn hermes(&self, number: &str) -> Answer {
-        let headers = vec![("x-language", "de".into()), ("referer", "https://www.myhermes.de/".into())];
-        let request = page(format!("{HERMES_URL}{number}"), headers);
-        match self.send(request).await {
-            Ok((_, json)) => parse_hermes(&json),
-            // It answers 400 for numbers it has no data for yet.
-            Err(error) => Err(error),
-        }
-    }
-
-    async fn gls(&self, number: &str) -> Answer {
-        let request = page(format!("{GLS_URL}{number}"), Vec::new());
-        parse_gls(&self.send(request).await?.1)
-    }
 }
 
 /// The finding a mail gets when its carrier does not know its parcel number.
@@ -629,11 +571,6 @@ pub(crate) async fn cross_check(
             tracing::warn!(%err, "writing the spam history failed");
         }
     }
-}
-
-fn page(url: String, mut headers: Vec<(&'static str, String)>) -> ParcelRequest {
-    headers.push(("accept", "application/json".into()));
-    ParcelRequest { method: "GET", url, headers, body: None }
 }
 
 fn rand_bytes() -> [u8; 16] {
@@ -853,106 +790,6 @@ fn parse_fedex(json: &Value) -> Answer {
     Ok((events, expected))
 }
 
-/// DPD's tracking page: `parcellifecycleResponse.parcelLifeCycleData.statusInfo`, the steps it
-/// shows; only those reached count.
-fn parse_dpd(json: &Value) -> Answer {
-    let data = &json["parcellifecycleResponse"]["parcelLifeCycleData"];
-    let steps = data["statusInfo"].as_array().ok_or(NOT_FOUND)?;
-    let events = steps
-        .iter()
-        .filter(|step| step["statusHasBeenReached"].as_bool() == Some(true))
-        .filter_map(|step| {
-            let status = match step["status"].as_str()? {
-                "ACCEPTED" => ShipmentStatus::Shipped,
-                "AT_SENDING_DEPOT" | "ON_THE_ROAD" | "AT_DELIVERY_DEPOT" => ShipmentStatus::InTransit,
-                "OUT_FOR_DELIVERY" => ShipmentStatus::OutForDelivery,
-                "DELIVERED" => ShipmentStatus::Delivered,
-                "DELIVERED_PARCELSHOP" | "PICKUP_PARCELSHOP" => ShipmentStatus::ReadyForPickup,
-                _ => return None,
-            };
-            let words = step["description"]["content"]
-                .as_array()
-                .map(|lines| lines.iter().filter_map(text).collect::<Vec<_>>().join(" "))
-                .filter(|words| !words.is_empty())
-                .or_else(|| text(&step["label"]));
-            // shortcut: the page's date format is not documented; one it does not read drops the step.
-            Some(NewShipmentEvent {
-                at: instant(step["date"].as_str()?)?,
-                status,
-                text: words,
-                location: text(&step["location"]),
-            })
-        })
-        .collect();
-    Ok((events, None))
-}
-
-fn hermes_status(code: &str) -> Option<ShipmentStatus> {
-    let code = code.to_ascii_uppercase();
-    let has = |words: &[&str]| words.iter().any(|word| code.contains(word));
-    Some(if has(&["RETURN", "RETOURE"]) {
-        ShipmentStatus::Returned
-    } else if has(&["NOT_DELIVERABLE", "DELIVERY_FAILED", "NOT_DELIVERED"]) {
-        ShipmentStatus::DeliveryFailed
-    } else if has(&["READY_FOR", "FOR_COLLECTION"]) {
-        ShipmentStatus::ReadyForPickup
-    } else if has(&["DELIVERED", "PICKED_UP_BY_RECIPIENT", "COLLECTED"]) {
-        ShipmentStatus::Delivered
-    } else if has(&["TOUR_STARTED", "OUT_FOR_DELIVERY", "NEXT_STOP"]) {
-        ShipmentStatus::OutForDelivery
-    } else if has(&["ANNOUNCED", "ORDER_INFO"]) {
-        ShipmentStatus::Shipped
-    } else if has(&["TRANSIT", "SORTED", "DEPOT", "HANDED_OVER", "PICKED_UP"]) {
-        ShipmentStatus::InTransit
-    } else {
-        return None;
-    })
-}
-
-/// Hermes's tracking page: an array whose first entry has `parcelProgress`.
-fn parse_hermes(json: &Value) -> Answer {
-    let progress = json[0]["parcelProgress"].as_array().ok_or(NOT_FOUND)?;
-    let events = progress
-        .iter()
-        .filter_map(|step| {
-            Some(NewShipmentEvent {
-                at: instant(step["timestamp"].as_str()?)?,
-                status: hermes_status(step["parcelStatus"].as_str()?)?,
-                text: text(&step["historyText"]),
-                location: None,
-            })
-        })
-        .collect();
-    Ok((events, None))
-}
-
-/// GLS's tracking page: `tuStatus[0].history`, newest first, and where the bar stands.
-fn parse_gls(json: &Value) -> Answer {
-    let status = &json["tuStatus"][0];
-    let history = status["history"].as_array().ok_or(NOT_FOUND)?;
-    let current = match status["progressBar"]["statusInfo"].as_str().unwrap_or("") {
-        "PREADVICE" => Some(ShipmentStatus::Shipped),
-        "INTRANSIT" | "INWAREHOUSE" => Some(ShipmentStatus::InTransit),
-        "INDELIVERY" => Some(ShipmentStatus::OutForDelivery),
-        "DELIVERED" => Some(ShipmentStatus::Delivered),
-        "DELIVEREDPS" => Some(ShipmentStatus::ReadyForPickup),
-        "NOTDELIVERED" => Some(ShipmentStatus::DeliveryFailed),
-        _ => None,
-    };
-    let events = history
-        .iter()
-        .enumerate()
-        .filter_map(|(index, step)| {
-            let words = text(&step["evtDscr"]);
-            let status = words.as_deref().and_then(by_text);
-            let status = if index == 0 { current.or(status) } else { status }.unwrap_or(ShipmentStatus::InTransit);
-            let at = format!("{} {}", step["date"].as_str()?, step["time"].as_str().unwrap_or("00:00:00"));
-            Some(NewShipmentEvent { at: instant(&at)?, status, text: words, location: text(&step["address"]["city"]) })
-        })
-        .collect();
-    Ok((events, None))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1013,7 +850,14 @@ mod tests {
             [(r#"{"title":"No shipment found"}"#, NOT_FOUND), ("<html>Not Found</html>", UNAVAILABLE)]
         {
             let parcels = Parcels::new(Arc::new(Answer(404, body)));
-            let answer = parcels.send(page("https://carrier.example/".into(), Vec::new())).await;
+            let answer = parcels
+                .send(ParcelRequest {
+                    method: "GET",
+                    url: "https://carrier.example/".into(),
+                    headers: Vec::new(),
+                    body: None,
+                })
+                .await;
             assert_eq!(answer.err(), Some(expected), "{body}");
         }
     }
@@ -1045,7 +889,5 @@ mod tests {
             Some(ShipmentStatus::InTransit)
         );
         assert_eq!(dhl_status("unknown", "Sendung angekündigt"), None);
-        assert_eq!(hermes_status("DELIVERED_TO_NEIGHBOUR"), Some(ShipmentStatus::Delivered));
-        assert_eq!(hermes_status("RETOURE_DELIVERED"), Some(ShipmentStatus::Returned));
     }
 }

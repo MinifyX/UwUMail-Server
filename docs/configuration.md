@@ -490,7 +490,6 @@ ups_client_id = ""       # developer.ups.com
 ups_client_secret = ""
 fedex_client_id = ""     # developer.fedex.com
 fedex_client_secret = ""
-unofficial = true        # DPD, Hermes and GLS without a key
 
 [tone]
 language = "de"        # de | en | fr | nl | ja | zh

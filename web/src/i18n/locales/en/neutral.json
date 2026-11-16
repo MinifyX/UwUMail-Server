@@ -1901,9 +1901,7 @@
       "upsClientId": "UPS client ID",
       "upsClientSecret": "UPS client secret",
       "fedexClientId": "FedEx client ID",
-      "fedexClientSecret": "FedEx client secret",
-      "unofficial": "Ask DPD, Hermes and GLS without a key",
-      "unofficialHint": "These carriers have no public interface; the server uses the one behind their tracking page. It may stop working at any time."
+      "fedexClientSecret": "FedEx client secret"
     }
   },
   "health": {

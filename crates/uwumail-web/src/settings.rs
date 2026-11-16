@@ -176,7 +176,6 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("shipments.lookup.ups_client_secret", SettingKind::Secret),
     spec("shipments.lookup.fedex_client_id", SettingKind::Text),
     spec("shipments.lookup.fedex_client_secret", SettingKind::Secret),
-    spec("shipments.lookup.unofficial", SettingKind::Bool),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

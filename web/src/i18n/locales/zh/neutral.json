@@ -1859,9 +1859,7 @@
       "upsClientId": "UPS 客户端 ID",
       "upsClientSecret": "UPS 客户端密钥",
       "fedexClientId": "FedEx 客户端 ID",
-      "fedexClientSecret": "FedEx 客户端密钥",
-      "unofficial": "无需密钥查询 DPD、Hermes 和 GLS",
-      "unofficialHint": "这些承运商没有公开接口；服务器使用其追踪页面背后的接口。可能随时失效。"
+      "fedexClientSecret": "FedEx 客户端密钥"
     }
   },
   "health": {

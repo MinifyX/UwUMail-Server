@@ -249,13 +249,11 @@ ups_client_id = "…"       # developer.ups.com, OAuth client credentials
 ups_client_secret = "…"
 fedex_client_id = "…"     # developer.fedex.com, OAuth client credentials
 fedex_client_secret = "…"
-unofficial = true         # DPD, Hermes and GLS without a key
 ```
 
-A carrier is asked only once its key is there; DPD, Hermes and GLS have no
-official interface, so the server uses the one behind their tracking pages
-while `unofficial` is on. Those may stop working at any time; their failures
-are only logged. Amazon Logistics and `other` are never asked.
+A carrier is asked only once its key is there, and only through its official
+API. DPD, Hermes, GLS, Amazon Logistics and `other` are never asked; their
+shipments keep the tracking link from the mail.
 
 **What leaves the server**: the tracking number and, for the carrier, nothing
 else, sent to the carrier's fixed address (never a link from a mail, never the
@@ -291,8 +289,7 @@ is checked against the carrier while the lookup is on, unless its sender is
 on the person's allowed list. Only when the carrier's official API answers
 clearly that it does not know any of the numbers is the mail moved to Junk
 and noted in the spam history with `PARCEL_NUMBER_UNKNOWN`; a bare 404, an
-error, a timeout or a rate limit changes nothing, and the unofficial carriers
-never move a mail. These checks get 10 % of each carrier's daily limit and at
+error, a timeout or a rate limit changes nothing. These checks get 10 % of each carrier's daily limit and at
 most 5 a day per sender (its domain when DMARC passes, else its network).
 Such a move takes the mail's parcels along but teaches the spam filter
 nothing.

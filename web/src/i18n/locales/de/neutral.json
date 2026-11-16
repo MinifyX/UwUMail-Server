@@ -1901,9 +1901,7 @@
       "upsClientId": "UPS Client-ID",
       "upsClientSecret": "UPS Client-Secret",
       "fedexClientId": "FedEx Client-ID",
-      "fedexClientSecret": "FedEx Client-Secret",
-      "unofficial": "DPD, Hermes und GLS ohne Schlüssel fragen",
-      "unofficialHint": "Diese Dienste haben keine öffentliche Schnittstelle; der Server nutzt die ihrer Sendungsverfolgung. Das kann jederzeit aufhören zu klappen."
+      "fedexClientSecret": "FedEx Client-Secret"
     }
   },
   "health": {

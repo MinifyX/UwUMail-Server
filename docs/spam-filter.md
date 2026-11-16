@@ -570,7 +570,7 @@ scores mail by it. Fetching and reporting are two switches (*Spamfilter → List
 [spamnet]
 fetch = false   # fetch the list every 15 minutes and score by it
 report = false  # report spam and not-spam
-url = "https://spamnet.uwu.minifyx.de"
+url = "https://spamnet.minifyx.de"
 ```
 
 The first time either switch is on, the server registers with the hub and keeps the key it gets
@@ -635,7 +635,7 @@ wider network.
 ### Text for your privacy policy
 
 > **Spam-Netz.** To recognise spam, this mail server takes part in the Spam-Netz, a list run
-> together by UwUMail servers at spamnet.uwu.minifyx.de. When a message is marked as spam or not
+> together by UwUMail servers at spamnet.minifyx.de. When a message is marked as spam or not
 > spam, or refused as spam, the server sends: fingerprints of its text (hashes from which the
 > text cannot be restored), the domains of its links, the IP address of the server that delivered
 > it and the domain of the sender's address. Recipients, content, subjects, attachments and the
@@ -646,7 +646,7 @@ wider network.
 German:
 
 > **Spam-Netz.** Um Spam zu erkennen, nimmt dieser Mailserver am Spam-Netz teil, einer Liste, die
-> UwUMail-Server gemeinsam unter spamnet.uwu.minifyx.de führen. Wird eine Mail als Spam oder kein
+> UwUMail-Server gemeinsam unter spamnet.minifyx.de führen. Wird eine Mail als Spam oder kein
 > Spam markiert oder als Spam abgelehnt, sendet der Server: Fingerabdrücke ihres Textes (Hashes,
 > aus denen sich der Text nicht wiederherstellen lässt), die Domains ihrer Links, die IP-Adresse
 > des einliefernden Servers und die Domain der Absenderadresse. Empfänger, Inhalt, Betreff,

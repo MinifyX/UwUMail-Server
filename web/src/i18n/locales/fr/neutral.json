@@ -1933,9 +1933,7 @@
       "upsClientId": "ID client UPS",
       "upsClientSecret": "Secret client UPS",
       "fedexClientId": "ID client FedEx",
-      "fedexClientSecret": "Secret client FedEx",
-      "unofficial": "Interroger DPD, Hermes et GLS sans clé",
-      "unofficialHint": "Ces transporteurs n’ont pas d’interface publique ; le serveur utilise celle de leur page de suivi. Cela peut cesser de fonctionner à tout moment."
+      "fedexClientSecret": "Secret client FedEx"
     }
   },
   "health": {

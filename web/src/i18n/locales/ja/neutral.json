@@ -1859,9 +1859,7 @@
       "upsClientId": "UPS クライアント ID",
       "upsClientSecret": "UPS クライアントシークレット",
       "fedexClientId": "FedEx クライアント ID",
-      "fedexClientSecret": "FedEx クライアントシークレット",
-      "unofficial": "DPD、Hermes、GLS にキーなしで問い合わせる",
-      "unofficialHint": "これらの業者には公開インターフェースがなく、追跡ページの裏側を使います。いつでも使えなくなる可能性があります。"
+      "fedexClientSecret": "FedEx クライアントシークレット"
     }
   },
   "health": {

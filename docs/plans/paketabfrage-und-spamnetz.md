@@ -41,14 +41,12 @@ vergeben). Beim Zusammenführen auf A's Branch mergen.
 
 - Nie ein Link aus der Mail. Nur Sendungsnummer + Paketdienst an feste Endpunkte.
 - Dienste: DHL (offizielle Shipment Tracking – Unified API, Header `DHL-API-Key`),
-  UPS (OAuth Client-Credentials, Track API), FedEx (OAuth, Track API),
-  DPD/Hermes/GLS (inoffizielle JSON-Endpunkte der Tracking-Seiten, ohne Key; Ausfall nur
-  loggen).
+  UPS (OAuth Client-Credentials, Track API), FedEx (OAuth, Track API). DPD/Hermes/GLS
+  wurden am 16.11.2026 wieder entfernt (inoffizielle Endpunkte tot); dort bleibt der Mail-Link.
 - Admin-Settings: `shipments.lookup.enabled` (Bool, Default aus),
   `shipments.lookup.dhl_key` (Secret), `shipments.lookup.ups_client_id` (Text),
   `shipments.lookup.ups_client_secret` (Secret), `shipments.lookup.fedex_client_id` (Text),
-  `shipments.lookup.fedex_client_secret` (Secret), `shipments.lookup.unofficial` (Bool,
-  Default an = DPD/Hermes/GLS mitnehmen, wenn Abfrage an).
+  `shipments.lookup.fedex_client_secret` (Secret), (kein Schalter für inoffizielle Dienste mehr).
 - Konto-Schalter wie die Paketerkennung (eigenes Konto kann ausschalten), Default an,
   wenn Admin an.
 - Egress: neuer `Purpose::Parcels`, im Admin über den Proxy schaltbar wie die anderen.
@@ -80,7 +78,7 @@ vergeben). Beim Zusammenführen auf A's Branch mergen.
 ## C/D Spam-Netz (UwUSpamNet)
 
 Offen für beliebige Mailserver (nicht nur UwUMail), Teilnahme nur mit Registrierung +
-Key. Dienst unter `https://spamnet.uwu.minifyx.de`. Repo `MinifyX/UwUSpamNet`.
+Key. Dienst unter `https://spamnet.minifyx.de`. Repo `MinifyX/UwUSpamNet`.
 
 ### Was geteilt wird
 
@@ -142,7 +140,7 @@ mitgeprüft.
 ### Client im UwUMail Server (D)
 
 - Admin-Settings: `spamnet.fetch` (Bool, Default aus), `spamnet.report` (Bool, Default aus),
-  `spamnet.url` (Text, Default `https://spamnet.uwu.minifyx.de`), Key automatisch bei der
+  `spamnet.url` (Text, Default `https://spamnet.minifyx.de`), Key automatisch bei der
   ersten Nutzung registriert und als Secret `spamnet.key` gespeichert.
 - Egress: neuer `Purpose::SpamNet` (über Proxy schaltbar).
 - Findings: `SPAMNET_DIGEST`, `SPAMNET_DOMAIN`, `SPAMNET_IP`, `SPAMNET_FROM` mit den

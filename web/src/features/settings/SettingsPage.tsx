@@ -574,7 +574,6 @@ const PARCEL_LOOKUP_SETTING_KEYS = [
   "shipments.lookup.ups_client_secret",
   "shipments.lookup.fedex_client_id",
   "shipments.lookup.fedex_client_secret",
-  "shipments.lookup.unofficial",
 ];
 
 /** Where an admin gets the free keys for each carrier's tracking API. */
@@ -584,7 +583,7 @@ const CARRIER_PORTALS = [
   ["FedEx", "https://developer.fedex.com/"],
 ] as const;
 
-/** Asking the carriers about parcel numbers: the switch, a key per carrier and the unofficial ones. */
+/** Asking the carriers about parcel numbers: the switch, a key per carrier */
 function ParcelLookupFields({ form }: { form: Form }) {
   const { t } = useT();
   return (
@@ -636,12 +635,6 @@ function ParcelLookupFields({ form }: { form: Form }) {
               label={t("settings.parcelLookup.fedexClientSecret")}
             />
           </div>
-          <ToggleField
-            form={form}
-            settingKey="shipments.lookup.unofficial"
-            label={t("settings.parcelLookup.unofficial")}
-            hint={t("settings.parcelLookup.unofficialHint")}
-          />
         </>
       )}
     </>

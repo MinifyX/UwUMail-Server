@@ -428,7 +428,6 @@ async fn the_carriers_are_asked_on_request_and_the_session_says_whom() {
     server.smtp.parcels().configure(uwumail_smtp::parcels::LookupConfig {
         enabled: true,
         dhl_key: "test-key".into(),
-        unofficial: false,
         ..Default::default()
     });
     let on = server.session_of(MINI).await;

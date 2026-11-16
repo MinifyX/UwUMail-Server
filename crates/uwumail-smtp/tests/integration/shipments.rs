@@ -147,7 +147,7 @@ async fn parcels_are_asked_of_their_carrier_on_a_schedule_until_they_arrive() {
     let id = store.shipments(mini, None).await.unwrap()[0].id;
     let fake = with_carriers(&a);
     let parcels = a.smtp.parcels();
-    assert_eq!(parcels.carriers(), ["dhl", "deutschePost", "dpd", "hermes", "gls"]);
+    assert_eq!(parcels.carriers(), ["dhl", "deutschePost"]);
 
     let out_for_delivery = json!({ "shipments": [{ "events": [
         { "timestamp": "2027-01-12T07:10:00+01:00", "statusCode": "transit", "description": "Die Sendung wird zugestellt.",

@@ -392,7 +392,7 @@ pub struct SpamNetConfig {
 
 impl Default for SpamNetConfig {
     fn default() -> Self {
-        SpamNetConfig { fetch: false, report: false, url: "https://spamnet.uwu.minifyx.de".into() }
+        SpamNetConfig { fetch: false, report: false, url: "https://spamnet.minifyx.de".into() }
     }
 }
 
