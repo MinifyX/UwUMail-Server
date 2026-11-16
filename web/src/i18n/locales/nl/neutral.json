@@ -3814,6 +3814,30 @@
         "block": "Geblokkeerd",
         "points": "Geeft punten"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "Een lijst die UwUMail-servers samen bijhouden: wat velen van hen als spam herkenden, geeft hier ook punten. Ophalen en melden staan los van elkaar; beide staan uit tot je ze aanzet.",
+      "fetchLabel": "Gedeelde lijst gebruiken",
+      "fetchHint": "Elke 15 minuten haalt de server de lijst op. Een treffer geeft tot 4 punten per soort, samen hooguit 6.",
+      "reportLabel": "Spam melden",
+      "reportHint": "Als iemand een bericht naar Ongewenst verplaatst of eruit haalt, en als het filter een bericht weigert, meldt de server de vingerafdrukken ervan. Nooit mail van je eigen domeinen, en nooit geverifieerde mail van contacten.",
+      "sharedTitle": "Wat gedeeld wordt",
+      "shared": "Vingerafdrukken van de tekst (hashes waaruit de tekst niet terug te halen is), de domeinen van links, het adres van de afleverende server en het domein van de afzender. Daarnaast eenmalig de naam van deze server om aan te melden.",
+      "notSharedTitle": "Wat nooit gedeeld wordt",
+      "notShared": "Ontvangers, de inhoud, onderwerpen, bijlagen, het volledige adres van de afzender en wie een bericht markeerde.",
+      "notYet": "Nog niet",
+      "fetched_one": "{{entries}} vermelding in de lijst · opgehaald {{when}}",
+      "fetched_other": "{{entries}} vermeldingen in de lijst · opgehaald {{when}}",
+      "fetchFailed": "Het laatste ophalen is mislukt: {{error}}",
+      "reported_one": "{{sent}} melding verstuurd {{when}} · {{queued}} wachtend",
+      "reported_other": "{{sent}} meldingen verstuurd {{when}} · {{queued}} wachtend",
+      "reportFailed": "De laatste meldingen zijn mislukt: {{error}}",
+      "sync": "Nu synchroniseren",
+      "synced": "Gesynchroniseerd met het Spam-Netz.",
+      "syncFailed": "Synchroniseren mislukt: {{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "UwUMail-servers kunnen nu delen wat ze als spam herkennen. Uit tot een admin het aanzet, onder Spamfilter → Lijsten."
     }
   },
   "vpn": {
@@ -3938,7 +3962,10 @@
       "direct": "Direct",
       "assist": "Verzoeken aan AI-providers",
       "assistHint": "Alleen providers op internet. Een provider in je lokale netwerk, zoals een Ollama, wordt altijd rechtstreeks bereikt.",
-      "assistShort": "AI-providers"
+      "assistShort": "AI-providers",
+      "spamnet": "Verzoeken aan het Spam-Netz",
+      "spamnetHint": "Het ophalen van de gedeelde lijst en het versturen van meldingen. Het Spam-Netz ziet dan het adres van de VPN in plaats van dat van de server.",
+      "spamnetShort": "Spam-Netz"
     },
     "remove": {
       "title": "De VPN verwijderen?",

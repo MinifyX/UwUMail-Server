@@ -3729,6 +3729,28 @@
         "block": "已屏蔽",
         "points": "加分"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "由 UwUMail 服务器共同维护的列表：许多服务器认定为垃圾邮件的内容，在这里也会计分。获取和报告相互独立；在你开启之前两者都是关闭的。",
+      "fetchLabel": "使用共享列表",
+      "fetchHint": "服务器每 15 分钟获取一次列表。每种匹配最多 4 分，合计最多 6 分。",
+      "reportLabel": "报告垃圾邮件",
+      "reportHint": "当有人把邮件移入或移出垃圾邮件，或过滤器拒收邮件时，服务器会报告它的指纹。绝不报告来自你自己域名的邮件，也不报告来自联系人的已认证邮件。",
+      "sharedTitle": "会共享的内容",
+      "shared": "正文的指纹（无法还原正文的哈希）、链接的域名、投递服务器的地址和发件人的域名。另外在注册时发送一次本服务器的名称。",
+      "notSharedTitle": "绝不共享的内容",
+      "notShared": "收件人、内容、主题、附件、发件人的完整地址，以及谁标记了邮件。",
+      "notYet": "尚未",
+      "fetched_other": "列表中有 {{entries}} 个条目 · 获取于 {{when}}",
+      "fetchFailed": "上次获取失败：{{error}}",
+      "reported_other": "{{when}}发送了 {{sent}} 份报告 · {{queued}} 份等待中",
+      "reportFailed": "上次报告失败：{{error}}",
+      "sync": "立即同步",
+      "synced": "已与 Spam-Netz 同步。",
+      "syncFailed": "同步失败：{{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "UwUMail 服务器现在可以共享它们识别出的垃圾邮件。在管理员于“垃圾邮件过滤 → 列表”中开启之前保持关闭。"
     }
   },
   "vpn": {
@@ -3853,7 +3875,10 @@
       "direct": "直接",
       "assist": "发往 AI 服务商的请求",
       "assistHint": "仅限互联网上的服务商。本地网络中的服务商（例如 Ollama）始终直接连接。",
-      "assistShort": "AI 服务商"
+      "assistShort": "AI 服务商",
+      "spamnet": "对 Spam-Netz 的请求",
+      "spamnetHint": "获取共享列表和发送报告。Spam-Netz 看到的将是 VPN 的地址，而不是服务器的地址。",
+      "spamnetShort": "Spam-Netz"
     },
     "remove": {
       "title": "移除 VPN？",

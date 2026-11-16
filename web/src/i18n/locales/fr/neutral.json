@@ -3885,6 +3885,32 @@
         "block": "Bloqué",
         "points": "Ajoute des points"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "Une liste tenue en commun par les serveurs UwUMail : ce que beaucoup d'entre eux ont reconnu comme spam donne aussi des points ici. Récupérer et signaler sont séparés ; les deux restent désactivés jusqu'à ce que vous les activiez.",
+      "fetchLabel": "Utiliser la liste commune",
+      "fetchHint": "Toutes les 15 minutes, le serveur récupère la liste. Une correspondance donne jusqu'à 4 points par type, 6 au plus au total.",
+      "reportLabel": "Signaler le spam",
+      "reportHint": "Quand quelqu'un déplace un message vers les indésirables ou l'en sort, et quand le filtre refuse un message, le serveur signale ses empreintes. Jamais le courrier de vos propres domaines, ni le courrier authentifié des contacts.",
+      "sharedTitle": "Ce qui est partagé",
+      "shared": "Des empreintes du texte (des hachages dont on ne peut pas retrouver le texte), les domaines des liens, l'adresse du serveur d'envoi et le domaine de l'expéditeur. Ainsi que, une seule fois, le nom de ce serveur pour l'inscription.",
+      "notSharedTitle": "Ce qui n'est jamais partagé",
+      "notShared": "Les destinataires, le contenu, les objets, les pièces jointes, l'adresse complète de l'expéditeur et qui a marqué un message.",
+      "notYet": "Pas encore",
+      "fetched_one": "{{entries}} entrée dans la liste · récupérée {{when}}",
+      "fetched_many": "{{entries}} entrées dans la liste · récupérée {{when}}",
+      "fetched_other": "{{entries}} entrées dans la liste · récupérée {{when}}",
+      "fetchFailed": "La dernière récupération a échoué : {{error}}",
+      "reported_one": "{{sent}} signalement envoyé {{when}} · {{queued}} en attente",
+      "reported_many": "{{sent}} signalements envoyés {{when}} · {{queued}} en attente",
+      "reported_other": "{{sent}} signalements envoyés {{when}} · {{queued}} en attente",
+      "reportFailed": "Les derniers signalements ont échoué : {{error}}",
+      "sync": "Synchroniser maintenant",
+      "synced": "Synchronisé avec le Spam-Netz.",
+      "syncFailed": "La synchronisation a échoué : {{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "Les serveurs UwUMail peuvent désormais partager ce qu'ils reconnaissent comme spam. Désactivé jusqu'à ce qu'un admin l'active, sous Filtre anti-spam → Listes."
     }
   },
   "vpn": {
@@ -4009,7 +4035,10 @@
       "direct": "Direct",
       "assist": "Requêtes vers les fournisseurs d'IA",
       "assistHint": "Uniquement les fournisseurs sur Internet. Un fournisseur sur votre réseau local, comme un Ollama, est toujours joint directement.",
-      "assistShort": "Fournisseurs d'IA"
+      "assistShort": "Fournisseurs d'IA",
+      "spamnet": "Requêtes vers le Spam-Netz",
+      "spamnetHint": "Récupération de la liste commune et envoi des signalements. Le Spam-Netz voit alors l'adresse du VPN au lieu de celle du serveur.",
+      "spamnetShort": "Spam-Netz"
     },
     "remove": {
       "title": "Supprimer le VPN ?",

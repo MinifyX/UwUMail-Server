@@ -3814,6 +3814,30 @@
         "block": "Blocked",
         "points": "Adds points"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "A list that UwUMail servers keep together: what many of them found to be spam gives points here too. Fetching and reporting are separate; both are off until you switch them on.",
+      "fetchLabel": "Use the shared list",
+      "fetchHint": "Every 15 minutes the server fetches the list. A match gives up to 4 points per kind, at most 6 together.",
+      "reportLabel": "Report spam",
+      "reportHint": "When someone moves a message to Junk or out of it, and when the filter refuses a message, the server reports its fingerprints. Never mail from your own domains, and never authenticated mail from someone's contacts.",
+      "sharedTitle": "What is shared",
+      "shared": "Fingerprints of the text (hashes, the text cannot be read back from them), the domains of links, the address of the sending server and the domain of the sender. Plus this server's name, once, to register.",
+      "notSharedTitle": "What is never shared",
+      "notShared": "Recipients, the content, subjects, attachments, the sender's full address and who marked a message.",
+      "notYet": "Not yet",
+      "fetched_one": "{{entries}} entry in the list · fetched {{when}}",
+      "fetched_other": "{{entries}} entries in the list · fetched {{when}}",
+      "fetchFailed": "The last fetch failed: {{error}}",
+      "reported_one": "{{sent}} report sent {{when}} · {{queued}} waiting",
+      "reported_other": "{{sent}} reports sent {{when}} · {{queued}} waiting",
+      "reportFailed": "The last reports failed: {{error}}",
+      "sync": "Sync now",
+      "synced": "Synced with the Spam-Netz.",
+      "syncFailed": "Syncing failed: {{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "UwUMail servers can now share what they find to be spam. Off until an admin switches it on, under Spam filter → Lists."
     }
   },
   "vpn": {
@@ -3938,7 +3962,10 @@
       "direct": "Direct",
       "assist": "Requests to AI providers",
       "assistHint": "Only providers on the internet. One in your local network, like an Ollama, is always reached directly.",
-      "assistShort": "AI providers"
+      "assistShort": "AI providers",
+      "spamnet": "Requests to the Spam-Netz",
+      "spamnetHint": "Fetching the shared list and sending reports. The Spam-Netz then sees the VPN's address instead of the server's.",
+      "spamnetShort": "Spam-Netz"
     },
     "remove": {
       "title": "Remove the VPN?",
