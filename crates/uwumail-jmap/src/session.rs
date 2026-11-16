@@ -387,9 +387,10 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             let picture_state = if may_be_public { "-p1" } else { "-p0" };
             let assist_state = add_assist(&jmap, &mut document, &account, &base).await;
             let backups_state = add_backups(&jmap, &mut document, &account).await;
-            let switches = shipment_switches(&jmap.inner.store, account.id, &shared).await;
+            let carriers = jmap.inner.smtp.parcels().carriers();
+            let switches = shipment_switches(&jmap.inner.store, &carriers, account.id, &shared).await;
             let all: Vec<i64> = std::iter::once(account.id).chain(shared.iter().map(|(owner, _, _)| *owner)).collect();
-            keep_shipments(&mut document, account.id, &all, switches.as_deref());
+            keep_shipments(&mut document, account.id, &all, switches.as_deref(), &carriers);
             let shipments_state = shipments_state(switches.as_deref());
             document["state"] = json!(format!(
                 "{}{}{internal_state}{masked_state}{shipments_state}{picture_state}{assist_state}{backups_state}",
@@ -431,13 +432,14 @@ async fn add_assist(jmap: &Jmap, document: &mut Value, account: &Account, base: 
     format!("-ai{}", bits.iter().map(|on| if *on { '1' } else { '0' }).collect::<String>())
 }
 
-/// Whether parcels are on for the account and the accounts shared with it, in that order; `None`
-/// when the admin switched them off for the whole server.
+/// Whether parcels are on for the account and the accounts shared with it, in that order, and
+/// whether they are asked of the `carriers`; `None` when the admin switched them off for the whole server.
 pub async fn shipment_switches(
     store: &uwumail_store::Store,
+    carriers: &[&str],
     me: i64,
     shared: &[(i64, String, bool)],
-) -> Option<Vec<(i64, bool)>> {
+) -> Option<Vec<(i64, bool, bool)>> {
     if !store.shipments_allowed() {
         return None;
     }
@@ -447,25 +449,46 @@ pub async fn shipment_switches(
             tracing::warn!(%err, account = id, "reading whether shipments are on failed");
             false
         });
-        switches.push((id, on));
+        let lookup = on
+            && !carriers.is_empty()
+            && store.shipment_lookup_enabled(id).await.unwrap_or_else(|err| {
+                tracing::warn!(%err, account = id, "reading whether parcels are looked up failed");
+                false
+            });
+        switches.push((id, on, lookup));
     }
     Some(switches)
 }
 
 /// The part of the session state that moves with the parcel switches.
-pub fn shipments_state(switches: Option<&[(i64, bool)]>) -> String {
+pub fn shipments_state(switches: Option<&[(i64, bool, bool)]>) -> String {
     match switches {
         None => "-sh-".into(),
-        Some(switches) => {
-            format!("-sh{}", switches.iter().map(|(_, on)| if *on { '1' } else { '0' }).collect::<String>())
-        }
+        Some(switches) => format!(
+            "-sh{}",
+            switches
+                .iter()
+                .map(|(_, on, lookup)| match (on, lookup) {
+                    (false, _) => '0',
+                    (true, false) => '1',
+                    (true, true) => '2',
+                })
+                .collect::<String>()
+        ),
     }
 }
 
 /// Takes parcels out where they are switched off (docs/jmap-shipments.md, "Switching off"): off on
 /// the server, out of the whole session; off for an account, out of that account but still among
 /// the server's capabilities, so a client knows it can be switched on through UserSettings.
-fn keep_shipments(document: &mut Value, me: i64, all: &[i64], switches: Option<&[(i64, bool)]>) {
+/// Where they are on, `lookupCarriers` says whom the account's parcels are asked of.
+fn keep_shipments(
+    document: &mut Value,
+    me: i64,
+    all: &[i64],
+    switches: Option<&[(i64, bool, bool)]>,
+    carriers: &[&str],
+) {
     let off: Vec<i64> = match switches {
         None => {
             if let Some(capabilities) = document["capabilities"].as_object_mut() {
@@ -473,7 +496,15 @@ fn keep_shipments(document: &mut Value, me: i64, all: &[i64], switches: Option<&
             }
             all.to_vec()
         }
-        Some(switches) => switches.iter().filter(|(_, on)| !on).map(|(id, _)| *id).collect(),
+        Some(switches) => {
+            for (id, _, lookup) in switches.iter().filter(|(_, on, _)| *on) {
+                let capability = &mut document["accounts"][ids::account(*id)]["accountCapabilities"][SHIPMENTS];
+                if capability.is_object() {
+                    capability["lookupCarriers"] = if *lookup { json!(carriers) } else { json!([]) };
+                }
+            }
+            switches.iter().filter(|(_, on, _)| !on).map(|(id, _, _)| *id).collect()
+        }
     };
     for id in &off {
         if let Some(capabilities) = document["accounts"][ids::account(*id)]["accountCapabilities"].as_object_mut() {

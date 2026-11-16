@@ -84,7 +84,7 @@ async fn assisted() -> (Server, Arc<Mutex<Vec<Value>>>) {
     .unwrap();
     assist.create_server_provider(input).await.unwrap();
     let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_assist(assist);
-    (Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir }, seen)
+    (Server { router: jmap.router(), jmap, store: plain.store, smtp: plain.smtp, dir: plain.dir }, seen)
 }
 
 #[tokio::test]
@@ -335,7 +335,7 @@ async fn estimates_and_usage_carry_costs_in_the_currency_asked_for() {
     .unwrap();
     assist.create_server_provider(input).await.unwrap();
     let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_assist(assist);
-    let server = Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir };
+    let server = Server { router: jmap.router(), jmap, store: plain.store, smtp: plain.smtp, dir: plain.dir };
     let login = "mini@example.org";
     let account = server.account_id(login).await;
     let email = server
@@ -425,7 +425,7 @@ async fn base_labels_are_switched_one_by_one_and_overlaps_are_told() {
     let plain = server().await;
     let assist = with_assist(&plain.store).await;
     let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_assist(assist);
-    let server = Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir };
+    let server = Server { router: jmap.router(), jmap, store: plain.store, smtp: plain.smtp, dir: plain.dir };
     let login = "mini@example.org";
     let account = server.account_id(login).await;
     let responses = server.api_using(login, &USING, json!([["AssistLabel/get", { "accountId": account }, "g"]])).await;
@@ -539,7 +539,7 @@ async fn labels_work_without_a_provider_and_carry_their_counts() {
     let plain = server().await;
     let assist = with_assist(&plain.store).await;
     let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_assist(assist);
-    let server = Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir };
+    let server = Server { router: jmap.router(), jmap, store: plain.store, smtp: plain.smtp, dir: plain.dir };
     let login = "mini@example.org";
     let account = server.account_id(login).await;
     let email = server

@@ -28,6 +28,7 @@ pub struct Server {
     pub jmap: Jmap,
     pub router: Router,
     pub store: Store,
+    pub smtp: Smtp,
     pub dir: tempfile::TempDir,
 }
 
@@ -68,8 +69,9 @@ pub async fn server_with(configure: impl FnOnce(Jmap) -> Jmap) -> Server {
             .await
             .unwrap();
     }
-    let jmap = configure(Jmap::new(smtp(&store)).with_avatar_net(std::sync::Arc::new(NoNet)));
-    Server { router: jmap.router(), jmap, store, dir }
+    let smtp = smtp(&store);
+    let jmap = configure(Jmap::new(smtp.clone()).with_avatar_net(std::sync::Arc::new(NoNet)));
+    Server { router: jmap.router(), jmap, store, smtp, dir }
 }
 
 /// The internet people's pictures come from, where nothing answers: no test asks the real one.

@@ -24,7 +24,7 @@ async fn people_find_their_deleted_mail_in_the_backups_and_take_it_back() {
     };
     backups.save_settings(&settings).await.unwrap();
     let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_backups(backups.clone());
-    let server = Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir };
+    let server = Server { router: jmap.router(), jmap, store: plain.store, smtp: plain.smtp, dir: plain.dir };
 
     let login = "mini@example.org";
     let account = server.account_id(login).await;
