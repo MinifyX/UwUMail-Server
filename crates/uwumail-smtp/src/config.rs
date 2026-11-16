@@ -378,6 +378,24 @@ impl Default for ReportsConfig {
     }
 }
 
+/// `[spamnet]`: the Spam-Netz shared between UwUMail servers (docs/spam.md).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SpamNetConfig {
+    /// Fetch the shared list every 15 minutes and score mail by it.
+    pub fetch: bool,
+    /// Report what people mark as spam or not spam, and what the filter refuses.
+    pub report: bool,
+    /// The hub, https only.
+    pub url: String,
+}
+
+impl Default for SpamNetConfig {
+    fn default() -> Self {
+        SpamNetConfig { fetch: false, report: false, url: "https://spamnet.uwu.minifyx.de".into() }
+    }
+}
+
 /// The name, colour and mascot the server shows people. Empty means the UwUMail defaults.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
