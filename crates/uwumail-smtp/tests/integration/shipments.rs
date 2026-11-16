@@ -1,7 +1,17 @@
 //! Shipments found at delivery (docs/jmap-shipments.md): a shipping mail becomes a shipment,
 //! unless the person switched them off. Names and numbers are made up.
 
-use crate::flow::{RawSession, TestServer, start};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use serde_json::json;
+use uwumail_labels::ShipmentStatus;
+use uwumail_smtp::SpamConfig;
+use uwumail_smtp::parcels::{LookupConfig, ParcelRequest, ParcelTransport};
+use uwumail_smtp::provider_oauth::BoxFuture;
+use uwumail_store::MailboxRole;
+
+use crate::flow::{RawSession, TestServer, relay_message_from_outside, spam_test_server, start};
 
 fn dhl_mail(number: &str) -> String {
     format!(
@@ -44,4 +54,214 @@ async fn a_shipping_mail_is_followed_unless_switched_off() {
     hand_in(&a, &dhl_mail("00340434161234567891")).await;
     a.wait_for_inbox("mini@a.test", 2).await;
     assert!(store.shipments(mini, None).await.unwrap().is_empty(), "nothing is kept while off");
+}
+
+/// A fake shipping mail (unauthenticated, a fee, links to a third site) goes to Junk and is no
+/// shipment.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fake_shipping_mail_is_junk_and_no_shipment() {
+    let a = crate::flow::spam_test_server(uwumail_smtp::SpamConfig::default(), None).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let reply = crate::flow::relay_message_from_outside(
+        &a,
+        "From: DHL Paket <news@sender.test>\r\nTo: mini@a.test\r\nSubject: Ihr DHL Paket wartet\r\n\r\n\
+         Ihre Sendung 00340433958441804804 konnte nicht zugestellt werden. Bitte zahlen Sie die \
+         Zustellgebuehr: https://pay.elsewhere.example/dhl\r\nZustellgebühr 1,99 EUR.\r\n",
+    )
+    .await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let started = std::time::Instant::now();
+    while a.mailbox("mini@a.test", uwumail_store::MailboxRole::Junk).await.is_empty() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "the fake never reached Junk");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(store.shipments(mini, None).await.unwrap().is_empty());
+
+    // Not bad enough for Junk (the limit is high here), but doubted: greylisted, then in the Inbox
+    // on the retry, and still no shipment though it links to the carrier's tracking page.
+    let a =
+        crate::flow::spam_test_server(uwumail_smtp::SpamConfig { junk_score: 50.0, ..Default::default() }, None).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let doubted = "From: Versand <news@sender.test>\r\nTo: mini@a.test\r\nSubject: Ihr DHL Paket ist unterwegs\r\n\r\n\
+         Ihre Sendung ist unterwegs: \
+         https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567896\r\n";
+    let reply = crate::flow::relay_message_from_outside(&a, doubted).await;
+    assert!(reply.starts_with("451"), "{reply}");
+    let reply = crate::flow::relay_message_from_outside(&a, doubted).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    a.wait_for_inbox("mini@a.test", 1).await;
+    assert!(store.shipments(mini, None).await.unwrap().is_empty());
+}
+
+/// Carriers that answer from a list instead of the network: the first answer whose key is part of
+/// the address asked, else "not found".
+#[derive(Default)]
+struct FakeCarriers {
+    answers: Mutex<Vec<(&'static str, u16, String)>>,
+    asked: Mutex<Vec<String>>,
+}
+
+impl FakeCarriers {
+    fn answer(&self, key: &'static str, status: u16, body: serde_json::Value) {
+        self.answers.lock().unwrap().insert(0, (key, status, body.to_string()));
+    }
+    fn asked(&self) -> usize {
+        self.asked.lock().unwrap().len()
+    }
+}
+
+impl ParcelTransport for FakeCarriers {
+    fn send(&self, request: ParcelRequest) -> BoxFuture<'_, Result<(u16, Vec<u8>), String>> {
+        let answer = self.answers.lock().unwrap().iter().find(|(key, _, _)| request.url.contains(key)).cloned();
+        self.asked.lock().unwrap().push(request.url);
+        Box::pin(
+            async move { Ok(answer.map_or((404, b"{}".to_vec()), |(_, status, body)| (status, body.into_bytes()))) },
+        )
+    }
+}
+
+fn with_carriers(server: &TestServer) -> Arc<FakeCarriers> {
+    let fake = Arc::new(FakeCarriers::default());
+    server.smtp.parcels().set_transport(fake.clone());
+    server.smtp.parcels().configure(LookupConfig { enabled: true, dhl_key: "test-key".into(), ..Default::default() });
+    fake
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn parcels_are_asked_of_their_carrier_on_a_schedule_until_they_arrive() {
+    let a = start("a.test", &["mini"], &[]).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    a.smtp.dns_cache().pin_txt("dhl.example", "v=spf1 ip4:127.0.0.1 -all").unwrap();
+    for name in ["_dmarc.dhl.example", "relay.local"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    hand_in(&a, &dhl_mail("00340434169999000001")).await;
+    a.wait_for_inbox("mini@a.test", 1).await;
+    let id = store.shipments(mini, None).await.unwrap()[0].id;
+    let fake = with_carriers(&a);
+    let parcels = a.smtp.parcels();
+    assert_eq!(parcels.carriers(), ["dhl", "deutschePost"]);
+
+    let out_for_delivery = json!({ "shipments": [{ "events": [
+        { "timestamp": "2027-01-12T07:10:00+01:00", "statusCode": "transit", "description": "Die Sendung wird zugestellt.",
+          "status": "in Zustellung", "location": { "address": { "addressLocality": "Musterstadt" } } },
+        { "timestamp": "2027-01-11T20:00:00+01:00", "statusCode": "transit", "description": "Im Paketzentrum bearbeitet" },
+    ], "estimatedTimeOfDelivery": "2027-01-12" }] });
+    fake.answer("trackingNumber=00340434169999000001", 200, out_for_delivery);
+    let start = now();
+    assert!(!parcels.run_due(store, start).await);
+    let shipment = &store.shipments(mini, None).await.unwrap()[0];
+    assert_eq!(shipment.status, ShipmentStatus::OutForDelivery);
+    assert_eq!(shipment.looked_up_at, Some(start));
+    assert_eq!(shipment.lookup_error, None);
+    let carrier: Vec<_> = shipment.events.iter().filter(|event| event.source == "carrier").collect();
+    assert_eq!(carrier.len(), 2, "{:?}", shipment.events);
+    assert!(carrier.iter().any(|event| event.location.as_deref() == Some("Musterstadt")));
+    assert_eq!(shipment.expected_day.as_deref(), Some("2027-01-12"));
+
+    // Not due again for half an hour; then the same events are not added twice.
+    parcels.run_due(store, start + 60).await;
+    assert_eq!(fake.asked(), 1);
+    parcels.run_due(store, start + 1801).await;
+    assert_eq!(fake.asked(), 2);
+    let events = store.shipments(mini, None).await.unwrap()[0].events.len();
+    assert_eq!(events, shipment.events.len(), "nothing twice");
+
+    // Delivered: never asked again.
+    fake.answer(
+        "trackingNumber=00340434169999000001",
+        200,
+        json!({ "shipments": [{ "events": [{ "timestamp": "2027-01-12T11:00:00+01:00", "statusCode": "delivered", "description": "Zugestellt" }] }] }),
+    );
+    parcels.run_due(store, start + 3700).await;
+    assert_eq!(store.shipments(mini, None).await.unwrap()[0].status, ShipmentStatus::Delivered);
+    parcels.run_due(store, start + 100_000).await;
+    assert_eq!(fake.asked(), 3);
+    assert_eq!(parcels.refresh(store, mini, id, start + 100_000).await.unwrap(), Err("notSupported"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refresh_waits_five_minutes_and_says_what_the_carrier_said() {
+    let a = start("a.test", &["mini"], &[]).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    a.smtp.dns_cache().pin_txt("dhl.example", "v=spf1 ip4:127.0.0.1 -all").unwrap();
+    for name in ["_dmarc.dhl.example", "relay.local"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    hand_in(&a, &dhl_mail("00340434169999000002")).await;
+    a.wait_for_inbox("mini@a.test", 1).await;
+    let id = store.shipments(mini, None).await.unwrap()[0].id;
+    let parcels = a.smtp.parcels();
+    // Without a key, nobody is asked about DHL parcels.
+    assert_eq!(parcels.refresh(store, mini, id, now()).await.unwrap(), Err("notSupported"));
+    let fake = with_carriers(&a);
+    let start = now();
+    assert_eq!(parcels.refresh(store, mini, id, start).await.unwrap(), Err("notFound"));
+    assert_eq!(store.shipments(mini, None).await.unwrap()[0].lookup_error.as_deref(), Some("notFound"));
+    assert_eq!(parcels.refresh(store, mini, id, start + 299).await.unwrap(), Err("tooSoon"));
+    fake.answer("trackingNumber=00340434169999000002", 503, json!({}));
+    assert_eq!(parcels.refresh(store, mini, id, start + 301).await.unwrap(), Err("unavailable"));
+    assert_eq!(fake.asked(), 2);
+    assert!(matches!(
+        parcels.refresh(store, mini, id + 1000, start).await,
+        Err(uwumail_store::StoreError::NotFound(_))
+    ));
+}
+
+/// A mail dressed up as DHL from somewhere else, about a parcel DHL never heard of, goes to Junk;
+/// one whose parcel DHL knows stays where it was.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_doubtful_mail_about_an_unknown_parcel_goes_to_junk() {
+    // Suspicious, not spam: the filter alone would deliver it after greylisting.
+    let a = spam_test_server(SpamConfig { junk_score: 20.0, greylist_score: 1.0, ..SpamConfig::default() }, None).await;
+    let fake = with_carriers(&a);
+    let fake_dhl = |number: &str| {
+        format!(
+            "From: DHL Paket <news@sender.test>\r\nSubject: Ihr DHL Paket kommt bald\r\n\r\n\
+             Ihre Sendung {number} von Beispielshop wurde an DHL \u{fc}bergeben.\r\n"
+        )
+    };
+    let reply = relay_message_from_outside(&a, &fake_dhl("00340434169999000003")).await;
+    assert!(reply.starts_with("451"), "{reply}");
+    let reply = relay_message_from_outside(&a, &fake_dhl("00340434169999000003")).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let started = std::time::Instant::now();
+    while a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty() {
+        assert!(started.elapsed() < Duration::from_secs(20), "the mail never went to Junk, asked {}", fake.asked());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let log = a.smtp.store().spam_log(uwumail_store::SpamLogFilter { limit: 10, ..Default::default() }).await.unwrap();
+    let entry = log
+        .iter()
+        .find(|entry| entry.hits.iter().any(|hit| hit.rule == "PARCEL_NUMBER_UNKNOWN"))
+        .unwrap_or_else(|| panic!("{log:#?} asked {}", fake.asked()));
+    assert_eq!(entry.action, "junk");
+    assert_eq!(entry.recipients[0].address, "mini@a.test");
+
+    // DHL is asked once in five seconds at most, so the next one goes to a server of its own.
+    let b = spam_test_server(SpamConfig { junk_score: 20.0, greylist_score: 1.0, ..SpamConfig::default() }, None).await;
+    let known = with_carriers(&b);
+    known.answer(
+        "trackingNumber=00340434169999000004",
+        200,
+        json!({ "shipments": [{ "events": [{ "timestamp": "2027-01-11T20:00:00+01:00", "statusCode": "transit", "description": "Unterwegs" }] }] }),
+    );
+    let reply = relay_message_from_outside(&b, &fake_dhl("00340434169999000004")).await;
+    assert!(reply.starts_with("451"), "{reply}");
+    let reply = relay_message_from_outside(&b, &fake_dhl("00340434169999000004")).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    b.wait_for_inbox("mini@a.test", 1).await;
+    while known.asked() < 1 {
+        assert!(started.elapsed() < Duration::from_secs(20), "DHL was never asked");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(b.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty(), "a known parcel stays put");
 }

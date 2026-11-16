@@ -24,6 +24,7 @@ const DEFAULTS: &[&str] = &[
     "carrier",
     "number",
     "trackingUrl",
+    "shopTrackingUrl",
     "title",
     "merchant",
     "orderRef",
@@ -37,7 +38,12 @@ const DEFAULTS: &[&str] = &[
     "events",
     "created",
     "updated",
+    "lookedUpAt",
+    "lookupError",
 ];
+
+/// The most parcels one Shipment/refresh asks about; each may take up to ten seconds.
+const MAX_REFRESH: usize = 20;
 
 /// In someone else's account, the shipments the caller has the `needed` rights for: those of a
 /// mailbox their mail lies in, as for the mail itself. One added by hand goes by the Inbox. In
@@ -152,6 +158,7 @@ fn to_json(shipment: &Shipment, tz: Tz) -> Map<String, Value> {
         "carrier": shipment.carrier,
         "number": shipment.number,
         "trackingUrl": shipment.tracking_url,
+        "shopTrackingUrl": shipment.shop_tracking_url,
         "title": shipment.title,
         "merchant": shipment.merchant,
         "orderRef": shipment.order_ref,
@@ -165,6 +172,8 @@ fn to_json(shipment: &Shipment, tz: Tz) -> Map<String, Value> {
         "events": events,
         "created": dates::format(shipment.created_at),
         "updated": dates::format(shipment.updated_at),
+        "lookedUpAt": shipment.looked_up_at.map(dates::format),
+        "lookupError": shipment.lookup_error,
     }) else {
         unreachable!("object literal")
     };
@@ -531,4 +540,42 @@ pub async fn rescan(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         Err(err) => return Err(err.into()),
     };
     Ok(json!({ "accountId": ctx.account_id(), "rescan": rescan_json(rescan) }))
+}
+
+/// Asks the carriers about the parcels now, at most once in five minutes each. What they say
+/// reaches clients the usual way, through the Shipment state.
+pub async fn refresh(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    let Some(requested) = get_ids(args)? else {
+        return Err(MethodError::invalid_arguments("ids is a list of shipment ids"));
+    };
+    if requested.len() > MAX_REFRESH {
+        return Err(MethodError::kind("requestTooLarge"));
+    }
+    let store = &ctx.jmap.store;
+    let on = store.shipment_lookup_enabled(ctx.account.id).await?;
+    let wanted: Vec<i64> = requested.iter().filter_map(|id| ctx.parse_id('s', id)).collect();
+    let visible = allowed(ctx, store.shipments(ctx.account.id, Some(wanted)).await?, "r").await?;
+    let mut refreshed = Vec::new();
+    let mut not_refreshed = Map::new();
+    for wanted in requested {
+        let number = ctx.parse_id('s', &wanted).filter(|n| visible.iter().any(|shipment| shipment.id == *n));
+        let outcome = match number {
+            None => Err("notFound"),
+            Some(_) if !on => Err("notSupported"),
+            Some(number) => {
+                match ctx.jmap.smtp.parcels().refresh(store, ctx.account.id, number, crate::jscal::now()).await {
+                    Ok(outcome) => outcome,
+                    Err(StoreError::NotFound(_)) => Err("notFound"),
+                    Err(err) => return Err(err.into()),
+                }
+            }
+        };
+        match outcome {
+            Ok(()) => refreshed.push(json!(wanted)),
+            Err(kind) => {
+                not_refreshed.insert(wanted, json!({ "type": kind }));
+            }
+        }
+    }
+    Ok(json!({ "accountId": ctx.account_id(), "refreshed": refreshed, "notRefreshed": not_refreshed }))
 }

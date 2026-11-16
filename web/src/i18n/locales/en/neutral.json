@@ -234,7 +234,9 @@
       "saved": "Saved",
       "confirmTitle": "Stop following parcels?",
       "confirmText": "All stored parcels are deleted. If you switch it on again, only new mail and that of the last days is read.",
-      "confirmOff": "Switch off and delete"
+      "confirmOff": "Switch off and delete",
+      "lookupLabel": "Ask the carrier",
+      "lookupDescription": "Asks the carrier for the status using only the tracking number. Links in mail are never opened."
     }
   },
   "admin": {
@@ -1888,7 +1890,19 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "How mail leaves the server and what it accepts. Changes take effect at once, without a restart.",
-    "appsIntro": "What holds for mail apps and the mailbox in the browser. Changes take effect at once, without a restart."
+    "appsIntro": "What holds for mail apps and the mailbox in the browser. Changes take effect at once, without a restart.",
+    "parcelLookup": {
+      "title": "Parcel lookup",
+      "intro": "Asks the carriers themselves how a shipment is doing, instead of only waiting for the next mail.",
+      "enabled": "Ask carriers",
+      "enabledHint": "The server sends only the tracking number and the carrier to the carrier's fixed address, every 2 hours and up to 30 days after the last mail. It never opens links from mail. Each account can switch it off for itself. Mention it in your privacy policy.",
+      "keysIntro": "DHL, UPS and FedEx need a free key from their developer portal:",
+      "dhlKey": "DHL API key",
+      "upsClientId": "UPS client ID",
+      "upsClientSecret": "UPS client secret",
+      "fedexClientId": "FedEx client ID",
+      "fedexClientSecret": "FedEx client secret"
+    }
   },
   "health": {
     "loading": "Loading the server's health …",
@@ -3814,6 +3828,30 @@
         "block": "Blocked",
         "points": "Adds points"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "A list that UwUMail servers keep together: what many of them found to be spam gives points here too. Fetching and reporting are separate; both are off until you switch them on.",
+      "fetchLabel": "Use the shared list",
+      "fetchHint": "Every 15 minutes the server fetches the list. A match gives up to 4 points per kind, at most 6 together.",
+      "reportLabel": "Report spam",
+      "reportHint": "When someone moves a message to Junk or out of it, and when the filter refuses a message, the server reports its fingerprints. Never mail from your own domains, and never authenticated mail from someone's contacts.",
+      "sharedTitle": "What is shared",
+      "shared": "Fingerprints of the text (hashes, the text cannot be read back from them), the domains of links, the address of the sending server and the domain of the sender. Plus this server's name, once, to register.",
+      "notSharedTitle": "What is never shared",
+      "notShared": "Recipients, the content, subjects, attachments, the sender's full address and who marked a message.",
+      "notYet": "Not yet",
+      "fetched_one": "{{entries}} entry in the list · fetched {{when}}",
+      "fetched_other": "{{entries}} entries in the list · fetched {{when}}",
+      "fetchFailed": "The last fetch failed: {{error}}",
+      "reported_one": "{{sent}} report sent {{when}} · {{queued}} waiting",
+      "reported_other": "{{sent}} reports sent {{when}} · {{queued}} waiting",
+      "reportFailed": "The last reports failed: {{error}}",
+      "sync": "Sync now",
+      "synced": "Synced with the Spam-Netz.",
+      "syncFailed": "Syncing failed: {{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "UwUMail servers can now share what they find to be spam. Off until an admin switches it on, under Spam filter → Lists."
     }
   },
   "vpn": {
@@ -3938,7 +3976,13 @@
       "direct": "Direct",
       "assist": "Requests to AI providers",
       "assistHint": "Only providers on the internet. One in your local network, like an Ollama, is always reached directly.",
-      "assistShort": "AI providers"
+      "assistShort": "AI providers",
+      "spamnet": "Requests to the Spam-Netz",
+      "spamnetHint": "Fetching the shared list and sending reports. The Spam-Netz then sees the VPN's address instead of the server's.",
+      "spamnetShort": "Spam-Netz",
+      "parcels": "Requests to carriers",
+      "parcelsHint": "The parcel lookup: carriers then see the proxy's address instead of the server's.",
+      "parcelsShort": "carriers"
     },
     "remove": {
       "title": "Remove the VPN?",
@@ -5182,5 +5226,14 @@
       "caption": "This is how a code appears above the mail list."
     },
     "saved": "Saved"
+  },
+  "news": {
+    "close": "Close",
+    "spamnetParcels": {
+      "title": "New: Spam network and parcel lookup",
+      "parcelsTitle": "Parcel lookup",
+      "parcelsText": "The server can ask DHL, UPS, FedEx and others directly how a parcel is doing, with only the tracking number. It stays off until you switch it on.",
+      "parcelsOpen": "Open settings"
+    }
   }
 }

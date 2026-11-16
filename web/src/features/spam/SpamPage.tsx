@@ -39,6 +39,7 @@ import { ScopePicker } from "./rules/ScopePicker";
 import { guessSenderKind } from "./senders";
 import { SpamLimitsCard } from "./SpamLimitsCard";
 import { SpamLogCard } from "./SpamLogCard";
+import { SpamNetCard } from "./SpamNetCard";
 import { SubscribedListsCard } from "./SubscribedListsCard";
 
 const accountKey = ["account", "spam"] as const;
@@ -553,6 +554,7 @@ export function AdminSpamPage({ tab = "overview" }: { tab?: SpamTab }) {
       {tab === "lists" && (
         <>
           <FeedsCard view={settings.data} />
+          <SpamNetCard view={settings.data} />
           <SubscribedListsCard admin />
         </>
       )}

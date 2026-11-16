@@ -805,6 +805,8 @@ impl Web {
             .route("/api/admin/vpn/use-gluetun", post(routes::vpn::use_gluetun))
             .route("/api/admin/spam", get(routes::spam::admin_overview))
             .route("/api/admin/spam/learn-folders", post(routes::spam::admin_learn))
+            .route("/api/admin/spamnet", get(routes::spam::admin_spamnet))
+            .route("/api/admin/spamnet/sync", post(routes::spam::admin_spamnet_sync))
             .route("/api/admin/spam/log", get(routes::spam::admin_log).delete(routes::spam::admin_clear_log))
             .route(
                 "/api/admin/spam/senders",

@@ -255,6 +255,37 @@ function DecimalField({
   );
 }
 
+/** A password or token: never shown, only whether one is set; typing replaces it. */
+export function SecretField({ form, settingKey, label }: { form: Form; settingKey: string; label: string }) {
+  const { t } = useT();
+  const locked = form.locked(settingKey);
+  const stored = form.setting(settingKey);
+  const draft = form.value(settingKey);
+  return (
+    <Field
+      label={label}
+      hint={locked ? <LockedHint /> : stored?.set && draft !== null ? t("logs.loki.secretSet") : undefined}
+    >
+      {(id) => (
+        <div className="flex gap-2">
+          <TextInput
+            id={id}
+            type="password"
+            autoComplete="new-password"
+            disabled={locked}
+            placeholder={stored?.set ? "••••••••" : ""}
+            value={typeof draft === "string" ? draft : ""}
+            onChange={(event) => form.set(settingKey, event.target.value === "" ? undefined : event.target.value)}
+          />
+          {stored?.set && !locked && (
+            <Button onClick={() => form.set(settingKey, null)}>{t("logs.loki.secretRemove")}</Button>
+          )}
+        </div>
+      )}
+    </Field>
+  );
+}
+
 export function TextField({
   form,
   settingKey,
@@ -522,9 +553,91 @@ export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
               />
             )}
           </Section>
+          <Section
+            title={t("settings.parcelLookup.title")}
+            intro={t("settings.parcelLookup.intro")}
+            view={view}
+            keys={PARCEL_LOOKUP_SETTING_KEYS}
+          >
+            {(form) => <ParcelLookupFields form={form} />}
+          </Section>
         </div>
       )}
     </div>
+  );
+}
+
+const PARCEL_LOOKUP_SETTING_KEYS = [
+  "shipments.lookup.enabled",
+  "shipments.lookup.dhl_key",
+  "shipments.lookup.ups_client_id",
+  "shipments.lookup.ups_client_secret",
+  "shipments.lookup.fedex_client_id",
+  "shipments.lookup.fedex_client_secret",
+];
+
+/** Where an admin gets the free keys for each carrier's tracking API. */
+const CARRIER_PORTALS = [
+  ["DHL", "https://developer.dhl.com/"],
+  ["UPS", "https://developer.ups.com/"],
+  ["FedEx", "https://developer.fedex.com/"],
+] as const;
+
+/** Asking the carriers about parcel numbers: the switch, a key per carrier */
+function ParcelLookupFields({ form }: { form: Form }) {
+  const { t } = useT();
+  return (
+    <>
+      <ToggleField
+        form={form}
+        settingKey="shipments.lookup.enabled"
+        label={t("settings.parcelLookup.enabled")}
+        hint={t("settings.parcelLookup.enabledHint")}
+      />
+      {Boolean(form.value("shipments.lookup.enabled")) && (
+        <>
+          <p className="text-sm text-muted">
+            {t("settings.parcelLookup.keysIntro")}{" "}
+            {CARRIER_PORTALS.map(([name, url], index) => (
+              <span key={name}>
+                {index > 0 && " · "}
+                <a
+                  className="font-semibold text-pink-ink underline"
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  {name}
+                </a>
+              </span>
+            ))}
+          </p>
+          <SecretField form={form} settingKey="shipments.lookup.dhl_key" label={t("settings.parcelLookup.dhlKey")} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              form={form}
+              settingKey="shipments.lookup.ups_client_id"
+              label={t("settings.parcelLookup.upsClientId")}
+            />
+            <SecretField
+              form={form}
+              settingKey="shipments.lookup.ups_client_secret"
+              label={t("settings.parcelLookup.upsClientSecret")}
+            />
+            <TextField
+              form={form}
+              settingKey="shipments.lookup.fedex_client_id"
+              label={t("settings.parcelLookup.fedexClientId")}
+            />
+            <SecretField
+              form={form}
+              settingKey="shipments.lookup.fedex_client_secret"
+              label={t("settings.parcelLookup.fedexClientSecret")}
+            />
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

@@ -35,6 +35,8 @@ pub struct Config {
     pub log: LogConfig,
     /// What the server reports to other domains: daily TLS reports (RFC 8460).
     pub reports: uwumail_smtp::ReportsConfig,
+    /// The shared Spam-Netz: fetching its list and reporting to it (docs/spam-filter.md).
+    pub spamnet: uwumail_smtp::SpamNetConfig,
     /// Prometheus metrics under `/metrics`; the admin panel can change this part.
     pub metrics: uwumail_web::MetricsConfig,
     /// Logging in to the portal at an OpenID Connect provider or with an LDAP directory's password
@@ -52,11 +54,13 @@ pub struct Config {
 pub struct ShipmentsConfig {
     /// Off: no parcels are found, served or shown for anyone; the ones stored stay for later.
     pub enabled: bool,
+    /// `[shipments.lookup]`: asking the carriers by number, off unless an admin turns it on.
+    pub lookup: uwumail_smtp::parcels::LookupConfig,
 }
 
 impl Default for ShipmentsConfig {
     fn default() -> Self {
-        ShipmentsConfig { enabled: true }
+        ShipmentsConfig { enabled: true, lookup: Default::default() }
     }
 }
 
@@ -85,6 +89,7 @@ impl Default for Config {
             ocr: uwumail_jmap::ocr::OcrConfig::default(),
             log: LogConfig::default(),
             reports: uwumail_smtp::ReportsConfig::default(),
+            spamnet: uwumail_smtp::SpamNetConfig::default(),
             metrics: uwumail_web::MetricsConfig::default(),
             auth: uwumail_web::AuthConfig::default(),
             fetch: FetchConfig::default(),

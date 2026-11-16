@@ -3,6 +3,49 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.38.0
+
+- Parcels: IKEA's („ist fast bei dir … voraussichtlich Freitag, 06.11.2026.“) is now *Unterwegs*
+  with its expected day; a date that ends the sentence was not read before.
+- Parcels: `shopTrackingUrl`, the shop's own tracking page (*Beim Shop ansehen*), from
+  authenticated mail only and only on the shop's own domain, without tracking parameters
+  (`utm_`, `fbclid`, `gclid`, …) or fragment; it is never opened by the server. Update: every account looks back 14 days once
+  more (migration 0096).
+- Fake shipping mail: new spam rules `PARCEL_FEE_UNAUTH`, `PARCEL_BAD_NUMBER` and
+  `PARCEL_FOREIGN_LINK` (docs/spam-filter.md), only for unauthenticated mail that names a carrier
+  and a parcel number. A shipping mail the filter doubts is no parcel
+  unless its sender is authenticated, and moving a mail to Junk removes the parcels that came only
+  from it.
+- Spam-Netz: the server can fetch a list that UwUMail servers keep together and score mail by it
+  (`SPAMNET_DIGEST`, `SPAMNET_DOMAIN`, `SPAMNET_IP`, `SPAMNET_FROM`, at most 6 points together;
+  none for authenticated mail from contacts), and report what people move into or out of Junk and what the filter refuses. Only text
+  fingerprints, link domains, the sending server's address and the sender's domain (only when
+  DMARC-aligned) leave the server, plus host name and version at registration; never recipients or content, never mail from own domains or authenticated mail from
+  contacts. Both off by default (`[spamnet] fetch`, `report`); portal card under *Spamfilter →
+  Listen*, `egress.spamnet` on the VPN page, privacy text in docs/spam-filter.md. Migration 0098.
+- Parcel lookup: the server can ask DHL/Deutsche Post, UPS and FedEx through their official APIs (with
+  their free developer keys) how a parcel is doing; other carriers keep the link from the mail. UPS
+  and FedEx are not yet tested with real keys. Off by default; switch it
+  on under *Settings → Apps & webmail → Parcel lookup*. Only the tracking number goes to the carrier's
+  fixed address, never a link from a mail. Every 2 hours (every 30 minutes while out for delivery), up
+  to 30 days after the last mail, never after delivery. Each account can switch it off under *My
+  account → Parcels*; the questions can take the VPN (`egress.parcels`). **Operators: mention it in
+  your privacy policy before switching it on.**
+- JMAP: `lookupCarriers` in the shipments capability, `lookedUpAt` and `lookupError` on `Shipment`,
+  and `Shipment/refresh` to ask the carrier now (at most every 5 minutes per parcel). Events from the
+  carrier have `source: "carrier"`. An account can refresh at most 20 parcels in 5 minutes.
+- Spam: a suspicious mail about a parcel number the carrier's official API clearly does not know
+  goes to Junk, noted as `PARCEL_NUMBER_UNKNOWN`; never for allowed senders, at most 5 checks a day
+  per sender. An error, a bare 404 or a timeout at the carrier changes nothing, and the move
+  teaches the spam filter nothing.
+- Portal: a one-time card on the overview about what is new.
+- Parcels: a cancelled contract („Kündigung für Ihr … Paket“, a hosting or phone plan) is no
+  longer an order.
+- Parcels: when a shop splits an order (Amazon ships some items under another order number), the
+  shipping mail finds its order by the item quoted in the subject and no second parcel appears.
+- Webmail 0.34.0: *Beim Shop ansehen*, *Jetzt aktualisieren* and the carrier's last answer on a
+  parcel.
+
 ## 0.37.3
 
 - Updates page: *Neu starten* only shows when the machine (or the gateway VPS) needs a restart, next

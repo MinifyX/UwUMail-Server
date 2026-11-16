@@ -102,6 +102,9 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0093_shipment_events_forget_mail.sql"),
     include_str!("migrations/0094_shipments_reread.sql"),
     include_str!("migrations/0095_shipments_trash.sql"),
+    include_str!("migrations/0096_shipments_shop_link.sql"),
+    include_str!("migrations/0097_shipment_lookup.sql"),
+    include_str!("migrations/0098_spamnet.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

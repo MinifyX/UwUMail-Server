@@ -192,6 +192,24 @@ written that From, and the link counts as `PHISHING_LINK_TEXT`. A user name
 with dots ("lia.lunare") is not taken for a domain: only names with a known
 ending are.
 
+### Parcel mail
+
+Fake shipping mail ("Ihr Paket wartet, bitte Zollgebühr zahlen") is a phishing classic. These
+rules look only at mail whose From domain is not authenticated and that talks about a parcel; the
+fee and link rules also need a carrier's name ("post" alone does not count) and something that
+looks like a parcel number, so bills and newsletters with the same words stay out:
+
+| Rule | Points | When |
+|---|---|---|
+| `PARCEL_FEE_UNAUTH` | +3.0 | the From domain is not authenticated and the mail asks for a fee (customs, delivery, storage) or to confirm or update the address |
+| `PARCEL_BAD_NUMBER` | +2.5 | a tracking number with a check digit (DHL SSCC `0034…`, UPS `1Z…`) has the wrong one: no carrier hands it out |
+| `PARCEL_FOREIGN_LINK` | +2.0 | the From domain is not authenticated, the mail names a carrier, and every link leads somewhere that is neither the carrier nor the sender's own site |
+
+A shipping mail the filter doubts (anything above *Deliver*, or a brand or lookalike rule) only
+becomes a parcel when its sender is authenticated, unless the sender is on the person's allowed
+list. Mail in Junk never does, and moving a mail to Junk later takes the parcels along that came
+only from it (docs/jmap-shipments.md).
+
 ### How well it does
 
 `crates/uwumail-smtp/tests/corpus` holds 195 made-up mails in German and
@@ -539,6 +557,103 @@ A fetch that fails, or brings no usable entries, keeps the values of the last
 good one and is tried again an hour later. The portal shows for each list how
 many entries it holds, when it was fetched and why it failed, with a button to
 fetch it now; `uwumail-server spam feeds` shows the same.
+
+## Spam-Netz
+
+The Spam-Netz is a list that UwUMail servers keep together, run as its own service
+([UwUSpamNet](https://github.com/MinifyX/UwUSpamNet)). Servers report what people mark as spam;
+what enough servers report independently lands on the list, and every server that fetches it
+scores mail by it. Fetching and reporting are two switches (*Spamfilter → Listen → Spam-Netz* or
+`[spamnet]` in the config file), both off by default:
+
+```toml
+[spamnet]
+fetch = false   # fetch the list every 15 minutes and score by it
+report = false  # report spam and not-spam
+url = "https://spamnet.minifyx.de"
+```
+
+The first time either switch is on, the server registers with the hub and keeps the key it gets
+sealed in the database. Registration sends the server's host name and `UwUMail <version>`, nothing
+else; the host name names the server and its domain, and the version tells the hub which release
+it runs. A key the
+hub no longer accepts (401) is dropped and the server registers again on the next run.
+
+**Fetching.** The first run is two minutes after start, then every 15 minutes; *Jetzt abgleichen*
+in the portal runs one at once (at most once a minute). Each fetch only brings what changed since
+the last cursor; when the hub sends the full list, it replaces the old one. Entries the hub gave
+an expiry drop out by themselves. A failed fetch keeps the last list. One fetch takes at most
+50,000 entries and writes them in chunks, so a huge answer cannot hold up mail delivery; a fetch
+that fails half way starts over with the full list next time.
+
+| Kind | Finding | Matches |
+|---|---|---|
+| Text fingerprint | `SPAMNET_DIGEST` | one of the message's text fingerprints (digest v1 of the visible text) |
+| Link domain | `SPAMNET_DOMAIN` | the registrable domain of a link in the message |
+| Sending server | `SPAMNET_IP` | the address that handed the message over (IPv4, or the IPv6 /64) |
+| Sender domain | `SPAMNET_FROM` | the registrable domain of the `From` address, only when the mail is not authenticated for it |
+
+Each kind gives the points the hub lists for its best match, at most 4; all four together give at
+most 6, so the Spam-Netz alone does not refuse a mail at the default thresholds. Mail the server
+sends itself is never scored by it, and neither is mail from an authenticated sender a recipient
+knows (a contact or someone they wrote to); a sender on the allowed list stays out of Junk
+anyway. What other servers say about a domain cannot push its own authenticated mail into Junk.
+
+**Reporting.** The server reports:
+
+- *spam* when a person moves a message into Junk, and when the filter refuses a message (the hub
+  counts a person twice as much as a filter);
+- *not spam* when a person moves a message out of Junk.
+
+Moves the server makes itself (a rule, a parcel the carrier does not know) teach nothing: they
+report nothing and train neither the learning filter nor the sender's reputation.
+
+It never reports mail from its own domains or accounts, and never authenticated mail (DMARC pass)
+from someone's contacts. Of what the filter refuses, only unauthenticated mail is reported. What a delivered message would report is kept
+next to it, so a later move reports exactly that and never needs to read the message again.
+Reports wait in a queue and go out with the next run, at most 500 per run; a failed send (the hub
+down, the daily limit reached, the server banned) leaves them queued for the next run. Turning
+reporting off empties the queue.
+
+**What leaves the server** with a report: the verdict (spam/not spam), why (a person or the
+filter), up to 8 text fingerprints, up to 20 link domains, the sending server's address and the
+sender's domain (only when the mail was authenticated for it, so a forged From never puts a
+stranger's domain on the list). **Never:** recipients, the text, subjects, attachments, the sender's full
+address, the account or who marked the message. The fingerprints are hashes of normalised text
+shingles; the text cannot be read back from them. They are not salted, though: whoever has the
+same text can tell from the list that some server got it. A *not spam* report can come from
+personal mail, such as a first mail from someone new that the filter had put in Junk; mail that
+was never in Junk is not reported as not spam.
+
+With the gateway VPN, *VPN → egress.spamnet* sends these requests through it, so the hub sees the
+VPN's address instead of the server's.
+
+Known limit: list entries match exactly. A listed domain does not match its subdomains (the
+client already shortens hosts to the registrable domain), and an IPv4 entry does not match a
+wider network.
+
+### Text for your privacy policy
+
+> **Spam-Netz.** To recognise spam, this mail server takes part in the Spam-Netz, a list run
+> together by UwUMail servers at spamnet.minifyx.de. When a message is marked as spam or not
+> spam, or refused as spam, the server sends: fingerprints of its text (hashes from which the
+> text cannot be restored), the domains of its links, the IP address of the server that delivered
+> it and the domain of the sender's address. Recipients, content, subjects, attachments and the
+> sender's full address are never sent. Mail from our own domains and authenticated mail from
+> your contacts is never reported. Legal basis: our legitimate interest in protecting the service
+> and its users from spam (Art. 6(1)(f) GDPR).
+
+German:
+
+> **Spam-Netz.** Um Spam zu erkennen, nimmt dieser Mailserver am Spam-Netz teil, einer Liste, die
+> UwUMail-Server gemeinsam unter spamnet.minifyx.de führen. Wird eine Mail als Spam oder kein
+> Spam markiert oder als Spam abgelehnt, sendet der Server: Fingerabdrücke ihres Textes (Hashes,
+> aus denen sich der Text nicht wiederherstellen lässt), die Domains ihrer Links, die IP-Adresse
+> des einliefernden Servers und die Domain der Absenderadresse. Empfänger, Inhalt, Betreff,
+> Anhänge und die volle Absenderadresse werden nie übertragen. Mail von unseren eigenen Domains
+> und authentifizierte Mail von deinen Kontakten wird nie gemeldet. Rechtsgrundlage: unser
+> berechtigtes Interesse, den Dienst und seine Nutzer vor Spam zu schützen (Art. 6 Abs. 1 lit. f
+> DSGVO).
 
 ## Headers
 

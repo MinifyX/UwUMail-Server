@@ -228,7 +228,9 @@
       "saved": "已保存",
       "confirmTitle": "不再跟踪包裹？",
       "confirmText": "所有已保存的包裹都会被删除。重新开启后，只会读取新邮件和最近几天的邮件。",
-      "confirmOff": "关闭并删除"
+      "confirmOff": "关闭并删除",
+      "lookupLabel": "向承运商查询",
+      "lookupDescription": "仅用运单号向承运商查询状态。从不打开邮件中的链接。"
     }
   },
   "admin": {
@@ -1846,7 +1848,19 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "邮件如何离开服务器，以及服务器接收哪些邮件。更改会立即生效，无需重启。",
-    "appsIntro": "适用于邮件应用和浏览器中邮箱的设置。更改会立即生效，无需重启。"
+    "appsIntro": "适用于邮件应用和浏览器中邮箱的设置。更改会立即生效，无需重启。",
+    "parcelLookup": {
+      "title": "包裹查询",
+      "intro": "直接向承运商查询货件状态，而不只是等待下一封邮件。",
+      "enabled": "向承运商查询",
+      "enabledHint": "服务器只把运单号和承运商发送到承运商的固定地址，每 2 小时一次，直到最后一封邮件后 30 天。从不打开邮件中的链接。每个账户都可以自行关闭。请在隐私政策中说明。",
+      "keysIntro": "DHL、UPS 和 FedEx 需要在其开发者门户获取免费密钥：",
+      "dhlKey": "DHL API 密钥",
+      "upsClientId": "UPS 客户端 ID",
+      "upsClientSecret": "UPS 客户端密钥",
+      "fedexClientId": "FedEx 客户端 ID",
+      "fedexClientSecret": "FedEx 客户端密钥"
+    }
   },
   "health": {
     "loading": "正在加载服务器健康状况…",
@@ -3729,6 +3743,28 @@
         "block": "已屏蔽",
         "points": "加分"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "由 UwUMail 服务器共同维护的列表：许多服务器认定为垃圾邮件的内容，在这里也会计分。获取和报告相互独立；在你开启之前两者都是关闭的。",
+      "fetchLabel": "使用共享列表",
+      "fetchHint": "服务器每 15 分钟获取一次列表。每种匹配最多 4 分，合计最多 6 分。",
+      "reportLabel": "报告垃圾邮件",
+      "reportHint": "当有人把邮件移入或移出垃圾邮件，或过滤器拒收邮件时，服务器会报告它的指纹。绝不报告来自你自己域名的邮件，也不报告来自联系人的已认证邮件。",
+      "sharedTitle": "会共享的内容",
+      "shared": "正文的指纹（无法还原正文的哈希）、链接的域名、投递服务器的地址和发件人的域名。另外在注册时发送一次本服务器的名称。",
+      "notSharedTitle": "绝不共享的内容",
+      "notShared": "收件人、内容、主题、附件、发件人的完整地址，以及谁标记了邮件。",
+      "notYet": "尚未",
+      "fetched_other": "列表中有 {{entries}} 个条目 · 获取于 {{when}}",
+      "fetchFailed": "上次获取失败：{{error}}",
+      "reported_other": "{{when}}发送了 {{sent}} 份报告 · {{queued}} 份等待中",
+      "reportFailed": "上次报告失败：{{error}}",
+      "sync": "立即同步",
+      "synced": "已与 Spam-Netz 同步。",
+      "syncFailed": "同步失败：{{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "UwUMail 服务器现在可以共享它们识别出的垃圾邮件。在管理员于“垃圾邮件过滤 → 列表”中开启之前保持关闭。"
     }
   },
   "vpn": {
@@ -3853,7 +3889,13 @@
       "direct": "直接",
       "assist": "发往 AI 服务商的请求",
       "assistHint": "仅限互联网上的服务商。本地网络中的服务商（例如 Ollama）始终直接连接。",
-      "assistShort": "AI 服务商"
+      "assistShort": "AI 服务商",
+      "spamnet": "对 Spam-Netz 的请求",
+      "spamnetHint": "获取共享列表和发送报告。Spam-Netz 看到的将是 VPN 的地址，而不是服务器的地址。",
+      "spamnetShort": "Spam-Netz",
+      "parcels": "向承运商的请求",
+      "parcelsHint": "包裹查询：承运商看到的是代理的地址，而不是服务器的地址。",
+      "parcelsShort": "承运商"
     },
     "remove": {
       "title": "移除 VPN？",
@@ -5073,5 +5115,14 @@
       "caption": "验证码会这样显示在邮件列表上方。"
     },
     "saved": "已保存"
+  },
+  "news": {
+    "close": "关闭",
+    "spamnetParcels": {
+      "title": "新功能：垃圾邮件网络和包裹查询",
+      "parcelsTitle": "包裹查询",
+      "parcelsText": "服务器可以仅凭运单号直接向 DHL、UPS、FedEx 等查询包裹状态。在你开启之前一直关闭。",
+      "parcelsOpen": "打开设置"
+    }
   }
 }

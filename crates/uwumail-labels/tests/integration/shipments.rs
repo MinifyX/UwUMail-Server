@@ -236,6 +236,17 @@ fn tickets_are_no_parcels() {
 }
 
 #[test]
+fn contracts_are_no_parcels() {
+    // A hosting provider calls its product a "Paket" and has an order number.
+    let mail = message(
+        &["From: Hoster <service@hoster.example>", "Subject: Kündigung für Ihr Hoster Paket (Auftrag: 10236476)"],
+        "Kundennummer: 77764539\nAuftragsnummer: 10236476\nSie haben beauftragt, Ihr Produkt (VPS Linux M) zu kündigen.\n\
+         Die Kündigung erfolgt zum 16.12.2026. Bis dahin fallen die monatlichen Gebühren an.",
+    );
+    assert_eq!(uwumail_labels::shipment(&mail), None);
+}
+
+#[test]
 fn shopify_themes() {
     // Dawn: a button to the carrier.
     let dawn = html_message(
@@ -405,4 +416,37 @@ fn odd_input_does_not_panic() {
         Vec::new(),
     );
     assert_eq!(found(&mail).status, Some(ShipmentStatus::Delivered));
+}
+
+#[test]
+fn shop_tracking_page_and_a_date_ending_the_sentence() {
+    // A shop's own notice through a tracking service: the shop's page next to the carrier's.
+    let mut mail = html_message(
+        &["From: Beispielmoebel <no.reply@order.email.moebel.example>", "Subject: Lieferzeitfenster"],
+        r#"<p>Hej Leni,</p><p>deine Lieferung ist fast bei dir. Sie kommt voraussichtlich Freitag, 06.11.2026.</p>
+        <a href="https://www.moebel.example/de/de/customer-service/sendungsverfolgungPL/?orderNo=1642190674&amp;utm_source=mail&amp;fbclid=x1&amp;_hsenc=x2&amp;gclid=x3#top">Lieferung verfolgen</a>
+        <a href="https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567890">DHL</a>
+        <a href="https://www.moebel.example/de/de/p/stoffhai/?utm_source=mail">Stoffhai</a>"#,
+    );
+    let facts = found(&mail);
+    assert_eq!(facts.status, Some(ShipmentStatus::InTransit));
+    assert_eq!(facts.expected.map(|e| e.day), Some(on(6, 11, 2026)));
+    assert_eq!(facts.numbers, ["00340434161234567890"]);
+    assert_eq!(
+        facts.shop_tracking_url.as_deref(),
+        Some("https://www.moebel.example/de/de/customer-service/sendungsverfolgungPL/?orderNo=1642190674")
+    );
+
+    // A look-alike host on the shop's domain is no shop link.
+    let odd = html_message(
+        &["From: Beispielmoebel <no.reply@order.email.moebel.example>", "Subject: Lieferzeitfenster"],
+        r#"<p>deine Lieferung ist fast bei dir. Sie kommt voraussichtlich Freitag, 06.11.2026.</p>
+        <a href="https://www.möbel.moebel.example/de/sendungsverfolgung/?orderNo=1">Lieferung verfolgen</a>
+        <a href="https://www.dhl.example/de/privatkunden/pakete-empfangen/verfolgen.html?piececode=00340434161234567890">DHL</a>"#,
+    );
+    assert_eq!(found(&odd).shop_tracking_url, None);
+
+    // Unauthenticated mail never gets a shop link.
+    mail.from_trusted = false;
+    assert_eq!(found(&mail).shop_tracking_url, None);
 }

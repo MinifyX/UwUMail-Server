@@ -287,6 +287,9 @@ pub struct ShipmentFacts {
     /// In capitals; one mail can name several shipments of one carrier.
     pub numbers: Vec<String>,
     pub tracking_url: Option<String>,
+    /// The shop's own tracking page, from authenticated mail only and on the From address's
+    /// domain, without tracking parameters. Only read, never opened.
+    pub shop_tracking_url: Option<String>,
     pub status: Option<ShipmentStatus>,
     pub expected: Option<DateWindow>,
     pub merchant: Option<String>,
@@ -348,7 +351,12 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
     let mut confidence;
     if numbers.is_empty() {
         // An order confirmation or a shop's shipping notice without a number: by shop and order.
-        if order_ref.is_none() || facts.mass_mail() || !order_subject || is_ticket(mail, subject, text) {
+        if order_ref.is_none()
+            || facts.mass_mail()
+            || !order_subject
+            || is_ticket(mail, subject, text)
+            || is_contract(subject, text)
+        {
             return None;
         }
         confidence = 0.8;
@@ -392,11 +400,13 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
     let pickup = matches!(status, Some(ShipmentStatus::ReadyForPickup | ShipmentStatus::DeliveryFailed))
         .then(|| pickup_of(text))
         .flatten();
+    let shop_tracking_url = if facts.authenticated { shop_link(mail) } else { None };
     Some(ShipmentFacts {
         merchant: merchant_of(mail),
         carrier,
         numbers,
         tracking_url,
+        shop_tracking_url,
         status,
         expected,
         order_ref,
@@ -424,6 +434,26 @@ fn is_ticket(mail: &Mail, subject: &str, text: &str) -> bool {
         || fold(&mail.from_name).contains("ticket")
         || mail.from_domain().to_ascii_lowercase().contains("ticket")
         || find_any(text, TICKET_WORDS).is_some()
+}
+
+/// Words of a contract (hosting, phone, subscription) rather than goods: such mail has an order
+/// number too and calls the product a "Paket".
+const CONTRACT_SUBJECT_WORDS: &[&str] =
+    &["kündigung", "gekündigt", "vertrag", "abonnement", "subscription", "tarifwechsel"];
+const CONTRACT_WORDS: &[&str] = &[
+    "kündigung erfolgt zum",
+    "kündigungsbestätigung",
+    "vertragslaufzeit",
+    "mindestlaufzeit",
+    "monatliche gebühr",
+    "monatlichen gebühr",
+    "webspace",
+    "your subscription",
+];
+
+/// Whether `subject` and `text` (folded) are about a contract rather than something shipped.
+fn is_contract(subject: &str, text: &str) -> bool {
+    find_any(subject, CONTRACT_SUBJECT_WORDS).is_some() || find_any(text, CONTRACT_WORDS).is_some()
 }
 
 /// Words of a status, the most telling first: a mail about a failed delivery also tells what was
@@ -550,6 +580,10 @@ const STATUS_WORDS: &[(ShipmentStatus, &[&str])] = &[
             "wurde sortiert",
             "im depot",
             "im paketverteilzentrum",
+            "ist fast bei dir",
+            "ist fast bei ihnen",
+            "ist bald bei dir",
+            "ist bald bei ihnen",
         ],
     ),
     (
@@ -877,6 +911,66 @@ fn merchant_of(mail: &Mail) -> Option<String> {
     };
     let name: String = name.chars().take(MAX_NAME_CHARS).collect();
     (!name.is_empty()).then_some(name)
+}
+
+/// Path words of a shop's own tracking page.
+const SHOP_TRACKING_WORDS: &[&str] =
+    &["sendungsverfolgung", "track", "verfolg", "bestellstatus", "lieferstatus", "order-status", "orderstatus"];
+/// Query keys of newsletter and click trackers, dropped from a shop's link.
+const TRACKER_PREFIXES: &[&str] = &[
+    "utm_",
+    "oxm_",
+    "mc_",
+    "_hs",
+    "mkt_tok",
+    "fbclid",
+    "gclid",
+    "gbraid",
+    "wbraid",
+    "dclid",
+    "msclkid",
+    "igshid",
+    "yclid",
+    "twclid",
+    "ttclid",
+    "li_fat_id",
+    "_ga",
+    "_gl",
+];
+
+/// The first https link to a tracking page on the From address's own registrable domain.
+fn shop_link(mail: &Mail) -> Option<String> {
+    let from_host = mail.from.rsplit_once('@')?.1.to_ascii_lowercase();
+    let site = psl::domain_str(&from_host)?;
+    mail.links.iter().find_map(|link| {
+        if !link.starts_with("https://") {
+            return None;
+        }
+        let parts = Url::split(link)?;
+        // The same characters `Carrier::of_host` allows, so no look-alike host is shown.
+        if !parts.host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-') {
+            return None;
+        }
+        let on_site = parts.host == site || parts.host.ends_with(&format!(".{site}"));
+        let path = parts.path.to_ascii_lowercase();
+        if !on_site || Carrier::of_host(&parts.host).is_some() || find_any(&path, SHOP_TRACKING_WORDS).is_none() {
+            return None;
+        }
+        let query: Vec<&str> = parts
+            .query
+            .split('&')
+            .filter(|pair| {
+                let key = pair.split('=').next().unwrap_or_default().to_ascii_lowercase();
+                !pair.is_empty() && !TRACKER_PREFIXES.iter().any(|prefix| key.starts_with(prefix))
+            })
+            .collect();
+        let mut url = format!("https://{}{}", parts.host, parts.path);
+        if !query.is_empty() {
+            url.push('?');
+            url.push_str(&query.join("&"));
+        }
+        Some(url)
+    })
 }
 
 /// A link on a carrier's own host, with the number it names.

@@ -113,6 +113,7 @@ import type {
   MicrosoftIssue,
   MicrosoftIssues,
   RefusedMail,
+  SpamNetStatus,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 import { assistMockRoutes } from "./mockAssist";
@@ -173,7 +174,7 @@ const session = (): Session => ({
   // Installed before any feature with a "New" tag, so they all show.
   server: { hostname: "mail.uwu.example", version: "0.1.0", installedVersion: "0.0.0", brand: brand() },
   webmail: true,
-  features: { shipments: true },
+  features: { shipments: true, shipmentLookup: true },
 });
 
 const address = (value: string, kind: "primary" | "alias" = "primary") => ({
@@ -1172,8 +1173,19 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "egress.fetch": { value: false, source: "default" },
   "egress.image_cache_mb": { value: 1024, source: "default" },
   "egress.assist": { value: false, source: "default" },
+  "egress.spamnet": { value: false, source: "default" },
+  "spamnet.fetch": { value: true, source: "database" },
+  "spamnet.report": { value: false, source: "default" },
+  "spamnet.url": { value: "https://spamnet.minifyx.de", source: "default" },
+  "egress.parcels": { value: false, source: "default" },
   "reports.send_tls_reports": { value: true, source: "default" },
   "shipments.enabled": { value: true, source: "default" },
+  "shipments.lookup.enabled": { value: true, source: "database" },
+  "shipments.lookup.dhl_key": { value: null, source: "database", set: true },
+  "shipments.lookup.ups_client_id": { value: null, source: "default" },
+  "shipments.lookup.ups_client_secret": { value: null, source: "default", set: false },
+  "shipments.lookup.fedex_client_id": { value: null, source: "default" },
+  "shipments.lookup.fedex_client_secret": { value: null, source: "default", set: false },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
   "log.loki.url": { value: null, source: "default" },
@@ -3117,6 +3129,19 @@ const bimiMockRoutes: [string, RegExp, Handler][] = [
   ],
 ];
 
+const mockSpamNet: SpamNetStatus = {
+  fetch: true,
+  report: false,
+  registered: true,
+  fetchedAt: now - 9 * 60,
+  fetchError: null,
+  entries: 1843,
+  reportedAt: null,
+  reportError: null,
+  sent: 0,
+  queued: 0,
+};
+
 const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
@@ -3900,6 +3925,16 @@ const routes: [string, RegExp, Handler][] = [
     () => [200, { error: "the link answered 404 Not Found", lists: mockWords.admin }],
   ],
   ["GET", /^\/api\/admin\/spam\/feeds$/, () => [200, mockFeeds]],
+  ["GET", /^\/api\/admin\/spamnet$/, () => [200, mockSpamNet]],
+  [
+    "POST",
+    /^\/api\/admin\/spamnet\/sync$/,
+    () => {
+      mockSpamNet.fetchedAt = now;
+      mockSpamNet.fetchError = null;
+      return [200, mockSpamNet];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/spam\/feeds\/(\w+)\/refresh$/,

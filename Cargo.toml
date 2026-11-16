@@ -17,7 +17,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.37.3"
+version = "0.38.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/MinifyX/UwUMail-Server"
@@ -66,6 +66,8 @@ hickory-resolver = { version = "0.26", default-features = false, features = [
 hyper = "1"
 # Link hosts in spam checks: turning punycode back into the letters a reader sees.
 idna = "1"
+# Spam-Netz digests: Unicode NFKC, already in the build through idna.
+icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 # Profile pictures: what people upload (PNG, JPEG, WebP, a GIF's first frame) is decoded within limits
 # and written anew, without anything else the file carried.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }

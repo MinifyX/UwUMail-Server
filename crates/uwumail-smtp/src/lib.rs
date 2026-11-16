@@ -34,6 +34,7 @@ pub mod microsoft;
 pub mod mta_sts;
 mod outbound;
 pub mod palette;
+pub mod parcels;
 pub mod pictures;
 pub mod profile_pictures;
 pub mod provider_oauth;
@@ -73,7 +74,7 @@ pub use client::{Connector, connect_directly};
 pub use client_slots::{ClientSlot, ClientSlots};
 pub use config::{
     AntivirusConfig, BrandConfig, DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig,
-    RelaySecurity, ReportsConfig, SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
+    RelaySecurity, ReportsConfig, SmtpConfig, SpamConfig, SpamLogConfig, SpamNetConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
 pub use fetch::is_public;
@@ -89,6 +90,7 @@ pub use outbound::run_queue;
 pub use relay::IpNetwork;
 pub use spam::{Authentication, Score, phishing, score_offline};
 pub use spam::{FEEDS, Feed, feed, run_learning, run_list_updates};
+pub use spam::{SpamNetStatus, run_spamnet};
 pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
 pub use tlsrpt::run_tls_reports;
@@ -129,6 +131,8 @@ pub(crate) struct Context {
     pub validator: dane::Validator,
     /// Whether delivery sessions are counted and other domains get TLS reports about them.
     send_tls_reports: AtomicBool,
+    /// `[spamnet]` as set now.
+    spamnet: RwLock<Arc<config::SpamNetConfig>>,
     /// The store's, shared with every other protocol.
     pub auth_limiter: Arc<AuthLimiter>,
     /// Recent blocklist answers about sending servers.
@@ -159,6 +163,8 @@ pub(crate) struct Context {
     brand: RwLock<Arc<BrandConfig>>,
     /// Signing in at Microsoft and Google for fetched mailboxes, and their tokens.
     pub(crate) provider_oauth: provider_oauth::ProviderOAuth,
+    /// Asking carriers where a parcel is, by number (docs/jmap-shipments.md).
+    pub(crate) parcels: parcels::Parcels,
     /// Recipients each account sent to lately, for `smtp.max_recipients_per_hour` and `_per_day`.
     pub(crate) send_limits: send_limit::SendLimits,
 }
@@ -193,6 +199,10 @@ impl Context {
 
     pub fn brand(&self) -> Arc<BrandConfig> {
         self.brand.read().expect("brand poisoned").clone()
+    }
+
+    pub fn spamnet(&self) -> Arc<config::SpamNetConfig> {
+        self.spamnet.read().expect("spamnet poisoned").clone()
     }
 
     pub fn sends_tls_reports(&self) -> bool {
@@ -247,6 +257,7 @@ impl Smtp {
                 dns: DnsCaches::default(),
                 validator: dane::Validator::default(),
                 send_tls_reports: AtomicBool::new(ReportsConfig::default().send_tls_reports),
+                spamnet: RwLock::default(),
                 auth_limiter,
                 blocklist_cache: spam::BlocklistCache::default(),
                 domain_cache: spam::DomainCache::default(),
@@ -259,6 +270,7 @@ impl Smtp {
                 connector: RwLock::new(None),
                 brand: RwLock::new(Arc::new(BrandConfig::default())),
                 provider_oauth: provider_oauth::ProviderOAuth::default(),
+                parcels: parcels::Parcels::default(),
                 send_limits: send_limit::SendLimits::default(),
             }),
         })
@@ -302,6 +314,11 @@ impl Smtp {
     /// Signing in at Microsoft and Google for fetched mailboxes (docs/fetch.md).
     pub fn provider_oauth(&self) -> &provider_oauth::ProviderOAuth {
         &self.inner.provider_oauth
+    }
+
+    /// Asking carriers where a parcel is (docs/jmap-shipments.md, "Asking the carrier").
+    pub fn parcels(&self) -> &parcels::Parcels {
+        &self.inner.parcels
     }
 
     /// The mail servers a domain names, for telling who runs its mail. Empty when it names none or
@@ -393,6 +410,21 @@ impl Smtp {
     /// Takes the report settings into use at once (`[reports]`).
     pub fn set_reports(&self, reports: &ReportsConfig) {
         self.inner.send_tls_reports.store(reports.send_tls_reports, Ordering::Relaxed);
+    }
+
+    /// Takes the Spam-Netz settings into use at once (`[spamnet]`).
+    pub fn set_spamnet(&self, spamnet: &SpamNetConfig) {
+        *self.inner.spamnet.write().expect("spamnet poisoned") = Arc::new(spamnet.clone());
+    }
+
+    /// Fetches the Spam-Netz list and sends waiting reports right away, as every 15 minutes.
+    pub async fn sync_spamnet(&self, egress: &egress::Egress) -> spam::SpamNetStatus {
+        spam::sync_spamnet(&self.inner, egress).await
+    }
+
+    /// How the last Spam-Netz fetch and report went, and how many reports wait.
+    pub async fn spamnet_status(&self) -> spam::SpamNetStatus {
+        spam::spamnet_status(&self.inner).await
     }
 
     /// Sends the TLS reports of the finished days before `today` (days since 1970) that are due,

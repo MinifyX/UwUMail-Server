@@ -45,7 +45,10 @@ pub(crate) async fn session_body(web: &Web, account: &Account, csrf_token: &str,
         "webmail": super::webmail::allowed_for(web, account),
         // What the admin switched on for the whole server; the person's own switches are in
         // `preferences` (docs/jmap-shipments.md, "Switching off").
-        "features": { "shipments": web.store().shipments_allowed() },
+        "features": {
+            "shipments": web.store().shipments_allowed(),
+            "shipmentLookup": web.store().shipments_allowed() && !web.smtp().parcels().carriers().is_empty(),
+        },
         "server": {
             "hostname": web.settings().hostname,
             "version": env!("CARGO_PKG_VERSION"),

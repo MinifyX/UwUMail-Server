@@ -64,6 +64,7 @@ pub(crate) fn queue_marked(tx: &Transaction<'_>, email_id: i64, account_id: i64,
     if let Some(blob) = blob {
         queue_learning(tx, &blob, None, spam)?;
         queue_learning(tx, &blob, Some(account_id), spam)?;
+        crate::spamnet::queue_marked(tx, &blob, account_id, spam)?;
     }
     Ok(())
 }

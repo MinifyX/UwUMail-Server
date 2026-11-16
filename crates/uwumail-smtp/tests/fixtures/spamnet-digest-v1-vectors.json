@@ -1,0 +1,135 @@
+{
+  "spec": "Digest v1, see docs/digest-v1.md",
+  "vectors": [
+    {
+      "name": "short",
+      "input": "Hallo, kurze Nachricht.",
+      "normalized": "hallo kurze nachricht",
+      "digests": []
+    },
+    {
+      "name": "one-paragraph",
+      "input": "Dear customer, your parcel could not be delivered because the shipping fee was not paid.",
+      "normalized": "dear customer your parcel could not be delivered because the shipping fee was not paid",
+      "digests": [
+        "d1:1b77c8178a2179713b0fd98b75d805e4",
+        "p1:1b77c8178a2179713b0fd98b75d805e4"
+      ]
+    },
+    {
+      "name": "numbers-urls-addresses-removed",
+      "input": "Dear customer, your parcel 4711 could not be delivered because the shipping fee of 1,99 EUR was not paid. Pay now: https://parcel.example.com/pay?id=123 or write to support@example.net, see www.example.org",
+      "normalized": "dear customer your parcel could not be delivered because the shipping fee of eur was not paid pay now or write to see",
+      "digests": [
+        "d1:c97e1b7701fae833be1f6c92c17056e6",
+        "p1:c97e1b7701fae833be1f6c92c17056e6"
+      ]
+    },
+    {
+      "name": "same-as-above-other-numbers",
+      "input": "Dear customer, your parcel 9999 could not be delivered because the shipping fee of 3,49 EUR was not paid. Pay now: http://other.example.com/x or write to help@example.org, see www.example.net/abc",
+      "normalized": "dear customer your parcel could not be delivered because the shipping fee of eur was not paid pay now or write to see",
+      "digests": [
+        "d1:c97e1b7701fae833be1f6c92c17056e6",
+        "p1:c97e1b7701fae833be1f6c92c17056e6"
+      ]
+    },
+    {
+      "name": "digits-inside-words",
+      "input": "Gew1nn! Sie haben gew0nnen: 1000000 Euro warten auf Sie, klicken Sie jetzt und sichern Sie sich den Pre1s.",
+      "normalized": "gewnn sie haben gewnnen euro warten auf sie klicken sie jetzt und sichern sie sich den pres",
+      "digests": [
+        "d1:b49946705c1ae8bacb7de269002d7c5d",
+        "p1:b49946705c1ae8bacb7de269002d7c5d"
+      ]
+    },
+    {
+      "name": "nfkc-fullwidth-ligatures",
+      "input": "ＷＩＮＮＥＲ! Your oﬃcial ﬁnal notice: claim your reward today before the oﬀer expires tonight.",
+      "normalized": "winner your official final notice claim your reward today before the offer expires tonight",
+      "digests": [
+        "d1:226ac5dc15aa286ecea1c5e8ae8b0fc3",
+        "p1:226ac5dc15aa286ecea1c5e8ae8b0fc3"
+      ]
+    },
+    {
+      "name": "case-and-punctuation",
+      "input": "URGENT!!! <b>Your ACCOUNT</b> has been SUSPENDED --- verify   your\tidentity *now* (no delay).",
+      "normalized": "urgent b your account b has been suspended verify your identity now no delay",
+      "digests": [
+        "d1:ab44569c71e01ad2d542f9080f370da0",
+        "p1:ab44569c71e01ad2d542f9080f370da0"
+      ]
+    },
+    {
+      "name": "german-umlauts-sharp-s",
+      "input": "Sehr geehrte Kundin, Ihr Konto wurde gesperrt. Bitte bestätigen Sie Ihre Identität über das Formular. Grüße, Ihre Straßenbank",
+      "normalized": "sehr geehrte kundin ihr konto wurde gesperrt bitte bestätigen sie ihre identität über das formular grüße ihre straßenbank",
+      "digests": [
+        "d1:6aa2ea1139e862ec921db6ba0056ecbc",
+        "p1:6aa2ea1139e862ec921db6ba0056ecbc"
+      ]
+    },
+    {
+      "name": "greek-final-sigma",
+      "input": "ΤΕΛΙΚΗ ΕΙΔΟΠΟΙΗΣΗ ΓΙΑ ΤΟΝ ΛΟΓΑΡΙΑΣΜΟ ΣΑΣ ΠΑΡΑΚΑΛΩ ΕΠΙΒΕΒΑΙΩΣΤΕ ΤΑ ΣΤΟΙΧΕΙΑ ΣΑΣ ΑΜΕΣΑ",
+      "normalized": "τελικη ειδοποιηση για τον λογαριασμο σας παρακαλω επιβεβαιωστε τα στοιχεια σας αμεσα",
+      "digests": [
+        "d1:7a4ba5ce32f9c8a02b28265559abd6c3",
+        "p1:7a4ba5ce32f9c8a02b28265559abd6c3"
+      ]
+    },
+    {
+      "name": "paragraphs-crlf-and-blank-lines",
+      "input": "Hello friend,\r\n\r\nI am contacting you about a business proposal that will benefit both of us greatly in the coming weeks.\r\n   \r\nPlease reply with your full name and telephone number so that we can discuss the details of the transfer.\r\n\r\nRegards",
+      "normalized": "hello friend i am contacting you about a business proposal that will benefit both of us greatly in the coming weeks please reply with your full name and telephone number so that we can discuss the details of the transfer regards",
+      "digests": [
+        "d1:2cdde67bfb3f90d8042634dedaa70aaf",
+        "p1:abc8f3779f12292d8e44afbc133c9a0d",
+        "p1:ec3bf570a7364fd9e087932fa5fd1c26"
+      ]
+    },
+    {
+      "name": "five-long-paragraphs-four-kept",
+      "input": "First paragraph that is long enough to count as its own fingerprint in digest one.\n\nSecond paragraph, a little bit longer than the first one, so that it is ranked higher than that.\n\nThird paragraph is the very longest of them all because it simply keeps going on and on and on without end.\n\nFourth paragraph: also long enough to be counted when the paragraphs are chosen by length.\n\nFifth one, exactly as long as the first: equal ones keep their order\n\nShort closing line.",
+      "normalized": "first paragraph that is long enough to count as its own fingerprint in digest one second paragraph a little bit longer than the first one so that it is ranked higher than that third paragraph is the very longest of them all because it simply keeps going on and on and on without end fourth paragraph also long enough to be counted when the paragraphs are chosen by length fifth one exactly as long as the first equal ones keep their order short closing line",
+      "digests": [
+        "d1:0b04863833a85cc191101a43c2b3a2b6",
+        "p1:14b46b1cbcff75c13bb2abc6501b06d9",
+        "p1:5c86039f4939b8d84b63cab7412f6dfc",
+        "p1:50ebebe8c46ddb18d8a68d275ba073a2",
+        "p1:360af9b5a02fcd144006b2ce46b22f0f"
+      ]
+    },
+    {
+      "name": "duplicate-paragraphs-once",
+      "input": "This exact paragraph appears twice in the message and should only give one fingerprint.\n\nThis exact paragraph appears twice in the message and should only give one fingerprint.",
+      "normalized": "this exact paragraph appears twice in the message and should only give one fingerprint this exact paragraph appears twice in the message and should only give one fingerprint",
+      "digests": [
+        "d1:b7c8dcff8652cfaaf4fad781cb611b1e",
+        "p1:ea05517e79ed8a0857d2e6bc72f45bdf"
+      ]
+    },
+    {
+      "name": "only-urls-and-numbers",
+      "input": "https://example.com/a 12345 user@example.com www.example.net 987 654 321 https://example.org/very/long/path/that/goes/on",
+      "normalized": "",
+      "digests": []
+    },
+    {
+      "name": "emoji-and-symbols",
+      "input": "🎉🎉 Congratulations 🎉 you are our lucky winner ★★★ of the week — claim your prize ✔ today!",
+      "normalized": "congratulations you are our lucky winner of the week claim your prize today",
+      "digests": [
+        "d1:cb3ee306db46fb73fac37aa3c888fe33",
+        "p1:cb3ee306db46fb73fac37aa3c888fe33"
+      ]
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "normalized": "",
+      "digests": []
+    }
+  ]
+}

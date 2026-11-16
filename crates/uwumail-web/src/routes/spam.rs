@@ -314,3 +314,19 @@ pub async fn admin_remove_sender(
     audit(&web, &session, "spam.senderRemove", &entry.value, details).await;
     admin_senders(&web).await
 }
+
+/// The Spam-Netz: whether it is on, and how the last fetch and the last reports went.
+pub async fn admin_spamnet(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<uwumail_smtp::SpamNetStatus>> {
+    Ok(Json(web.smtp().spamnet_status().await))
+}
+
+/// Fetches the Spam-Netz list and sends waiting reports now, at most once a minute.
+pub async fn admin_spamnet_sync(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<uwumail_smtp::SpamNetStatus>> {
+    let status = web.smtp().spamnet_status().await;
+    let last = status.fetched_at.max(status.reported_at);
+    if last.is_some_and(|at| crate::health::unix_now() - at < 60) {
+        return Ok(Json(status));
+    }
+    let egress = web.egress().ok_or_else(|| ApiError::NotFound("nothing leaves this server".into()))?;
+    Ok(Json(web.smtp().sync_spamnet(egress).await))
+}

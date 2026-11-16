@@ -160,7 +160,8 @@ from other providers: mail from their mailboxes, calendars people subscribed to
 and calendars and contacts moved over ([calendar-import.md](calendar-import.md))
 (`egress.fetch`; some providers refuse VPN addresses), and the AI assistant's requests to OpenAI, Anthropic and
 the other providers on the internet (`egress.assist`, see [llm.md](llm.md); providers in the local network
-are always reached directly). Pictures (`egress.pictures`) take it unless switched off,
+are always reached directly), and the questions to parcel carriers (`egress.parcels`, see
+[jmap-shipments.md](jmap-shipments.md#carrier-lookup)). Pictures (`egress.pictures`) take it unless switched off,
 and one-click unsubscriptions ([jmap-unsubscribe.md](jmap-unsubscribe.md)) go the way pictures go. DNS,
 delivering mail, blocklists and list updates keep leaving directly. Outgoing
 mail on port 25 could not go through a VPN anyway; providers block it, and
@@ -233,11 +234,12 @@ updates = false
 fetch = false
 image_cache_mb = 1024
 assist = false
+parcels = false
 ```
 
 As environment variables: `UWUMAIL_EGRESS__PROXY`, `UWUMAIL_EGRESS__FALLBACK`,
 `UWUMAIL_EGRESS__PICTURES`, `UWUMAIL_EGRESS__UPDATES`, `UWUMAIL_EGRESS__FETCH`,
-`UWUMAIL_EGRESS__IMAGE_CACHE_MB` and `UWUMAIL_EGRESS__ASSIST`.
+`UWUMAIL_EGRESS__IMAGE_CACHE_MB`, `UWUMAIL_EGRESS__ASSIST` and `UWUMAIL_EGRESS__PARCELS`.
 What the config file or a non-empty variable sets is locked in the portal; the
 empty `UWUMAIL_EGRESS_PROXY=` and `UWUMAIL_EGRESS_FALLBACK=` that `compose.yaml`
 passes on leave them to the portal. A proxy login belongs in `.env` or the
@@ -478,6 +480,16 @@ send_tls_reports = true
 # false switches them off for everyone; stored ones are kept, not deleted.
 [shipments]
 enabled = true
+
+# Ask the carriers about parcel numbers (off by default). Only the number goes to the
+# carrier's fixed address; mention it in your privacy policy. See docs/jmap-shipments.md.
+[shipments.lookup]
+enabled = false
+dhl_key = ""             # developer.dhl.com
+ups_client_id = ""       # developer.ups.com
+ups_client_secret = ""
+fedex_client_id = ""     # developer.fedex.com
+fedex_client_secret = ""
 
 [tone]
 language = "de"        # de | en | fr | nl | ja | zh

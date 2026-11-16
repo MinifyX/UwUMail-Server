@@ -234,7 +234,9 @@
       "saved": "Gespeichert",
       "confirmTitle": "Pakete nicht mehr verfolgen?",
       "confirmText": "Alle gespeicherten Pakete werden gelöscht. Wenn du es wieder einschaltest, werden nur neue Mails und die der letzten Tage gelesen.",
-      "confirmOff": "Ausschalten und löschen"
+      "confirmOff": "Ausschalten und löschen",
+      "lookupLabel": "Beim Paketdienst nachfragen",
+      "lookupDescription": "Fragt den Paketdienst nur mit der Sendungsnummer nach dem Stand. Links aus Mails werden nie geöffnet."
     }
   },
   "admin": {
@@ -1888,7 +1890,19 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "Wie Mail den Server verlässt und was er annimmt. Änderungen wirken sofort, ohne Neustart.",
-    "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart."
+    "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart.",
+    "parcelLookup": {
+      "title": "Paketabfrage",
+      "intro": "Fragt die Paketdienste selbst nach dem Stand einer Sendung, statt nur auf die nächste Mail zu warten.",
+      "enabled": "Bei Paketdiensten nachfragen",
+      "enabledHint": "Der Server schickt nur die Sendungsnummer und den Paketdienst an deren feste Adressen, alle 2 Stunden und bis 30 Tage nach der letzten Mail. Links aus Mails öffnet er nie. Jedes Konto kann es für sich abschalten. Erwähne es in deiner Datenschutzerklärung.",
+      "keysIntro": "DHL, UPS und FedEx brauchen einen kostenlosen Schlüssel aus ihrem Entwicklerportal:",
+      "dhlKey": "DHL-API-Schlüssel",
+      "upsClientId": "UPS Client-ID",
+      "upsClientSecret": "UPS Client-Secret",
+      "fedexClientId": "FedEx Client-ID",
+      "fedexClientSecret": "FedEx Client-Secret"
+    }
   },
   "health": {
     "loading": "Zustand wird geladen …",
@@ -3814,6 +3828,30 @@
         "block": "Blockiert",
         "points": "Gibt Punkte"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "Eine Liste, die UwUMail-Server gemeinsam führen: Was viele von ihnen als Spam erkannt haben, gibt auch hier Punkte. Abrufen und Melden sind getrennt; beides ist aus, bis du es einschaltest.",
+      "fetchLabel": "Gemeinsame Liste nutzen",
+      "fetchHint": "Alle 15 Minuten holt der Server die Liste. Ein Treffer gibt bis zu 4 Punkte je Art, zusammen höchstens 6.",
+      "reportLabel": "Spam melden",
+      "reportHint": "Schiebt jemand eine Mail in den Spam-Ordner oder heraus oder lehnt der Filter eine Mail ab, meldet der Server ihre Fingerabdrücke. Nie Mail von deinen eigenen Domains und nie authentifizierte Mail von Kontakten.",
+      "sharedTitle": "Was geteilt wird",
+      "shared": "Fingerabdrücke des Textes (Hashes, aus denen sich der Text nicht zurückgewinnen lässt), die Domains von Links, die Adresse des einliefernden Servers und die Domain des Absenders. Dazu einmalig der Name dieses Servers zur Anmeldung.",
+      "notSharedTitle": "Was nie geteilt wird",
+      "notShared": "Empfänger, der Inhalt, Betreffs, Anhänge, die volle Adresse des Absenders und wer eine Mail markiert hat.",
+      "notYet": "Noch nicht",
+      "fetched_one": "{{entries}} Eintrag in der Liste · geholt {{when}}",
+      "fetched_other": "{{entries}} Einträge in der Liste · geholt {{when}}",
+      "fetchFailed": "Letzter Abruf fehlgeschlagen: {{error}}",
+      "reported_one": "{{sent}} Meldung gesendet {{when}} · {{queued}} warten",
+      "reported_other": "{{sent}} Meldungen gesendet {{when}} · {{queued}} warten",
+      "reportFailed": "Letzte Meldungen fehlgeschlagen: {{error}}",
+      "sync": "Jetzt abgleichen",
+      "synced": "Mit dem Spam-Netz abgeglichen.",
+      "syncFailed": "Abgleich fehlgeschlagen: {{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "UwUMail-Server können jetzt teilen, was sie als Spam erkennen. Aus, bis ein Admin es einschaltet, unter Spamfilter → Listen."
     }
   },
   "vpn": {
@@ -3938,7 +3976,13 @@
       "direct": "Direkt",
       "assist": "Anfragen an KI-Anbieter",
       "assistHint": "Nur Anbieter im Internet. Einer in deinem lokalen Netz, etwa ein Ollama, wird immer direkt erreicht.",
-      "assistShort": "KI-Anbieter"
+      "assistShort": "KI-Anbieter",
+      "spamnet": "Anfragen an das Spam-Netz",
+      "spamnetHint": "Abruf der gemeinsamen Liste und Meldungen. Das Spam-Netz sieht dann die Adresse des VPN statt die des Servers.",
+      "spamnetShort": "Spam-Netz",
+      "parcels": "Fragen an Paketdienste",
+      "parcelsHint": "Die Paketabfrage: Paketdienste sehen dann die Adresse des Proxys statt die des Servers.",
+      "parcelsShort": "Paketdienste"
     },
     "remove": {
       "title": "VPN entfernen?",
@@ -5182,5 +5226,14 @@
       "caption": "So erscheint ein Code über der Mailliste."
     },
     "saved": "Gespeichert"
+  },
+  "news": {
+    "close": "Schließen",
+    "spamnetParcels": {
+      "title": "Neu: Spam-Netz und Paketabfrage",
+      "parcelsTitle": "Paketabfrage",
+      "parcelsText": "Der Server kann DHL, UPS, FedEx und andere direkt nach dem Stand eines Pakets fragen, nur mit der Sendungsnummer. Sie ist aus, bis du sie einschaltest.",
+      "parcelsOpen": "Zu den Einstellungen"
+    }
   }
 }

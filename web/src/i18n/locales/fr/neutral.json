@@ -234,7 +234,9 @@
       "saved": "Enregistré",
       "confirmTitle": "Ne plus suivre les colis ?",
       "confirmText": "Tous les colis enregistrés seront supprimés. Si vous le réactivez, seuls les nouveaux e-mails et ceux des derniers jours seront lus.",
-      "confirmOff": "Désactiver et supprimer"
+      "confirmOff": "Désactiver et supprimer",
+      "lookupLabel": "Demander au transporteur",
+      "lookupDescription": "Demande l’état au transporteur avec le seul numéro de suivi. Les liens des e-mails ne sont jamais ouverts."
     }
   },
   "admin": {
@@ -1920,7 +1922,19 @@
       "uwuauth": "UwUAuth"
     },
     "mailIntro": "Comment le courrier quitte le serveur et ce qu'il accepte. Les modifications s'appliquent immédiatement, sans redémarrage.",
-    "appsIntro": "Ce qui vaut pour les applis de messagerie et la boîte mail dans le navigateur. Les modifications s'appliquent immédiatement, sans redémarrage."
+    "appsIntro": "Ce qui vaut pour les applis de messagerie et la boîte mail dans le navigateur. Les modifications s'appliquent immédiatement, sans redémarrage.",
+    "parcelLookup": {
+      "title": "Suivi auprès des transporteurs",
+      "intro": "Demande directement aux transporteurs où en est un envoi, au lieu d’attendre le prochain e-mail.",
+      "enabled": "Interroger les transporteurs",
+      "enabledHint": "Le serveur n’envoie que le numéro de suivi et le transporteur à l’adresse fixe de celui-ci, toutes les 2 heures et jusqu’à 30 jours après le dernier e-mail. Il n’ouvre jamais les liens des e-mails. Chaque compte peut le désactiver pour lui-même. Mentionnez-le dans votre politique de confidentialité.",
+      "keysIntro": "DHL, UPS et FedEx demandent une clé gratuite de leur portail développeur :",
+      "dhlKey": "Clé API DHL",
+      "upsClientId": "ID client UPS",
+      "upsClientSecret": "Secret client UPS",
+      "fedexClientId": "ID client FedEx",
+      "fedexClientSecret": "Secret client FedEx"
+    }
   },
   "health": {
     "loading": "Chargement de l'état du serveur …",
@@ -3885,6 +3899,32 @@
         "block": "Bloqué",
         "points": "Ajoute des points"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "Une liste tenue en commun par les serveurs UwUMail : ce que beaucoup d'entre eux ont reconnu comme spam donne aussi des points ici. Récupérer et signaler sont séparés ; les deux restent désactivés jusqu'à ce que vous les activiez.",
+      "fetchLabel": "Utiliser la liste commune",
+      "fetchHint": "Toutes les 15 minutes, le serveur récupère la liste. Une correspondance donne jusqu'à 4 points par type, 6 au plus au total.",
+      "reportLabel": "Signaler le spam",
+      "reportHint": "Quand quelqu'un déplace un message vers les indésirables ou l'en sort, et quand le filtre refuse un message, le serveur signale ses empreintes. Jamais le courrier de vos propres domaines, ni le courrier authentifié des contacts.",
+      "sharedTitle": "Ce qui est partagé",
+      "shared": "Des empreintes du texte (des hachages dont on ne peut pas retrouver le texte), les domaines des liens, l'adresse du serveur d'envoi et le domaine de l'expéditeur. Ainsi que, une seule fois, le nom de ce serveur pour l'inscription.",
+      "notSharedTitle": "Ce qui n'est jamais partagé",
+      "notShared": "Les destinataires, le contenu, les objets, les pièces jointes, l'adresse complète de l'expéditeur et qui a marqué un message.",
+      "notYet": "Pas encore",
+      "fetched_one": "{{entries}} entrée dans la liste · récupérée {{when}}",
+      "fetched_many": "{{entries}} entrées dans la liste · récupérée {{when}}",
+      "fetched_other": "{{entries}} entrées dans la liste · récupérée {{when}}",
+      "fetchFailed": "La dernière récupération a échoué : {{error}}",
+      "reported_one": "{{sent}} signalement envoyé {{when}} · {{queued}} en attente",
+      "reported_many": "{{sent}} signalements envoyés {{when}} · {{queued}} en attente",
+      "reported_other": "{{sent}} signalements envoyés {{when}} · {{queued}} en attente",
+      "reportFailed": "Les derniers signalements ont échoué : {{error}}",
+      "sync": "Synchroniser maintenant",
+      "synced": "Synchronisé avec le Spam-Netz.",
+      "syncFailed": "La synchronisation a échoué : {{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "Les serveurs UwUMail peuvent désormais partager ce qu'ils reconnaissent comme spam. Désactivé jusqu'à ce qu'un admin l'active, sous Filtre anti-spam → Listes."
     }
   },
   "vpn": {
@@ -4009,7 +4049,13 @@
       "direct": "Direct",
       "assist": "Requêtes vers les fournisseurs d'IA",
       "assistHint": "Uniquement les fournisseurs sur Internet. Un fournisseur sur votre réseau local, comme un Ollama, est toujours joint directement.",
-      "assistShort": "Fournisseurs d'IA"
+      "assistShort": "Fournisseurs d'IA",
+      "spamnet": "Requêtes vers le Spam-Netz",
+      "spamnetHint": "Récupération de la liste commune et envoi des signalements. Le Spam-Netz voit alors l'adresse du VPN au lieu de celle du serveur.",
+      "spamnetShort": "Spam-Netz",
+      "parcels": "Requêtes aux transporteurs",
+      "parcelsHint": "Le suivi des colis : les transporteurs voient alors l’adresse du proxy au lieu de celle du serveur.",
+      "parcelsShort": "transporteurs"
     },
     "remove": {
       "title": "Supprimer le VPN ?",
@@ -5277,5 +5323,14 @@
       "caption": "Voici comment un code apparaît au-dessus de la liste des mails."
     },
     "saved": "Enregistré"
+  },
+  "news": {
+    "close": "Fermer",
+    "spamnetParcels": {
+      "title": "Nouveau : réseau anti-spam et suivi des colis",
+      "parcelsTitle": "Suivi des colis",
+      "parcelsText": "Le serveur peut demander directement à DHL, UPS, FedEx et d’autres où en est un colis, avec le seul numéro de suivi. Il reste désactivé jusqu’à ce que vous l’activiez.",
+      "parcelsOpen": "Ouvrir les réglages"
+    }
   }
 }

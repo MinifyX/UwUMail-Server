@@ -83,6 +83,7 @@ pub async fn run(
     )?;
     smtp.set_brand(config.brand.clone());
     smtp.set_reports(&config.reports);
+    smtp.set_spamnet(&config.spamnet);
 
     let (shutdown, shutdown_rx) = watch::channel(false);
     let mut tasks = JoinSet::new();
@@ -131,6 +132,10 @@ pub async fn run(
     // fetching leaves, through the proxy when fetching takes it (docs/fetch.md).
     smtp.provider_oauth().configure(config.fetch.oauth.clone());
     smtp.provider_oauth().set_transport(Arc::new(uwumail_smtp::provider_oauth::EgressTransport(egress.clone())));
+    // Parcels asked of their carriers by number only, the way the admin routes it (docs/jmap-shipments.md).
+    smtp.parcels().configure(config.shipments.lookup.clone());
+    smtp.parcels().set_transport(Arc::new(uwumail_smtp::parcels::EgressTransport(egress.clone())));
+    tasks.spawn(uwumail_smtp::parcels::run_parcel_lookups(smtp.clone(), shutdown_rx.clone()));
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
     tasks.spawn(crate::migrate::run_migrations(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
@@ -138,6 +143,7 @@ pub async fn run(
     // Subscribed calendars, fetched again when their turn comes, the same way out as fetched mail.
     tasks.spawn(uwumail_dav::client::run_subscriptions(store.clone(), egress.clone(), shutdown_rx.clone()));
     let tls_report_egress = egress.clone();
+    let spamnet_egress = egress.clone();
     // Birthdays calendars for the contacts people had before there were any (docs/birthdays.md).
     let backfill_store = store.clone();
     tokio::spawn(async move {
@@ -374,6 +380,7 @@ pub async fn run(
     tasks.spawn(collect_garbage(store.clone(), smtp.clone(), shutdown_rx.clone()));
     // Once a day is over, the domains mail went to hear how TLS went (RFC 8460).
     tasks.spawn(uwumail_smtp::run_tls_reports(smtp.clone(), tls_report_egress, shutdown_rx.clone()));
+    tasks.spawn(uwumail_smtp::run_spamnet(smtp.clone(), spamnet_egress, shutdown_rx.clone()));
     tasks.spawn(flush_stats(store.clone(), shutdown_rx.clone()));
     tasks.spawn(clean_up_verifications(store.clone(), shutdown_rx.clone()));
     tasks.spawn(backups.clone().run(shutdown_rx.clone()));

@@ -1,6 +1,6 @@
 //! Parcels on their way to a person: found in their mail when it arrives or by a look back through
-//! earlier mail, added or followed by an app (docs/jmap-shipments.md). Kept per account, never
-//! fetched from a carrier by the server.
+//! earlier mail, added or followed by an app (docs/jmap-shipments.md). Kept per account; the
+//! carrier is asked by number only when the admin and the person allow it (`uwumail_smtp::parcels`).
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate};
 use chrono_tz::{Europe::Berlin, Tz};
@@ -28,12 +28,21 @@ pub const SHIPMENT_RESCAN_MAX_DAYS: i64 = 90;
 /// What a look back reaches when the person switches shipments on.
 pub const SHIPMENT_RESCAN_DEFAULT_DAYS: i64 = 14;
 const TEXT_MAX_CHARS: usize = 500;
+const SHOP_URL_MAX_BYTES: usize = 2048;
 const LOCATION_MAX_CHARS: usize = 200;
 const TITLE_MAX_CHARS: usize = 200;
 const NUMBER_MAX_CHARS: usize = 40;
 const CLIENT_MAX_CHARS: usize = 100;
 /// The preference that switches it (`"on"`, the default, or `"off"`).
 const PREFERENCE: &str = "shipments";
+/// The preference that lets the server ask carriers (`"on"`, the default, or `"off"`).
+const LOOKUP_PREFERENCE: &str = "shipmentLookup";
+/// Carriers are asked until this long after the last mail about a parcel, in days.
+pub const SHIPMENT_LOOKUP_DAYS: i64 = 30;
+/// An app may ask for one parcel by hand this often at most (`Shipment/refresh`).
+pub const SHIPMENT_REFRESH_SECS: i64 = 300;
+const LOOKUP_EVERY_SECS: i64 = 2 * 3600;
+const LOOKUP_OUT_FOR_DELIVERY_SECS: i64 = 30 * 60;
 
 /// Where a shipment waits to be picked up; `until` is a day like `2026-11-22`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,7 +59,7 @@ pub struct ShipmentEvent {
     pub status: ShipmentStatus,
     pub text: Option<String>,
     pub location: Option<String>,
-    /// `mail`, `ai` or `client`.
+    /// `mail`, `ai`, `client` or `carrier`.
     pub source: String,
     pub email_id: Option<i64>,
     pub client_name: Option<String>,
@@ -63,6 +72,8 @@ pub struct Shipment {
     pub carrier: String,
     pub number: Option<String>,
     pub tracking_url: Option<String>,
+    /// The shop's own tracking page, from authenticated mail only.
+    pub shop_tracking_url: Option<String>,
     pub title: Option<String>,
     pub merchant: Option<String>,
     pub order_ref: Option<String>,
@@ -77,6 +88,10 @@ pub struct Shipment {
     pub hidden: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    /// When the carrier was last asked, and what went wrong then: `notFound`, `unavailable` or
+    /// `rateLimited`.
+    pub looked_up_at: Option<i64>,
+    pub lookup_error: Option<String>,
     /// Oldest first.
     pub events: Vec<ShipmentEvent>,
 }
@@ -111,6 +126,43 @@ pub struct ShipmentUpdate {
     pub add_events: Vec<NewShipmentEvent>,
     /// Events an app added before, by `at` and status, to take back (`removeEvents`).
     pub remove_events: Vec<(i64, ShipmentStatus)>,
+}
+
+/// A parcel to ask its carrier about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShipmentLookup {
+    pub id: i64,
+    pub account_id: i64,
+    /// A [`Carrier::id`].
+    pub carrier: String,
+    pub number: String,
+}
+
+/// When a carrier expects to deliver: instants, `day_only` when it named only the day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShipmentExpected {
+    pub from: i64,
+    pub to: Option<i64>,
+    pub day_only: bool,
+}
+
+/// What a carrier said: its events and expected delivery, or an `error` (`notFound`,
+/// `unavailable`, `rateLimited`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShipmentLookupResult {
+    pub events: Vec<NewShipmentEvent>,
+    pub expected: Option<ShipmentExpected>,
+    pub error: Option<&'static str>,
+}
+
+/// Whether an app may have a parcel asked about now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShipmentRefresh {
+    Go(ShipmentLookup),
+    /// Asked by hand less than [`SHIPMENT_REFRESH_SECS`] ago.
+    TooSoon,
+    /// No number, a carrier nobody asks, or already delivered, returned or cancelled.
+    NotSupported,
 }
 
 /// A look back through earlier mail.
@@ -152,10 +204,14 @@ fn clipped(value: &str, max: usize) -> Option<String> {
 
 /// Whether shipments are switched on for an account (they are unless the person said no).
 pub(crate) fn enabled(conn: &Connection, account_id: i64) -> Result<bool> {
+    preference_on(conn, account_id, PREFERENCE)
+}
+
+fn preference_on(conn: &Connection, account_id: i64, key: &str) -> Result<bool> {
     let raw: Option<String> =
         conn.query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0)).optional()?;
     let preferences: Value = raw.and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default();
-    Ok(preferences.get(PREFERENCE).and_then(Value::as_str) != Some("off"))
+    Ok(preferences.get(key).and_then(Value::as_str) != Some("off"))
 }
 
 /// After the preferences changed: switched off deletes every shipment and the look back, switched
@@ -209,6 +265,38 @@ fn destroy(conn: &Connection, account_id: i64, id: i64) -> Result<i64> {
     Ok(modseq)
 }
 
+/// A person filed `email_id` as spam: what it told of shipments goes. A shipment only that mail (or
+/// the model reading it) made is deleted; one with a name, hidden, or with other events only loses
+/// the mail's events and has its status played again.
+pub(crate) fn forget_junk_mail(tx: &Connection, account_id: i64, email_id: i64) -> Result<()> {
+    let ids: Vec<i64> = {
+        let mut stmt = tx.prepare_cached(
+            "SELECT DISTINCT e.shipment_id FROM shipment_events e JOIN shipments s ON s.id = e.shipment_id
+             WHERE e.email_id = ?1 AND s.account_id = ?2 AND e.source IN ('mail', 'model')",
+        )?;
+        stmt.query_map(params![email_id, account_id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?
+    };
+    for id in ids {
+        tx.execute(
+            "DELETE FROM shipment_events WHERE shipment_id = ?1 AND email_id = ?2 AND source IN ('mail', 'model')",
+            params![id, email_id],
+        )?;
+        let keep: bool = tx.query_row(
+            "SELECT title IS NOT NULL OR hidden OR EXISTS (SELECT 1 FROM shipment_events WHERE shipment_id = ?1)
+             FROM shipments WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if keep {
+            replay(tx, id)?;
+            changed(tx, account_id, id, "updated")?;
+        } else {
+            destroy(tx, account_id, id)?;
+        }
+    }
+    Ok(())
+}
+
 /// The person's time zone: the one of their default calendar, else Europe/Berlin.
 pub(crate) fn timezone(conn: &Connection, account_id: i64) -> Result<Tz> {
     let text: Option<String> = conn
@@ -257,7 +345,8 @@ fn status_of(value: &str) -> rusqlite::Result<ShipmentStatus> {
 }
 
 const COLUMNS: &str = "id, carrier, number, tracking_url, title, merchant, order_ref, status, status_at, expected_day,
-     expected_from, expected_to, delivered_at, pickup_json, hidden, created_at, updated_at";
+     expected_from, expected_to, delivered_at, pickup_json, hidden, created_at, updated_at, shop_tracking_url,
+     looked_up_at, lookup_error";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<Shipment> {
     let pickup: Option<String> = row.get(13)?;
@@ -266,6 +355,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Shipment> {
         carrier: row.get(1)?,
         number: row.get(2)?,
         tracking_url: row.get(3)?,
+        shop_tracking_url: row.get(17)?,
         title: row.get(4)?,
         merchant: row.get(5)?,
         order_ref: row.get(6)?,
@@ -279,6 +369,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Shipment> {
         hidden: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
+        looked_up_at: row.get(18)?,
+        lookup_error: row.get(19)?,
         events: Vec::new(),
     })
 }
@@ -444,16 +536,34 @@ fn record_mail(
     };
     // The same shop may sign as „Apple“ and as „Apple Store“: one name starting the other counts.
     let order_of = |tx: &Connection, number_is_null: bool| -> Result<Vec<i64>> {
-        let Some(order_ref) = &order_ref else { return Ok(Vec::new()) };
-        let mut stmt = tx.prepare_cached(
-            "SELECT id FROM shipments WHERE account_id = ?1 AND order_ref = ?2
+        if let Some(order_ref) = &order_ref {
+            let mut stmt = tx.prepare_cached(
+                "SELECT id FROM shipments WHERE account_id = ?1 AND order_ref = ?2
                AND (?3 IS NULL OR merchant IS NULL OR merchant = ?3
                     OR substr(?3, 1, length(merchant) + 1) = merchant || ' '
                     OR substr(merchant, 1, length(?3) + 1) = ?3 || ' ')
                AND (?4 = 0 OR number IS NULL)
              ORDER BY id",
+            )?;
+            let rows = stmt.query_map(params![account_id, order_ref, merchant, number_is_null], |row| row.get(0))?;
+            let ids: Vec<i64> = rows.collect::<rusqlite::Result<_>>()?;
+            if !ids.is_empty() {
+                return Ok(ids);
+            }
+        }
+        // A shop may split one order (Amazon, by seller) and name another number in the shipping
+        // mail: the same quoted item in the subject of an open order of the last 30 days ties them.
+        // Only authenticated mail: an item name is easier to guess than an order number.
+        let Some(item) = quoted_item(subject).filter(|_| authenticated) else { return Ok(Vec::new()) };
+        let mut stmt = tx.prepare_cached(
+            "SELECT DISTINCT s.id FROM shipments s JOIN shipment_events e ON e.shipment_id = s.id
+             WHERE s.account_id = ?1 AND s.merchant = ?2 AND (?3 = 0 OR s.number IS NULL)
+               AND s.status NOT IN ('delivered', 'returned', 'cancelled') AND s.status_at >= ?4
+               AND e.email_id IS NOT NULL AND instr(e.text, ?5) > 0
+             ORDER BY s.id",
         )?;
-        let rows = stmt.query_map(params![account_id, order_ref, merchant, number_is_null], |row| row.get(0))?;
+        let since = received_at - 30 * 86_400;
+        let rows = stmt.query_map(params![account_id, merchant, number_is_null, since, item], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     };
 
@@ -554,6 +664,7 @@ fn record_mail(
             None => (None, None, None),
         };
         let pickup_json = pickup.as_ref().map(|pickup| serde_json::to_string(pickup).unwrap_or_default());
+        let shop = facts.shop_tracking_url.as_deref().filter(|url| authenticated && url.len() <= SHOP_URL_MAX_BYTES);
         tx.execute(
             "UPDATE shipments SET
                 carrier = CASE WHEN carrier = 'other' AND ?2 IS NOT NULL THEN ?2 ELSE carrier END,
@@ -563,13 +674,25 @@ fn record_mail(
                 expected_day = CASE WHEN ?6 IS NOT NULL AND (?9 OR expected_day IS NULL) THEN ?6 ELSE expected_day END,
                 expected_from = CASE WHEN ?6 IS NOT NULL AND (?9 OR expected_day IS NULL) THEN ?7 ELSE expected_from END,
                 expected_to = CASE WHEN ?6 IS NOT NULL AND (?9 OR expected_day IS NULL) THEN ?8 ELSE expected_to END,
-                pickup_json = CASE WHEN ?10 IS NOT NULL AND (?9 OR pickup_json IS NULL) THEN ?10 ELSE pickup_json END
+                pickup_json = CASE WHEN ?10 IS NOT NULL AND (?9 OR pickup_json IS NULL) THEN ?10 ELSE pickup_json END,
+                shop_tracking_url = CASE WHEN ?11 IS NOT NULL AND (?9 OR shop_tracking_url IS NULL) THEN ?11
+                                         ELSE shop_tracking_url END
              WHERE id = ?1",
-            params![id, carrier, tracking, merchant, order_ref, day, from, to, newest, pickup_json],
+            params![id, carrier, tracking, merchant, order_ref, day, from, to, newest, pickup_json, shop],
         )?;
         last = Some(changed(tx, account_id, id, if created { "created" } else { "updated" })?);
     }
     Ok(last)
+}
+
+/// The item a subject names in quotes („Wasserkocher“ or "Wasserkocher"), quotes included, when
+/// it is long enough to tell one item from another.
+fn quoted_item(subject: &str) -> Option<&str> {
+    let (open, close) = [('„', '“'), ('"', '"'), ('“', '”')].into_iter().find(|(open, _)| subject.contains(*open))?;
+    let start = subject.find(open)?;
+    let inner = start + open.len_utf8();
+    let end = inner + subject[inner..].find(close)? + close.len_utf8();
+    (subject[inner..end - close.len_utf8()].chars().count() >= 4).then(|| &subject[start..end])
 }
 
 /// The link to follow a shipment: the carrier's own page, else the mail's (which `shipment` only
@@ -900,6 +1023,158 @@ impl Store {
         Ok(gone.len())
     }
 
+    /// Whether the person lets the server ask carriers about their parcels (it does unless they
+    /// said no, or switched shipments off). The admin's side is `uwumail_smtp::Parcels`.
+    pub async fn shipment_lookup_enabled(&self, account_id: i64) -> Result<bool> {
+        if !self.shipments_allowed() {
+            return Ok(false);
+        }
+        self.read(move |conn| Ok(enabled(conn, account_id)? && preference_on(conn, account_id, LOOKUP_PREFERENCE)?))
+            .await
+    }
+
+    /// Up to `limit` parcels of these `carriers` due to be asked about at `now`, the longest
+    /// waiting first: open, with a number, of an account that allows it, and with a mail about
+    /// them in the last [`SHIPMENT_LOOKUP_DAYS`].
+    pub async fn shipment_lookups_due(
+        &self,
+        carriers: Vec<&'static str>,
+        now: i64,
+        limit: i64,
+    ) -> Result<Vec<ShipmentLookup>> {
+        if !self.shipments_allowed() || carriers.is_empty() {
+            return Ok(Vec::new());
+        }
+        let carriers = serde_json::to_string(&carriers).unwrap_or_else(|_| "[]".into());
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT s.id, s.account_id, s.carrier, s.number FROM shipments s JOIN accounts a ON a.id = s.account_id
+                 WHERE s.number IS NOT NULL AND s.carrier IN (SELECT value FROM json_each(?1))
+                   AND s.status NOT IN ('delivered', 'returned', 'cancelled')
+                   AND coalesce(s.lookup_due_at, 0) <= ?2
+                   AND coalesce((SELECT max(e.at) FROM shipment_events e
+                                 WHERE e.shipment_id = s.id AND e.source IN ('mail', 'ai')), s.created_at) >= ?3
+                   AND a.deleted_at IS NULL
+                   AND (NOT json_valid(a.preferences)
+                        OR (coalesce(json_extract(a.preferences, '$.shipments'), '') != 'off'
+                            AND coalesce(json_extract(a.preferences, '$.shipmentLookup'), '') != 'off'))
+                 ORDER BY coalesce(s.lookup_due_at, 0), s.id LIMIT ?4",
+            )?;
+            let rows = stmt.query_map(params![carriers, now, now - SHIPMENT_LOOKUP_DAYS * 86_400, limit], |row| {
+                Ok(ShipmentLookup {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    carrier: row.get(2)?,
+                    number: row.get(3)?,
+                })
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
+    /// Puts what a carrier said at `now` into a shipment: its events with source `carrier`, its
+    /// expected delivery, and when to ask next (30 minutes when out for delivery, else 2 hours).
+    /// A shipment deleted meanwhile is left alone.
+    pub async fn record_shipment_lookup(
+        &self,
+        account_id: i64,
+        id: i64,
+        now: i64,
+        result: ShipmentLookupResult,
+    ) -> Result<()> {
+        let modseq = self
+            .write(move |tx| {
+                let found: bool = tx.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM shipments WHERE id = ?1 AND account_id = ?2)",
+                    params![id, account_id],
+                    |row| row.get(0),
+                )?;
+                if !found {
+                    return Ok(None);
+                }
+                let mut events = result.events;
+                events.sort_by_key(|event| event.at);
+                for event in &events {
+                    let event = ShipmentEvent {
+                        at: event.at,
+                        status: event.status,
+                        text: event.text.as_deref().and_then(|text| clipped(text, TEXT_MAX_CHARS)),
+                        location: event.location.as_deref().and_then(|location| clipped(location, LOCATION_MAX_CHARS)),
+                        source: "carrier".into(),
+                        email_id: None,
+                        client_name: None,
+                    };
+                    add_event(tx, id, &event)?;
+                }
+                if let Some(expected) = result.expected {
+                    let tz = timezone(tx, account_id)?;
+                    let local = |at: i64| DateTime::from_timestamp(at, 0).map(|at| at.with_timezone(&tz));
+                    if let Some(from) = local(expected.from) {
+                        let to = expected.to.and_then(local).filter(|to| to.date_naive() == from.date_naive());
+                        let (from_time, to_time) = if expected.day_only {
+                            (None, None)
+                        } else {
+                            (Some(from.format("%H:%M").to_string()), to.map(|to| to.format("%H:%M").to_string()))
+                        };
+                        tx.execute(
+                            "UPDATE shipments SET expected_day = ?2, expected_from = ?3, expected_to = ?4 WHERE id = ?1",
+                            params![id, from.date_naive().to_string(), from_time, to_time],
+                        )?;
+                    }
+                }
+                let status: String = tx.query_row("SELECT status FROM shipments WHERE id = ?1", [id], |row| row.get(0))?;
+                let every = if status_of(&status)? == ShipmentStatus::OutForDelivery {
+                    LOOKUP_OUT_FOR_DELIVERY_SECS
+                } else {
+                    LOOKUP_EVERY_SECS
+                };
+                tx.execute(
+                    "UPDATE shipments SET looked_up_at = ?2, lookup_error = ?3, lookup_due_at = ?4 WHERE id = ?1",
+                    params![id, now, result.error, now + every],
+                )?;
+                changed(tx, account_id, id, "updated").map(Some)
+            })
+            .await?;
+        if let Some(modseq) = modseq {
+            self.notify_change(account_id, modseq);
+        }
+        Ok(())
+    }
+
+    /// Claims a parcel for an app's `Shipment/refresh` at `now`, if its carrier is one of
+    /// `carriers`: at most once per [`SHIPMENT_REFRESH_SECS`].
+    pub async fn claim_shipment_refresh(
+        &self,
+        account_id: i64,
+        id: i64,
+        now: i64,
+        carriers: Vec<&'static str>,
+    ) -> Result<ShipmentRefresh> {
+        self.write(move |tx| {
+            let row: Option<(String, Option<String>, String, Option<i64>)> = tx
+                .query_row(
+                    "SELECT carrier, number, status, refreshed_at FROM shipments WHERE id = ?1 AND account_id = ?2",
+                    params![id, account_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            let Some((carrier, number, status, refreshed_at)) = row else {
+                return Err(StoreError::NotFound(format!("shipment {id}")));
+            };
+            let done = status_of(&status)?.is_done();
+            let Some(number) = number.filter(|_| carriers.contains(&carrier.as_str()) && !done) else {
+                return Ok(ShipmentRefresh::NotSupported);
+            };
+            if refreshed_at.is_some_and(|at| at > now - SHIPMENT_REFRESH_SECS) {
+                return Ok(ShipmentRefresh::TooSoon);
+            }
+            tx.execute("UPDATE shipments SET refreshed_at = ?2 WHERE id = ?1", params![id, now])?;
+            Ok(ShipmentRefresh::Go(ShipmentLookup { id, account_id, carrier, number }))
+        })
+        .await
+    }
+
     /// Starts a look back over the last `days` (1 to [`SHIPMENT_RESCAN_MAX_DAYS`]), from the start
     /// again if one is running.
     pub async fn start_shipment_rescan(&self, account_id: i64, days: i64) -> Result<ShipmentRescan> {
@@ -1054,6 +1329,7 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
             carrier: (!numbers.is_empty()).then_some(Carrier::Dhl),
             numbers: numbers.iter().map(|number| number.to_string()).collect(),
             tracking_url: None,
+            shop_tracking_url: None,
             status,
             expected: None,
             merchant: Some("Beispielshop".into()),
@@ -1134,6 +1410,45 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert_eq!(first.status_at, t + 3600);
         assert_eq!(first.delivered_at, None);
         assert_eq!(first.events.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn a_split_order_follows_its_item() {
+        let (store, _dir, account) = setup().await;
+        let t = 1_794_699_000;
+        let order = mail(&store, account).await;
+        let subject = "Bestellt: „Pulsgurt M-XXL…“ und 1 mehr Artikel";
+        store
+            .record_shipment_mail(account, order, t, subject.into(), facts(&[], None, Some("A-1")), true)
+            .await
+            .unwrap();
+        // Shipped under the second order number of the split: the same item still ties it.
+        let shipped = mail(&store, account).await;
+        let facts_b = facts(&[], Some(ShipmentStatus::Shipped), Some("B-2"));
+        store
+            .record_shipment_mail(account, shipped, t + 60, "Versendet: „Pulsgurt M-XXL…“".into(), facts_b, true)
+            .await
+            .unwrap();
+        let all = store.shipments(account, None).await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].status, ShipmentStatus::Shipped);
+        // Another item of another order stays apart.
+        let other = mail(&store, account).await;
+        let facts_c = facts(&[], Some(ShipmentStatus::Shipped), Some("C-3"));
+        store
+            .record_shipment_mail(account, other, t + 120, "Versendet: „Wasserkocher“".into(), facts_c, true)
+            .await
+            .unwrap();
+        assert_eq!(store.shipments(account, None).await.unwrap().len(), 2);
+        // An unauthenticated mail naming the same item does not join it.
+        let forged = mail(&store, account).await;
+        let facts_d = facts(&[], Some(ShipmentStatus::Shipped), Some("D-4"));
+        store
+            .record_shipment_mail(account, forged, t + 180, "Versendet: „Pulsgurt M-XXL…“".into(), facts_d, false)
+            .await
+            .unwrap();
+        assert_eq!(store.shipments(account, None).await.unwrap().len(), 3);
+        assert_eq!(quoted_item("Ein \"Ab\""), None, "too short to tell items apart");
     }
 
     #[tokio::test]
@@ -1292,5 +1607,42 @@ END:VTIMEZONE\r\nEND:VCALENDAR\r\n";
         assert_eq!(all.len() as i64, MAX_PER_ACCOUNT);
         assert!(all.iter().all(|s| s.number.as_deref() != Some("X1")), "the oldest gave way");
         assert!(all.iter().any(|s| s.number.as_deref() == Some("00340434000000000009")));
+    }
+
+    #[tokio::test]
+    async fn spam_takes_its_shipments_along() {
+        use crate::{EmailUpdate, KeywordsChange, MailboxesChange};
+        let (store, _dir, account) = setup().await;
+        let t = 1_794_699_000;
+        let junk = |id: i64| EmailUpdate {
+            id,
+            keywords: KeywordsChange::Patch(vec![("$junk".into(), true)]),
+            mailboxes: MailboxesChange::Keep,
+        };
+        // Only the fake mail knew this one: it goes.
+        let fake = mail(&store, account).await;
+        let mut lone = facts(&["00340434000000000011"], None, None);
+        lone.shop_tracking_url = Some("https://www.shop.example/sendungsverfolgung/?order=1".into());
+        store.record_shipment_mail(account, fake, t, "Paket".into(), lone, true).await.unwrap();
+        assert_eq!(
+            store.shipments(account, None).await.unwrap()[0].shop_tracking_url.as_deref(),
+            Some("https://www.shop.example/sendungsverfolgung/?order=1")
+        );
+        // Two mails tell of this one: it stays with the other's status.
+        let real = mail(&store, account).await;
+        let both = facts(&["00340434000000000012"], None, None);
+        store.record_shipment_mail(account, real, t, "Versandt".into(), both, true).await.unwrap();
+        let second = mail(&store, account).await;
+        let out = facts(&["00340434000000000012"], Some(ShipmentStatus::OutForDelivery), None);
+        store.record_shipment_mail(account, second, t + 60, "Heute".into(), out, true).await.unwrap();
+
+        for result in store.update_emails(account, vec![junk(fake), junk(second)]).await.unwrap() {
+            result.unwrap();
+        }
+        let left = store.shipments(account, None).await.unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].number.as_deref(), Some("00340434000000000012"));
+        assert_eq!(left[0].status, ShipmentStatus::Shipped);
+        assert_eq!(left[0].email_ids(), vec![real]);
     }
 }
