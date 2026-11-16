@@ -17,12 +17,15 @@ pub(crate) mod links;
 mod lists;
 mod parcels;
 pub mod phishing;
+pub(crate) mod spamnet;
 mod uri_lists;
 mod words;
 
 pub use bayes::run_learning;
 pub use feeds::{FEEDS, Feed, feed, run_list_updates};
 pub(crate) use feeds::{refresh_feed, refresh_word_source};
+pub use spamnet::{SpamNetStatus, run_spamnet};
+pub(crate) use spamnet::{spamnet_status, sync_spamnet};
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
@@ -176,6 +179,9 @@ pub struct Score {
     /// points, so this is kept for the history rather than for the score.
     #[serde(skip)]
     pub(crate) reverse_name: Option<String>,
+    /// What the Spam-Netz would get to hear of this message, when it is on.
+    #[serde(skip)]
+    pub(crate) spamnet: Option<spamnet::Features>,
 }
 
 /// The compiled word lists and built-in lists, kept between messages.
@@ -416,7 +422,9 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
         link_hosts,
         files,
         from_domain,
+        from_address,
         reply_to_domain,
+        digests,
         ..
     } = examination;
 
@@ -493,6 +501,14 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
     }
     if let Some(host) = link_hosts.iter().find_map(|host| feeds::listed(&known.redirectors, host)) {
         score.add("LINK_SHORTENER", 0.5, Some(host.to_owned()));
+    }
+    let spamnet_config = ctx.spamnet();
+    if !outbound && (spamnet_config.fetch || spamnet_config.report) {
+        let features = spamnet::Features::of(digests, &link_hosts, ip, from_address.as_deref());
+        if spamnet_config.fetch {
+            spamnet::add_findings(ctx, &features, &mut score).await;
+        }
+        score.spamnet = Some(features);
     }
     score.subject = subject;
     score.text = text;

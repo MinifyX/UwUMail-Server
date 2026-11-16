@@ -31,7 +31,10 @@ pub(crate) struct Examination {
     pub link_hosts: Vec<String>,
     pub files: Vec<(String, [String; 2])>,
     pub from_domain: Option<String>,
+    pub from_address: Option<String>,
     pub reply_to_domain: Option<String>,
+    /// The Spam-Netz digests of the visible text.
+    pub digests: Vec<String>,
 }
 
 fn add(hits: &mut Vec<Hit>, rule: &'static str, points: f32, detail: Option<String>) {
@@ -191,7 +194,10 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
             (name, [hex::encode(Md5::digest(contents)), hex::encode(Sha256::digest(contents))])
         })
         .collect();
+    let from_address = from.and_then(|from| from.address.as_deref()).map(str::to_owned);
     Examination {
+        digests: super::spamnet::digests(&text),
+        from_address,
         hits,
         link_domains: links::domains_to_look_up(&body.links),
         tokens,

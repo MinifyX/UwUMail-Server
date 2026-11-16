@@ -1778,6 +1778,11 @@ pub(crate) async fn receive(
             virus: None,
         };
         note_spam(&ctx, &live.spam.log, note).await;
+        // Only what the score refuses: a person's blocked senders are their own business.
+        if server_rejects && let Some(features) = score.as_ref().and_then(|score| score.spamnet.as_ref()) {
+            let authenticated = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
+            spam::spamnet::report_refused(&ctx, features, authenticated).await;
+        }
         ctx.store.stats().count(uwumail_store::Stat::RefusedSpam);
         return "550 5.7.1 This message looks like spam\r\n".into();
     }
@@ -2368,6 +2373,12 @@ pub(crate) async fn receive(
             virus: None,
         };
         note_spam(&ctx, &live.spam.log, note).await;
+    }
+
+    // What the Spam-Netz would hear of it, should a person mark it as junk or not junk later.
+    if let (Some(features), Some(stored)) = (score.as_ref().and_then(|score| score.spamnet.as_ref()), &stored) {
+        let authenticated = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
+        spam::spamnet::keep(&ctx, stored.clone(), features, authenticated).await;
     }
 
     // Count the message for whoever sent it, so a sender that keeps behaving gets the benefit

@@ -1385,7 +1385,7 @@ export interface EgressView {
   /** In unix seconds. */
   lastProxyFailure: { at: number; error: string } | null;
   /** Which kinds of request take the proxy while one is set. */
-  routes?: { pictures: boolean; updates: boolean; fetch: boolean; assist: boolean };
+  routes?: { pictures: boolean; updates: boolean; fetch: boolean; assist: boolean; spamnet?: boolean };
 }
 
 export type VpnKind = "wireguard" | "openvpn";
@@ -1638,6 +1638,23 @@ export interface FeedsView {
   abuseChKeySet: boolean;
   /** Only after fetching one now: why it failed. */
   error?: string | null;
+}
+
+/** The shared Spam-Netz: whether it is on, and how the last fetch and the last reports went. */
+export interface SpamNetStatus {
+  fetch: boolean;
+  report: boolean;
+  registered: boolean;
+  fetchedAt: number | null;
+  fetchError: string | null;
+  /** Entries of the list in force. */
+  entries: number;
+  reportedAt: number | null;
+  reportError: string | null;
+  /** Reports the hub took in the last run. */
+  sent: number;
+  /** Reports waiting to be sent. */
+  queued: number;
 }
 
 export interface LearnedFromFolders {

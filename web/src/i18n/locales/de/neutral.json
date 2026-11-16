@@ -3814,6 +3814,30 @@
         "block": "Blockiert",
         "points": "Gibt Punkte"
       }
+    },
+    "spamnet": {
+      "title": "Spam-Netz",
+      "intro": "Eine Liste, die UwUMail-Server gemeinsam führen: Was viele von ihnen als Spam erkannt haben, gibt auch hier Punkte. Abrufen und Melden sind getrennt; beides ist aus, bis du es einschaltest.",
+      "fetchLabel": "Gemeinsame Liste nutzen",
+      "fetchHint": "Alle 15 Minuten holt der Server die Liste. Ein Treffer gibt bis zu 4 Punkte je Art, zusammen höchstens 6.",
+      "reportLabel": "Spam melden",
+      "reportHint": "Schiebt jemand eine Mail in den Spam-Ordner oder heraus oder lehnt der Filter eine Mail ab, meldet der Server ihre Fingerabdrücke. Nie Mail von deinen eigenen Domains und nie authentifizierte Mail von Kontakten.",
+      "sharedTitle": "Was geteilt wird",
+      "shared": "Fingerabdrücke des Textes (Hashes, aus denen sich der Text nicht zurückgewinnen lässt), die Domains von Links, die Adresse des einliefernden Servers und die Domain des Absenders. Dazu einmalig der Name dieses Servers zur Anmeldung.",
+      "notSharedTitle": "Was nie geteilt wird",
+      "notShared": "Empfänger, der Inhalt, Betreffs, Anhänge, die volle Adresse des Absenders und wer eine Mail markiert hat.",
+      "notYet": "Noch nicht",
+      "fetched_one": "{{entries}} Eintrag in der Liste · geholt {{when}}",
+      "fetched_other": "{{entries}} Einträge in der Liste · geholt {{when}}",
+      "fetchFailed": "Letzter Abruf fehlgeschlagen: {{error}}",
+      "reported_one": "{{sent}} Meldung gesendet {{when}} · {{queued}} warten",
+      "reported_other": "{{sent}} Meldungen gesendet {{when}} · {{queued}} warten",
+      "reportFailed": "Letzte Meldungen fehlgeschlagen: {{error}}",
+      "sync": "Jetzt abgleichen",
+      "synced": "Mit dem Spam-Netz abgeglichen.",
+      "syncFailed": "Abgleich fehlgeschlagen: {{error}}",
+      "newsTitle": "Spam-Netz",
+      "newsText": "UwUMail-Server können jetzt teilen, was sie als Spam erkennen. Aus, bis ein Admin es einschaltet, unter Spamfilter → Listen."
     }
   },
   "vpn": {
@@ -3938,7 +3962,10 @@
       "direct": "Direkt",
       "assist": "Anfragen an KI-Anbieter",
       "assistHint": "Nur Anbieter im Internet. Einer in deinem lokalen Netz, etwa ein Ollama, wird immer direkt erreicht.",
-      "assistShort": "KI-Anbieter"
+      "assistShort": "KI-Anbieter",
+      "spamnet": "Anfragen an das Spam-Netz",
+      "spamnetHint": "Abruf der gemeinsamen Liste und Meldungen. Das Spam-Netz sieht dann die Adresse des VPN statt die des Servers.",
+      "spamnetShort": "Spam-Netz"
     },
     "remove": {
       "title": "VPN entfernen?",

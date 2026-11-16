@@ -81,6 +81,7 @@ mod sieve;
 mod signatures;
 mod spam;
 mod spam_log;
+mod spamnet;
 mod stats;
 mod suggestions;
 mod tls_rpt;
@@ -257,6 +258,9 @@ pub use spam::{
 pub use spam_log::{
     FetchedVerdicts, NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit,
     SpamLogRecipient,
+};
+pub use spamnet::{
+    SPAMNET_FEATURES_DAYS, SPAMNET_QUEUE_DAYS, SpamNetEntry, SpamNetFeatures, SpamNetRemoved, SpamNetReport,
 };
 pub use stats::{STATS_RETENTION_DAYS, Stat, Stats, StatsDay};
 pub use suggestions::AddressUse;

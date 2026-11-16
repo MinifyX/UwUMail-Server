@@ -4763,6 +4763,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "icu_normalizer",
  "idna",
  "image",
  "lettre",

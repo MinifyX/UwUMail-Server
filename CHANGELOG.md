@@ -15,6 +15,13 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   `PARCEL_FOREIGN_LINK` (docs/spam-filter.md). A shipping mail the filter doubts is no parcel
   unless its sender is authenticated, and moving a mail to Junk removes the parcels that came only
   from it.
+- Spam-Netz: the server can fetch a list that UwUMail servers keep together and score mail by it
+  (`SPAMNET_DIGEST`, `SPAMNET_DOMAIN`, `SPAMNET_IP`, `SPAMNET_FROM`, at most 6 points together),
+  and report what people move into or out of Junk and what the filter refuses. Only text
+  fingerprints, link domains, the sending server's address and the sender's domain leave the
+  server; never recipients or content, never mail from own domains or authenticated mail from
+  contacts. Both off by default (`[spamnet] fetch`, `report`); portal card under *Spamfilter →
+  Listen*, `egress.spamnet` on the VPN page, privacy text in docs/spam-filter.md. Migration 0098.
 
 ## 0.37.3
 
