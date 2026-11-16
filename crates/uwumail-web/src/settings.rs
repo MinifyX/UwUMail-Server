@@ -124,8 +124,13 @@ pub const SETTINGS: &[SettingSpec] = &[
     // The shared cache of remote pictures in messages, in megabytes; 0 keeps none (docs/jmap-remote.md).
     spec("egress.image_cache_mb", SettingKind::Integer { min: 0, max: 102_400 }),
     spec("egress.assist", SettingKind::Bool),
+    spec("egress.spamnet", SettingKind::Bool),
     // Daily TLS reports (RFC 8460) to the domains mail went to, when they ask for them.
     spec("reports.send_tls_reports", SettingKind::Bool),
+    // The shared Spam-Netz (docs/spam.md): its list in the filter, and reports to it.
+    spec("spamnet.fetch", SettingKind::Bool),
+    spec("spamnet.report", SettingKind::Bool),
+    spec("spamnet.url", SettingKind::Text),
     // Prometheus metrics under /metrics (docs/metrics.md).
     spec("metrics.enabled", SettingKind::Bool),
     spec("metrics.token", SettingKind::Secret),

@@ -43,6 +43,7 @@ pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<
         "log": { "loki": config.log.loki },
         "egress": config.egress,
         "reports": config.reports,
+        "spamnet": config.spamnet,
         "metrics": config.metrics,
         "auth": config.auth,
         "fetch": config.fetch,
@@ -80,6 +81,7 @@ impl SettingsBackend for ServerSettings {
             .map_err(|err| err.to_string())?;
         self.smtp.set_brand(config.brand.clone());
         self.smtp.set_reports(&config.reports);
+        self.smtp.set_spamnet(&config.spamnet);
         self.loki.set_target(config.log.loki.target(&config.hostname)?);
         self.egress.reconfigure(&config.egress)?;
         self.metrics.configure(&config.metrics)?;

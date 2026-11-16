@@ -23,7 +23,7 @@ const MAX_DOMAINS: usize = 20;
 /// Reports per request, as the hub takes them.
 const BATCH: usize = 100;
 /// Requests of reports per run at most, so a long queue does not take the whole run.
-const BATCHES_PER_RUN: usize = 20;
+const BATCHES_PER_RUN: usize = 5;
 const TICK: Duration = Duration::from_secs(15 * 60);
 const MAX_ANSWER: usize = 16 * 1024 * 1024;
 const KEY_SETTING: &str = "spamnet.key";
@@ -69,8 +69,8 @@ pub(crate) fn digests(text: &str) -> Vec<String> {
             paragraphs.push((length, normalized));
         }
     }
-    // Longest first; equal lengths keep the order of the text (sort_by is stable).
-    paragraphs.sort_by(|a, b| b.0.cmp(&a.0));
+    // Longest first; equal lengths keep the order of the text (the sort is stable).
+    paragraphs.sort_by_key(|paragraph| std::cmp::Reverse(paragraph.0));
     let mut kept: Vec<String> = Vec::new();
     for (_, paragraph) in paragraphs {
         if kept.len() == 4 {
