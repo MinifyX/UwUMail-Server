@@ -3,6 +3,23 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+- Parcel lookup: the server can ask DHL/Deutsche Post, UPS and FedEx (with their free developer keys)
+  and DPD, Hermes and GLS (without a key, unofficial) how a parcel is doing. Off by default; switch it
+  on under *Settings → Apps & webmail → Parcel lookup*. Only the tracking number goes to the carrier's
+  fixed address, never a link from a mail. Every 2 hours (every 30 minutes while out for delivery), up
+  to 30 days after the last mail, never after delivery. Each account can switch it off under *My
+  account → Parcels*; the questions can take the VPN (`egress.parcels`). **Operators: mention it in
+  your privacy policy before switching it on.**
+- JMAP: `lookupCarriers` in the shipments capability, `lookedUpAt` and `lookupError` on `Shipment`,
+  and `Shipment/refresh` to ask the carrier now (at most every 5 minutes per parcel). Events from the
+  carrier have `source: "carrier"`.
+- Spam: a doubtful mail (suspicious, or posing as a carrier or shop without passing its checks) about
+  a parcel number the carrier clearly does not know goes to Junk, noted as `PARCEL_NUMBER_UNKNOWN`.
+  An error or timeout at the carrier changes nothing.
+- Portal: a one-time card on the overview about what is new.
+
 ## 0.37.3
 
 - Updates page: *Neu starten* only shows when the machine (or the gateway VPS) needs a restart, next
