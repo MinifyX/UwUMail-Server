@@ -212,3 +212,60 @@ fn real_mail() {
     println!("spam: {}, greylisted or worse: {caught}", spam.len());
     println!("rules on wanted mail: {rules:?}");
 }
+
+/// The same measure on public corpora kept outside the repository (spam traps, phishing, ham, and
+/// carrier mails): a folder with `spam/`, `ham/` and `parcel/`, each full of `.eml` files. Reports how
+/// much spam the rules catch, how much ham they hold back, and on which mails a parcel card would be
+/// made: on spam and ham every card is a false one, on `parcel/` the missing ones are missed parcels.
+#[test]
+#[ignore = "needs UWUMAIL_PUBLIC_CORPUS"]
+fn public_corpus() {
+    let Ok(root) = std::env::var("UWUMAIL_PUBLIC_CORPUS") else { return };
+    let verbose = std::env::var_os("UWUMAIL_CORPUS_VERBOSE").is_some();
+    for class in ["spam", "ham", "parcel"] {
+        let Ok(dir) = std::fs::read_dir(Path::new(&root).join(class)) else { continue };
+        let mut files: Vec<_> = dir.filter_map(|entry| Some(entry.ok()?.path())).collect();
+        files.sort();
+        let (mut grey, mut junk, mut cards, mut rules) = (0, 0, 0, BTreeMap::<&str, usize>::new());
+        for file in &files {
+            let Ok(raw) = std::fs::read(file) else { continue };
+            let name = file.file_name().unwrap().to_string_lossy();
+            // Content alone: every sender counts as verified, and "now" is when the mail was sent, as
+            // these corpora are years old. Cards likewise as from a trusted sender, the worst case.
+            let sent =
+                mail_parser::MessageParser::default().parse(&raw).and_then(|m| m.date().map(|d| d.to_timestamp()));
+            let auth = Authentication { sender_verified: true, ..Authentication::default() };
+            let score = score_offline(&raw, sent.map_or(NOW, |sent| sent + 600), auth);
+            grey += usize::from(score.points >= GREYLIST);
+            junk += usize::from(score.points >= JUNK);
+            for hit in &score.hits {
+                *rules.entry(hit.rule).or_default() += 1;
+            }
+            let mut mail = uwumail_labels::Mail::parse(&raw);
+            mail.from_trusted = true;
+            let card = uwumail_labels::shipment(&mail).filter(|facts| facts.confidence >= 0.8);
+            cards += usize::from(card.is_some());
+            match (class, &card) {
+                ("parcel", None) => println!("missed parcel {name}: {}", mail.subject),
+                ("spam" | "ham", Some(facts)) => println!(
+                    "false card {class} {name}: {} {:?} {:?} {:?} ({:.1} {})",
+                    mail.subject,
+                    facts.carrier,
+                    facts.numbers,
+                    facts.order_ref,
+                    score.points,
+                    score.tests()
+                ),
+                _ => {}
+            }
+            if verbose && ((class == "ham" && score.points >= GREYLIST) || (class != "ham" && score.points < GREYLIST))
+            {
+                println!("{class} {name}: {:.1} {}", score.points, score.tests());
+            }
+        }
+        println!("{class}: {} mails, greylisted or worse {grey}, junk {junk}, parcel cards {cards}", files.len());
+        let mut top: Vec<_> = rules.into_iter().collect();
+        top.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+        println!("{class} rules: {:?}", &top[..top.len().min(25)]);
+    }
+}

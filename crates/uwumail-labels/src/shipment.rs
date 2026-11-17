@@ -311,6 +311,21 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
     if facts.mass_mail() && facts.sales.len() >= 2 {
         return None;
     }
+    // These make no card, but their numbers are still read: delivery asks the carrier about an
+    // unauthenticated mail's numbers and junks it if the carrier never heard of them, and the model
+    // is not asked either (confidence 0, security review 0.38.1).
+    // A carrier's name on mail from somewhere else is an impostor's: carriers write from their own,
+    // authenticated domains. Fees for a parcel are the carrier's to ask, and phishing's.
+    let carrier_sends = facts.authenticated && Carrier::of_host(mail.from_domain()).is_some();
+    let from_name = fold(&mail.from_name);
+    let mut no_card = (!carrier_sends
+        && (CARRIER_NAMES.iter().any(|name| has_word(&from_name, name))
+            || from_name.contains("fed-ex")
+            || find_any(text, FEE_WORDS).is_some()))
+        // A parcel the person sends themselves, a request to "verify your details", a quote.
+        || find_any(subject, NO_SHIPMENT_SUBJECT_WORDS).is_some()
+        // A subject with the recipient's own address in it is a mass mailing's.
+        || mail.to.iter().any(|to| !to.is_empty() && subject.contains(to.as_str()));
     let status = status_of(subject).or_else(|| status_of(text));
     // A label for a return the person still has to send is no shipment yet.
     if status != Some(ShipmentStatus::Returned)
@@ -331,44 +346,57 @@ pub(crate) fn shipment_of(mail: &Mail, subject: &str, text: &str, facts: &Facts)
             add(link.carrier.clone(), number.clone(), 0.95, &mut numbers);
         }
     }
+    let order_ref = amazon_order(subject)
+        .or_else(|| amazon_order(text))
+        .or_else(|| order_number(subject))
+        .or_else(|| order_number(text));
+    // Bare digits count beside a second sign: a link to the carrier, the carrier as sender, or the
+    // shop's order they belong to. Phishing copies real number formats.
+    let vouched = !links.is_empty() || carrier_sends || order_ref.is_some();
+    let mut guessed = false;
     for (_, word) in words(subject).chain(words(text)) {
         if let Some((carrier, number)) = own_number(word) {
             add(Carrier::from_name(carrier), number, 0.9, &mut numbers);
         }
     }
+    // Unvouched, a labelled number of an unauthenticated mail is still worth asking the carrier about.
     if numbers.is_empty()
+        && (vouched || !facts.authenticated)
         && !facts.mass_mail()
         && let Some((carrier, number)) = tracking(mail, subject, text)
     {
         add(Carrier::from_name(carrier), number.to_ascii_uppercase(), 0.85, &mut numbers);
+        guessed = !vouched;
     }
+    no_card |= guessed;
 
-    let order_ref = amazon_order(subject)
-        .or_else(|| amazon_order(text))
-        .or_else(|| order_number(subject))
-        .or_else(|| order_number(text));
     let order_subject = find_any(subject, ORDER_SUBJECT_WORDS).is_some() || find_any(subject, SHIPPING_WORDS).is_some();
     let mut confidence;
     if numbers.is_empty() {
         // An order confirmation or a shop's shipping notice without a number: by shop and order.
-        if order_ref.is_none()
-            || facts.mass_mail()
-            || !order_subject
-            || is_ticket(mail, subject, text)
-            || is_contract(subject, text)
+        if !no_card
+            && (order_ref.is_none()
+                || facts.mass_mail()
+                || !order_subject
+                || is_ticket(mail, subject, text)
+                || is_contract(subject, text))
         {
             return None;
         }
         confidence = 0.8;
     } else {
-        // An invoice that names the shipment in the small print.
-        if !order_subject && status.is_none() && find_any(subject, INVOICE_WORDS).is_some() {
-            return None;
-        }
+        // A number in a mail about something else: an invoice's small print, a shop's promotion.
+        // A carrier writes about nothing else, Amazon about much else.
+        let carrier_writes =
+            carrier_sends && matches!(Carrier::of_host(mail.from_domain()), Some(c) if c != Carrier::AmazonLogistics);
+        no_card |= !order_subject && status.is_none() && !carrier_writes;
         confidence = numbers.iter().map(|(_, _, c)| *c).fold(0.0, f32::max);
     }
     if !facts.authenticated {
         confidence -= 0.1;
+    }
+    if no_card {
+        confidence = 0.0;
     }
 
     let carrier = numbers
@@ -645,7 +673,50 @@ const STATUS_WORDS: &[(ShipmentStatus, &[&str])] = &[
 const RETURN_LABEL_WORDS: &[&str] =
     &["rücksendeetikett", "retourenlabel", "retourenschein", "rücksendelabel", "return label", "return shipping label"];
 
-const INVOICE_WORDS: &[&str] = &["rechnung", "invoice", "receipt", "beleg", "quittung"];
+/// Words in a subject that rule a shipment out: a parcel the person sends (DHL's receipt at the
+/// counter, a label bought online), a request to check one's details, a quote, an account notice.
+const NO_SHIPMENT_SUBJECT_WORDS: &[&str] = &[
+    "einlieferungsbeleg",
+    "einlieferungsquittung",
+    "online-frankierung",
+    "online frankierung",
+    "paketmarke",
+    "internetmarke",
+    "prüfen sie",
+    "überprüfen sie",
+    "bestätigen sie",
+    "aktualisieren sie",
+    "verify your",
+    "confirm your",
+    "review your",
+    "check your",
+    "update your",
+    "review requested",
+    "request for quote",
+    "quotation",
+    "your account",
+    "ihr konto",
+];
+
+/// A parcel waiting for money, folded. Not „Versandgebühr“: a shop's order names its shipping cost.
+const FEE_WORDS: &[&str] = &[
+    "zollgebühr",
+    "einfuhrabgabe",
+    "nachgebühr",
+    "zustellgebühr",
+    "lagergebühr",
+    "ausstehende gebühr",
+    "offene gebühr",
+    "customs fee",
+    "customs duty",
+    "redelivery fee",
+    "outstanding fee",
+    "additional shipping fee",
+    "amount due",
+];
+
+/// Carriers by name, each a word of its own, in a sender's name.
+const CARRIER_NAMES: &[&str] = &["dhl", "dpd", "hermes", "gls", "ups", "fedex", "deutsche post"];
 
 /// The most telling status `folded` names.
 fn status_of(folded: &str) -> Option<ShipmentStatus> {
@@ -887,7 +958,12 @@ fn order_number(folded: &str) -> Option<String> {
                 .take(MAX_REF_CHARS + 1)
                 .collect();
             let candidate = candidate.trim_matches('-');
-            if (3..=MAX_REF_CHARS).contains(&candidate.len()) && candidate.bytes().any(|b| b.is_ascii_digit()) {
+            // Not `1px` from a style sheet, not a date such as `2025-september-17`.
+            let letters = candidate.split(|c: char| !c.is_ascii_alphabetic()).map(str::len).max().unwrap_or(0);
+            if (4..=MAX_REF_CHARS).contains(&candidate.len())
+                && candidate.bytes().filter(u8::is_ascii_digit).count() >= 3
+                && letters < 5
+            {
                 return Some(candidate.to_ascii_uppercase());
             }
         }

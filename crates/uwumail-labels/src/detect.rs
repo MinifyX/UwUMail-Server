@@ -635,21 +635,61 @@ pub(crate) fn carrier_in(mail: &Mail, subject: &str, text: &str) -> Option<&'sta
     None
 }
 
+/// Words right before a bare tracking number, folded.
+const NUMBER_LABELS: &[&str] = &[
+    "sendungsnummer",
+    "sendungs-nr",
+    "sendungsnr",
+    "paketnummer",
+    "paket-nr",
+    "trackingnummer",
+    "tracking-nummer",
+    "tracking-nr",
+    "tracking number",
+    "tracking no",
+    "tracking id",
+    "tracking-id",
+    "tracking #",
+    "waybill",
+];
+
 /// A tracking number and its carrier: one that names its carrier, or a run of 10 to 20 digits
-/// beside a named carrier and a shipping word.
+/// right after a word such as „Sendungsnummer“ (or anywhere in the carrier's own mail), beside a named carrier and a shipping word. Never
+/// a run inside a link (a shop's `node=` ids) and never one for Amazon, whose own numbers are `TBA…`.
 pub(crate) fn tracking(mail: &Mail, subject: &str, text: &str) -> Option<(&'static str, String)> {
     if let Some(found) = own_tracking(subject).or_else(|| own_tracking(text)) {
         return Some(found);
     }
-    let carrier = carrier_in(mail, subject, text)?;
+    let carrier = carrier_in(mail, subject, text).filter(|carrier| *carrier != "Amazon")?;
     if find_any(subject, SHIPPING_WORDS).is_none() && find_any(text, SHIPPING_WORDS).is_none() {
         return None;
     }
-    let number = words(subject)
-        .chain(words(text))
-        .map(|(_, word)| word)
-        .find(|word| (10..=20).contains(&word.len()) && word.bytes().all(|b| b.is_ascii_digit()))?;
-    Some((carrier, number.to_owned()))
+    // Only an authenticated From is the carrier (security review 0.38.1).
+    let from_carrier = mail.from_trusted && crate::Carrier::of_host(mail.from_domain()).is_some();
+    [subject, text].into_iter().find_map(|folded| {
+        words(folded).find_map(|(at, word)| {
+            let fits = (10..=20).contains(&word.len())
+                && word.bytes().all(|b| b.is_ascii_digit())
+                && !folded[..at].ends_with(['=', '/', '&', '?'])
+                && (carrier != "DHL" || word.len() != 12 || dhl_ok(word));
+            let mut from = at.saturating_sub(24);
+            while !folded.is_char_boundary(from) {
+                from -= 1;
+            }
+            let before = &folded[from..at];
+            (fits && (from_carrier || find_any(before, NUMBER_LABELS).is_some())).then(|| (carrier, word.to_owned()))
+        })
+    })
+}
+
+/// The check digit of a 12-digit DHL parcel number: the first eleven digits weighted 4 and 9 by turns.
+pub(crate) fn dhl_ok(number: &str) -> bool {
+    let digits: Vec<u32> = number.chars().filter_map(|c| c.to_digit(10)).collect();
+    if digits.len() != 12 {
+        return false;
+    }
+    let sum: u32 = digits[..11].iter().enumerate().map(|(i, d)| d * if i % 2 == 0 { 4 } else { 9 }).sum();
+    (10 - sum % 10) % 10 == digits[11]
 }
 
 /// Words of an order on its way, in the subject: with them, shipping needs no carrier.

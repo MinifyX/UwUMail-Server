@@ -319,7 +319,8 @@ fn no_shipment() {
         &["From: Technik Beispiel <rechnung@technik.example>", "Subject: Ihre Rechnung RE-2026-0042"],
         "Anbei Ihre Rechnung über 49,90 €.\n\nHinweis: Die Ware ging mit DHL raus, Sendungsnummer 00340434161234567894.",
     );
-    assert_eq!(shipment(&invoice), None);
+    // No card; its number is still read for the carrier check.
+    assert!(shipment(&invoice).is_some_and(|facts| facts.confidence == 0.0));
 
     let newsletter = message(
         &[
@@ -449,4 +450,66 @@ fn shop_tracking_page_and_a_date_ending_the_sentence() {
     // Unauthenticated mail never gets a shop link.
     mail.from_trusted = false;
     assert_eq!(found(&mail).shop_tracking_url, None);
+}
+
+#[test]
+fn mails_that_only_look_like_parcels() {
+    let none = |headers: &[&str], text: &str| {
+        let mail = message(headers, text);
+        assert!(shipment(&mail).is_none_or(|facts| facts.confidence < 0.8), "{:?}", mail.subject);
+    };
+    // A shop's promotion whose links carry long ids, beside the words of a delivery.
+    none(
+        &["From: Amazon.de <prime@amazon.example>", "Subject: Willkommen bei Prime"],
+        "Kostenlose Lieferung mit DHL. https://www.amazon.example/b?node=12630126031 Jetzt entdecken.",
+    );
+    // A parcel the person sends: the receipt at the counter.
+    none(
+        &["From: DHL <noreply@dhl.example>", "Subject: Einlieferungsbeleg: Ihr Versand an der Packstation"],
+        "Ihre Sendung 00340434161234567893 wurde eingeliefert.",
+    );
+    // `1px` from a style sheet is no order number.
+    none(
+        &["From: Shop <info@shop.example>", "Subject: Ihre Bestellung"],
+        "td { border: 1px } Bestellung 1px Danke für Ihren Einkauf.",
+    );
+    // A carrier's name on mail from another domain, a fee, a request to check one's details.
+    none(
+        &["From: Fed-Ex <fedex@garden.example>", "Subject: Package missing - reschedule delivery"],
+        "Tracking Number 1Z999AA10123456784, signature required.",
+    );
+    none(
+        &["From: Support <noreply@app.example>", "Subject: Your DHL package is on its way"],
+        "Order 123456. DHL Express waybill no. 7140012563. Amount due: 1.65 USD.",
+    );
+    none(
+        &["From: Care <care@shop.example>", "Subject: Please verify your shipping details"],
+        "Order HF-8373652 is scheduled to ship on Tuesday.",
+    );
+    none(
+        &[
+            "From: George <a@shop.example>",
+            "To: jo@home.example",
+            "Subject: [jo@home.example] - Your receipt for order #651799218",
+        ],
+        "We confirm your order #651799218.",
+    );
+}
+
+#[test]
+fn a_shops_dhl_number_needs_its_check_digit() {
+    let with = |number: &str| {
+        message(
+            &["From: Shop <info@shop.example>", "Subject: Ihre Bestellung 4711 ist unterwegs"],
+            &format!("Ihre Bestellung 4711 geht mit DHL raus. Sendungsnummer: {number}"),
+        )
+    };
+    assert_eq!(found(&with("123456789016")).numbers, ["123456789016"]);
+    assert!(found(&with("123456789012")).numbers.is_empty());
+    // Bare digits with no word for a tracking number before them: the order alone.
+    let customer = message(
+        &["From: Shop <info@shop.example>", "Subject: Ihre Bestellung 4711 ist unterwegs"],
+        "Versand mit DHL. Kundennummer 123456789016.",
+    );
+    assert!(found(&customer).numbers.is_empty());
 }

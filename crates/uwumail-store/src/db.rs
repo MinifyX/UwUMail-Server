@@ -105,6 +105,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0096_shipments_shop_link.sql"),
     include_str!("migrations/0097_shipment_lookup.sql"),
     include_str!("migrations/0098_spamnet.sql"),
+    include_str!("migrations/0099_shipments_reread_again.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -301,20 +302,29 @@ mod tests {
             conn.execute_batch(sql).unwrap();
             conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
         }
-        // 1 and 2: orders only mail made; 3 has a number, 4 a name, 5 an app's event.
+        // 1 and 2: orders only mail made, 3 a number from mail and its carrier; 4 has a name, 5 an app's
+        // event, 6's mail is gone.
         conn.execute_batch(
             "DELETE FROM shipment_rescans;
              INSERT INTO accounts (id, login, created_at, modseq) VALUES (1, 'mini@example.org', 0, 10);
+             INSERT INTO blobs (hash, size, created_at) VALUES ('ab', 1, 0);
+             INSERT INTO threads (id, account_id) VALUES (1, 1);
+             INSERT INTO emails (id, account_id, thread_id, blob_hash, size, received_at, created_modseq, updated_modseq)
+                 VALUES (1, 1, 1, 'ab', 1, 0, 0, 0), (2, 1, 1, 'ab', 1, 0, 0, 0), (3, 1, 1, 'ab', 1, 0, 0, 0),
+                        (4, 1, 1, 'ab', 1, 0, 0, 0), (5, 1, 1, 'ab', 1, 0, 0, 0);
              INSERT INTO shipments (id, account_id, carrier, number, merchant, order_ref, status, status_at, title,
                                     created_at, updated_at)
                  VALUES (1, 1, 'other', NULL, 'Apple', 'W1', 'ordered', 500, NULL, 0, 0),
                         (2, 1, 'other', NULL, 'Tickets', '42', 'ordered', 900, NULL, 0, 0),
                         (3, 1, 'dhl', '00340434000000000001', NULL, NULL, 'shipped', 0, NULL, 0, 0),
                         (4, 1, 'other', NULL, 'Shop', 'A', 'ordered', 0, 'Lampe', 0, 0),
-                        (5, 1, 'other', NULL, 'Shop', 'B', 'ordered', 0, NULL, 0, 0);
-             INSERT INTO shipment_events (shipment_id, at, status, source)
-                 VALUES (1, 500, 'ordered', 'mail'), (2, 900, 'ordered', 'mail'), (3, 100, 'shipped', 'mail'),
-                        (4, 100, 'ordered', 'mail'), (5, 100, 'ordered', 'mail'), (5, 200, 'shipped', 'client');",
+                        (5, 1, 'other', NULL, 'Shop', 'B', 'ordered', 0, NULL, 0, 0),
+                        (6, 1, 'dhl', '00340434000000000002', NULL, NULL, 'shipped', 0, NULL, 0, 0);
+             INSERT INTO shipment_events (shipment_id, at, status, source, email_id)
+                 VALUES (1, 500, 'ordered', 'mail', 1), (2, 900, 'ordered', 'mail', 2), (3, 100, 'shipped', 'mail', 3),
+                        (3, 300, 'delivered', 'carrier', NULL), (4, 100, 'ordered', 'mail', 4),
+                        (5, 100, 'ordered', 'mail', 5), (5, 200, 'shipped', 'client', NULL),
+                        (6, 100, 'shipped', 'mail', NULL);",
         )
         .unwrap();
         migrate(&mut conn).unwrap();
@@ -325,7 +335,7 @@ mod tests {
             .unwrap()
             .map(Result::unwrap)
             .collect();
-        assert_eq!(ids, vec![3, 4, 5]);
+        assert_eq!(ids, vec![4, 5, 6]);
         let destroyed: Vec<(i64, i64)> = conn
             .prepare("SELECT modseq, object_id FROM changes WHERE kind = 'Shipment' AND change = 'destroyed' ORDER BY modseq")
             .unwrap()
@@ -333,15 +343,15 @@ mod tests {
             .unwrap()
             .map(Result::unwrap)
             .collect();
-        assert_eq!(destroyed, vec![(11, 1), (12, 2)]);
+        assert_eq!(destroyed, vec![(11, 1), (12, 2), (13, 3)]);
         let modseq: i64 = conn.query_row("SELECT modseq FROM accounts WHERE id = 1", [], |row| row.get(0)).unwrap();
-        assert_eq!(modseq, 12);
+        assert_eq!(modseq, 13);
         let rescan: (i64, i64) = conn
             .query_row("SELECT since, after_id FROM shipment_rescans WHERE account_id = 1", [], |row| {
                 Ok((row.get(0)?, row.get(1)?))
             })
             .unwrap();
-        assert_eq!(rescan, (500, 0));
+        assert_eq!(rescan, (100, 0));
     }
 
     #[test]
