@@ -106,6 +106,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0097_shipment_lookup.sql"),
     include_str!("migrations/0098_spamnet.sql"),
     include_str!("migrations/0099_shipments_reread_again.sql"),
+    include_str!("migrations/0100_shipments_reread_status.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

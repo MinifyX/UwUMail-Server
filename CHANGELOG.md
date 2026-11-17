@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.38.2
+
+- Parcels: a status word in a promise no longer counts. „Sobald deine Bestellung versendet wird,
+  senden wir dir eine Versandbestätigung“ made an order confirmation „Versendet“; now a phrase after
+  „sobald“, „wenn“, „once“, „when“ and the like in the same sentence is ignored, and „Bestätigung für
+  deine Bestellung“ and „Auftragsbestätigung“ mean ordered. Cards only mail made are read again once
+  more (migration 0100, as 0099), as a status never goes back by itself.
+
 ## 0.38.1
 
 - Parcels: fewer false cards. A bare run of digits counts as a tracking number only right after a

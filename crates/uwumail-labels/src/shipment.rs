@@ -653,6 +653,11 @@ const STATUS_WORDS: &[(ShipmentStatus, &[&str])] = &[
         ShipmentStatus::Ordered,
         &[
             "bestellbestätigung",
+            "auftragsbestätigung",
+            "bestätigung für deine bestellung",
+            "bestätigung für ihre bestellung",
+            "bestätigung deiner bestellung",
+            "bestätigung ihrer bestellung",
             "vielen dank für deine bestellung",
             "vielen dank für ihre bestellung",
             "danke für deine bestellung",
@@ -722,9 +727,25 @@ const CARRIER_NAMES: &[&str] = &["dhl", "dpd", "hermes", "gls", "ups", "fedex", 
 fn status_of(folded: &str) -> Option<ShipmentStatus> {
     STATUS_WORDS
         .iter()
-        .find(|(_, phrases)| phrases.iter().any(|phrase| folded.contains(phrase)))
+        .find(|(_, phrases)| phrases.iter().any(|phrase| said(folded, phrase)))
         .map(|(status, _)| *status)
 }
+
+/// Whether `folded` says `phrase` as a fact, not as a promise: „Sobald deine Bestellung versendet
+/// wird, senden wir dir eine Versandbestätigung“ is an order confirmation.
+fn said(folded: &str, phrase: &str) -> bool {
+    folded.match_indices(phrase).any(|(at, _)| {
+        // The sentence so far, at most 120 characters back.
+        let start = folded[..at].char_indices().rev().nth(120).map_or(0, |(i, _)| i);
+        let before = &folded[start..at];
+        let clause = before.rfind(['.', '!', '?', '\n']).map_or(before, |end| &before[end + 1..]);
+        !PROMISE_WORDS.iter().any(|word| has_word(clause, word))
+    })
+}
+
+/// Words that make what follows in the sentence a promise.
+const PROMISE_WORDS: &[&str] =
+    &["sobald", "wenn", "bevor", "once", "when", "as soon as", "senden wir", "erhältst du", "erhalten sie"];
 
 /// Words before an expected day or time window.
 const EXPECTED_WORDS: &[&str] = &[
