@@ -248,8 +248,9 @@ fn public_corpus() {
             match (class, &card) {
                 ("parcel", None) => println!("missed parcel {name}: {}", mail.subject),
                 ("spam" | "ham", Some(facts)) => println!(
-                    "false card {class} {name}: {} {:?} {:?} {:?} ({:.1} {})",
+                    "false card {class} {name}: {} {:?} {:?} {:?} {:?} ({:.1} {})",
                     mail.subject,
+                    facts.status,
                     facts.carrier,
                     facts.numbers,
                     facts.order_ref,

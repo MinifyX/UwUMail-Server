@@ -513,3 +513,19 @@ fn a_shops_dhl_number_needs_its_check_digit() {
     );
     assert!(found(&customer).numbers.is_empty());
 }
+
+/// An order confirmation that promises a shipping confirmation later is no shipped parcel.
+#[test]
+fn a_promised_shipping_confirmation_is_an_order() {
+    let mail = message(
+        &["From: Sprudel Beispiel <info@sprudel.example>", "Subject: Bestätigung für deine Bestellung #621167267"],
+        "Wir freuen uns, dass du dich für uns entschieden hast. Sobald deine Bestellung versendet wird senden wir \
+         dir eine separate Versandbestätigung.\n\nVersandkosten 0,00 €",
+    );
+    assert_eq!(found(&mail).status, Some(ShipmentStatus::Ordered));
+    let mail = message(
+        &["From: Shop <info@shop.example>", "Subject: Your order #621167267"],
+        "Thanks! We will email you once your order has shipped.",
+    );
+    assert_ne!(shipment(&mail).and_then(|facts| facts.status), Some(ShipmentStatus::Shipped));
+}
