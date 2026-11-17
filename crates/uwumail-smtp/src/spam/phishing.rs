@@ -573,7 +573,7 @@ pub fn domain_of(address: &str) -> Option<String> {
 /// The longest From display name the checks read, in characters.
 const MAX_NAME_CHARS: usize = 256;
 /// The longest subject the checks read, in characters.
-const MAX_SUBJECT_CHARS: usize = 1000;
+pub(super) const MAX_SUBJECT_CHARS: usize = 1000;
 /// At most this many contact domains are compared with the sender's.
 pub const MAX_CONTACT_DOMAINS: usize = 2000;
 
@@ -585,7 +585,7 @@ fn valid_domain(domain: &str) -> bool {
 }
 
 /// The first `max` bytes' worth of a text, cut at a character boundary.
-fn clip(text: &str, max: usize) -> &str {
+pub(super) fn clip(text: &str, max: usize) -> &str {
     if text.len() <= max {
         return text;
     }

@@ -137,6 +137,7 @@ delivery and the mail apps.
 | `DATE_IN_FUTURE` | +2.0 | the date is more than a day ahead |
 | `DATE_IN_PAST` | +1.0 | the date is more than 30 days old |
 | `SUBJECT_ALL_CAPS` | +1.5 | the subject shouts: at least 10 letters, none of them lowercase |
+| `SUBJECT_HAS_RECIPIENT` | +1.5 | the subject holds a To address, as mass mailings fill it in ("[jo@example.com] - Your receipt") |
 | `HTML_ONLY` | +0.5 | the message has HTML but no plain text version |
 | `BASE64_TEXT` | +1.0 | plain ASCII text is base64-encoded, which only hides words from filters |
 | `HIDDEN_TEXT` | +1.0 | more than 200 characters of text are hidden from the reader (only without DMARC) |

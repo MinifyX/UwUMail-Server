@@ -3,6 +3,32 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.38.1
+
+- Parcels: fewer false cards. A bare run of digits counts as a tracking number only right after a
+  word such as „Sendungsnummer“ (or in the carrier's own mail), never inside a link and never for
+  Amazon, and only beside a second sign: a link to the carrier, the carrier as sender, or the
+  shop's order. A 12-digit DHL number needs its check digit. A number in a mail whose subject is
+  about neither an order nor a shipment makes no card (Amazon's Prime welcome, „Prüfen Sie, ob eine
+  Nachricht wirklich von Amazon stammt“). No card either for a parcel the person sends
+  (Einlieferungsbeleg, Online-Frankierung, Paketmarke), a carrier's name on mail from another
+  domain, a fee for a parcel from anyone but the carrier, a request to check one's details, or a
+  subject with the recipient's own address. An order number needs four characters with three
+  digits and is no date, so `1px` from a style sheet is none.
+- Parcels: every card that only mail made is read again with these rules (migration 0099), also
+  the ones from before 0.38.0, so a split Amazon order that showed as two becomes one and contract
+  mail (e.g. STRATO „Paket“) is no parcel any more. Named, hidden and app-added cards stay, and so do
+  cards whose mail is gone or in Junk.
+- Parcels: a mail ruled out above still has its numbers asked of the carrier when it is
+  unauthenticated, and goes to Junk if the carrier never heard of them; the assistant makes no card
+  of it either. A From on a carrier's domain counts as the carrier only when authenticated
+  (`docs/security-audit-0.38.1.md`).
+- Spam filter: new rule `SUBJECT_HAS_RECIPIENT` (+1.5) for a subject holding a To address. Measured
+  on public spam, phishing and ham corpora with a new ignored test (`public_corpus` in
+  `crates/uwumail-smtp/tests/integration/corpus.rs`, folder in `UWUMAIL_PUBLIC_CORPUS`): 114 of 1455
+  spam mails and none of 1653 ham mails have it. On the same corpora no spam or ham mail makes a
+  parcel card any more (17 and 2 before).
+
 ## 0.38.0
 
 - Parcels: IKEA's („ist fast bei dir … voraussichtlich Freitag, 06.11.2026.“) is now *Unterwegs*

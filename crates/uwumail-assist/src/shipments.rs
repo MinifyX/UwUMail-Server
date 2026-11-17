@@ -115,7 +115,10 @@ impl Assist {
             .await
             .map_err(|err| AssistError::Store(uwumail_store::StoreError::Internal(err.to_string())))?;
         // What the rules read in full was noted at delivery already.
-        if ruled.is_some_and(|facts| facts.confidence >= SURE && !facts.numbers.is_empty() && facts.status.is_some()) {
+        // Nor one the rules ruled out (confidence 0): no card from the model either.
+        if ruled.is_some_and(|facts| {
+            facts.confidence <= 0.0 || (facts.confidence >= SURE && !facts.numbers.is_empty() && facts.status.is_some())
+        }) {
             return Ok(());
         }
         let ticket = self.prepare(account, "autoLabels").await?.expecting(TYPICAL_SHIPMENT_TOKENS);

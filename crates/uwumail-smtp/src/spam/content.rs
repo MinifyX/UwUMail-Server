@@ -259,6 +259,20 @@ fn headers(message: &Message<'_>, now: i64, hits: &mut Vec<Hit>) {
         if letters >= 10 && !subject.chars().any(char::is_lowercase) {
             add(hits, "SUBJECT_ALL_CAPS", 1.5, None);
         }
+        // "[jose@example.com] - Your receipt": a mass mailing fills in the address it was sent to.
+        // Bounded like phishing's subject checks: headers have no length limit (security review 0.38.1).
+        let subject = phishing::clip(subject, phishing::MAX_SUBJECT_CHARS).to_lowercase();
+        let named =
+            message.to().into_iter().flat_map(|to| to.iter()).filter_map(|to| to.address.as_deref()).take(50).any(
+                |address| {
+                    address.contains('@')
+                        && address.len() <= subject.len()
+                        && subject.contains(&address.trim().to_lowercase())
+                },
+            );
+        if named {
+            add(hits, "SUBJECT_HAS_RECIPIENT", 1.5, None);
+        }
     }
 }
 
@@ -359,6 +373,18 @@ TVo=
                 "SUBJECT_ALL_CAPS"
             ]
         );
+    }
+
+    #[test]
+    fn the_recipients_address_in_the_subject() {
+        let with = |subject: &str| {
+            format!(
+                "From: a@x.example\r\nTo: Jo <Jo@y.example>\r\nDate: Wed, 16 Sep 2026 09:00:00 +0000\r\n\
+                 Message-ID: <3@x.example>\r\nSubject: {subject}\r\n\r\nHallo\r\n"
+            )
+        };
+        assert_eq!(rules(&with("[jo@y.example] - Your receipt"), false), ["SUBJECT_HAS_RECIPIENT"]);
+        assert!(rules(&with("Your receipt"), false).is_empty());
     }
 
     #[test]
